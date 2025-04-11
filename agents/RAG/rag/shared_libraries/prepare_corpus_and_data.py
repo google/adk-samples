@@ -137,7 +137,7 @@ def main():
         corpus_name=corpus.name,
         pdf_path=pdf_path,
         display_name=PDF_FILENAME,
-        description=f"Alphabet's 10-K 2024 document"
+        description="Alphabet's 10-K 2024 document"
     )
   
   # List all files in the corpus

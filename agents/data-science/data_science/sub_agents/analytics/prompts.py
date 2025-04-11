@@ -18,7 +18,6 @@ This module defines functions that return instruction prompts for the analytics 
 These instructions guide the agent's behavior, workflow, and tool usage.
 """
 
-import os
 
 
 def return_instructions_ds() -> str:

@@ -14,7 +14,6 @@
 
 
 import os
-import pandas as pd
 from google.cloud import bigquery
 from pathlib import Path
 from dotenv import load_dotenv
@@ -71,7 +70,7 @@ def create_dataset_if_not_exists(project_id, dataset_name):
     try:
         client.get_dataset(dataset_id)  # Make an API request.
         print(f"Dataset {dataset_id} already exists")
-    except Exception as e:
+    except Exception:
         dataset = bigquery.Dataset(dataset_id)
         dataset.location = "US"  # Set the location (e.g., "US", "EU")
         dataset = client.create_dataset(dataset, timeout=30)  # Make an API request.

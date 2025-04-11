@@ -29,7 +29,6 @@ from google.adk.sessions import InMemorySessionService
 from data_science.agent import root_agent
 from data_science.sub_agents.bqml.agent import root_agent as bqml_agent
 from data_science.sub_agents.bigquery.agent import database_agent
-from data_science.sub_agents.analytics.agent import root_agent as data_science_agent
 
 session_service = InMemorySessionService()
 artifact_service = InMemoryArtifactService()

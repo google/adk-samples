@@ -12,12 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-from unittest.mock import patch
 from customer_service.tools.tools import (
     send_call_companion_link,
     approve_discount,
-    sync_ask_for_approval,
     update_salesforce_crm,
     access_cart_information,
     modify_cart,

@@ -47,7 +47,7 @@ def search(keywords: str, tool_context: ToolContext) -> str:
 
     # Show artifact in the UI.
     tool_context.save_artifact(
-        f"html",
+        "html",
         types.Part.from_uri(file_uri=webshop_env.state["html"], mime_type="text/html"),
     )
     return ob

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import gym
-from .web_agent_site.envs.web_agent_text_env import WebAgentTextEnv
 
 
 def init_env(num_products):

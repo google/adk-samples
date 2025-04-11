@@ -14,7 +14,6 @@
 
 """Deployment script for Brand Search Optimization agent."""
 
-import os
 
 import vertexai
 from absl import app, flags
@@ -39,7 +38,7 @@ def create() -> None:
         enable_tracing=True,
     )
 
-    extra_packages = [f"./brand_search_optimization"]
+    extra_packages = ["./brand_search_optimization"]
 
     remote_agent = agent_engines.create(
         adk_app,

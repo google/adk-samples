@@ -14,7 +14,6 @@
 
 """Translator from SQLite to BigQuery."""
 
-import os
 import re
 from typing import Any, Final
 
