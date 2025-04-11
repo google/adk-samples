@@ -14,7 +14,7 @@ This agent showcases Multi Agent setup with tool calling and web crawling
 |   Complexity |   Advanced |
 |   Agent Type |   Multi Agent |
 |   Multi Agent Design Pattern: |   Router Agent |
-|   Components |   Bigquery Connection, Computer use, Tools, Evaluation |
+|   Components |   BigQuery Connection, Computer use, Tools, Evaluation |
 |   Vertical |   Retail |
 
 ### Agent Architecture
@@ -25,7 +25,7 @@ This agent showcases Multi Agent setup with tool calling and web crawling
 
 * **Tools:**
 
-  * `function_calling`:  Gets data from the product catalog i.e. bigquery table based on user provide brand.  It takes a brand string as input and returns a list of database records.
+  * `function_calling`:  Gets data from the product catalog i.e. BigQuery table based on user provide brand.  It takes a brand string as input and returns a list of database records.
 
   * `load_artifacts_tool`: Load web page source data as an artifact to analyze the components to take action such as clicking on the search button.
 
@@ -56,11 +56,11 @@ This agent showcases Multi Agent setup with tool calling and web crawling
     * **BigQuery Setup**
         * BigQuery DATASET_ID should be under `.env` in `DATASET_ID`
         * BigQuery TABLE_ID should be under `.env` in `TABLE_ID`
-        * BigQuery table setup can be done using automatically following the `sh deployment/run.sh` belowor manually by following steps in `BigQuery Setup` section.
+        * BigQuery table setup can be done using automatically following the `sh deployment/run.sh` below or manually by following steps in `BigQuery Setup` section.
 
     * **Other Configuration:**
         * You can change Gemini Model by changing `MODEL` under `.env`
-        * `DISABLE_WEB_DRIVER` when set to `1` will enable you to run unit tests. See `Unit Tests` section below for details. **NOTE** keep this flag to 0 by default when not testing.
+        * `DISABLE_WEB_DRIVER` when set to `1`, will enable you to run unit tests. See `Unit Tests` section below for details. **NOTE** keep this flag to 0 by default when not testing.
 
 3.  **Authenticate with your Google Cloud account:**
     ```bash
@@ -137,7 +137,7 @@ Run unit test using `pytest` by following these steps
 
 2. Run `sh deployment/test.sh`
 
-This script runs unit test with a mock BQ client for bigquery tool in `tests/unit/test_tools.py`.
+This script runs unit test with a mock BQ client for BigQuery tool in `tests/unit/test_tools.py`.
 
 ## Deploying the Agent
 
