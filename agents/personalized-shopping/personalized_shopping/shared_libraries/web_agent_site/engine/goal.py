@@ -131,7 +131,7 @@ def get_synthetic_goals(all_products, product_prices):
                     "attributes": attributes,
                     "price_upper": price_upper,
                     "goal_options": goal_options,
-                    "name": product["Title"],
+                    "title": product["Title"],
                 }
             )
             for att in attributes:
