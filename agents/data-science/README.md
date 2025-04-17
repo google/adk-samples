@@ -100,7 +100,7 @@ The key features of the Data Science Multi-Agent include:
 
     *   First, set the BigQuery project ID in the `.env` file. This can be the same GCP Project you use for `GOOGLE_CLOUD_PROJECT`,
         but you can use other BigQuery projects as well, as long as you have access permissions to that project.
-        If you have an existig BigQuery table you wish to connect, specify the `BQ_DATASET_ID` in the `.env` file as well.
+        If you have an existing BigQuery table you wish to connect, specify the `BQ_DATASET_ID` in the `.env` file as well.
         Make sure you leave `BQ_DATASET_ID='forecasting_sticker_sales'` if you wish to use the sample data.
 
         Alternatively, you can set the variables from your terminal:
@@ -296,7 +296,7 @@ The last sequence of digits is the AgentEngine resource ID.
 
 Once you have successfully deployed your agent, you can interact with it
 using the `test_deployment.py` script in the `deployment` directory. Store the
-agent's resource ID in an enviroment variable and run the following command:
+agent's resource ID in an environment variable and run the following command:
 
 ```bash
 export RESOURCE_ID=...

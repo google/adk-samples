@@ -143,7 +143,7 @@ for event in runner.run(
         print(part.text)
 ```
 
-You may aslo utilize `google.adk.Runner` to have fine-grained control on
+You may also utilize `google.adk.Runner` to have fine-grained control on
 interaction sessions and more, or wrap the agent in a
 `vertexai.preview.reasoning_engines.AdkApp`.
 
@@ -272,7 +272,7 @@ python3 -m pytest eval
 `tests` runs the agent on a sample request, and makes sure that every component
 is functional. `eval` is a demonstration of how to evaluate the agent, using the
 `AgentEvaluator` in ADK. It sends a couple requests to the agent and expects
-that the agent's responses match a pre-defined response reasonablly well.
+that the agent's responses match a pre-defined response reasonably well.
 
 
 ## Deployment

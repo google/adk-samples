@@ -236,7 +236,7 @@ The last sequence of digits is the AgentEngine resource ID.
 
 Once you have successfully deployed your agent, you can interact with it
 using the `test_deployment.py` script in the `deployment` directory. Store the
-agent's resource ID in an enviroment variable and run the following command:
+agent's resource ID in an environment variable and run the following command:
 ```bash
 export RESOURCE_ID=...
 export USER_ID=<any string>

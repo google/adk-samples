@@ -8,7 +8,7 @@ Each folder in this directory contains a different agent sample.
 
 1.  **Prerequisites:**
 
-    *   "Ensure you have installed and configured the Agent Development Kit (ADK). See the [ADK Quickstart Guide](https://google.github.io/adk-docs/get-started/quickstart/).
+    *   "Ensure you have installed and configured the Agent Development Kit (ADK). See the [ADK Quickstart Guide](https://google.github.io/adk-docs/get-started/quickstart/)."
     *   "Python 3.9+ and [Poetry](https://python-poetry.org/docs/#installation) installed."
     *   "Access to Google Cloud (Vertex AI) and/or a Gemini API Key (depending on the agent - see individual agent READMEs)."
 
