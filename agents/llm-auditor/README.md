@@ -89,6 +89,16 @@ to implement this workflow.
         gcloud auth application-default set-quota-project $GOOGLE_CLOUD_PROJECT
         ```
 
+    *   If you'd prefer to run the agent locally without using Google Vertex AI or Cloud dependencies, you may set the following 
+        environment variables in your shell, or in a `.env` file instead.
+
+        ```bash
+        export GOOGLE_GENAI_USE_VERTEXAI=false
+        export GOOGLE_API_KEY=PASTE_YOUR_ACTUAL_API_KEY_HERE
+        ```
+
+        Refer to the [Google Gemini API Quickstart](https://ai.google.dev/gemini-api/docs/quickstart?lang=python#make-first-request) for instructions on obtaining a Google Gemini API key.
+
 ## Running the Agent
 
 **Using `adk`**
