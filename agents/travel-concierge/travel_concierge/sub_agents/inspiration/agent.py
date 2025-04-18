@@ -16,7 +16,7 @@
 
 from google.adk.agents import Agent
 from google.adk.tools.agent_tool import AgentTool
-from travel_concierge.shared_libraries.types import DesintationIdeas, POISuggestions, json_response_config
+from travel_concierge.shared_libraries.types import DestinationIdeas, POISuggestions, json_response_config
 from travel_concierge.sub_agents.inspiration import prompt
 from travel_concierge.tools.places import map_tool
 
@@ -28,7 +28,7 @@ place_agent = Agent(
     description="This agent suggests a few destination given some user preferences",
     disallow_transfer_to_parent=True,
     disallow_transfer_to_peers=True,
-    output_schema=DesintationIdeas,
+    output_schema=DestinationIdeas,
     output_key="place",
     generate_content_config=json_response_config,
 )

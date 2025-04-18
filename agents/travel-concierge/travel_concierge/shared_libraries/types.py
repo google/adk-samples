@@ -107,7 +107,7 @@ class Destination(BaseModel):
     rating: str = Field(description="Numerical rating (e.g., 4.5)")
 
 
-class DesintationIdeas(BaseModel):
+class DestinationIdeas(BaseModel):
     """Destinations recommendation."""
     places: list[Destination]
 
