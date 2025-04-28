@@ -1,0 +1,14 @@
+google-adk
+google-genai
+python-dotenv
+websockets
+aiohttp # For async input in app/main.py
+yfinance # For the MCP stock tool
+mcp
+uvicorn # ASGI server for A2A
+starlette # Web framework for A2A server (used by A2A common)
+httpx # HTTP client for A2A client (used by A2A common)
+pydantic # Dependency for others
+mcp[cli]
+pytest
+pytest-asyncio
