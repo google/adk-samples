@@ -35,10 +35,6 @@ flags.DEFINE_bool("create", False, "Creates a new agent.")
 flags.DEFINE_bool("delete", False, "Deletes an existing agent.")
 flags.mark_bool_flags_as_mutual_exclusive(["create", "delete"])
 
-_AI_PLATFORM_GIT = (
-    "git+https://github.com/googleapis/python-aiplatform.git@copybara_738852226"
-)
-
 
 def create() -> None:
     """Creates an agent engine for LLM Auditor."""
@@ -49,7 +45,7 @@ def create() -> None:
         display_name=root_agent.name,
         requirements=[
             "google-adk (>=0.0.2)",
-            f"google-cloud-aiplatform[agent_engines] @ {_AI_PLATFORM_GIT}",
+            "google-cloud-aiplatform[agent_engines] (>=1.88.0,<2.0.0)",
             "google-genai (>=1.5.0,<2.0.0)",
             "pydantic (>=2.10.6,<3.0.0)",
             "absl-py (>=2.2.1,<3.0.0)",
