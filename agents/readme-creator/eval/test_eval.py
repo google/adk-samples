@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Basic evalualtion for Readme Creator."""
+"""Basic evaluation for Readme Creator."""
 
 import pathlib
 
