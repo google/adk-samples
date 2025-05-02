@@ -1,5 +1,5 @@
 [project]
-name = "personalized-shopping"
+name = "readme-generator"
 version = "0.1.0"
 description = "Repository Readme Generator with Google ADK"
 authors = [{ name = "Berkay Güzel", email = "berkayguzel43@gmail.com" }]
