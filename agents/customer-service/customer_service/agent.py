@@ -23,6 +23,7 @@ from .shared_libraries.callbacks import (
     rate_limit_callback,
     before_agent,
     before_tool,
+    after_tool
 )
 from .tools.tools import (
     send_call_companion_link,
@@ -67,6 +68,7 @@ root_agent = Agent(
         generate_qr_code,
     ],
     before_tool_callback=before_tool,
+    after_tool_callback=after_tool,
     before_agent_callback=before_agent,
     before_model_callback=rate_limit_callback,
 )

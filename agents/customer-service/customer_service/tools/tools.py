@@ -17,6 +17,7 @@
 import logging
 import uuid
 from datetime import datetime, timedelta
+from google.adk.tools import ToolContext
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +58,15 @@ def approve_discount(discount_type: str, value: float, reason: str) -> str:
         >>> approve_discount(type='percentage', value=10.0, reason='Customer loyalty')
         '{"status": "ok"}'
     """
+    if value > 10:
+        logger.info("Denying %s discount of %s", discount_type, value)
+        # Send back a reason for the error so that the model can recover.
+        return {"status": "rejected",
+                "message": "discount too large. Must be 10 or less."}
     logger.info(
         "Approving a %s discount of %s because %s", discount_type, value, reason
     )
-
-    logger.info("INSIDE TOOL CALL")
-    return '{"status": "ok"}'
-
+    return {"status": "ok"}
 
 def sync_ask_for_approval(discount_type: str, value: float, reason: str) -> str:
     """
@@ -87,7 +90,7 @@ def sync_ask_for_approval(discount_type: str, value: float, reason: str) -> str:
         value,
         reason,
     )
-    return '{"status": "approved"}'
+    return {"status": "approved"}
 
 
 def update_salesforce_crm(customer_id: str, details: dict) -> dict:
@@ -371,6 +374,16 @@ def generate_qr_code(
         >>> generate_qr_code(customer_id='123', discount_value=10.0, discount_type='percentage', expiration_days=30)
         {'status': 'success', 'qr_code_data': 'MOCK_QR_CODE_DATA', 'expiration_date': '2024-08-24'}
     """
+    
+    # Guardrails to validate the amount of discount is acceptable for a auto-approved discount.
+    # Defense-in-depth to prevent malicious prompts that could circumvent system instructions and
+    # be able to get arbitrary discounts.
+    if discount_type == "" or discount_type == "percentage":
+        if discount_value > 10:
+            return "cannot generate a QR code for this amount, must be 10% or less"
+    if discount_type == "fixed" and discount_value > 20:
+        return "cannot generate a QR code for this amount, must be 20 or less"
+    
     logger.info(
         "Generating QR code for customer: %s with %s - %s discount.",
         customer_id,
