@@ -38,7 +38,7 @@ The key features of the Data Science Multi-Agent include:
 ### Prerequisites
 
 *   **Google Cloud Account:** You need a Google Cloud account with BigQuery enabled.
-*   **Python 3.9+:** Ensure you have Python 3.9 or a later version installed.
+*   **Python 3.12+:** Ensure you have Python 3.12 or a later version installed.
 *   **Poetry:** Install Poetry by following the instructions on the official Poetry website: [https://python-poetry.org/docs/](https://python-poetry.org/docs/)
 *   **Git:** Ensure you have git installed. If not, you can download it from [https://git-scm.com/](https://git-scm.com/) and follow the [installation guide](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git).
 
@@ -67,11 +67,17 @@ The key features of the Data Science Multi-Agent include:
     poetry env activate
     ```
 
-    This activates the virtual environment, allowing you to run commands within the project's environment.
-    Make sure the environment is active. If the above command did not activate the environment for you, you can also activate it through
+    This activates the virtual environment, allowing you to run commands within the project's environment. To make sure the environment is active, use for example
+    
+    ```bash
+    $> poetry env list
+       data-science-FAlhSuLn-py3.13 (Activated)
+    ```
+    
+    If the above command did not activate the environment for you, you can also activate it through
 
      ```bash
-    source .venv/bin/activate
+    source $(poetry env info --path)/bin/activate
     ```
 
 4.  **Set up Environment Variables:**
