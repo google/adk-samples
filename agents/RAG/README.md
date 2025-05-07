@@ -70,7 +70,7 @@ This diagram outlines the agent's workflow, designed to provide informed and con
     source .venv/bin/activate 
     ```   
 4.  **Set up Environment Variables:**
-    Rename the file ".env example" to ".env" 
+    Rename the file ".env.example" to ".env" 
     Follow the steps in the file to set up the environment variables.
 
 5. **Setup Corpus:**
