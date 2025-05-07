@@ -37,7 +37,7 @@ root_agent = Agent(
     name="root_agent",
     description=(
         "Use tools and other agents provided to generate an analysis report"
-        "about the most recent FMOC meeting."
+        "about the most recent FOMC meeting."
     ),
     instruction=root_agent_prompt.PROMPT,
     tools=[store_state_tool],
