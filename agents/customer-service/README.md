@@ -118,7 +118,7 @@ The agent has access to the following tools:
 
 2.  Install dependencies using Poetry:
 
-- if you have not installed poetry before then run `pip install poetry` first. the you can create your virtual environment and install all dependencies using:
+- if you have not installed poetry before then run `pip install poetry` first. then you can create your virtual environment and install all dependencies using:
 
   ```bash
   poetry install

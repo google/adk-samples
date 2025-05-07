@@ -36,7 +36,7 @@ The agent’s default configuration allows you to simulate interactions with a f
 ### Key Features
 
 The key features of the personalized-shopping agent include:
-*  **Environment:** The agent can interact in a e-commerce web environment with 1.18M of products.
+*  **Environment:** The agent can interact in an e-commerce web environment with 1.18M of products.
 *  **Memory:** The agent maintains a conversational memory with all the previous-turns information in its context window.
 *  **Tools:**
 

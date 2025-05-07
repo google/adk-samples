@@ -25,7 +25,7 @@ This agent showcases Multi Agent setup with tool calling and web crawling
 
 * **Tools:**
 
-  * `function_calling`:  Gets data from the product catalog i.e. BigQuery table based on user provide brand.  It takes a brand string as input and returns a list of database records.
+  * `function_calling`:  Gets data from the product catalog i.e. BigQuery table based on user provided brand.  It takes a brand string as input and returns a list of database records.
 
   * `load_artifacts_tool`: Load web page source data as an artifact to analyze the components to take action such as clicking on the search button.
 
