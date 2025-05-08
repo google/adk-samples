@@ -23,6 +23,7 @@ from data_science.utils.utils import get_env_var
 from google.adk.tools import ToolContext
 from google.cloud import bigquery
 from google.genai import Client
+from vertexai.language_models import TextEmbeddingModel
 
 from .chase_sql import chase_constants
 
@@ -33,7 +34,9 @@ location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 llm_client = Client(vertexai=True, project=project, location=location)
 
 MAX_NUM_ROWS = 80
-
+SCHEMA_EMBEDDING_MODEL_NAME = os.getenv("SCHEMA_EMBEDDING_MODEL_NAME", "text-embedding-004")
+MAX_SCHEMA_RESULTS = 20
+BQ_RAG_DATASET_ID = os.getenv("BQ_RAG_DATASET_ID")
 
 database_settings = None
 bq_client = None
@@ -47,6 +50,100 @@ def get_bq_client():
     return bq_client
 
 
+def get_column_embeddings(texts: list[str]) -> list[list[float]]:
+    """Generates embeddings for a list of texts."""
+    model = TextEmbeddingModel.from_pretrained(SCHEMA_EMBEDDING_MODEL_NAME)
+    embeddings = model.get_embeddings(texts)
+    return [embedding.values for embedding in embeddings]
+
+def get_relevant_schema_from_embeddings(question: str, project_id: str, data_dataset_id: str, rag_dataset_id: str) -> str:
+    """Retrieves relevant schema details (tables and columns) based on vector similarity to the question."""
+    client = get_bq_client()
+    question_embedding = get_column_embeddings([question])[0]
+
+    # Ensure BQ_RAG_DATASET_ID is available, otherwise this function cannot proceed.
+    if not rag_dataset_id:
+        print("Error: BQ_RAG_DATASET_ID is not set. Cannot query schema embeddings.")
+        return "" # Return empty string or handle error as appropriate
+
+    # Query to find relevant columns from the schema_embeddings table in the RAG dataset
+    query = f"""
+    WITH QuestionEmbedding AS (
+        SELECT {question_embedding} AS q_embedding
+    ),
+    SchemaEmbeddingsWithNorm AS (
+        SELECT
+            table_name,
+            column_name,
+            column_description,
+            data_type,
+            embedding,
+            (SELECT SQRT(SUM(value * value)) FROM UNNEST(embedding) AS value) AS norm_v,
+            (SELECT SQRT(SUM(value * value)) FROM UNNEST(q_embedding) AS value) AS norm_q
+        FROM
+            `{project_id}.{rag_dataset_id}.schema_embeddings`, QuestionEmbedding
+    )
+    SELECT
+        se.table_name,
+        se.column_name,
+        se.column_description,
+        se.data_type,
+        (SELECT SUM(ve * qe) FROM UNNEST(se.embedding) AS ve WITH OFFSET i JOIN UNNEST(q_embedding) AS qe WITH OFFSET j ON i = j) / SAFE_DIVIDE(norm_v * norm_q, 1) AS similarity
+    FROM SchemaEmbeddingsWithNorm se, QuestionEmbedding
+    ORDER BY similarity DESC
+    LIMIT {MAX_SCHEMA_RESULTS}
+    """
+
+    try:
+        query_job = client.query(query)
+        results = query_job.result()
+    except Exception as e:
+        print(f"Error querying schema embeddings: {e}")
+        return "" # Return empty string if error occurs
+
+    ddl_statements = ""
+    tables_processed = set()
+
+    table_columns = {}
+    for row in results:
+        if row.table_name not in table_columns:
+            table_columns[row.table_name] = []
+        table_columns[row.table_name].append(row)
+
+    for table_name, cols in table_columns.items():
+        if table_name in tables_processed:
+            continue
+
+        table_ref = client.dataset(data_dataset_id).table(table_name)
+        try:
+            table_obj = client.get_table(table_ref)
+        except Exception as e:
+            print(f"Could not get table {table_name}: {e}")
+            continue
+        
+        if table_obj.table_type != "TABLE":
+            continue
+
+        ddl_statement = f"CREATE OR REPLACE TABLE `{project_id}.{data_dataset_id}.{table_name}` (\n"
+        relevant_columns_in_table = {col.column_name for col in cols}
+
+        for field in table_obj.schema:
+            if field.name in relevant_columns_in_table:
+                ddl_statement += f"  `{field.name}` {field.field_type}"
+                if field.mode == "REPEATED":
+                    ddl_statement += " ARRAY"
+                col_description = next((c.column_description for c in cols if c.column_name == field.name and c.column_description), field.description)
+                if col_description:
+                    ddl_statement += f" COMMENT '{col_description}'"
+                ddl_statement += ",\n"
+        
+        if not ddl_statement.endswith("(\n"):
+            ddl_statement = ddl_statement[:-2] + "\n);\n\n"
+            ddl_statements += ddl_statement
+            tables_processed.add(table_name)
+
+    return ddl_statements
+
 def get_database_settings():
     """Get database settings."""
     global database_settings
@@ -58,14 +155,21 @@ def get_database_settings():
 def update_database_settings():
     """Update database settings."""
     global database_settings
+    # Determine the RAG dataset ID to use. Fallback to BQ_DATASET_ID if BQ_RAG_DATASET_ID is not set.
+    # This is a fallback for cases where BQ_RAG_DATASET_ID might not be configured,
+    # though for RAG functionality, it should ideally always be set.
+    rag_dataset_id_to_use = get_env_var("BQ_RAG_DATASET_ID", default_value=get_env_var("BQ_DATASET_ID"))
+
     ddl_schema = get_bigquery_schema(
-        get_env_var("BQ_DATASET_ID"),
+        dataset_id=get_env_var("BQ_DATASET_ID"), # This is the data dataset
         client=get_bq_client(),
         project_id=get_env_var("BQ_PROJECT_ID"),
+        rag_dataset_id=rag_dataset_id_to_use # Pass the RAG dataset ID
     )
     database_settings = {
         "bq_project_id": get_env_var("BQ_PROJECT_ID"),
-        "bq_dataset_id": get_env_var("BQ_DATASET_ID"),
+        "bq_dataset_id": get_env_var("BQ_DATASET_ID"), # Data dataset
+        "bq_rag_dataset_id": rag_dataset_id_to_use, # RAG dataset for schema embeddings
         "bq_ddl_schema": ddl_schema,
         # Include ChaseSQL-specific constants.
         **chase_constants.chase_sql_constants_dict,
@@ -73,22 +177,27 @@ def update_database_settings():
     return database_settings
 
 
-def get_bigquery_schema(dataset_id, client=None, project_id=None):
+def get_bigquery_schema(dataset_id, client=None, project_id=None, question: str = None, rag_dataset_id: str = None):
     """Retrieves schema and generates DDL with example values for a BigQuery dataset.
+    If a question is provided, it retrieves only schema relevant to the question using embeddings from the rag_dataset_id.
 
     Args:
-        dataset_id (str): The ID of the BigQuery dataset (e.g., 'my_dataset').
+        dataset_id (str): The ID of the BigQuery DATASET containing the actual data.
         client (bigquery.Client): A BigQuery client.
         project_id (str): The ID of your Google Cloud Project.
+        question (str, optional): The user's question to filter schema. Defaults to None.
+        rag_dataset_id (str, optional): The ID of the BigQuery RAG DATASET containing schema embeddings. Defaults to None.
 
     Returns:
         str: A string containing the generated DDL statements.
     """
+    if question and project_id and dataset_id and rag_dataset_id:
+        print(f"Retrieving schema relevant to the question using embeddings from RAG dataset: {rag_dataset_id}...")
+        return get_relevant_schema_from_embeddings(question, project_id, dataset_id, rag_dataset_id)
 
     if client is None:
         client = bigquery.Client(project=project_id)
 
-    # dataset_ref = client.dataset(dataset_id)
     dataset_ref = bigquery.DatasetReference(project_id, dataset_id)
 
     ddl_statements = ""
@@ -97,7 +206,6 @@ def get_bigquery_schema(dataset_id, client=None, project_id=None):
         table_ref = dataset_ref.table(table.table_id)
         table_obj = client.get_table(table_ref)
 
-        # Check if table is a view
         if table_obj.table_type != "TABLE":
             continue
 
@@ -113,14 +221,13 @@ def get_bigquery_schema(dataset_id, client=None, project_id=None):
 
         ddl_statement = ddl_statement[:-2] + "\n);\n\n"
 
-        # Add example values if available (limited to first row)
         rows = client.list_rows(table_ref, max_results=5).to_dataframe()
         if not rows.empty:
             ddl_statement += f"-- Example values for table `{table_ref}`:\n"
-            for _, row in rows.iterrows():  # Iterate over DataFrame rows
+            for _, row in rows.iterrows():
                 ddl_statement += f"INSERT INTO `{table_ref}` VALUES\n"
                 example_row_str = "("
-                for value in row.values:  # Now row is a pandas Series and has values
+                for value in row.values:
                     if isinstance(value, str):
                         example_row_str += f"'{value}',"
                     elif value is None:
@@ -129,7 +236,7 @@ def get_bigquery_schema(dataset_id, client=None, project_id=None):
                         example_row_str += f"{value},"
                 example_row_str = (
                     example_row_str[:-1] + ");\n\n"
-                )  # remove trailing comma
+                )
                 ddl_statement += example_row_str
 
         ddl_statements += ddl_statement
@@ -183,7 +290,29 @@ The database structure is defined by the following table schemas (possibly with 
 
    """
 
-    ddl_schema = tool_context.state["database_settings"]["bq_ddl_schema"]
+    # Retrieve schema based on the question, if NL2SQL_METHOD is not BASELINE (i.e., CHASE or other RAG-based methods)
+    nl2sql_method = os.getenv("NL2SQL_METHOD", "BASELINE")
+    rag_dataset_id_for_nl2sql = tool_context.state["database_settings"].get("bq_rag_dataset_id", BQ_RAG_DATASET_ID) # Get RAG dataset from context or env
+
+    if nl2sql_method != "BASELINE":
+        ddl_schema = get_bigquery_schema(
+            dataset_id=tool_context.state["database_settings"]["bq_dataset_id"], # Data dataset
+            project_id=tool_context.state["database_settings"]["bq_project_id"],
+            question=question,
+            rag_dataset_id=rag_dataset_id_for_nl2sql # Pass the RAG dataset ID
+        )
+    else:
+        # For BASELINE, if a question is present, still try to get RAG schema, else full schema.
+        # This allows BASELINE to also benefit from RAG if a question is asked.
+        if question and rag_dataset_id_for_nl2sql:
+             ddl_schema = get_bigquery_schema(
+                dataset_id=tool_context.state["database_settings"]["bq_dataset_id"],
+                project_id=tool_context.state["database_settings"]["bq_project_id"],
+                question=question,
+                rag_dataset_id=rag_dataset_id_for_nl2sql
+            )
+        else:
+            ddl_schema = tool_context.state["database_settings"]["bq_ddl_schema"]
 
     prompt = prompt_template.format(
         MAX_NUM_ROWS=MAX_NUM_ROWS, SCHEMA=ddl_schema, QUESTION=question
@@ -266,7 +395,6 @@ def run_bigquery_validation(
 
     final_result = {"query_result": None, "error_message": None}
 
-    # More restrictive check for BigQuery - disallow DML and DDL
     if re.search(
         r"(?i)(update|delete|drop|insert|create|alter|truncate|merge)", sql_string
     ):
@@ -277,9 +405,9 @@ def run_bigquery_validation(
 
     try:
         query_job = get_bq_client().query(sql_string)
-        results = query_job.result()  # Get the query results
+        results = query_job.result()
 
-        if results.schema:  # Check if query returned data
+        if results.schema:
             rows = [
                 {
                     key: (
@@ -292,8 +420,7 @@ def run_bigquery_validation(
                 for row in results
             ][
                 :MAX_NUM_ROWS
-            ]  # Convert BigQuery RowIterator to list of dicts
-            # return f"Valid SQL. Results: {rows}"
+            ]
             final_result["query_result"] = rows
 
             tool_context.state["query_result"] = rows
@@ -305,7 +432,7 @@ def run_bigquery_validation(
 
     except (
         Exception
-    ) as e:  # Catch generic exceptions from BigQuery  # pylint: disable=broad-exception-caught
+    ) as e:
         final_result["error_message"] = f"Invalid SQL: {e}"
 
     print("\n run_bigquery_validation final_result: \n", final_result)
