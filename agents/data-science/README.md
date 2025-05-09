@@ -100,18 +100,17 @@ The key features of the Data Science Multi-Agent include:
 
     *   First, set the BigQuery project ID in the `.env` file. This can be the same GCP Project you use for `GOOGLE_CLOUD_PROJECT`,
         but you can use other BigQuery projects as well, as long as you have access permissions to that project.
-        If you have an existing BigQuery table you wish to connect, specify the `BQ_DATASET_ID` in the `.env` file as well.
-        Make sure you leave `BQ_DATASET_ID='forecasting_sticker_sales'` if you wish to use the sample data.
+        If you have an existing BigQuery table you wish to connect, specify the `BQ_DATASET_IDS` in the `.env` file as well.
+        Make sure you leave `BQ_DATASET_IDS='forecasting_sticker_sales'` if you wish to use the sample data.
 
         Alternatively, you can set the variables from your terminal:
 
         ```bash
         export BQ_PROJECT_ID='YOUR-BQ-PROJECT-ID'
-        export BQ_DATASET_ID='YOUR-DATASET-ID' # leave as 'forecasting_sticker_sales' if using sample data
+        export BQ_DATASET_IDS='YOUR-DATASET-ID1,YOUR-DATASET-ID2' # leave as 'forecasting_sticker_sales' if using sample data
         ```
 
         You can skip the upload steps if you are using your own data. We recommend not adding any production critical datasets to this sample agent.
-        If you wish to use the sample data, continue with the next step.
 
     *   You will find the datasets inside 'data-science/data_science/utils/data/'.
         Make sure you are still in the working directory (`agents/data-science`). To load the test and train tables into BigQuery, run the following commands:
@@ -174,9 +173,9 @@ from the working directory:
 
 Here's a quick example of how a user might interact with the Data Science Multi-Agent System:
 
-> ´**User:** Hi, What data do you have access to?
+> **User:** Hi, What data do you have access to?
 
-> **Agent:**  I have access to two tables: `train` and `test`. Both tables contain sticker sales data with the following columns: `id`, `date`, `country`, `store`, `product`, and `num_sold`.
+> **Agent:**  I have access to two tables: `train` and `test` within the `forecasting_sticker_sales` dataset. Both tables contain sticker sales data with the following columns: `id`, `date`, `country`, `store`, `product`, and `num_sold`. If you have configured multiple datasets, I can access those as well.
 
 > **User:** I need more details on the train table. What countries exist? How many stores are there?
 

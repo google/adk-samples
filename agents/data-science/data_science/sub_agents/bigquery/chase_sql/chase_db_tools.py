@@ -94,22 +94,22 @@ def initial_bq_nl2sql(
       str: An SQL statement to answer this question.
     """
     print("****** Running agent with ChaseSQL algorithm.")
-    # ddl_schema = tool_context.state["database_settings"]["bq_ddl_schema"]
     project = tool_context.state["database_settings"]["bq_project_id"]
-    db = tool_context.state["database_settings"]["bq_dataset_id"] # This is the data dataset
+    dataset_ids_list = tool_context.state["database_settings"]["bq_dataset_ids"] # This is the list of data datasets
     rag_db = tool_context.state["database_settings"].get("bq_rag_dataset_id") # Get RAG dataset from context
 
     if not rag_db:
         print("Warning: BQ_RAG_DATASET_ID not found in tool_context. ChaseSQL RAG features may be limited.")
         # Fallback to using the main data dataset for RAG if not specified, or handle error
-        rag_db = db # Or raise an error if a separate RAG dataset is strictly required for CHASE
+        # For CHASE, RAG is preferred. If rag_db is not set, schema retrieval might be limited
+        # or fall back to a general schema dump if implemented that way in get_bigquery_schema.
 
-    # Retrieve schema based on the question using RAG
+    # Retrieve schema based on the question using RAG or by listing schemas for all datasets
     ddl_schema = get_bigquery_schema(
-        dataset_id=db, # Data dataset
         project_id=project,
         question=question,
-        rag_dataset_id=rag_db # RAG dataset for embeddings lookup
+        rag_corpus_id=rag_db, # RAG corpus for embeddings lookup
+        target_dataset_ids=dataset_ids_list # Pass the list of dataset IDs
     )
     if not ddl_schema:
         # Fallback or error handling if schema retrieval fails
@@ -166,7 +166,7 @@ def initial_bq_nl2sql(
         # pylint: disable=g-bad-todo
         # pylint: enable=g-bad-todo
         responses: str = translator.translate(
-            responses, ddl_schema=ddl_schema, db=db, catalog=project
+            responses, ddl_schema=ddl_schema, db=dataset_ids_list[0] if dataset_ids_list else None, catalog=project
         )
 
     return responses
