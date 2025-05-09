@@ -42,23 +42,49 @@ def setup_before_agent_call(callback_context: CallbackContext):
     # setting up database settings in session.state
     if "database_settings" not in callback_context.state:
         db_settings = dict()
-        db_settings["use_database"] = "BigQuery"
+        db_settings["use_database"] = "BigQuery"  # Default or initial setting
         callback_context.state["all_db_settings"] = db_settings
+    # Ensure all_db_settings is populated and consistent
+    elif "all_db_settings" not in callback_context.state or \
+         "use_database" not in callback_context.state["all_db_settings"]:
+        # If database_settings exists but all_db_settings is missing or incomplete,
+        # try to infer or default. This state might indicate an issue elsewhere.
+        callback_context.state["all_db_settings"] = {"use_database": "BigQuery"} # Defaulting
 
-    # setting up schema in instruction
-    if callback_context.state["all_db_settings"]["use_database"] == "BigQuery":
-        callback_context.state["database_settings"] = get_bq_database_settings()
-        schema = callback_context.state["database_settings"]["bq_ddl_schema"]
+    schema_info = "-- No schema information available for the configured database. --" # Default schema info
 
+    if callback_context.state.get("all_db_settings", {}).get("use_database") == "BigQuery":
+        # Get BQ settings and store them
+        current_bq_settings = get_bq_database_settings()
+        callback_context.state["database_settings"] = current_bq_settings
+
+        # Safely get the DDL schema
+        schema = current_bq_settings.get("bq_ddl_schema")
+        if schema:
+            schema_info = schema
+        else:
+            schema_info = "-- BigQuery DDL schema is not available or is empty. --"
+    # Example for other database types (if ever needed)
+    # elif callback_context.state.get("all_db_settings", {}).get("use_database") == "OtherDB":
+    #     # Fetch and set schema for OtherDB
+    #     # schema_info = get_other_db_schema_logic()
+    #     schema_info = "-- Schema for OtherDB (logic to be implemented). --"
+
+    base_instruction = return_instructions_root()
+    # Ensure _invocation_context and agent are valid before modification
+    if callback_context._invocation_context and callback_context._invocation_context.agent:
         callback_context._invocation_context.agent.instruction = (
-            return_instructions_root()
+            base_instruction
             + f"""
 
-    --------- The BigQuery schema of the relevant data with a few sample rows. ---------
-    {schema}
+    --------- The schema of the relevant data with a few sample rows. ---------
+    {schema_info}
 
     """
         )
+    else:
+        # Handle cases where context might not be fully initialized (e.g. log a warning)
+        print("Warning: Agent invocation context not fully initialized in setup_before_agent_call.")
 
 
 root_agent = Agent(

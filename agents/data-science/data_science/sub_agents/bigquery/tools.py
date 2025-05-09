@@ -158,10 +158,13 @@ def get_bigquery_schema(
                     ddl_statement += f" COMMENT '{clean_description}'"
                 ddl_statement += ",\n"
             
-            if not ddl_statement.endswith("(\n"): 
-                 ddl_statement = ddl_statement[:-2] + "\n);\n\n"
-            else: 
-                ddl_statement += ");\n\n"
+            if ddl_statement.endswith(",\n"):
+                ddl_statement = ddl_statement.removesuffix(",\n") + "\n);\n\n"
+            elif ddl_statement.endswith("(\n"): 
+                ddl_statement = ddl_statement.removesuffix("(\n") + "();\n\n"
+            # If ddl_statement doesn't end with either (e.g., it's empty or malformed from prior steps),
+            # it will pass through this block unchanged. This relies on prior logic correctly
+            # initializing ddl_statement and appending columns.
 
             try:
                 rows_df = client.list_rows(table_ref, max_results=2).to_dataframe()
@@ -351,17 +354,8 @@ def run_bigquery_validation(
 
         if results.schema:
             rows = [
-                {
-                    key: (
-                        value
-                        if not isinstance(value, datetime.date)
-                        else value.strftime("%Y-%m-%d")
-                    )
-                    for (key, value) in row.items()
-                }
+                {key: value for key, value in row.items()}
                 for row in results
-            ][
-                :MAX_NUM_ROWS
             ]
             final_result["query_result"] = rows
 
