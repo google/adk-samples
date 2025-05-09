@@ -1,0 +1,190 @@
+[
+  {
+    "name": "case15fa0a",
+    "data": [
+      {
+        "query": "Hey",
+        "expected_tool_use": [],
+        "expected_intermediate_agent_responses": [],
+        "reference": "Hello, I am a code review assistant. My job is to help you review the code in your GitHub repository.\nI can review commits, pull requests, and provide feedback on the code.\nI can also suggest improvements and help identify potential issues.\nHere are some of the things I can do:\n1. Review commits.\n2. Review pull requests.\nDo you need anything else? Would you like to review a commit or a pull request?\n"
+      },
+      {
+        "query": "Review pull requests.",
+        "expected_tool_use": [],
+        "expected_intermediate_agent_responses": [],
+        "reference": "Okay, I can help you with that.\n\nPlease provide the repository name and pull request number you want to review.\n\nFor example: \"owner/repo: 123\"\n"
+      },
+      {
+        "query": "ju4nv1e1r4/cost-llm-go: 2",
+        "expected_tool_use": [
+          {
+            "tool_name": "transfer_to_agent",
+            "tool_input": {
+              "agent_name": "get_pr"
+            }
+          },
+          {
+            "tool_name": "get_pull_request",
+            "tool_input": {}
+          }
+        ],
+        "expected_intermediate_agent_responses": [
+          {
+            "author": "get_pr",
+            "text": "Hello, I am get_pr, and I'm here to help you retrieve information about pull requests from a GitHub repository. I will start by getting the information for the pull request you specified.\n\n"
+          }
+        ],
+        "reference": "Okay, I have retrieved the information for pull request 2 in the repository ju4nv1e1r4/cost-llm-go. The title is \"chore: add CalcInput example,\" it is currently open, and it modifies one file, main.go. The body of the pull request says, \"Add new function demonstration in main.go file.\"\n\nWould you like to review the pull request?\n"
+      },
+      {
+        "query": "Yes",
+        "expected_tool_use": [
+          {
+            "tool_name": "get_diff_content",
+            "tool_input": {}
+          },
+          {
+            "tool_name": "get_diff_content",
+            "tool_input": {}
+          }
+        ],
+        "expected_intermediate_agent_responses": [
+          {
+            "author": "get_pr",
+            "text": "I encountered an error when trying to get the diff content. It seems I need the pull request number to get the diff. I apologize for that. Let me try again.\n\n"
+          }
+        ],
+        "reference": "I am still encountering an error. It seems I am unable to retrieve the diff content at this time. I will proceed with a general analysis based on the information I have.\n\nBased on the information provided, the pull request \"chore: add CalcInput example\" adds a new function demonstration in the main.go file. Since the pull request only modifies one file, main.go, and the description indicates it's adding a demonstration, I would suggest the following:\n\n1.  **Review the implementation of the `CalcInput` example:** Ensure that the example is clear, concise, and easy to understand. It should effectively demonstrate the intended use of the function.\n2.  **Check for error handling:** Verify that the example includes proper error handling, if applicable. This will help users understand how to handle potential errors when using the function.\n3.  **Add comments:** Include comments to explain the purpose and functionality of the example. This will make it easier for others to understand the code.\n4.  **Consider adding a unit test:** Although it's just a demonstration, adding a simple unit test can help ensure that the example works as expected and prevent regressions in the future.\n\nExample of improvement:\n\n```go\n// This example demonstrates how to use the CalcInput function.\nfunc main() {\n    // Example input\n    input := \"some input string\"\n\n    // Calculate the result\n    result, err := CalcInput(input)\n    if err != nil {\n        fmt.Println(\"Error:\", err)\n        return\n    }\n\n    // Print the result\n    fmt.Println(\"Result:\", result)\n}\n```\n\nDo you need anything else?\n"
+      },
+      {
+        "query": "I'd like to review a commit.",
+        "expected_tool_use": [
+          {
+            "tool_name": "transfer_to_agent",
+            "tool_input": {
+              "agent_name": "get_commit"
+            }
+          }
+        ],
+        "expected_intermediate_agent_responses": [],
+        "reference": "Please provide the commit SHA and repository name in the format owner/repo\nowner/repo: SHA\nowner/repo: 1234567890abcdef1234567890abcdef12345678\n"
+      },
+      {
+        "query": "ju4nv1e1r4/cost-llm-go: 1e12ed3033c5c95f4324564a9a2f893822157b03",
+        "expected_tool_use": [
+          {
+            "tool_name": "get_commit_tool",
+            "tool_input": {}
+          }
+        ],
+        "expected_intermediate_agent_responses": [],
+        "reference": "The commit information is:\n\nAuthor: Juan Vieira\nDate: 2025-04-16T12:51:30+00:00\nMessage: Merge pull request #1 from ju4nv1e1r4/dev\n\ndocs: modify comments\nStatus: ok\n\nDo you need anything else?\n"
+      },
+      {
+        "query": "No, but thanks",
+        "expected_tool_use": [],
+        "expected_intermediate_agent_responses": [],
+        "reference": "You're welcome!\n"
+      }
+    ],
+    "initial_session": {
+      "state": {},
+      "app_name": "code_reviewer",
+      "user_id": "user"
+    }
+  },
+  {
+    "name": "case150fad",
+    "data": [
+      {
+        "query": "Hey",
+        "expected_tool_use": [],
+        "expected_intermediate_agent_responses": [],
+        "reference": "Hello, I am a code review assistant. My job is to help you review the code in your GitHub repository.\nI can review commits, pull requests, and provide feedback on the code.\nI can also suggest improvements and help identify potential issues.\nHere are some of the things I can do:\n1. Review commits.\n2. Review pull requests.\nDo you need anything else? Would you like to review a commit or a pull request?\n"
+      },
+      {
+        "query": "Review pull requests.",
+        "expected_tool_use": [],
+        "expected_intermediate_agent_responses": [],
+        "reference": "Okay, I can help you with that.\n\nPlease provide the repository name and pull request number you want to review.\n\nFor example: \"owner/repo: 123\"\n"
+      },
+      {
+        "query": "ju4nv1e1r4/cost-llm-go: 2",
+        "expected_tool_use": [
+          {
+            "tool_name": "transfer_to_agent",
+            "tool_input": {
+              "agent_name": "get_pr"
+            }
+          },
+          {
+            "tool_name": "get_pull_request",
+            "tool_input": {}
+          }
+        ],
+        "expected_intermediate_agent_responses": [
+          {
+            "author": "get_pr",
+            "text": "Hello, I am get_pr, and I'm here to help you retrieve information about pull requests from a GitHub repository. I will start by getting the information for the pull request you specified.\n\n"
+          }
+        ],
+        "reference": "Okay, I have retrieved the information for pull request 2 in the repository ju4nv1e1r4/cost-llm-go. The title is \"chore: add CalcInput example,\" it is currently open, and it modifies one file, main.go. The body of the pull request says, \"Add new function demonstration in main.go file.\"\n\nWould you like to review the pull request?\n"
+      },
+      {
+        "query": "Yes",
+        "expected_tool_use": [
+          {
+            "tool_name": "get_diff_content",
+            "tool_input": {}
+          },
+          {
+            "tool_name": "get_diff_content",
+            "tool_input": {}
+          }
+        ],
+        "expected_intermediate_agent_responses": [
+          {
+            "author": "get_pr",
+            "text": "I encountered an error when trying to get the diff content. It seems I need the pull request number to get the diff. I apologize for that. Let me try again.\n\n"
+          }
+        ],
+        "reference": "I am still encountering an error. It seems I am unable to retrieve the diff content at this time. I will proceed with a general analysis based on the information I have.\n\nBased on the information provided, the pull request \"chore: add CalcInput example\" adds a new function demonstration in the main.go file. Since the pull request only modifies one file, main.go, and the description indicates it's adding a demonstration, I would suggest the following:\n\n1.  **Review the implementation of the `CalcInput` example:** Ensure that the example is clear, concise, and easy to understand. It should effectively demonstrate the intended use of the function.\n2.  **Check for error handling:** Verify that the example includes proper error handling, if applicable. This will help users understand how to handle potential errors when using the function.\n3.  **Add comments:** Include comments to explain the purpose and functionality of the example. This will make it easier for others to understand the code.\n4.  **Consider adding a unit test:** Although it's just a demonstration, adding a simple unit test can help ensure that the example works as expected and prevent regressions in the future.\n\nExample of improvement:\n\n```go\n// This example demonstrates how to use the CalcInput function.\nfunc main() {\n    // Example input\n    input := \"some input string\"\n\n    // Calculate the result\n    result, err := CalcInput(input)\n    if err != nil {\n        fmt.Println(\"Error:\", err)\n        return\n    }\n\n    // Print the result\n    fmt.Println(\"Result:\", result)\n}\n```\n\nDo you need anything else?\n"
+      },
+      {
+        "query": "I'd like to review a commit.",
+        "expected_tool_use": [
+          {
+            "tool_name": "transfer_to_agent",
+            "tool_input": {
+              "agent_name": "get_commit"
+            }
+          }
+        ],
+        "expected_intermediate_agent_responses": [],
+        "reference": "Please provide the commit SHA and repository name in the format owner/repo\nowner/repo: SHA\nowner/repo: 1234567890abcdef1234567890abcdef12345678\n"
+      },
+      {
+        "query": "ju4nv1e1r4/cost-llm-go: 1e12ed3033c5c95f4324564a9a2f893822157b03",
+        "expected_tool_use": [
+          {
+            "tool_name": "get_commit_tool",
+            "tool_input": {}
+          }
+        ],
+        "expected_intermediate_agent_responses": [],
+        "reference": "The commit information is:\n\nAuthor: Juan Vieira\nDate: 2025-04-16T12:51:30+00:00\nMessage: Merge pull request #1 from ju4nv1e1r4/dev\n\ndocs: modify comments\nStatus: ok\n\nDo you need anything else?\n"
+      },
+      {
+        "query": "No, but thanks",
+        "expected_tool_use": [],
+        "expected_intermediate_agent_responses": [],
+        "reference": "You're welcome!\n"
+      }
+    ],
+    "initial_session": {
+      "state": {},
+      "app_name": "code_reviewer",
+      "user_id": "user"
+    }
+  }
+]
