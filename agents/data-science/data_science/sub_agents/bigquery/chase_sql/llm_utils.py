@@ -14,23 +14,20 @@
 
 """This code contains the LLM utils for the CHASE-SQL Agent."""
 
-from concurrent.futures import as_completed
-from concurrent.futures import ThreadPoolExecutor
 import functools
 import os
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, List, Optional
 
 import dotenv
-from google.cloud import aiplatform
 import vertexai
-from vertexai.generative_models import GenerationConfig
-from vertexai.generative_models import HarmBlockThreshold
-from vertexai.generative_models import HarmCategory
+from google.cloud import aiplatform
+from vertexai.generative_models import (GenerationConfig, HarmBlockThreshold,
+                                        HarmCategory)
 from vertexai.preview import caching
 from vertexai.preview.generative_models import GenerativeModel
-
 
 dotenv.load_dotenv(override=True)
 
@@ -42,8 +39,8 @@ SAFETY_FILTER_CONFIG = {
     HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
 }
 
-GCP_PROJECT = os.getenv("GCP_PROJECT")
-GCP_REGION = os.getenv("GCP_REGION")
+GCP_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+GCP_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
 
 GEMINI_AVAILABLE_REGIONS = [
     "europe-west3",
@@ -78,9 +75,9 @@ GEMINI_URL = (
 
 aiplatform.init(
     project=GCP_PROJECT,
-    location=GCP_REGION,
+    location=GCP_LOCATION,
 )
-vertexai.init(project=GCP_PROJECT, location=GCP_REGION)
+vertexai.init(project=GCP_PROJECT, location=GCP_LOCATION)
 
 
 def retry(max_attempts=8, base_delay=1, backoff_factor=2):
@@ -157,7 +154,7 @@ class GeminiModel:
         Args:
             prompt (str): The prompt to call the model with.
             parser_func (callable, optional): A function that processes the LLM
-              output. It takes the model's response as input and returns the
+              output. It takes the model"s response as input and returns the
               processed result.
 
         Returns:

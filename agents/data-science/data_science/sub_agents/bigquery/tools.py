@@ -29,8 +29,8 @@ from .chase_sql import chase_constants
 # Assume that `BQ_PROJECT_ID` is set in the environment. See the
 # `data_agent` README for more details.
 project = os.getenv("BQ_PROJECT_ID", None)
-region = os.getenv("GOOGLE_CLOUD_REGION", "us-central1")
-llm_client = Client(vertexai=True, project=project, location=region)
+location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+llm_client = Client(vertexai=True, project=project, location=location)
 
 MAX_NUM_ROWS = 80
 
