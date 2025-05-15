@@ -139,8 +139,8 @@ Expand on the "Key Components" from above.
     #
     # Uncomment one of the two, or create your own.
     #
-    # TRAVEL_CONCIERGE_SCENARIO=eval/itinerary_seattle_example.json
-    TRAVEL_CONCIERGE_SCENARIO=eval/itinerary_empty_default.json
+    # TRAVEL_CONCIERGE_SCENARIO=travel_concierge/profiles/itinerary_seattle_example.json
+    TRAVEL_CONCIERGE_SCENARIO=travel_concierge/profiles/itinerary_empty_default.json
     ```
 
 4. Authenticate your GCloud account.
@@ -450,9 +450,9 @@ In an environment where the events are passed from the server running the agents
 The following are some ideas how one can reuse the concierge and make it your own.
 
 ### Load a premade itinerary to demo the in-trip flow
-- By default, a user profile and an empty itinerary is loaded from `eval/itinerary_empty_default.json`.
-- To specify a different file to load, such as the Seattle example `eval/itinerary_seattle_example.json`:
-  - Set the environmental variable `TRAVEL_CONCIERGE_SCENARIO` to `eval/itinerary_seattle_example.json` in the `.env`.
+- By default, a user profile and an empty itinerary is loaded from `travel_concierge/profiles/itinerary_empty_default.json`.
+- To specify a different file to load, such as the Seattle example `travel_concierge/profiles/itinerary_seattle_example.json`:
+  - Set the environmental variable `TRAVEL_CONCIERGE_SCENARIO` to `travel_concierge/profiles/itinerary_seattle_example.json` in the `.env`.
   - Then restart `adk web` and load the travel concierge.
 - When you start interacting with the agent, the state will be loaded. 
 - You can see the loaded user profile and itinerary when you select "State" in the GUI.
@@ -494,3 +494,12 @@ The following occasionally happens while interaction with the agent:
 - Similarly, if you have waited for a while and the agent has stopped in the middle of executing a series of actions, ask the agent "what's next" to nudge it forward.
 
 These happens occasionally, it is likely due to variations in JSON responses that requires more rigorous experimentation on prompts and generation parameters to attain more stable results. Within an application, these retries can also be built into the application as part of exception handling.
+
+
+## Disclaimer
+
+This agent sample is provided for illustrative purposes only and is not intended for production use. It serves as a basic example of an agent and a foundational starting point for individuals or teams to develop their own agents.
+
+This sample has not been rigorously tested, may contain bugs or limitations, and does not include features or optimizations typically required for a production environment (e.g., robust error handling, security measures, scalability, performance considerations, comprehensive logging, or advanced configuration options).
+
+Users are solely responsible for any further development, testing, security hardening, and deployment of agents based on this sample. We recommend thorough review, testing, and the implementation of appropriate safeguards before using any derived agent in a live or critical system.

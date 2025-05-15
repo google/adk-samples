@@ -26,7 +26,7 @@ from google.adk.tools import ToolContext
 from travel_concierge.shared_libraries import constants
 
 SAMPLE_SCENARIO_PATH = os.getenv(
-    "TRAVEL_CONCIERGE_SCENARIO", "eval/itinerary_empty_default.json"
+    "TRAVEL_CONCIERGE_SCENARIO", "travel_concierge/profiles/itinerary_empty_default.json"
 )
 
 

@@ -55,7 +55,7 @@ def create(env_vars: dict[str, str]) -> None:
         app,
         requirements=[
             "google-adk (>=0.0.2)",
-            "google-cloud-aiplatform[agent_engines] @ git+https://github.com/googleapis/python-aiplatform.git@copybara_738852226",
+            "google-cloud-aiplatform[agent_engines] (>=1.88.0,<=1.90.0)",
             "google-genai (>=1.5.0,<2.0.0)",
             "pydantic (>=2.10.6,<3.0.0)",
             "absl-py (>=2.2.1,<3.0.0)",
@@ -64,7 +64,6 @@ def create(env_vars: dict[str, str]) -> None:
         ],
         extra_packages=[
             "./travel_concierge",  # The main package
-            "./eval",  # The initial state files
         ],
     )
     print(f"Created remote agent: {remote_agent.resource_name}")

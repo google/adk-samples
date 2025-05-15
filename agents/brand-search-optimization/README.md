@@ -211,3 +211,12 @@ rm -rf /tmp/selenium
 * Agent doesn't run reliably when website enforces checks for bots and when the search element is hidden.
 * Agent doesn't suggest next step - This happens after keyword finding stage. Ask the agent to search for the top keyword in this case. e.g. "can you search for keyword?" or more explicitly "transfer me to web browser agent"
 * Agent asks for the keyword again - e.g. `Okay, I will go to XYZ.com. What keyword do you want to search for on XYZ?`. Please provide the keyword again.
+
+
+## Disclaimer
+
+This agent sample is provided for illustrative purposes only and is not intended for production use. It serves as a basic example of an agent and a foundational starting point for individuals or teams to develop their own agents.
+
+This sample has not been rigorously tested, may contain bugs or limitations, and does not include features or optimizations typically required for a production environment (e.g., robust error handling, security measures, scalability, performance considerations, comprehensive logging, or advanced configuration options).
+
+Users are solely responsible for any further development, testing, security hardening, and deployment of agents based on this sample. We recommend thorough review, testing, and the implementation of appropriate safeguards before using any derived agent in a live or critical system.

@@ -1,0 +1,7 @@
+[
+  {
+    "query": "who are you",
+    "expected_tool_use": [],
+    "reference": "Hello! I am marketing_coordinator, an agent designed to help you establish a powerful online presence and connect effectively with your audience. I can guide you through defining your digital identity, from choosing the perfect domain name and crafting a professional website, to strategizing online marketing campaigns, designing a memorable logo, and creating engaging short videos"
+  }
+]
