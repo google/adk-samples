@@ -1,0 +1,83 @@
+{
+    "cropping_guidelines": {
+      "optimal_cropping_points": {
+        "description": "Crop below the chest and above the knees for balanced image symmetry."
+      },
+      "avoid_close_up": {
+        "description": "Avoid cropping that creates a close-up of the face."
+      },
+      "avoid_cutting_at_feet": {
+        "description": "Avoid cropping at the feet. Showcase the complete subject for balance."
+      },
+      "symmetry_guidelines": {
+        "description": "Ensure cropping maintains overall symmetry in the image."
+      }
+    },
+    "composition_requirements": {
+      "centre_composition": {
+        "description": "Position the main subject in the center of the frame for balanced visuals."
+      },
+      "horizontal_line_composition": {
+        "description": "Align elements horizontally to create balance and stability."
+      },
+      "vertical_line_composition": {
+        "description": "Align elements vertically to emphasize height and structure."
+      },
+      "symmetrical_composition": {
+        "description": "Create harmony using mirrored visual arrangements."
+      },
+      "slash_composition": {
+        "description": "Use diagonal lines for dynamic and engaging visuals."
+      },
+      "guideline_composition": {
+        "description": "Use lines to guide the viewer's eye naturally through the image."
+      }
+    },
+    "basic_rules": {
+      "layout": {
+        "avoid_overlap": {
+          "description": "Ensure the image subject doesn't overlap with the clock or other UI elements."
+        },
+        "gap_requirement": {
+          "description": "Maintain a gap of a few pixels between the clock and the subject."
+        }
+      },
+      "avoid_white_backgrounds": {
+        "description": "Avoid using images with white or bright backgrounds that obscure the visibility of the clock."
+      },
+      "safe_areas": {
+        "key_visual_area": {
+          "description": "Ensure that the key visuals are within the designated area and do not overlap with the top UI or bottom UI elements."
+        },
+        "main_ui_area": {
+          "description": "Avoid placing the image focus in the main UI area (used for headline, CTA, and summary)."
+        }
+      }
+    },
+    "image_editing_guidelines": {
+      "placement_and_fill": {
+        "description": "Use content-aware or manual fill to ensure no visible patches remain."
+      },
+      "background_cleanup": {
+        "description": "Remove dust and unwanted objects from the background that divert attention from the main subject."
+      },
+      "color_adjustments": {
+        "remove_tint": {
+          "description": "Remove unwanted tint and adjust the color temperature to achieve a natural look."
+        },
+        "restore_skin_tones": {
+          "description": "Restore skin tones to their natural appearance to avoid over-editing."
+        },
+        "brightness_contrast_saturation": {
+          "description": "Fine-tune brightness, contrast, and saturation to ensure the image is visually balanced and vibrant."
+        }
+      }
+    },
+    "image_quality": {
+      "reduce_noise": {
+        "description": "Reduce grain and noise while retaining clarity. Apply slight sharpening for better details."
+      }
+    }
+   
+  
+}
