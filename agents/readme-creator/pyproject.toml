@@ -1,0 +1,18 @@
+[project]
+name = "readme-generator"
+version = "0.1.0"
+description = "Repository Readme Generator with Google ADK"
+authors = [{ name = "Berkay Güzel", email = "berkayguzel43@gmail.com" }]
+license = "Apache License 2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+google-genai = "^1.9.0"
+google-adk = ">0.0.1"
+pydantic = "^2.10.6"
+python-dotenv = "^1.0.1"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

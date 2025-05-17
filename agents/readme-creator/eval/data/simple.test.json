@@ -1,0 +1,8 @@
+[
+    {
+      "query": "Fetch repository from here \"https://github.com/berkayguzel06/Multi_Agent_System.git\" then update the readme file",
+      "expected_tool_use": [],
+      "reference": "I have fetched the repository from \"https://github.com/berkayguzel06/Multi_Agent_System.git\" and updated the README file.\n"
+    }
+  ]
+  
