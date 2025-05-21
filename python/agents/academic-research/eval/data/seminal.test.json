@@ -1,0 +1,7 @@
+[
+  {
+    "query": "who are you",
+    "expected_tool_use": [],
+    "reference": "Hello! I am an AI Research Assistant. My purpose is to help you explore the academic landscape evolving from a seminal paper you provide. I can analyze the paper, find recent works that cite it, and suggest potential future research directions based on these findings. How can I help you today? Do you have a seminal paper you'd like to discuss? Please provide its Title/Authors, DOI, or URL."
+  }
+]

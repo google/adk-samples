@@ -1,0 +1,24 @@
+[project]
+name = "brand-search-optimization"
+version = "0.1.0"
+description = "Brand Search Optimization ADK Agent Designed to enhance product titles for retail brand search. It retrieves top keywords, performs searches, and analyzes top results to provide suggestions for enriching product titles"
+authors = [{ name = "Nikhil Kulkarni", email = "nikhilkul@google.com" }]
+license = "Apache License 2.0"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-adk (>=0.5.0,<1.0.0)",
+    # "google-adk[eval] (>=0.0.2,<1.0.0)",
+    "google-genai (>=1.5.0,<2.0.0)",
+    "selenium (>=4.30.0,<5.0.0)",
+    "webdriver-manager (>=4.0.2,<5.0.0)",
+    "google-cloud-bigquery (>=3.31.0,<4.0.0)",
+    "absl-py (>=2.2.2,<3.0.0)",
+    "google-cloud-aiplatform[agent-engines] (>=1.93.0,<2.0.0)",
+    "pytest (>=8.3.5,<9.0.0)",
+    "pillow (>=11.1.0,<12.0.0)",
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

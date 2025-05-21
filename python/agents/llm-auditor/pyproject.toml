@@ -1,0 +1,40 @@
+[project]
+name = "llm-auditor"
+version = "0.1.0"
+description = "The LLM Auditor evaluates LLM-generated answers, verifies actual accuracy using the web, and refines the response to ensure alignment with real-world knowledge."
+authors = [
+    { name = "Chun-Sung Ferng", email = "csferng@google.com" },
+    { name = "Cyrus Rashtchian", email = "cyroid@google.com" },
+    { name = "Da-Cheng Juan", email = "dacheng@google.com" },
+    { name = "Ivan Kuznetsov", email = "ivanku@google.com" },
+]
+license = "Apache License 2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+google-adk = "^0.5.0"
+google-cloud-aiplatform = { extras = [
+    "adk",
+    "agent-engines",
+], version = "^1.93.0" }
+google-genai = "^1.9.0"
+pydantic = "^2.10.6"
+python-dotenv = "^1.0.1"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+google-adk = { version = "^0.5.0", extras = ["eval"] }
+pytest = "^8.3.5"
+
+[tool.poetry.group.deployment]
+optional = true
+
+[tool.poetry.group.deployment.dependencies]
+absl-py = "^2.2.1"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

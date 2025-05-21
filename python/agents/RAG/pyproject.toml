@@ -1,0 +1,35 @@
+[project]
+name = "rag"
+version = "0.1.0"
+description = "Answer questions related to Vertex AI documentation using Vertex AI RAG Engine"
+authors = [
+        { name = "Hangfei Lin", email = "hangfei@google.com" },
+        { name = "Chouaieb Nemri", email = "nemri@google.com" },
+]
+
+license = "Apache License 2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pydantic-settings = "^2.8.1"
+tabulate = "^0.9.0"
+google-auth = "^2.36.0"
+requests = "^2.32.3"
+google-adk = "^0.5.0"
+google-cloud-aiplatform = { extras = [
+        "adk",
+        "agent-engines",
+], version = "^1.93.0" }
+llama-index = "^0.12"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+pytest-mock = "^3.14.0"
+scikit-learn = "^1.6.1"
+pytest-cov = "^6.0.0"
+pytest-asyncio = "^0.25.3"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

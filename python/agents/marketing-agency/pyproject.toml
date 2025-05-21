@@ -1,0 +1,37 @@
+[project]
+name = "marketing_agency"
+version = "0.1"
+description = "AI-driven agent designed to facilitate the exploration of the marketing agencies"
+authors = [{ name = "Antonio Gulli", email = "gulli@google.com" }]
+license = "Apache License 2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+google-adk = "^0.5.0"
+google-genai = "^1.9.0"
+pydantic = "^2.10.6"
+python-dotenv = "^1.0.1"
+google-cloud-aiplatform = { version = "^1.93.0", extras = [
+    "adk",
+    "agent-engines",
+] }
+
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+google-adk = { version = "^0.5.0", extras = ["eval"] }
+pytest = "^8.3.5"
+black = "^25.1.0"
+
+[tool.poetry.group.deployment]
+optional = true
+
+[tool.poetry.group.deployment.dependencies]
+absl-py = "^2.2.1"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

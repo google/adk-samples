@@ -1,0 +1,44 @@
+[project]
+name = "travel-concierge"
+version = "0.1.0"
+description = "Orchestrates personalized travel experiences, illustrates means to integrate booking systems, and provides support throughout the traveler's journey, from initial planning, booking, to real-time itinerary services and alerts."
+authors = [
+    { name = "Gary Ng", email = "gkcng@google.com" },
+    { name = "Arun Santhanagopalan", email = "asanthan@google.com" },
+    { name = "Renee Zhang", email = "xiaolizhang@google.com" },
+    { name = "Anisha Kaul", email = "anishasjkaul@google.com" },
+    { name = "Duncan Renfrow-Symon", email = "drenfrowsymon@google.com" },
+]
+license = "Apache License 2.0"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.poetry.dependencies]
+google-cloud-aiplatform = { extras = [
+    "adk",
+    "agent-engines",
+], version = "^1.93.0" }
+python = "^3.11"
+pydantic = "^2.10.6"
+python-dotenv = "^1.0.1"
+google-genai = "^1.9.0"
+google-adk = "^0.5.0"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+google-adk = { version = "^0.5.0", extras = ["eval"] }
+
+[tool.poetry.group.deployment]
+optional = true
+
+[tool.poetry.group.deployment.dependencies]
+absl-py = "^2.2.1"
+cloudpickle = "^3.1.1"
+flake8-pyproject = "^1.2.3"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
