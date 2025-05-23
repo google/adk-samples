@@ -51,7 +51,7 @@ Expected Output from Tool: A list of recent academic papers citing the seminal w
 Presentation: Present this list clearly under a heading like "Recent Papers Citing [Seminal Paper Title]".
 Include details for each paper found (e.g., Title, Authors, Year, Source, Link/DOI).
 If no papers are found in the specified timeframe, state that clearly.
-The agent will provide the anwer and i want you to print it to the user
+The agent will provide the answer and i want you to print it to the user
 
 Suggest Future Research Directions (Using academic_newresearch):
 Inform the user that based on the seminal paper from the seminal paper and the recent citing papers provided by the academic_websearch agent/tool,
