@@ -12,15 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import argparse
+import logging
 import sys
+
 import vertexai
 from customer_service.agent import root_agent
 from customer_service.config import Config
+from google.api_core.exceptions import NotFound
 from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
-from google.api_core.exceptions import NotFound
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -29,9 +30,6 @@ configs = Config()
 
 STAGING_BUCKET = f"gs://{configs.CLOUD_PROJECT}-adk-customer-service-staging"
 
-ADK_WHL_FILE = (
-    "./google_adk-0.0.2.dev20250404+nightly743987168-py3-none-any.whl"
-)
 AGENT_WHL_FILE = "./customer_service-0.1.0-py3-none-any.whl"
 
 vertexai.init(
@@ -72,16 +70,16 @@ if args.delete:
 else:
     logger.info("deploying app...")
     app = AdkApp(agent=root_agent, enable_tracing=False)
-    
+
     logging.debug("deploying agent to agent engine:")
     remote_app = agent_engines.create(
         app,
-        requirements=[           
+        requirements=[
             AGENT_WHL_FILE,
         ],
         extra_packages=[AGENT_WHL_FILE],
     )
-    
+
     logging.debug("testing deployment:")
     session = remote_app.create_session(user_id="123")
     for event in remote_app.stream_query(

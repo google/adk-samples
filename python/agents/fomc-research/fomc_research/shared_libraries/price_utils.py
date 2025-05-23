@@ -27,12 +27,10 @@ bqclient = bigquery.Client()
 logger = logging.getLogger(__name__)
 
 MOVE_SIZE_BP = 25
-DATASET_NAME = os.getenv("GOOGLE_CLOUD_BQ_DATASET")
-if not DATASET_NAME:
-    DATASET_NAME = "fomc_research_agent"
-TIMESERIES_CODES = os.getenv("GOOGLE_GENAI_FOMC_AGENT_TIMESERIES_CODES")
-if not TIMESERIES_CODES:
-    TIMESERIES_CODES = "SFRH5,SFRZ5"
+DATASET_NAME = os.getenv("GOOGLE_CLOUD_BQ_DATASET", "fomc_research_agent")
+TIMESERIES_CODES = os.getenv(
+    "GOOGLE_GENAI_FOMC_AGENT_TIMESERIES_CODES",
+    "SFRH5,SFRZ5")
 
 
 def fetch_prices_from_bq(

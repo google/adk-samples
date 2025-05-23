@@ -68,12 +68,12 @@ The key features of the Data Science Multi-Agent include:
     ```
 
     This activates the virtual environment, allowing you to run commands within the project's environment. To make sure the environment is active, use for example
-    
+
     ```bash
     $> poetry env list
        data-science-FAlhSuLn-py3.13 (Activated)
     ```
-    
+
     If the above command did not activate the environment for you, you can also activate it through
 
      ```bash
@@ -217,7 +217,15 @@ Here's a quick example of how a user might interact with the Data Science Multi-
 >*   Do you want to fit and forecast multiple time series using a single query? If so, what are the ID columns? (e.g., `country`, `store`, `product`)
 
 
-## Running Evaluations
+## Testing and Evaluation
+
+To run the test and evaluation code, you need a few additional dependencies. Run
+the following Poetry command from the `agents/data-science` directory to install them:
+```bash
+poetry install --with=dev
+```
+
+### Running Evaluations
 
 
 Evaluation tests assess the overall performance and capabilities of the agent in a holistic manner.
@@ -234,7 +242,7 @@ Evaluation tests assess the overall performance and capabilities of the agent in
 
 
 
-## Running Tests
+### Running Tests
 
 Tests assess the overall executability of the agents.
 

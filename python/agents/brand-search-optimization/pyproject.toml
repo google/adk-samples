@@ -13,7 +13,6 @@ dependencies = [
     "google-cloud-bigquery (>=3.31.0,<4.0.0)",
     "absl-py (>=2.2.2,<3.0.0)",
     "google-cloud-aiplatform[agent-engines] (>=1.93.0,<2.0.0)",
-    "pytest (>=8.3.5,<9.0.0)",
     "pillow (>=11.1.0,<12.0.0)",
     "google-adk (>=1.0.0,<2.0.0)",
 ]
@@ -24,3 +23,5 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.group.dev.dependencies]
 google-adk = { extras = ["eval"], version = "^1.0.0" }
+pytest-asyncio = "^0.26.0"
+pytest = "^8.3.5"

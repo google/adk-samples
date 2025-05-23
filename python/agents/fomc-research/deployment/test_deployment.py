@@ -14,11 +14,13 @@
 
 """Test deployment of FOMC Research Agent to Agent Engine."""
 
+import asyncio
 import os
 
 import vertexai
 from absl import app, flags
 from dotenv import load_dotenv
+from google.adk.sessions import VertexAiSessionService
 from vertexai import agent_engines
 
 FLAGS = flags.FLAGS
@@ -76,9 +78,15 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
         staging_bucket=f"gs://{bucket}",
     )
 
+    session_service = VertexAiSessionService(project_id, location)
+    session = asyncio.run(session_service.create_session(
+        app_name=FLAGS.resource_id,
+        user_id=FLAGS.user_id)
+    )
+
     agent = agent_engines.get(FLAGS.resource_id)
     print(f"Found agent with resource ID: {FLAGS.resource_id}")
-    session = agent.create_session(user_id=FLAGS.user_id)
+
     print(f"Created session for user ID: {FLAGS.user_id}")
     print("Type 'quit' to exit.")
     while True:
@@ -87,7 +95,9 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
             break
 
         for event in agent.stream_query(
-            user_id=FLAGS.user_id, session_id=session["id"], message=user_input
+            user_id=FLAGS.user_id,
+            session_id=session.id,
+            message=user_input
         ):
             if "content" in event:
                 if "parts" in event["content"]:
@@ -97,7 +107,11 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
                             text_part = part["text"]
                             print(f"Response: {text_part}")
 
-    agent.delete_session(user_id=FLAGS.user_id, session_id=session["id"])
+    asyncio.run(session_service.delete_session(
+        app_name=FLAGS.resource_id,
+        user_id=FLAGS.user_id,
+        session_id=session.id
+    ))
     print(f"Deleted session for user ID: {FLAGS.user_id}")
 
 

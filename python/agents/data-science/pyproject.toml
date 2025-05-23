@@ -11,7 +11,7 @@ package-mode = true
 [tool.poetry.dependencies]
 python = "^3.12"
 python-dotenv = "^1.0.1"
-google-adk = "^0.5.0"
+google-adk = "^1.0.0"
 immutabledict = "^4.2.1"
 sqlglot = "^26.10.1"
 db-dtypes = "^1.4.2"
@@ -26,7 +26,13 @@ pydantic = "^2.11.3"
 
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^7.4.0"
+google-cloud-aiplatform = { extras = [
+    "adk",
+    "agent-engines",
+    "evaluation",
+], version = "^1.93.0" }
+pytest = "^8.3.5"
+pytest-asyncio = "^0.26.0"
 
 
 [tool.pytest.ini_options]

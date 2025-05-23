@@ -14,11 +14,13 @@
 
 """Test deployment of Data Science Agent to Agent Engine."""
 
+import asyncio
 import os
 
 import vertexai
 from absl import app, flags
 from dotenv import load_dotenv
+from google.adk.sessions import VertexAiSessionService
 from vertexai import agent_engines
 
 FLAGS = flags.FLAGS
@@ -41,19 +43,22 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
     load_dotenv()
 
     project_id = (
-        FLAGS.project_id if FLAGS.project_id else os.getenv("GOOGLE_CLOUD_PROJECT")
+        FLAGS.project_id
+        if FLAGS.project_id
+        else os.getenv("GOOGLE_CLOUD_PROJECT")
     )
-    location = FLAGS.location if FLAGS.location else os.getenv("GOOGLE_CLOUD_LOCATION")
-
-    default_bucket_name = f"{project_id}-adk-staging" if project_id else None
-    bucket_name = (
+    location = (
+        FLAGS.location if FLAGS.location else os.getenv("GOOGLE_CLOUD_LOCATION")
+    )
+    bucket = (
         FLAGS.bucket
         if FLAGS.bucket
-        else os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET", default_bucket_name)
+        else os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET")
     )
 
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
     location = os.getenv("GOOGLE_CLOUD_LOCATION")
+    bucket = os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET")
 
     if not project_id:
         print("Missing required environment variable: GOOGLE_CLOUD_PROJECT")
@@ -61,19 +66,27 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
     elif not location:
         print("Missing required environment variable: GOOGLE_CLOUD_LOCATION")
         return
-    elif not bucket_name:
-        print("Missing required environment variable: GOOGLE_CLOUD_STORAGE_BUCKET")
+    elif not bucket:
+        print(
+            "Missing required environment variable: GOOGLE_CLOUD_STORAGE_BUCKET"
+        )
         return
 
     vertexai.init(
         project=project_id,
         location=location,
-        staging_bucket=f"gs://{bucket_name}",
+        staging_bucket=f"gs://{bucket}",
+    )
+
+    session_service = VertexAiSessionService(project_id, location)
+    session = asyncio.run(session_service.create_session(
+        app_name=FLAGS.resource_id,
+        user_id=FLAGS.user_id)
     )
 
     agent = agent_engines.get(FLAGS.resource_id)
     print(f"Found agent with resource ID: {FLAGS.resource_id}")
-    session = agent.create_session(user_id=FLAGS.user_id)
+
     print(f"Created session for user ID: {FLAGS.user_id}")
     print("Type 'quit' to exit.")
     while True:
@@ -82,7 +95,9 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
             break
 
         for event in agent.stream_query(
-            user_id=FLAGS.user_id, session_id=session["id"], message=user_input
+            user_id=FLAGS.user_id,
+            session_id=session.id,
+            message=user_input
         ):
             if "content" in event:
                 if "parts" in event["content"]:
@@ -92,7 +107,11 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
                             text_part = part["text"]
                             print(f"Response: {text_part}")
 
-    agent.delete_session(user_id=FLAGS.user_id, session_id=session["id"])
+    asyncio.run(session_service.delete_session(
+        app_name=FLAGS.resource_id,
+        user_id=FLAGS.user_id,
+        session_id=session.id
+    ))
     print(f"Deleted session for user ID: {FLAGS.user_id}")
 
 

@@ -12,21 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from customer_service.tools.tools import (
-    send_call_companion_link,
-    approve_discount,
-    update_salesforce_crm,
-    access_cart_information,
-    modify_cart,
-    get_product_recommendations,
-    check_product_availability,
-    schedule_planting_service,
-    get_available_planting_times,
-    send_care_instructions,
-    generate_qr_code,
-)
-from datetime import datetime, timedelta
 import logging
+from datetime import datetime, timedelta
+
+from customer_service.tools.tools import (
+    access_cart_information,
+    approve_discount,
+    check_product_availability,
+    generate_qr_code,
+    get_available_planting_times,
+    get_product_recommendations,
+    modify_cart,
+    schedule_planting_service,
+    send_call_companion_link,
+    send_care_instructions,
+    update_salesforce_crm,
+)
 
 # Configure logging for the test file
 logging.basicConfig(level=logging.INFO)
@@ -42,18 +43,22 @@ def test_send_call_companion_link():
     }
 
 
-def test_approve_discount():
+def test_approve_discount_ok():
     result = approve_discount(
         discount_type="percentage", value=10.0, reason="Test discount"
     )
     assert result == {"status": "ok"}
 
 
-def test_approve_discount():
+def test_approve_discount_rejected():
     result = approve_discount(
         discount_type="percentage", value=15.0, reason="Test large discount"
     )
-    assert result["status"]=="rejected"
+    assert result == {
+        "message": "discount too large. Must be 10 or less.",
+        "status": "rejected",
+    }
+
 
 def test_update_salesforce_crm():
     customer_id = "123"

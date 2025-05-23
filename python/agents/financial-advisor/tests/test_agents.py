@@ -15,7 +15,6 @@
 """Test cases for the Financial Advisors"""
 
 import textwrap
-import unittest
 
 import dotenv
 import pytest

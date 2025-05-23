@@ -13,7 +13,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-google-adk = "^0.5.0"
+google-adk = "^1.0.0"
 google-cloud-aiplatform = { extras = [
     "adk",
     "agent-engines",
@@ -26,8 +26,9 @@ python-dotenv = "^1.0.1"
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-google-adk = { version = "^0.5.0", extras = ["eval"] }
+google-adk = { version = "^1.0.0", extras = ["eval"] }
 pytest = "^8.3.5"
+pytest-asyncio = "^0.26.0"
 
 [tool.poetry.group.deployment]
 optional = true

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Basic evalualtion for Financial Advisor"""
+"""Basic evaluation for Financial Advisor"""
 
 import pathlib
 
@@ -31,8 +31,9 @@ def load_env():
 @pytest.mark.asyncio
 async def test_all():
     """Test the agent's basic ability on a few examples."""
+    print("Running evaluate")
     await AgentEvaluator.evaluate(
         "financial_advisor",
         str(pathlib.Path(__file__).parent / "data"),
-        num_runs=1,
+        num_runs=5,
     )
