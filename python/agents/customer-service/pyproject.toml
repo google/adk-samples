@@ -28,6 +28,7 @@ pytest-asyncio = "^0.25.3"
 flake8-pyproject = "^1.2.3"
 pylint = "^3.3.6"
 pyink = "^24.10.1"
+jsonschema = "^4.23.0"
 google-cloud-aiplatform = { extras = ["evaluation"], version = "^1.93.0" }
 
 
