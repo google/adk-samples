@@ -1,7 +1,7 @@
 # Sample Agents (Java)
 
 
-This folder contains Java agent samples for the [Agent Development Kit](https://github.com/google/adk) (ADK).
+This folder contains Java agent samples for the [Agent Development Kit](https://github.com/google/adk-java) (ADK).
 
 
 Each folder in this directory contains a different agent sample.
