@@ -146,7 +146,7 @@ if __name__ == "__main__":
         async_main(
             (
                 "Find me an airbnb in San Diego, April 9th, to april 13th, no flights nor itinerary needed. "
-                "No need to confirm, simply return 5 choicess, remember to include urls."
+                "No need to confirm, simply return 5 choices, remember to include urls."
             )
         )
     )
