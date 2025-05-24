@@ -3,15 +3,15 @@
 
 ## Overview
 
-The Financial Advisor is a team of specialized AI agents that assists human financial advisors.
+The Financial Advisor is a team of specialized AI agents designed to assist users by providing financial insights and planning strategies. It can analyze individual market tickers and, importantly, now also offers investment planning strategies for an existing user portfolio. The system guides users through a structured process, leveraging a suite of sub-agents to deliver comprehensive advice.
 
-1. Data Analyst Agent: This agent is responsible for creating in-depth and current market analysis reports for specific stock tickers. It achieves this by repeatedly using Google Search to find a predetermined amount of unique, recent (within a given timeframe), and insightful information. The agent focuses on gathering both SEC filings and broader market intelligence via Google Search tool, which it then uses to compile a structured report based solely on the collected data.
+The team consists of the following agents:
 
-2. Trading Analyst Agent: This agent's task is to develop and describe at least five different trading strategies. It does this by carefully reviewing the comprehensive market analysis provided by the Data Analyst Agent. Each proposed strategy must be customized to match the user's declared risk tolerance and intended investment duration.
-
-3. Execution Agent: This agent creates a thorough and well-justified plan for implementing a given trading strategy. The plan must be carefully adjusted to fit the user's risk tolerance, investment timeframe, and preferred methods of execution. The output will be detailed and fact-based, examining the best approaches and specific timing for initiating, maintaining, adding to, partially selling, and completely exiting investment positions.
-
-4. Risk Evaluation Agent: This agent's role is to produce a detailed and reasoned analysis of the risks associated with a specific trading strategy and its execution plan. This analysis needs to be precisely aligned with the user's stated risk tolerance, investment period, and execution preferences. The output will be rich in factual analysis, clearly outlining all identified risks and suggesting concrete, actionable steps to lessen their impact.
+1.  **Data Analyst Agent**: Responsible for creating in-depth and current market analysis reports for specific stock tickers. It uses Google Search to gather SEC filings and broader market intelligence, compiling a structured report based on the collected data.
+2.  **Portfolio Analyst Agent**: Analyzes the user's current investment portfolio, including its composition, current market value, sector allocation, and concentration risks. Provides a foundational understanding of the existing portfolio state.
+3.  **Trading Analyst Agent**: Develops tailored trading strategies. For ticker analysis, it proposes strategies for a specific ticker. For portfolio planning, it generates strategies to adjust and optimize the user's existing portfolio based on their financial goals, risk tolerance, and the portfolio's current state.
+4.  **Execution Agent**: Creates a thorough and well-justified plan for implementing a given trading strategy or portfolio adjustment. The plan is adjusted to fit the user's risk tolerance, investment timeframe, and preferred methods of execution, detailing approaches for initiating, maintaining, and modifying investment positions.
+5.  **Risk Evaluation Agent**: Produces a detailed analysis of the risks associated with a specific trading strategy (or portfolio plan) and its execution. This analysis is aligned with the user's risk tolerance and investment period, outlining identified risks and suggesting mitigation steps.
 
 **Legal Disclaimer and User Acknowledgment**
 
@@ -33,15 +33,39 @@ The key features of the Financial Advisor include:
 | --- | --- |
 | **Interaction Type** | Conversational |
 | **Complexity**  | Medium |
-| **Agent Type**  | Multi Agent |
+| **Agent Type**  | Multi Agent (Coordinator with Sub-Agents) |
 | **Components**  | Tools: built-in Google Search |
+| **Key Capabilities** | Market Ticker Analysis, Portfolio Input and Analysis, Personalized Investment Planning, Execution Strategy, Risk Assessment |
 | **Vertical**  | Financial |
 
+### New Features:
+*   **Portfolio Input and Analysis:** Allows users to input their current stock portfolio (tickers and quantities).
+*   **Personalized Investment Planning:** Generates tailored investment strategies to optimize the user's existing portfolio based on their risk profile and investment horizon. This includes suggestions for rebalancing, diversification, and potential buys/sells.
 
-### Agent architecture:
+## Workflows / How it Works
+
+The Financial Advisor orchestrates sub-agents based on the user's chosen workflow. After an initial greeting and disclaimer, the user is prompted to choose between two main paths:
+
+### 1. Ticker Analysis Workflow
+This workflow is designed for users who want to analyze a specific market ticker.
+1.  **User Input**: User provides a market ticker symbol (e.g., GOOGL).
+2.  **Data Analysis (`data_analyst_agent`):** Gathers and analyzes market data for the specified ticker.
+3.  **Trading Strategy Generation (`trading_analyst_agent`):** Proposes potential trading strategies based on the ticker analysis and user-defined risk attitude and investment period.
+4.  **Execution Planning (`execution_analyst_agent`):** Details how to implement a chosen trading strategy.
+5.  **Overall Risk Assessment (`risk_analyst_agent`):** Evaluates the risks of the proposed strategy and execution plan.
+
+### 2. Portfolio Planning Workflow (New)
+This workflow assists users in analyzing and getting investment planning advice for their existing stock portfolio.
+1.  **User Choice & Portfolio Input**: User indicates they want portfolio advice. They are then prompted to provide their portfolio as a comma-separated list of tickers and quantities (e.g., "GOOGL:10, AAPL:20, MSFT:5"). They also provide their risk attitude (e.g., "conservative", "moderate", "aggressive") and investment period (e.g., "short-term", "medium-term", "long-term").
+2.  **Portfolio Analysis (`portfolio_analyst_agent`):** This agent takes the user's portfolio string, risk attitude, and investment period. It parses the portfolio, fetches current market prices and sector information for each holding, and calculates total portfolio value, individual holding values, percentage allocations, and identifies any concentration risks (e.g., a single stock over 25% or a single sector over 50%). The output is a comprehensive analysis of the current portfolio.
+3.  **Investment Strategy Generation (`trading_analyst_agent`):** Using the `portfolio_analysis_output` and the user's risk/investment preferences, this agent proposes tailored strategies to adjust and optimize the portfolio. These strategies may include suggestions for rebalancing to target allocations, diversifying concentrated positions, or making new investments to align with the user's goals.
+4.  **Execution Planning (`execution_analyst_agent`):** For the proposed portfolio adjustment strategies, this agent outlines a detailed execution plan. This includes specific actions like which stocks to buy or sell, potential order types, and timing considerations.
+5.  **Overall Risk Assessment (`risk_analyst_agent`):** The agent evaluates the overall risk profile of the proposed portfolio adjustments and the resulting portfolio, considering the user's stated risk tolerance and investment horizon.
+
+### Agent Architecture:
 
 This diagram shows the detailed architecture of the agents and tools used
-to implement this workflow.
+to implement these workflows.
 <img src="financial-advisor.png" alt="Financial Advisor" width="800"/>
 
 ## Setup and Installation
@@ -113,45 +137,39 @@ Or on a web interface:
 
 The command `adk web` will start a web server on your machine and print the URL.
 You may open the URL, select "financial_advisor" in the top-left drop-down menu, and
-a chatbot interface will appear on the right. The conversation is initially
-blank. Here are some example requests you may ask the Financial Advisor to verify:
+a chatbot interface will appear on the right.
+
+### Example Initial Interaction & Workflow Choice
 
 ```
-who are you
+User: who are you
+Agent: Hello! I'm here to help you navigate the world of financial decision-making...
+       [Full greeting and disclaimer message]...
+       To best assist you, please choose an option:
+       (A) Analyze a new market ticker.
+       (B) Get investment planning advice for an existing portfolio.
+
+User: (B)
+Agent: You've chosen portfolio analysis. Please provide your portfolio details.
+       Example: "GOOGL:10, AAPL:20, MSFT:5".
+       What is your risk attitude (e.g., conservative, moderate, aggressive)?
+       And your investment period (e.g., short-term, medium-term, long-term)?
+
+User: My portfolio is GOOGL:10, MSFT:30. My risk is moderate, and period is long-term.
+Agent: Thank you. I will now call the portfolio_analyst_agent to analyze your portfolio: GOOGL:10, MSFT:30, with a moderate risk attitude and long-term investment period.
+       This agent will look at current holdings, sector allocations, and potential concentrations...
+       [The agent then proceeds with the Portfolio Planning Workflow]
 ```
 
-Sampled responses of these requrests are shown below in the [Example
-Interaction](#example-interaction) section.
+### Full Ticker Analysis Example Interaction
 
-```
-I am the financial coordinator agent. My role is to guide you through a structured process to receive financial advice. I work with specialized subagents to help you:
-
-Analyze a market ticker.
-Develop trading strategies based on your risk profile and investment goals.
-Define an optimal plan for executing those strategies.
-Evaluate the overall risk of the proposed plan.
-How can I help you start this process today? For example, we could begin by analyzing a market ticker.
-
-```
-
-### Example Interaction
-
-Below is an example interaction with the Financial Advisor. Note that the exact output
+Below is an example interaction for the Ticker Analysis workflow. Note that the exact output
 of the agent may be different every time.
 
 ```
-
-User: who are you
-
-I am the financial coordinator agent. My role is to guide you through a structured process to receive financial advice. I work with specialized subagents to help you:
-
-Analyze a market ticker.
-Develop trading strategies based on your risk profile and investment goals.
-Define an optimal plan for executing those strategies.
-Evaluate the overall risk of the proposed plan.
-How can I help you start this process today? For example, we could begin by analyzing a market ticker.
-
-User: APPL
+User: (A)
+Agent: Okay, you've chosen ticker analysis. Please provide the market ticker symbol you wish to analyze (e.g., AAPL, GOOGL, MSFT).
+User: AAPL
 
 It looks like there might be a typo in the ticker symbol. Did you mean "AAPL" for Apple Inc.?
 
