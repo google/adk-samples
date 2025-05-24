@@ -1,0 +1,29 @@
+[project]
+name = "starter-template"
+version = "0.1.0"
+description = "One-line description explaining your sample."
+authors = [{ name = "Your Name", email = "your.name@domain.com" }]
+
+license = "Apache License 2.0"
+readme = "README.md"
+
+# Dependencies required for your sample and local deployment
+[tool.poetry.dependencies]
+python = "^3.9"
+google-adk = ">=0.1.0"
+google-cloud-aiplatform = { extras = [
+        "adk",
+        "agent-engines",
+], version = "^1.88.0" }
+
+# Dependencies required for running tests/eval for sample
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+pytest-mock = "^3.14.0"
+pytest-cov = "^6.0.0"
+pytest-asyncio = "^0.25.3"
+google-adk = { extras = ["eval"], version = ">=0.1.0" }
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
