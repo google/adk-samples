@@ -3,13 +3,14 @@ FROM maven:3.8-openjdk-17 AS builder
 WORKDIR /app
 
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
+RUN mvn -B dependency:go-offline exec:help
 
 COPY src ./src
+RUN mvn -B compile
 
 EXPOSE 8080
 
-ENTRYPOINT ["mvn", "compile", "exec:java", \
+ENTRYPOINT ["mvn", "exec:java", \
     "-Dexec.args=--server.port=${PORT} \
     --adk.agents.source-dir=src/main/java \
     --logging.level.com.google.adk.dev=DEBUG \
