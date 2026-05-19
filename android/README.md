@@ -16,7 +16,7 @@ Follow these steps to set up and run the sample agents:
 
 1.  **Prerequisites:**
     *   **Install ADK Kotlin:** Follow the
-        [Android setup guide](https://adk.dev/get-started/installation/#kotlin)
+        [Build ADK agents for Android](https://developer.android.com/ai/adk)
         for project configuration and dependency setup.
     *   **Android Studio** (latest stable release) with Android SDK
         (compileSdk 34+, minSdk 26+).

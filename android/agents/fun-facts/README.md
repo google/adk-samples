@@ -12,6 +12,9 @@ fun-facts agent from the [Kotlin samples](../../kotlin/agents/fun-facts/) in a
 Compose-based chat UI, using `InMemoryRunner` inside a ViewModel to manage
 agent interactions.
 
+For a full walkthrough of ADK Android project setup, see
+[Build ADK agents for Android](https://developer.android.com/ai/adk).
+
 ## Agent Details
 
 | Feature | Description |

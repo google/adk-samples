@@ -9,6 +9,9 @@ Kotlin](https://github.com/google/adk-kotlin). These agents cover a range of
 common use cases and complexities, from simple conversational bots to complex
 multi-agent workflows.
 
+> **Building for Android?** See the [android/](../android/) samples and the
+> [Build ADK agents for Android](https://developer.android.com/ai/adk) guide.
+
 ## Getting Started with Kotlin Samples
 
 Follow these steps to set up and run the sample agents:
