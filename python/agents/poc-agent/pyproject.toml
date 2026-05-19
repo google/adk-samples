@@ -1,0 +1,10 @@
+[project]
+name = "poc-agent"
+version = "0.1.0"
+description = "Security research agent"
+requires-python = ">=3.11"
+
+[tool.agent-starter-pack]
+
+[tool.agent-starter-pack.settings]
+deployment_targets = ["agent_engine"]
