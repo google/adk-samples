@@ -83,7 +83,7 @@ def deploy_era_to_vertex(project_id: str, location: str = "us-east1"):
 
     adk_app = AdkApp(
         agent=root_agent,
-        enable_tracing=False,
+        enable_tracing=True,
     )
 
     # Use the new agent_engines API
