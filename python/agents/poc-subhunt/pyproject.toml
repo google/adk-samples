@@ -1,0 +1,13 @@
+[project]
+name = "poc-subhunt"
+version = "0.1.0"
+description = "poc"
+requires-python = ">=3.11,<3.13"
+dependencies = []
+
+[tool.agent-starter-pack]
+example_question = "What is the capital of France?"
+
+[tool.agent-starter-pack.settings]
+agent_directory = "poc_agent"
+deployment_targets = ["agent_engine"]
