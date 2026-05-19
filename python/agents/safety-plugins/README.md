@@ -51,19 +51,27 @@ If the API identifies any content violations based on the configured Model Armor
 | **Components** | Plugins (LLM Judge, Model Armor), Tools |
 | **Vertical** | Safety / Security |
 
-## Quick Start with Agent Starter Pack (Recommended)
+## Quick Start with Google Agents CLI (Recommended)
 
 The fastest way to get a production-ready version of this agent is using the
-[Agent Starter Pack](https://goo.gle/agent-starter-pack). It scaffolds a full
+[Google Agents CLI](https://github.com/google/agents-cli). It scaffolds a full
 project with CI/CD, deployment scripts, and best practices built in.
 
+**Install the CLI** (one-time):
+
 ```bash
-uvx agent-starter-pack create my-safety-plugins -a adk@safety-plugins
+uvx google-agents-cli setup
 ```
 
-This single command will:
+**Create the project from this sample** (replace `my-safety-plugins` with your project name):
+
+```bash
+agents-cli create my-safety-plugins -a adk@safety-plugins
+```
+
+This will:
 - Copy the safety-plugins sample into a new project
-- Prompt you to select deployment options (Cloud Run, Agent Engine, etc.)
+- Prompt you to select deployment options (Cloud Run, Agent Runtime, etc.)
 - Generate CI/CD pipelines and infrastructure-as-code
 - Set up a ready-to-deploy project structure
 

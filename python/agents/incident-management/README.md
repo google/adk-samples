@@ -90,33 +90,23 @@ Follow the instructions in this GCP Cloud Shell tutorial.
 
     - Set the following environment variables. You can set them in your `.env` file (modify and rename `.env.example` file to `.env`) or set them directly in your shell.
 
-### Alternative: Using Agent Starter Pack
+### Alternative: Using Google Agents CLI
 
-You can also use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options:
+You can also use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
 
-```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-incident-management -a adk@incident-management
-```
-
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
-
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and set up your project with a single command:
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-incident-management -a adk@incident-management
+uvx google-agents-cli setup
 ```
 
-This command handles creating the project without needing to pre-install the package into a virtual environment.
+**Create the project from this sample** (replace `my-incident-management` with your project name):
 
-</details>
+```bash
+agents-cli create my-incident-management -a adk@incident-management
+```
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ## Running the Agent Locally
 

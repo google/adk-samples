@@ -2,12 +2,15 @@
 name = "earth-engine-geospatial"
 version = "0.1.0"
 description = "An Earth Engine enabled ADK agent for geospatial land cover change analysis."
+authors = [
+    { name = "Nicholas Clinton", email = "nclinton@google.com" },
+]
 license = {text = "Apache License 2.0"}
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 
 dependencies = [
-    "google-adk>=1.0.0",
+    "google-adk>=1.31.0",
     "earthengine-api",
     "numpy",
     "google-auth",

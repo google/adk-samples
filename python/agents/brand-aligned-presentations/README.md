@@ -32,7 +32,7 @@ This project implements an advanced AI multi-agent system designed to automate t
 | **Internal RAG** | Connects to Vertex AI Search to retrieve proprietary case studies and frameworks. |
 | **External Grounding** | Uses Google Search and Deep Research API to validate market trends and competitor insights. |
 | **Brand Compliance** | Renders final assets using an official `.pptx` template via a dedicated Python rendering engine, matching enterprise slide masters. |
-| **Enterprise Scale** | Built on Google Cloud Vertex AI and deployed via Agent Engine for security and scalability.|
+| **Enterprise Scale** | Built on Google Cloud Vertex AI and deployed via Agent Runtime for security and scalability.|
 
 ---
 
@@ -89,7 +89,7 @@ The project follows a modular structure to separate core logic from deployment u
 Ensure your service account (or user account) has the following permissions:
 - **Vertex AI User** (`roles/aiplatform.user`): For calling Gemini/Imagen.
 - **Storage Object Admin** (`roles/storage.objectAdmin`): For reading templates/writing decks.
-- **Service Account User** (`roles/iam.serviceAccountUser`): Required for Agent Engine deployment.
+- **Service Account User** (`roles/iam.serviceAccountUser`): Required for Agent Runtime deployment.
 
 ### Installation
 
@@ -125,31 +125,23 @@ Ensure your service account (or user account) has the following permissions:
     gcloud auth application-default login
     ```
 
-### Alternative: Using Agent Starter Pack
+### Alternative: Using Google Agents CLI
 
-You can also use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options:
+You can also use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
+
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-research-deck-agent -a adk@brand-aligned-presentations
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
+**Create the project from this sample** (replace `my-research-deck-agent` with your project name):
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and set up your project with a single command:
 ```bash
-uvx agent-starter-pack create my-research-deck-agent -a adk@brand-aligned-presentations
+agents-cli create my-research-deck-agent -a adk@brand-aligned-presentations
 ```
-This command handles creating the project without needing to pre-install the package into a virtual environment.
 
-</details>
-
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ---
 
@@ -190,9 +182,9 @@ Users can provide your own `.pptx` templates. To achieve flawless formatting wit
 
 ---
 
-## 8. Deployment to Agent Engine & Registration
+## 8. Deployment to Agent Runtime & Registration
 
-#### 1. Deploy to Agent Engine
+#### 1. Deploy to Agent Runtime
 Use the `deploy.py` script located in the `deployment/` folder to containerize and push the agent.
 
 **To Create a New App:**
@@ -214,7 +206,7 @@ Once deployed, register the agent so it can be discovered as a Tool/Agent in Gem
     cd agent_registration.
     cp config_template.json config.json
     ```
-2. Fill out `config.json` with your project details, app ID, and the Agent Engine ID (`adk_deployment_id`).
+2. Fill out `config.json` with your project details, app ID, and the Agent Runtime ID (`adk_deployment_id`).
 3. Run the registration wrapper:
     ```bash
     python as_registry_client.py register_agent --config config.json

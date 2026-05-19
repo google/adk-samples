@@ -1,11 +1,11 @@
 # 🧠 Economic Research Agent (ERA)
 
-[![Level 3 Maturity](https://img.shields.io/badge/Maturity-Level%203%20Structural-blueviolet)](https://github.com/GoogleCloudPlatform/agent-starter-pack)
-[![Framework-Atomic Agents](https://img.shields.io/badge/Framework-Atomic%20Agents-blue)](https://github.com/GoogleCloudPlatform/agent-starter-pack)
+[![Level 3 Maturity](https://img.shields.io/badge/Maturity-Level%203%20Structural-blueviolet)](https://github.com/google/agents-cli)
+[![Framework-Atomic Agents](https://img.shields.io/badge/Framework-Atomic%20Agents-blue)](https://github.com/google/agents-cli)
 [![ADK-Enabled](https://img.shields.io/badge/ADK-v2.0-green)](https://github.com/google/adk)
 [![Live-API](https://img.shields.io/badge/Live--API-Grounded-orange)](#)
 
-An enterprise-grade, **Multi-Agent intelligence** for high-fidelity regional economic analysis, labor market evaluation, and cross-industry site selection. Upgraded to **Vertex AI Agent Engine (ADK 2.0 / AdkApp)** with a 100% Live-API grounded architecture and **Zero LangChain/LangGraph dependencies** for massive speed-up.
+An enterprise-grade, **Multi-Agent intelligence** for high-fidelity regional economic analysis, labor market evaluation, and cross-industry site selection. Upgraded to **Agent Runtime (ADK 2.0 / AdkApp)** with a 100% Live-API grounded architecture and **Zero LangChain/LangGraph dependencies** for massive speed-up.
 
 ---
 
@@ -153,30 +153,24 @@ Before deploying to the Vertex AI Reasoning Engine, ensure your local environmen
    gcloud auth application-default login
    ```
 
-### 📦 Using Agent Starter Pack (Recommended)
+### 📦 Using Google Agents CLI (Recommended)
 
-We highly recommend setting up and deploying this agent using the [Agent Starter Pack (ASP)](https://goo.gle/agent-starter-pack). ASP provides a production-ready framework that includes:
+We highly recommend setting up and deploying this agent using the [Google Agents CLI](https://github.com/google/agents-cli). Google Agents CLI provides a production-ready framework that includes:
 - **Automated CI/CD Pipelines**: Pre-configured GitHub Actions for streamlined Vertex AI deployments.
 - **Standardized Structure**: Adheres to Google Cloud best practices for modular agent repositories.
 - **Interactive CLI Setup**: Guides you through provisioning staging buckets and Vertex AI resources automatically.
 
-```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate
+**Install the CLI** (one-time):
 
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-economic-research-agent -a adk@economic-research-agent
+```bash
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
+**Create the project from this sample** (replace `my-economic-research-agent` with your project name):
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and setup your project with a single command:
 ```bash
-uvx agent-starter-pack create my-economic-research-agent -a adk@economic-research-agent
+agents-cli create my-economic-research-agent -a adk@economic-research-agent
 ```
-</details>
 
 ### 🚀 Running the Agent
 

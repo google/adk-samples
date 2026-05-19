@@ -31,7 +31,7 @@ A multi-agent AI pipeline for retail site selection, built with [Google Agent De
     </tr>
     <tr>
       <td>🏗️</td>
-      <td><strong>Production-Ready:</strong> Deploy to <a href="https://cloud.google.com/run">Cloud Run</a> or <a href="https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview">Vertex AI Agent Engine</a> via <a href="https://goo.gle/agent-starter-pack">Agent Starter Pack</a>.</td>
+      <td><strong>Production-Ready:</strong> Deploy to <a href="https://cloud.google.com/run">Cloud Run</a> or <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime">Agent Runtime</a> via <a href="https://github.com/google/agents-cli">Google Agents CLI</a>.</td>
     </tr>
   </tbody>
 </table>
@@ -53,7 +53,7 @@ Given a location and business type, this pipeline automatically:
 ## Run this agent
 
 > [!IMPORTANT]
-> This agent uses the Agent Starter Pack, which is the fastest and easiest way to run and customize this agent.
+> This agent uses the Google Agents CLI, which is the fastest and easiest way to run and customize this agent.
 
 From the `python` directory, run the following command:
 
@@ -122,9 +122,9 @@ Your agent is now running at `http://localhost:8501`.
 
 ---
 
-### B. Google Cloud Vertex AI (via Agent Starter Pack)
+### B. Google Cloud Vertex AI (via Google Agents CLI)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready project with deployment scripts. This is ideal for cloud deployment scenarios.
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready project with deployment scripts. This is ideal for cloud deployment scenarios.
 
 You'll need: **[Google Cloud SDK](https://cloud.google.com/sdk/docs/install)** and a **Google Cloud Project** with the **Vertex AI API** enabled.
 
@@ -150,29 +150,21 @@ Then run `make install && make dev` to start the agent.
 
 #### Step 1: Create Project from Template
 
-This command uses the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a new directory (`my-retail-agent`) with all the necessary code.
+This uses the [Google Agents CLI](https://github.com/google/agents-cli) to create a new directory (`my-retail-agent`) with all the necessary code.
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-retail-agent -a adk@retail-ai-location-strategy
+uvx google-agents-cli setup
 ```
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
-
-<details>
-<summary>⚡️ Alternative: Using pip</summary>
-
-If you don't have `uv` installed, you can use pip:
+**Create the project from this sample** (replace `my-retail-agent` with your project name):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-retail-agent -a adk@retail-ai-location-strategy
+agents-cli create my-retail-agent -a adk@retail-ai-location-strategy
 ```
 
-</details>
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 #### Step 2: Install & Run
 Navigate into your **newly created project folder**, then install dependencies and start the server.
@@ -183,7 +175,7 @@ Your agent is now running at `http://localhost:8501`.
 
 ## Cloud Deployment
 
-> **Note:** Cloud deployment applies only to projects created with **agent-starter-pack** (Option B).
+> **Note:** Cloud deployment applies only to projects created with **google-agents-cli** (Option B).
 
 **Prerequisites:**
 ```bash
@@ -199,7 +191,7 @@ make deploy IAP=true
 
 After deployment, grant users access to your IAP-protected service by following the [Manage User Access](https://cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run#manage_user_or_group_access) documentation.
 
-For production deployments with CI/CD, see the [Agent Starter Pack Development Guide](https://googlecloudplatform.github.io/agent-starter-pack/guide/development-guide.html#b-production-ready-deployment-with-ci-cd).
+For production deployments with CI/CD, see the [Google Agents CLI Development Guide](https://github.com/google/agents-cli).
 
 ---
 
@@ -411,7 +403,7 @@ For detailed documentation, see **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)**:
 If you encounter issues while setting up or running this agent, here are some resources to help you troubleshoot:
 - [ADK Documentation](https://google.github.io/adk-docs/): Comprehensive documentation for the Agent Development Kit
 - [Vertex AI Authentication Guide](https://cloud.google.com/vertex-ai/docs/authentication): Detailed instructions for setting up authentication
-- [Agent Starter Pack Troubleshooting](https://googlecloudplatform.github.io/agent-starter-pack/guide/troubleshooting.html): Common issues
+- [Google Agents CLI Troubleshooting](https://github.com/google/agents-cli): Common issues
 
 ---
 

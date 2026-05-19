@@ -21,7 +21,7 @@ USER_AGENT = "adk-samples-data-science-agent"
 
 
 def list_all_extensions():
-    extensions = Extension.list(location="us-central1")
+    extensions = Extension.list(location="us-east1")
     for extension in extensions:
         print("Name:", extension.gca_resource.name)
         print("Display Name:", extension.gca_resource.display_name)

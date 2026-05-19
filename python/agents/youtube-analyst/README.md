@@ -2,12 +2,20 @@
 
 The YouTube Analyst Agent is a powerful Gemini-powered assistant designed to provide deep insights into YouTube content, channel performance, and audience engagement. It leverages the YouTube Data API to retrieve real-time data and uses Gemini's reasoning capabilities to analyze trends, sentiment, and metrics.
 
-## 🚀 Quick Start (Agent Starter Pack)
+## 🚀 Quick Start (Google Agents CLI)
 
-To create a production-ready project based on this agent, run the following command:
+To create a production-ready project based on this agent:
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-youtube-analyst -a adk@youtube-analyst
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-youtube-analyst` with your project name):
+
+```bash
+agents-cli create my-youtube-analyst -a adk@youtube-analyst
 ```
 
 This will set up a complete project with:
@@ -125,9 +133,9 @@ make cli
 
 ### Deployment (Advanced)
 
-For users who want to deploy the agent as a managed service, we provide automated deployment scripts that rely on the [Agent Starter Pack (ASP)](https://goo.gle/agent-starter-pack).
+For users who want to deploy the agent as a managed service, we provide automated deployment scripts that rely on the [Google Agents CLI](https://github.com/google/agents-cli).
 
-- **Deploy to Vertex AI Agent Engine:**
+- **Deploy to Agent Runtime:**
   ```bash
   ./deployment/deploy-to-agent-engine.sh
   ```

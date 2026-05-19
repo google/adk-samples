@@ -16,7 +16,7 @@ from vertexai.evaluation import EvalTask, PointwiseMetric
 from economic_research.agent import agent
 
 load_dotenv()
-vertexai.init(project=os.getenv("GOOGLE_CLOUD_PROJECT"), location="us-central1")
+vertexai.init(project=os.getenv("GOOGLE_CLOUD_PROJECT"), location="us-east1")
 
 # The judge must also use Vertex AI explicitly
 GROUNDING_METRIC = PointwiseMetric(

@@ -460,7 +460,7 @@ Results are saved to `invoice_processing/data/eval_results/`.
 
 ## Deployment
 
-To deploy Invoice Processing to a cloud environment, follow the [ADK Samples Integration](https://googlecloudplatform.github.io/agent-starter-pack/guide/getting-started.html) instructions to deploy via Agent Starter Pack.
+To deploy Invoice Processing to a cloud environment, follow the [ADK Samples Integration](https://github.com/google/agents-cli) instructions to deploy via Google Agents CLI.
 
 See [`deployment/README.md`](deployment/README.md) for details.
 

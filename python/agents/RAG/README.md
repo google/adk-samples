@@ -214,7 +214,7 @@ This evaluation helps ensure the agent correctly leverages the RAG capabilities 
 
 ## Deploying the Agent
 
-The Agent can be deployed to Vertex AI Agent Engine using the following
+The Agent can be deployed to Agent Runtime using the following
 commands:
 
 ```bash
@@ -227,7 +227,7 @@ After deploying the agent, you'll be able to read the following INFO log message
 Deployed agent to Vertex AI Agent Engine successfully, resource name: projects/<PROJECT_NUMBER>/locations/us-east1/reasoningEngines/<AGENT_ENGINE_ID>
 ```
 
-Please note your Agent Engine resource name and update `.env` file accordingly as this is crucial for testing the remote agent.
+Please note your Agent Runtime resource name and update `.env` file accordingly as this is crucial for testing the remote agent.
 
 You may also modify the deployment script for your use cases.
 
@@ -270,13 +270,20 @@ After deploying the agent, follow these steps to test it:
 
 The test script includes example queries about Alphabet's 2025 10-K report. You can modify the queries in `deployment/run.py` to test different aspects of your deployed agent.
 
-### Recommended: Using Agent Starter Pack
+### Recommended: Using Google Agents CLI
 
-The Agent Starter Pack is the recommended way to create and deploy a production-ready version of this agent. We have built custom lifecycle hooks into this template so that the Agent Starter Pack automatically handles building your RAG corpus and granting IAM permissions during deployment.
+The Google Agents CLI is the recommended way to create and deploy a production-ready version of this agent. The template is wired so that deployment automatically handles building your RAG corpus and granting IAM permissions.
 
-To create your project using `uv`:
+**Install the CLI** (one-time):
+
 ```bash
-uvx agent-starter-pack create my-rag-agent -a adk@RAG -d agent_engine -ds vertex_ai_search
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-rag-agent` with your project name):
+
+```bash
+agents-cli create my-rag-agent -a adk@RAG -d agent_runtime -ds agent_platform_search
 cd my-rag-agent
 ```
 
@@ -285,7 +292,7 @@ Next, run the installation command. This will prompt you to automatically build 
 make install
 ```
 
-Finally, deploy the agent to Google Cloud. This will package your agent, push it to Vertex AI Agent Engine, and automatically grant the new Agent Identity permissions to query your RAG Corpus:
+Finally, deploy the agent to Google Cloud. This will package your agent, push it to Agent Runtime, and automatically grant the new Agent Identity permissions to query your RAG Corpus:
 ```bash
 make backend
 ```

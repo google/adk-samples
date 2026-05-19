@@ -62,7 +62,7 @@ Check out the agent samples below, organized by category:
 | [Google Trends Agent](google-trends-agent) | Surfaces top trending search trends from Google Trends using BigQuery dataset. Shows trending topics by region and time period. | BigQuery, Trend analysis, Sequential agent | Conversational | Medium | Sequential Agent | Marketing & Analytics |
 | [Hierarchical Workflow Automation](hierarchical-workflow-automation) | The "Hierarchical Workflow Automation" pattern is an automation process where multiple distinct tasks or transactions must be executed in a structured hierarchy across various systems to complete a full workflow | Multi-agent, Custom tool, BigQuery, Agent Tool | Workflow | Advanced | Multi Agent / Sequential Agent | Order Management / Customer Support |
 | [Plumber-Data-Engineering-Assistant](Plumber-Data-Engineering-Assistant) | A data engineering assistant agent capable of creating and deploy big data pipelines in Apache Spark, Apache Beam and dBT on GCP data stack via conversations | Big Data, Data Analytics, Streaming Analytics, Dataflow, Dataproc, Bigquery | Conversational | Hard | Multi Agent | Data & Analytics |
-| [GenMedia for Commerce](genmedia-for-commerce) | Full-stack AI agent for commerce media generation: virtual try-on (image & video), 360° product spinning, background changing, product fitting, and catalogue search. Includes MCP server, FastAPI backend, React frontend, and Terraform infra. | MCP, Multimodal, Image generation, Video generation, Virtual try-on, Catalogue search, Agent Engine | Conversational | Advanced | Single Agent | Retail |
+| [GenMedia for Commerce](genmedia-for-commerce) | Full-stack AI agent for commerce media generation: virtual try-on (image & video), 360° product spinning, background changing, product fitting, and catalogue search. Includes MCP server, FastAPI backend, React frontend, and Terraform infra. | MCP, Multimodal, Image generation, Video generation, Virtual try-on, Catalogue search, Agent Runtime | Conversational | Advanced | Single Agent | Retail |
 
 
 
@@ -142,7 +142,7 @@ Here's a general workflow you can expect:
 
 8.  **Deploying the Agent:**
     *   Some agents are designed for deployment, typically to
-        [Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview).
+        [Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime).
     *   The `deployment/` directory contains the necessary scripts (like
         `deploy.py`) and configuration files.
     *   Deployment usually requires specific Google Cloud setup (Project ID,
@@ -201,7 +201,7 @@ The root of each agent resides in its own directory under `agents/`. For example
 2.  **`deployment/`**
 
     *   Contains scripts and files necessary for deploying the agent to a
-        platform like Vertex AI Agent Engine.
+        platform like Agent Runtime.
     *   The `deploy.py` script is often found here, handling the deployment process.
 
 3.  **`eval/`**

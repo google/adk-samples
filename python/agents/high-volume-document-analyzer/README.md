@@ -53,11 +53,11 @@ Would you like me to continue reading the older documents?
 
 ![Architecture diagram](agent_pattern.png)
 
-*The architecture illustrates the data flow: Gemini Enterprise (Frontend) routes the request to the Vertex AI Agent Engine. The ADK Agent orchestrates the tools, which authenticate via Secret Manager and fetch document batches from the External System, feeding them to the multimodal Gemini model.*
+*The architecture illustrates the data flow: Gemini Enterprise (Frontend) routes the request to the Agent Runtime. The ADK Agent orchestrates the tools, which authenticate via Secret Manager and fetch document batches from the External System, feeding them to the multimodal Gemini model.*
 
 ### 🔐 Authentication Cycle
 1. **User Authorization:** End-user logs into **Gemini Enterprise**.
-2. **Agent Engine Connection:** Gemini Enterprise securely invokes the hosted agent using IAM roles.
+2. **Agent Runtime Connection:** Gemini Enterprise securely invokes the hosted agent using IAM roles.
 3. **Downstream Authentication:** The agent securely retrieves external credentials from **Google Cloud Secret Manager**.
 4. **External Access:** The tool fetches OAuth tokens to download document chunks securely.
 
@@ -118,7 +118,7 @@ Depending on your deployment, you may also need to configure the following varia
     ```
 
 5.  **IAM Permissions:**
-    If you deploy your agent using Agent Engine, make sure the service account running the Agent (often the Default Compute Service Account) has the **Secret Manager Secret Accessor** role so it can read your credentials:
+    If you deploy your agent using Agent Runtime, make sure the service account running the Agent (often the Default Compute Service Account) has the **Secret Manager Secret Accessor** role so it can read your credentials:
     ```bash
     gcloud projects add-iam-policy-binding your-project-id \
         --member="serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL" \
@@ -253,17 +253,24 @@ The performance of the High-Volume Document Analyzer is evaluated based on its a
 
 ## F. Deploy
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with deployment options. Run this command from the root of the `adk-samples` repository:
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with deployment options.
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-document-analyzer -a local@python/agents/high-volume-document-analyzer
-
+uvx google-agents-cli setup
 ```
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+**Create the project from this sample** (run from the root of the `adk-samples` repository, replace `my-document-analyzer` with your project name):
 
-### 1. Vertex AI Agent Engine Deployment
-The project includes a dedicated deployment script that automates the creation and update of your Agent Engine resource, ensuring all environment variables and dependencies are correctly configured.
+```bash
+agents-cli create my-document-analyzer -a local@python/agents/high-volume-document-analyzer
+```
+
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+
+### 1. Agent Runtime Deployment
+The project includes a dedicated deployment script that automates the creation and update of your Agent Runtime resource, ensuring all environment variables and dependencies are correctly configured.
 
 1. **Configure Environment**: Ensure your `.env` file has the `STAGING_BUCKET` defined (e.g., `gs://your-bucket-name`).
 2. **Run the Deployment Script**:
@@ -290,7 +297,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 After a successful deployment, you can register your deployed Agent as a tool extension directly inside your **Gemini Enterprise** workspace:
 
 ```bash
-uvx agent-starter-pack register-gemini-enterprise
+uvx google-agents-cli publish gemini-enterprise
 ```
 
-> **Note:** This is an interactive command that defaults to your currently authenticated Google Cloud project and will prompt you to select the deployed Agent App you wish to link. If you prefer to register it under a different GCP project, update your active project via `gcloud config set project <project-id>` beforehand or refer to the [Agent Starter Pack documentation](https://googlecloudplatform.github.io/agent-starter-pack/cli/register_gemini_enterprise.html) for more details.
+> **Note:** This is an interactive command that defaults to your currently authenticated Google Cloud project and will prompt you to select the deployed Agent App you wish to link. If you prefer to register it under a different GCP project, update your active project via `gcloud config set project <project-id>` beforehand or refer to the [Google Agents CLI documentation](https://github.com/google/agents-cli) for more details.

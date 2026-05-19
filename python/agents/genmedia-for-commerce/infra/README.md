@@ -14,9 +14,9 @@ Deploys the full application (ADK agent + REST API + MCP server + React frontend
 - **Best for**: Full application deployment, custom infrastructure, event-driven workloads
 - **Entrypoint**: `genmedia4commerce/fast_api_app.py`
 
-### Agent Engine (`make deploy-agent-engine`)
+### Agent Runtime (`make deploy-agent-engine`)
 
-Deploys only the ADK agent to Vertex AI Agent Engine as a managed service. No Dockerfile needed — source code is packaged and uploaded directly.
+Deploys only the ADK agent to Agent Runtime as a managed service. No Dockerfile needed — source code is packaged and uploaded directly.
 
 - **What's deployed**: ADK agent only (conversational interface)
 - **Best for**: Managed infrastructure, minimal ops, agent-only deployments
@@ -25,10 +25,10 @@ Deploys only the ADK agent to Vertex AI Agent Engine as a managed service. No Do
 
 ## Setup
 
-The recommended way to deploy the infrastructure and set up the CI/CD pipeline is by using the `agent-starter-pack setup-cicd` command from the root of your project.
+The recommended way to deploy the infrastructure and set up the CI/CD pipeline is by using the `agents-cli scaffold enhance . --cicd-runner github_actions` command from the root of your project.
 
 However, for a more hands-on approach, you can always apply the Terraform configurations manually for a do-it-yourself setup.
 
 For detailed information on the deployment process, infrastructure, and CI/CD pipelines, please refer to the official documentation:
 
-**[Agent Starter Pack Deployment Guide](https://googlecloudplatform.github.io/agent-starter-pack/guide/deployment.html)**
+**[Google Agents CLI Deployment Guide](https://github.com/google/agents-cli)**

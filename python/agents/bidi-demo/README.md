@@ -58,6 +58,26 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 ## Installation
 
+### Google Agents CLI (Recommended)
+
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
+
+**Install the CLI** (one-time):
+
+```bash
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-bidi-demo` with your project name):
+
+```bash
+agents-cli create my-bidi-demo -a adk@bidi-demo
+```
+
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+
+### Manual Setup
+
 ### 1. Navigate to Demo Directory
 
 ```bash

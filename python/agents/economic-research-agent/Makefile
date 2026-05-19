@@ -2,7 +2,7 @@
 # --- Economic Research Agent (ERA) Makefile ---
 
 PROJECT_ID ?= $(shell gcloud config get-value project)
-LOCATION ?= us-central1
+LOCATION ?= us-east1
 VENV_PATH = .venv
 MODERN_REPO = economic_research
 

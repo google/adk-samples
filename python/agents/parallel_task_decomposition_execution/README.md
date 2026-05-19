@@ -36,7 +36,7 @@ The goal of this agent is to show how the agent decomposes a single complex goal
 
     **Google Cloud SDK and GCP Project:**
 
-    For the Agent Engine deployment steps, you will need
+    For the Agent Runtime deployment steps, you will need
     a Google Cloud Project. Once you have created your project,
     [install the Google Cloud SDK](https://cloud.google.com/sdk/docs/install).
     Then run the following command to authenticate with your project:
@@ -124,25 +124,20 @@ This sample has not been rigorously tested, may contain bugs or limitations, and
 
 Users are solely responsible for any further development, testing, security hardening, and deployment of agents based on this sample. We recommend thorough review, testing, and the implementation of appropriate safeguards before using any derived agent in a live or critical system.
 
-### Agent Starter Pack (Recommended)
+### Google Agents CLI (Recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options. The easiest way is with `uvx` (no install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
 
-```bash
-uvx agent-starter-pack create my-parallel-task-decomposition -a adk@parallel-task-decomposition-execution
-```
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-parallel-task-decomposition -a adk@parallel-task-decomposition-execution
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-parallel-task-decomposition` with your project name):
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+```bash
+agents-cli create my-parallel-task-decomposition -a adk@parallel-task-decomposition-execution
+```
+
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.

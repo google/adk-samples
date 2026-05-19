@@ -274,10 +274,10 @@ uv run --extra dev pytest eval
 `AgentEvaluator` in ADK. It sends a couple requests to the agent and expects
 that the agent's responses match a pre-defined response reasonably well.
 
-## Deployment on VertexAI Agent Engine
+## Deployment on Agent Runtime
 
 0. Initial Setup
-   To deploy the agent to Google VertexAI Agent Engine, first follow these steps to set up your Google Cloud project for Agent Engine.
+   To deploy the agent to Agent Runtime, first follow [these steps](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) to set up your Google Cloud project for Agent Runtime.
 
 You also need to give BigQuery User, BigQuery Data Viewer, and Vertex AI User permissions to the Reasoning Engine Service Agent. Run the following commands to grant the required permissions:
 
@@ -314,14 +314,14 @@ In order to inherit all dependencies of your agent you can build the wheel file 
     uv run python deploy.py --create
     ```
 
-When this command returns, if it succeeds it will print an AgentEngine resource
+When this command returns, if it succeeds it will print an Agent Runtime resource
 name that looks something like this:
 
 ```
 projects/************/locations/us-central1/reasoningEngines/7737333693403889664
 ```
 
-The last sequence of digits is the AgentEngine resource ID.
+The last sequence of digits is the Agent Runtime resource ID.
 
 3.  **Test the agent deployed in agent engine**
 
@@ -348,7 +348,7 @@ The last sequence of digits is the AgentEngine resource ID.
     ```
 
     Note that this is _not_ a full-featured, production-ready CLI; it is just
-    intended to show how to use the Agent Engine API to interact with a deployed
+    intended to show how to use the Agent Runtime API to interact with a deployed
     agent. ```
 
 4.  **Delete the agent deployed in agent engine**

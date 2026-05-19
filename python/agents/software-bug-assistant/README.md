@@ -11,7 +11,7 @@ The Software Bug Assistant is a sample agent designed to help IT Support and Sof
 
 This README contains instructions for local and Google Cloud deployment.
 
-The [Agent Starter Pack](https://goo.gle/agent-starter-pack) is the **recommended** way to scaffold a deployable copy of this agent; the flow below leads with **`uvx`** and keeps direct clone instructions in a collapsed section.
+The [Google Agents CLI](https://github.com/google/agents-cli) is the **recommended** way to scaffold a deployable copy of this agent; the flow below leads with **`uvx`** and keeps direct clone instructions in a collapsed section.
 
 ## Agent Details
 
@@ -42,7 +42,7 @@ up-to-date knowledge.
 
 ## Setup and Installation
 
-The [Agent Starter Pack](https://goo.gle/agent-starter-pack) (ASP) is the **recommended** path for new projects; the [adk-samples](https://github.com/google/adk-samples) tree is for browsing and contributions.
+The [Google Agents CLI](https://github.com/google/agents-cli) is the **recommended** path for new projects; the [adk-samples](https://github.com/google/adk-samples) tree is for browsing and contributions.
 
 ### Prerequisites
 
@@ -51,12 +51,18 @@ The [Agent Starter Pack](https://goo.gle/agent-starter-pack) (ASP) is the **reco
 - Git (for cloning the repository, see [Installation Instructions](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git))
 - Google Cloud CLI ([Installation Instructions](https://cloud.google.com/sdk/docs/install))
 
-### Recommended: Using Agent Starter Pack
+### Recommended: Using Google Agents CLI
 
-Create and enter a new project (rename `my-software-bug-assistant` if you like):
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-software-bug-assistant -a adk@software-bug-assistant
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-software-bug-assistant` with your project name):
+
+```bash
+agents-cli create my-software-bug-assistant -a adk@software-bug-assistant
 cd my-software-bug-assistant
 ```
 
@@ -66,26 +72,12 @@ Install dependencies:
 uv sync --group dev
 ```
 
-The starter pack prompts for deployment options and adds production-oriented CI/CD assets. Then continue with **Installation** step 1 from your project root (`.env`, MCP Toolbox, PostgreSQL, and running the agent).
-
-<details>
-<summary>Alternative: install Agent Starter Pack with pip</summary>
-
-```bash
-python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-software-bug-assistant -a adk@software-bug-assistant
-cd my-software-bug-assistant
-```
-
-Then run `uv sync --group dev` and follow the same installation steps below.
-
-</details>
+The Google Agents CLI prompts for deployment options and adds production-oriented CI/CD assets. Then continue with **Installation** step 1 from your project root (`.env`, MCP Toolbox, PostgreSQL, and running the agent).
 
 <details>
 <summary>Clone this repository directly (contributors and advanced use)</summary>
 
-**New projects should still use the Agent Starter Pack** when possible.
+**New projects should still use the Google Agents CLI** when possible.
 
 ```bash
 git clone https://github.com/google/adk-samples.git

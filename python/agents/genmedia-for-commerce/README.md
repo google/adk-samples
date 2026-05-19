@@ -26,7 +26,7 @@ The **GenMedia for Commerce Agent** is a production-ready solution for generatin
     </tr>
     <tr>
       <td>🚀</td>
-      <td><strong>Production-Ready:</strong> Modular backend, multi-stage Docker build, and deployment support for Cloud Run and Agent Engine.</td>
+      <td><strong>Production-Ready:</strong> Modular backend, multi-stage Docker build, and deployment support for Cloud Run and Agent Runtime.</td>
     </tr>
   </tbody>
 </table>
@@ -50,25 +50,19 @@ cd adk-samples/python/agents/genmedia-for-commerce
 
 **Option B: Create project from template**
 
-This command uses the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a new directory (`genmedia_for_commerce`) with all the necessary code.
-```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+This uses the [Google Agents CLI](https://github.com/google/agents-cli) to create a new directory (`genmedia4commerce`) with all the necessary code.
 
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create genmedia4commerce -a adk@genmedia-for-commerce
+**Install the CLI** (one-time):
+
+```bash
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>Alternative: Using uv</summary>
+**Create the project from this sample**:
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create your project with a single command:
 ```bash
-uvx agent-starter-pack create genmedia4commerce -a adk@genmedia-for-commerce
+agents-cli create genmedia4commerce -a adk@genmedia-for-commerce
 ```
-This handles creating the project without needing to pre-install the package into a virtual environment.
-</details>
 
 You'll be prompted to select a deployment option — choose **None**, as deployment is already handled in the code repo.
 
@@ -118,7 +112,7 @@ make dev
 
 After completing the initial setup, you have two deployment options:
 
-### Option A: Deploy Agent to Vertex AI Agent Engine + Gemini Enterprise
+### Option A: Deploy Agent to Agent Runtime + Gemini Enterprise
 This deployment focuses solely on the agent logic and tools, making it accessible via Gemini Enterprise.
 
 1. **Deploy Agent**:
@@ -129,7 +123,7 @@ This deployment focuses solely on the agent logic and tools, making it accessibl
    ```bash
    make register-gemini-enterprise
    ```
-   Follow the interactive prompts to confirm the Agent Engine ID and link it to your instance.
+   Follow the interactive prompts to confirm the Agent Runtime ID and link it to your instance.
 
 ### Option B: Deploy Full Application (Cloud Run with MCP & Frontend)
 This deploys the entire application stack, including the React frontend, FastAPI backend, and MCP server.

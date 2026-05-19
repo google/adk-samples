@@ -61,33 +61,23 @@ Before running or deploying the agent, you must configure the environment.
 
 2. **Configure `.env`:** Open the newly created `.env` file and fill in the required values (Project ID, Region, GCS Bucket, Model Name, etc.).
 
-### 2. Agent Starter Pack (recommended)
+### 2. Google Agents CLI (recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options.
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
 
-```bash
-uvx agent-starter-pack create my-brand-aligner -a adk@brand-aligner
-```
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv
-# Linux/macOS
-source .venv/bin/activate
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-
-# Install starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-brand-aligner -a adk@brand-aligner
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-brand-aligner` with your project name):
 
-The starter pack guides you through setup options and generates a production-ready project structure.
+```bash
+agents-cli create my-brand-aligner -a adk@brand-aligner
+```
+
+The Google Agents CLI guides you through setup options and generates a production-ready project structure.
 
 <details>
 <summary>Alternative: Local development from this sample repo (manual clone)</summary>
@@ -121,9 +111,9 @@ The starter pack guides you through setup options and generates a production-rea
 
    Access the UI at `http://localhost:8000`.
 
-### 4. Deployment to Agent Engine and Gemini Enterprise
+### 4. Deployment to Agent Runtime and Gemini Enterprise
 
-To deploy the agent to Agent Engine then register it with Gemini Enterprise:
+To deploy the agent to Agent Runtime then register it with Gemini Enterprise:
 
 1. **Deploy the Agent:**
 
@@ -135,7 +125,7 @@ To deploy the agent to Agent Engine then register it with Gemini Enterprise:
 
 The `deployment/` directory contains essential scripts for managing the agent's registration and configuration with Gemini Enterprise.
 
-* **`config.sh`**: **CRITICAL**. This file contains all the variables required for Gemini Enterprise registration and deployment (for example, Agent Engine ID and service account details). It relies on your local `.env` file for values. Ensure this is configured correctly before running the registration script.
+* **`config.sh`**: **CRITICAL**. This file contains all the variables required for Gemini Enterprise registration and deployment (for example, Agent Runtime ID and service account details). It relies on your local `.env` file for values. Ensure this is configured correctly before running the registration script.
 * **`ge_register.sh`**: Registers the deployed agent with Gemini Enterprise.
 * **`ge_unregister.sh`**: Unregisters the agent from Gemini Enterprise.
 

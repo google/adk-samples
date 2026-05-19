@@ -1,6 +1,6 @@
 # ADK Memory Bank Sample
 
-An [ADK](https://adk.dev/) agent with [Memory Bank](https://docs.cloud.google.com/agent-builder/agent-engine/memory-bank/set-up) integration that remembers user preferences and facts across sessions. Deployable to Vertex AI Agent Engine or Cloud Run.
+An [ADK](https://adk.dev/) agent with [Memory Bank](https://docs.cloud.google.com/agent-builder/agent-engine/memory-bank/set-up) integration that remembers user preferences and facts across sessions. Deployable to Agent Runtime or Cloud Run.
 
 <table>
   <thead>
@@ -23,7 +23,7 @@ An [ADK](https://adk.dev/) agent with [Memory Bank](https://docs.cloud.google.co
     </tr>
     <tr>
       <td><strong>Two deployment targets</strong></td>
-      <td>Same agent code, deployable to Agent Engine (fully managed) or Cloud Run (container-based with FastAPI).</td>
+      <td>Same agent code, deployable to Agent Runtime (fully managed) or Cloud Run (container-based with FastAPI).</td>
     </tr>
   </tbody>
 </table>
@@ -96,9 +96,9 @@ uv run adk web . --port 8501 --memory_service_uri=agentengine://<AGENT_ENGINE_RE
 
 After completing the initial setup, you have two deployment options:
 
-### Option A: Deploy to Vertex AI Agent Engine
+### Option A: Deploy to Agent Runtime
 
-Agent Engine provides fully managed infrastructure — session management, memory, and scaling are handled automatically.
+Agent Runtime provides fully managed infrastructure — session management, memory, and scaling are handled automatically.
 
 ```bash
 make deploy-agent-engine
@@ -108,7 +108,7 @@ This runs `app/app_utils/deploy.py`, which:
 1. Reads `memory_bank_config` from `agent_engine_app.py`
 2. Wraps it in a `ReasoningEngineContextSpec`
 3. Passes it via `context_spec` in the `AgentEngineConfig`
-4. Creates or updates the Agent Engine instance with Memory Bank configured
+4. Creates or updates the Agent Runtime instance with Memory Bank configured
 
 Entry point: `app/agent_engine_app.py` (`AgentEngineApp`, a subclass of `AdkApp`)
 
@@ -121,7 +121,7 @@ make deploy-cloud-run
 ```
 
 On first startup, the Cloud Run service will:
-1. Find or create an Agent Engine instance for session and memory storage
+1. Find or create an Agent Runtime instance for session and memory storage
 2. If creating, pass `memory_bank_config` via `context_spec` to enable Memory Bank
 3. Set `session_service_uri` and `memory_service_uri` to the same `agentengine://` URI
 4. Start the FastAPI server with both services wired up
@@ -151,36 +151,28 @@ memory-bank-sample/
 |---|---|
 | `make install` | Install dependencies using uv |
 | `make playground` | Launch local dev playground (ADK Web UI) |
-| `make deploy-agent-engine` | Deploy to Vertex AI Agent Engine |
+| `make deploy-agent-engine` | Deploy to Agent Runtime |
 | `make deploy-cloud-run` | Deploy to Cloud Run |
 | `make local-server` | Run FastAPI server locally with hot-reload |
 | `make lint` | Run code quality checks |
 
-### Alternative: Using Agent Starter Pack
+### Alternative: Using Google Agents CLI
 
-You can also use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options:
+You can also use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
+
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-memory-bank -a adk@memory-bank
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
+**Create the project from this sample** (replace `my-memory-bank` with your project name):
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and set up your project with a single command:
 ```bash
-uvx agent-starter-pack create my-memory-bank -a adk@memory-bank
+agents-cli create my-memory-bank -a adk@memory-bank
 ```
-This command handles creating the project without needing to pre-install the package into a virtual environment.
 
-</details>
-
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ## Disclaimer
 
