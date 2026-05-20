@@ -181,16 +181,9 @@ This test suite performs end-to-end testing to ensure the agent correctly identi
 
 ## Deployment
 
-For production use, you can deploy this agent using the [Google Agents CLI](https://github.com/google/agents-cli), which provides automated CI/CD deployment scripts for services like Google Cloud Run.
-
-**Install the CLI** (one-time):
+For production use, you can deploy this agent using the [Agent Starter Pack](https://goo.gle/agent-starter-pack), which provides automated CI/CD deployment scripts for services like Google Cloud Run.
 
 ```bash
-uvx google-agents-cli setup
-```
-
-**Create the project from this sample**:
-
-```bash
-agents-cli create my-nurse-handover -a adk@nurse-handover
+# Install the starter pack and create a new project from this sample
+uvx agent-starter-pack create my-nurse-handover -a adk@nurse-handover
 ```

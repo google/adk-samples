@@ -233,3 +233,8 @@ go/agents/sail-researcher/server
 
 # Temporary Files for Agent Engine Deployment
 **/*_tmp*/
+
+# Gradle / JVM
+.gradle/
+*.class
+local.properties
