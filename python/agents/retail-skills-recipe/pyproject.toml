@@ -71,10 +71,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["samples"]
+packages = ["skills"]
 
 [tool.pytest.ini_options]
-testpaths = ["samples"]
+testpaths = ["skills"]
 addopts = "-s -v"
 log_cli = true
 log_cli_level = "INFO"
@@ -96,5 +96,5 @@ example_question = "I want to build a product search agent for my e-commerce sit
 name = "retail-skills-recipe"
 description = "Retail agent skills recipe with four layered capabilities"
 base_template = "adk"
-agent_directory = "samples/retail-product-search/app"
+agent_directory = "skills/retail-product-search/app"
 deployment_targets = ["cloud_run"]

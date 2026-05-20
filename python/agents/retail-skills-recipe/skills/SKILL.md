@@ -1,3 +1,4 @@
+
 ---
 name: retail-skills
 description: >-
@@ -44,4 +45,22 @@ All skills layer on top of product-search and can be combined independently.
 
 ## Adding New Skills
 
-Create `retail-{skill_name}/SKILL.md` with frontmatter, then update the table above.
+Each skill is a self-contained folder under `skills/`:
+
+```
+skills/{your-skill}/
+    SKILL.md          # skill specification (the entry point)
+    EVAL.yaml         # eval cases (rubric + assertions)
+    reference/        # reference docs, guides
+    scripts/          # setup automation, ingestion scripts
+    assets/           # design-spec, sample data
+    app/              # agent code (if applicable)
+    tests/            # unit and integration tests
+    pyproject.toml    # Python package config
+    README.md         # skill-level documentation
+```
+
+1. Create `skills/{your-skill}/SKILL.md` with frontmatter
+2. Add `scripts/`, `assets/`, `tests/` in the same directory
+3. Create `EVAL.yaml` with at least 5 eval cases
+4. Update [REGISTRY.md](REGISTRY.md) and the table above

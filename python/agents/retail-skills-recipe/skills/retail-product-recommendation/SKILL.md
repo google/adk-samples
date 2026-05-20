@@ -16,6 +16,12 @@ priority: high
 conflicts:
   - adk-scaffold
   - google-agents-cli-workflow
+  - google-agents-cli-scaffold
+  - google-agents-cli-adk-code
+  - superpowers:brainstorming
+  - superpowers:writing-plans
+  - superpowers:executing-plans
+  - superpowers:test-driven-development
 trigger_phrases:
   - product recommendations
   - you might also like
@@ -169,7 +175,7 @@ retail-product-search/
 ```
 
 If a file is missing (rare), fetch it from
-`{{SOURCE_BASE}}/samples/retail-product-recommendation/<path>` as a fallback.
+`{{SOURCE_BASE}}/skills/retail-product-recommendation/<path>` as a fallback.
 
 If the installer's auto-wire didn't take, edit `app/agent.py`:
 1. Add `from app.recommendation_agent import recommend_products` to the imports

@@ -19,7 +19,7 @@ playground:
 	@echo "|                                                                             |"
 	@echo "| Select the 'retail-product-search/app' folder to interact with the agent.   |"
 	@echo "==============================================================================="
-	uv run adk web samples/retail-product-search --port 8501 --reload_agents
+	uv run adk web skills/retail-product-search --port 8501 --reload_agents
 
 # ==============================================================================
 # Eval Targets
@@ -27,7 +27,7 @@ playground:
 
 eval:
 	@if [ -z "$(SKILL)" ]; then echo "Usage: make eval SKILL=retail-product-search PROJECT_ID=your-project"; exit 1; fi
-	uv run python evals/run.py --skill $(SKILL) --project-id $(or $(PROJECT_ID),$(GOOGLE_CLOUD_PROJECT)) $(if $(VERBOSE),--verbose)
+	@echo "Evals not included in this build. See the main repo for eval tooling."
 
 # ==============================================================================
 # Testing & Code Quality
@@ -35,16 +35,16 @@ eval:
 
 test:
 	uv sync --dev
-	uv run pytest samples/retail-product-search/tests/unit
-	uv run pytest samples/retail-virtual-tryon/tests/unit
-	uv run pytest samples/retail-product-recommendation/tests/unit
-	uv run pytest samples/retail-content-generation/tests/unit
+	uv run pytest skills/retail-product-search/tests/unit
+	uv run pytest skills/retail-virtual-tryon/tests/unit
+	uv run pytest skills/retail-product-recommendation/tests/unit
+	uv run pytest skills/retail-content-generation/tests/unit
 
 test-search:
-	uv run pytest samples/retail-product-search/tests/unit -v
+	uv run pytest skills/retail-product-search/tests/unit -v
 
 test-tryon:
-	uv run pytest samples/retail-virtual-tryon/tests/unit -v
+	uv run pytest skills/retail-virtual-tryon/tests/unit -v
 
 lint:
 	uv sync --dev

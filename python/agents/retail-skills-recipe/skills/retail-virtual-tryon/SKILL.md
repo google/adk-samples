@@ -18,6 +18,12 @@ priority: high
 conflicts:
   - adk-scaffold
   - google-agents-cli-workflow
+  - google-agents-cli-scaffold
+  - google-agents-cli-adk-code
+  - superpowers:brainstorming
+  - superpowers:writing-plans
+  - superpowers:executing-plans
+  - superpowers:test-driven-development
 trigger_phrases:
   - virtual try-on
   - virtual fitting
@@ -244,7 +250,7 @@ grep try_on_product retail-product-search/app/agent.py
 ```
 
 If a file is missing (rare), fetch it from
-`{{SOURCE_BASE}}/samples/retail-virtual-tryon/<path>` as a fallback.
+`{{SOURCE_BASE}}/skills/retail-virtual-tryon/<path>` as a fallback.
 
 If the installer's auto-wire didn't take (no `try_on_product` in
 `tools=[…]`), edit `app/agent.py`:
@@ -294,7 +300,7 @@ Test queries:
 adk eval
 ```
 
-Evalset: `evals/sets/retail-virtual-tryon.evalset.json`
+Evalset: `skills/retail-virtual-tryon/EVAL.yaml`
 
 Key metrics:
 - Image quality (correct item shown, photorealistic overlay)

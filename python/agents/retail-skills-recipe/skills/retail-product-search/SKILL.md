@@ -14,6 +14,12 @@ priority: high
 conflicts:
   - adk-scaffold
   - google-agents-cli-workflow
+  - google-agents-cli-scaffold
+  - google-agents-cli-adk-code
+  - superpowers:brainstorming
+  - superpowers:writing-plans
+  - superpowers:executing-plans
+  - superpowers:test-driven-development
 trigger_phrases:
   - retail product search
   - e-commerce search agent
@@ -294,7 +300,7 @@ scripts under `scripts/` instead.
 
 The project tree on disk should already look like this. If a file is
 missing (e.g. user installed with `--minimal` in some future flag), fetch
-it from `{{SOURCE_BASE}}/samples/retail-product-search/<path>` as a fallback.
+it from `{{SOURCE_BASE}}/skills/retail-product-search/<path>` as a fallback.
 
 ```text
 retail-product-search/         # current directory
@@ -344,7 +350,7 @@ After copying, the project structure MUST look like this:
     validate_schema.py    # REQUIRED: from retail skill scripts/
     api_connector.py      # From retail skill (Path A only)
     cleanup.py            # From retail skill scripts/
-  # evalset lives at repo root: evals/sets/retail-product-search.evalset.json
+  # evalset lives at repo root: skills/retail-product-search/EVAL.yaml
   deployment/terraform/dev/
     products.tf
 ```

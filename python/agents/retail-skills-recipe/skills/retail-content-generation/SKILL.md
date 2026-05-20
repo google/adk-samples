@@ -15,6 +15,12 @@ priority: high
 conflicts:
   - adk-scaffold
   - google-agents-cli-workflow
+  - google-agents-cli-scaffold
+  - google-agents-cli-adk-code
+  - superpowers:brainstorming
+  - superpowers:writing-plans
+  - superpowers:executing-plans
+  - superpowers:test-driven-development
 trigger_phrases:
   - product description generation
   - product SEO copy
@@ -236,7 +242,7 @@ retail-product-search/
 ```
 
 If a file is missing (rare), fetch it from
-`{{SOURCE_BASE}}/samples/retail-content-generation/<path>` as a fallback.
+`{{SOURCE_BASE}}/skills/retail-content-generation/<path>` as a fallback.
 
 If the installer's auto-wire didn't take, edit `app/agent.py`:
 1. Add `from app.content_agent import generate_product_content` to the imports
