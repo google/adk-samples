@@ -9,9 +9,9 @@ repositories {
 }
 
 dependencies {
-    implementation("com.google.adk:google-adk-kotlin-core:0.1.0")
-    implementation("com.google.adk:google-adk-kotlin-webserver:0.1.0")
-    ksp("com.google.adk:google-adk-kotlin-processor:0.1.0")
+    implementation("com.google.adk:google-adk-kotlin-core:0.2.0")
+    implementation("com.google.adk:google-adk-kotlin-webserver:0.2.0")
+    ksp("com.google.adk:google-adk-kotlin-processor:0.2.0")
 }
 
 kotlin {
@@ -23,4 +23,8 @@ application {
         project.findProperty("mainClass") as? String
             ?: "com.google.adk.samples.agents.funfacts.MainKt"
     )
+}
+
+tasks.named<JavaExec>("run") {
+    standardInput = System.`in`
 }
