@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -22,6 +23,13 @@ project_root = Path(__file__).resolve().parent.parent.parent
 ENV_FILE_PATH = project_root / ".env"
 
 load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
+
+# The ADK / google.genai client reads GOOGLE_CLOUD_LOCATION from the env at
+# request time. Force it to "global" so all Vertex AI traffic from the agent
+# targets the global endpoint, regardless of what .env says. The .env value
+# remains the source of truth for the Cloud Run endpoint deploy script.
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
+os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 
 
 class Settings(BaseSettings):

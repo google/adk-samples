@@ -20,6 +20,7 @@ from typing import Optional
 import google.auth
 import google.auth.transport.requests
 import requests as http_requests
+from google.auth import impersonated_credentials
 from google.oauth2 import id_token
 
 from .utils.config import settings
@@ -77,6 +78,37 @@ async def upload_generated_doc_to_gcs(state: dict, output_key: str) -> Optional[
         return None
 
 
+def _fetch_identity_token(audience: str) -> Optional[str]:
+    """Mint an OIDC ID token for `audience`.
+
+    In Agent Engine the runtime SA is attached via the metadata server, so
+    id_token.fetch_id_token works directly. Locally, user ADC can't mint OIDC
+    tokens, so we fall back to impersonating PROJECT_SERVICE_ACCOUNT (the user
+    needs roles/iam.serviceAccountTokenCreator on it).
+    """
+    auth_req = google.auth.transport.requests.Request()
+    try:
+        return id_token.fetch_id_token(auth_req, audience)
+    except Exception:
+        pass
+
+    source_creds, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    target_creds = impersonated_credentials.IDTokenCredentials(
+        impersonated_credentials.Credentials(
+            source_credentials=source_creds,
+            target_principal=settings.PROJECT_SERVICE_ACCOUNT,
+            target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            lifetime=300,
+        ),
+        target_audience=audience,
+        include_email=True,
+    )
+    target_creds.refresh(auth_req)
+    return target_creds.token
+
+
 def convert_markdown_to_pdf_and_get_signed_url(gcs_uri: str) -> Optional[str]:
     logging.info(f"Initiating remote conversion for GCS file: {gcs_uri}")
     service_url = settings.CONVERSION_SERVICE_URL
@@ -85,27 +117,19 @@ def convert_markdown_to_pdf_and_get_signed_url(gcs_uri: str) -> Optional[str]:
         return None
 
     try:
-
-        try:
-            auth_req = google.auth.transport.requests.Request()
-            identity_token = id_token.fetch_id_token(auth_req, service_url)
-            headers = {"Authorization": f"Bearer {identity_token}"}
-            logging.info("Successfully obtained OIDC identity token.")
-        except Exception as e:
-            logging.error(f"Failed to obtain OIDC identity token: {e}")
+        identity_token = _fetch_identity_token(service_url)
+        if not identity_token:
+            logging.error("Failed to obtain OIDC identity token.")
             return None
 
-        # --- 4. Construct the request parameters ---
-        params = {
-            "gcs_uri": gcs_uri,
-        }
-
-        # --- 5. Make the authenticated HTTP GET request ---
-        response = http_requests.post(service_url, headers=headers, params=params)
-        response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
+        response = http_requests.post(
+            service_url,
+            headers={"Authorization": f"Bearer {identity_token}"},
+            params={"gcs_uri": gcs_uri},
+        )
+        response.raise_for_status()
 
         signed_url = response.text.strip()
-
         logging.info(f"Successfully received signed URL: {signed_url}")
         return signed_url
     except Exception as e:

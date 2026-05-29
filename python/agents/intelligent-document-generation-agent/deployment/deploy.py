@@ -44,7 +44,7 @@ TEST_QUERY = "Acknowledge receipt and briefly describe what you do."
 def _client() -> vertexai.Client:
     return vertexai.Client(
         project=settings.GOOGLE_CLOUD_PROJECT,
-        location=settings.GOOGLE_CLOUD_LOCATION,
+        location="global",
     )
 
 

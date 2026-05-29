@@ -37,7 +37,7 @@ from .utils.config import settings
 
 vertexai.init(
     project=settings.GOOGLE_CLOUD_PROJECT,
-    location=settings.GOOGLE_CLOUD_LOCATION,
+    location="global",
     staging_bucket=settings.ADK_STAGING_BUCKET,
 )
 
