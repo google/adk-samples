@@ -1,0 +1,59 @@
+[project]
+name = "intelligent-document-generation-agent"
+version = "0.1.0"
+description = "Ingests unstructured PDFs, extracts structured data with a multi-agent workflow, generates summary / feature / security markdown deliverables, and converts them to PDFs via a Cloud Run microservice with output uploaded to Google Cloud Storage."
+authors = [
+    { name = "Austin Jacobson", email = "amjac1@gmail.com" },
+]
+license = {text = "Apache License 2.0"}
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "google-adk>=1.15.0,<2.0.0",
+    "google-auth>=2.30.0",
+    "google-cloud-aiplatform[agent-engines]>=1.118.0,<2.0.0",
+    "google-cloud-storage>=2.0.0,<4.0.0",
+    "pydantic-settings>=2.0.0,<3.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "requests>=2.32.0,<3.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "google-adk[eval]>=1.15.0,<2.0.0",
+    "nest-asyncio>=1.6.0,<2.0.0",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.23.8,<1.0.0",
+]
+
+[tool.ruff]
+# Inherit Black / iSort / Flake8-compatible rules from the master template.
+extend = "../../../pyproject.toml"
+
+[tool.ruff.lint.isort]
+known-first-party = ["intelligent_document_generation_agent"]
+
+[tool.isort]
+profile = "black"
+known_first_party = ["intelligent_document_generation_agent"]
+
+[tool.ruff.lint.per-file-ignores]
+"intelligent_document_generation_agent/__init__.py" = ["E402", "I001"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["intelligent_document_generation_agent"]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[project.optional-dependencies]
+lint = [
+    "ruff>=0.4.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

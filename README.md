@@ -69,6 +69,7 @@ To learn more, check out the [ADK Documentation](https://adk.dev), and the GitHu
 │   │   ├── google-trends-agent
 │   │   ├── high-volume-document-analyzer
 │   │   ├── image-scoring
+│   │   ├── intelligent-document-generation-agent
 │   │   ├── llm-auditor
 │   │   ├── machine-learning-engineering
 │   │   ├── marketing-agency
