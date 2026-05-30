@@ -1,4 +1,3 @@
-import difflib
 import glob
 import os
 import re
@@ -44,6 +43,37 @@ def parse_ground_truth(file_path):
                 sentences.append(line)
     return sentences
 
+def calculate_wer(ref, hyp):
+    """Calculates Word Error Rate (WER) using Levenshtein distance at the word level."""
+    ref_words = ref.split()
+    hyp_words = hyp.split()
+    
+    n = len(ref_words)
+    m = len(hyp_words)
+    
+    if n == 0:
+        return float(m)  # All words inserted
+        
+    # Create Levenshtein matrix
+    d = [[0] * (m + 1) for _ in range(n + 1)]
+    
+    for i in range(n + 1):
+        d[i][0] = i
+    for j in range(m + 1):
+        d[0][j] = j
+        
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            if ref_words[i - 1] == hyp_words[j - 1]:
+                d[i][j] = d[i - 1][j - 1]
+            else:
+                substitution = d[i - 1][j - 1] + 1
+                deletion = d[i - 1][j] + 1
+                insertion = d[i][j - 1] + 1
+                d[i][j] = min(substitution, deletion, insertion)
+                
+    return d[n][m] / n
+
 def main():
     eval_dir = Path(__file__).parent.resolve()
     base_dir = eval_dir.parent
@@ -71,34 +101,34 @@ def main():
     
     # Calculate Per-Sentence Ratios
     min_length = min(len(gt_sentences), len(detected_sentences))
-    sentence_ratios = []
+    sentence_wers = []
     
-    print("\n--- Per-Sentence Comparison ---")
+    print("\n--- Per-Sentence Comparison (Word Error Rate) ---")
     for i in range(min_length):
-        gt = re.sub(r'[.,]', ' ', gt_sentences[i]).replace("'", "").lower()
+        # Normalize inputs: lowercasing and removing punctuation
+        gt = re.sub(r'[.,;?!:]', ' ', gt_sentences[i]).replace("'", "").lower()
         gt = re.sub(r'\s+', ' ', gt).strip()
         
-        dt = re.sub(r'[.,]', ' ', detected_sentences[i]).replace("'", "").lower()
+        dt = re.sub(r'[.,;?!:]', ' ', detected_sentences[i]).replace("'", "").lower()
         dt = re.sub(r'\s+', ' ', dt).strip()
         
-        sm = difflib.SequenceMatcher(None, gt.lower(), dt.lower())
-        ratio = sm.ratio()
-        sentence_ratios.append(ratio)
+        wer = calculate_wer(gt, dt)
+        sentence_wers.append(wer)
         
         print(f"\nSentence {i+1}:")
         print(f"  Ground Truth: {gt}")
         print(f"  Detected:     {dt}")
-        print(f"  LCS Ratio:    {ratio:.4f}")
+        print(f"  Word Error Rate (WER): {wer:.4f} ({wer * 100:.2f}%)")
 
     if len(gt_sentences) != len(detected_sentences):
         print(f"\n[Warning] Length Mismatch: Ground Truth has {len(gt_sentences)} sentences, Detected has {len(detected_sentences)}.")
 
-    avg_sentence_ratio = sum(sentence_ratios) / len(sentence_ratios) if sentence_ratios else 0
+    avg_wer = sum(sentence_wers) / len(sentence_wers) if sentence_wers else 0
     
     print("\n" + "=" * 50)
     print("FINAL EVALUATION METRICS")
     print("=" * 50)
-    print(f"Average Sentence LCS Ratio: {avg_sentence_ratio:.4f}")
+    print(f"Average Sentence WER: {avg_wer:.4f} ({avg_wer * 100:.2f}%)")
     print("=" * 50)
 
 if __name__ == "__main__":

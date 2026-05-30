@@ -1,6 +1,6 @@
 # Gemini Live: Speech-to-Text Evaluation and Recording Audio Sessions for Audits
 
-A Real-Time Speech-to-Text (STT) Evaluation and Recording framework utilizing **Google's Agent Development Kit (ADK)**, **Gemini Live**, and **FastAPI**. It is designed to capture, archive, and audit bidirectional voice interactions, featuring robust character-level similarity evaluations to quantify Automatic Speech Recognition (ASR) performance against pristine Ground Truth reference files.
+A Real-Time Speech-to-Text (STT) Evaluation and Recording framework utilizing **Google's Agent Development Kit (ADK)**, **Gemini Live**, and **FastAPI**. It is designed to capture, archive, and audit bidirectional voice interactions, featuring robust word-level Word Error Rate (WER) evaluations to quantify Automatic Speech Recognition (ASR) performance against pristine Ground Truth reference files.
 
 ## Features
 
@@ -11,7 +11,7 @@ A Real-Time Speech-to-Text (STT) Evaluation and Recording framework utilizing **
   - **The "Filing Cabinet" (`google/adk/artifacts/file_artifact_service.py`)**: Executes physical disk operations to synchronously write and structure raw `.l16` and `.pcm` audio blobs alongside `metadata.json` footprint files.
   - **The architecture diagram below illustrates the end-to-end audio capture and artifact storage workflow:** 
 ![alt text](image.png)
-- **Pillar 2: ASR & STT Evaluation Engine**: Integrates a robust character-level Longest Common Subsequence (LCS) ratio evaluation suite built using Python's standard `difflib.SequenceMatcher` to quantify transcription similarity against established Ground Truth lines.
+- **Pillar 2: ASR & STT Evaluation Engine**: Integrates a robust word-level Word Error Rate (WER) evaluation suite built using the Levenshtein distance algorithm to quantify Automatic Speech Recognition (ASR) performance and word error rates against established Ground Truth lines.
 - **Language & Accent Best Practices**: Natively enforcing strict language anchoring for optimal performance on the Live API `gemini-live-2.5-flash`. By carefully aligning the API's `language_code` with the user's spoken language and explicitly embedding targeted instructions (e.g., `"RESPOND IN {OUTPUT_LANGUAGE}. YOU MUST RESPOND UNMISTAKABLY IN {OUTPUT_LANGUAGE}."`) into your system prompts, the live API anchors interactions accurately and seamlessly navigates user accent constraints [Source](https://ai.google.dev/gemini-api/docs/live-api/best-practices#language-guidelines)
 
 ## Prerequisites
@@ -63,7 +63,7 @@ Click the **Microphone** button to resume your `AudioContext` and start speaking
 
 > [!NOTE]
 > **Testing System Accuracy:**
-> To test the accuracy of your system against the Longest Common Subsequence (LCS) ratio evaluations, speak or read the exact scripted sentences provided in [STT_ground_truth.txt](eval/STT_ground_truth.txt) during your conversation test. Alternatively, you can update the script to validate custom dialogue workflows seamlessly.
+> To test the accuracy of your system against the Word Error Rate (WER) evaluations, speak or read the exact scripted sentences provided in [STT_ground_truth.txt](eval/STT_ground_truth.txt) during your conversation test. Alternatively, you can update the script to validate custom dialogue workflows seamlessly.
 
 ### 3. Session Recording & Auditing Outputs
 
@@ -78,9 +78,9 @@ As you converse with the live agent in real-time, your session audio and dialogu
 
 ### 4. Evaluate Speech-to-Text Performance
 
-Productionizing voice-based agentic workloads demands strict, measurable benchmarks for Automatic Speech Recognition (ASR) and Speech-to-Text (STT) similarity. Because model responses and records pulling rely heavily upon the precision of captured proper nouns (such as spelled names or email addresses), quantifying this accuracy against established Ground Truth lines is vital for auditing, quality assurance, and preventing silent performance degradation in production ecosystems.
+Productionizing voice-based agentic workloads demands strict, measurable benchmarks for Automatic Speech Recognition (ASR) and Speech-to-Text (STT) Word Error Rate (WER). Because model responses and records pulling rely heavily upon the precision of captured proper nouns (such as spelled names or email addresses), quantifying this accuracy against established Ground Truth lines is vital for auditing, quality assurance, and preventing silent performance degradation in production ecosystems.
 
-To run the Longest Common Subsequence (LCS) ratio similarity evaluation against the current `eval/STT_ground_truth.txt` file, execute:
+To run the Word Error Rate (WER) evaluation against the current `eval/STT_ground_truth.txt` file, execute:
 ```bash
 python eval/stt_eval.py
 ```
@@ -91,4 +91,4 @@ python eval/stt_eval.py
 - **`info_gather_agent/agent.py`**: Configures the ADK Agent persona, model options, and conversational instruction sets.
 - **`utils/frontend/index.html`**: Premium user interface featuring glassmorphic design and real-time JavaScript Web Audio API scheduling queues.
 - **`utils/wav_file_conversion.py`**: Consolidates saved `.pcm` and `.l16` audio blobs into merged `.wav` files.
-- **`eval/stt_eval.py`**: LCS character sequence comparison and ASR accuracy scoring.
+- **`eval/stt_eval.py`**: Word Error Rate (WER) word-level comparison and ASR accuracy scoring.
