@@ -44,6 +44,9 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 # Application name constant
 APP_NAME = "info_gather_agent"
 
+# Track latest active session_id for post-session WAV compilation
+latest_session_id = None
+
 # ========================================
 # Phase 1: Application Initialization (once at startup)
 # ========================================
@@ -83,22 +86,143 @@ async def root():
 def on_shutdown():
     """Executed automatically upon server shutdown (e.g. ^C)."""
     try:
-        from utils.wav_file_conversion import convert_artifacts_to_wav
+        from utils.audio_utils import convert_artifacts_to_wav
         print("\n" + "=" * 50)
         print("FastAPI shutting down. Converting artifacts to WAV format...")
         print("=" * 50)
         current_dir = Path(__file__).parent.resolve()
+        
+        # Construct output filename based on the latest session ID
+        output_filename = "session.wav"
+        if latest_session_id:
+            output_filename = f"{latest_session_id}.wav"
+            
         convert_artifacts_to_wav(
             artifacts_dir=str(current_dir / "artifacts"),
-            output_filename=str(current_dir / "session.wav")
+            output_filename=str(current_dir / output_filename),
+            session_id=latest_session_id
         )
     except Exception as e:
         print(f"Error during shutdown conversion: {e}")
 
 
+def _write_transcript(session_id: str, speaker: str, text: str) -> None:
+    """Writes a line of conversation transcript to a local text file."""
+    transcripts_dir = Path(__file__).parent / "transcripts"
+    transcripts_dir.mkdir(exist_ok=True)
+    with open(transcripts_dir / f"{session_id}.txt", "a", encoding="utf-8") as f:
+        f.write(f"{speaker}: {text}\n")
+
+
+async def handle_upstream_audio_and_text(websocket: WebSocket, live_request_queue: LiveRequestQueue) -> None:
+    """Receives messages from WebSocket and sends to LiveRequestQueue."""
+    logger.debug("handle_upstream_audio_and_text started")
+    while True:
+        # Receive message from WebSocket (text or binary)
+        message = await websocket.receive()
+
+        # Handle binary frames (audio data)
+        if "bytes" in message:
+            audio_data = message["bytes"]
+            logger.debug(
+                f"Received binary audio chunk: {len(audio_data)} bytes"
+            )
+
+            audio_blob = types.Blob(
+                mime_type="audio/l16;rate=16000", data=audio_data
+            )
+            live_request_queue.send_realtime(audio_blob)
+
+        # Handle text frames (JSON messages)
+        elif "text" in message:
+            text_data = message["text"]
+            logger.debug(f"Received text message: {text_data[:100]}...")
+
+            json_message = json.loads(text_data)
+
+            # Extract text from JSON and send to LiveRequestQueue
+            if json_message.get("type") == "text":
+                logger.debug(
+                    f"Sending text content: {json_message['text']}"
+                )
+                content = types.Content(
+                    parts=[types.Part(text=json_message["text"])]
+                )
+                live_request_queue.send_content(content)
+
+            # Handle image data
+            elif json_message.get("type") == "image":
+                logger.debug("Received image data")
+
+                # Decode base64 image data
+                image_data = base64.b64decode(json_message["data"])
+                mime_type = json_message.get("mimeType", "image/jpeg")
+
+                logger.debug(
+                    f"Sending image: {len(image_data)} bytes, "
+                    f"type: {mime_type}"
+                )
+
+                # Send image as blob
+                image_blob = types.Blob(
+                    mime_type=mime_type, data=image_data
+                )
+                live_request_queue.send_realtime(image_blob)
+
+
+async def handle_downstream_events(
+    websocket: WebSocket,
+    runner: Runner,
+    live_request_queue: LiveRequestQueue,
+    user_id: str,
+    session_id: str,
+    run_config: RunConfig
+) -> None:
+    """Receives Events from run_live() and sends to WebSocket."""
+    logger.debug("handle_downstream_events started, calling runner.run_live()")
+    logger.debug(
+        f"Starting run_live with user_id={user_id}, session_id={session_id}"
+    )
+    async for event in runner.run_live(
+        user_id=user_id,
+        session_id=session_id,
+        live_request_queue=live_request_queue,
+        run_config=run_config,
+    ):
+        event_json = event.model_dump_json(exclude_none=True, by_alias=True)
+        logger.debug(f"[SERVER] Event: {event_json}")
+        
+        if hasattr(event, "input_transcription") and event.input_transcription:
+            transcription = event.input_transcription
+            if transcription.text:
+                logger.info(
+                    f"[INPUT TRANSCRIPTION] [Session: {session_id}] [Finished: {transcription.finished}] {transcription.text}"
+                )
+                if transcription.finished:
+                    _write_transcript(session_id, "USER", transcription.text)
+
+        if hasattr(event, "output_transcription") and event.output_transcription:
+            transcription = event.output_transcription
+            if transcription.text:
+                logger.info(
+                    f"[OUTPUT TRANSCRIPTION] [Session: {session_id}] [Finished: {transcription.finished}] {transcription.text}"
+                )
+                if transcription.finished:
+                    _write_transcript(session_id, "MODEL", transcription.text)
+
+        if event.content and event.content.parts:
+            for part in event.content.parts:
+                if part.text:
+                    _write_transcript(session_id, "MODEL", part.text)
+
+        await websocket.send_text(event_json)
+    logger.debug("run_live() generator completed")
+
+
 # ========================================
 # WebSocket Endpoint
 # ========================================
+
 
 
 @app.websocket("/ws/{user_id}/{session_id}")
@@ -124,37 +248,18 @@ async def websocket_endpoint(
     )
     await websocket.accept()
     logger.debug("WebSocket connection accepted")
+    
+    global latest_session_id
+    latest_session_id = session_id
 
     # ========================================
     # Phase 2: Session Initialization (once per streaming session)
     # ========================================
 
     model_name = agent.model
-    run_config = RunConfig(
-        realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(
-                disabled=False,
-                start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
-                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
-                prefix_padding_ms=20,
-                silence_duration_ms=150,
-            )
-        ),
-        speech_config=types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name="Achird",
-                )
-            ),
-            language_code="en-US",
-        ),
-        session_resumption=types.SessionResumptionConfig(transparent=True),
-        streaming_mode=StreamingMode.BIDI,
-        response_modalities=["AUDIO"],
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
-        save_live_blob=True
-    )
+    # Load RunConfig from central configuration repository
+    from utils.config import LIVE_AGENT_RUN_CONFIG
+    run_config = LIVE_AGENT_RUN_CONFIG
     logger.debug(
         f"Native audio model detected: {model_name}, "
         f"using AUDIO response modality, "
@@ -172,122 +277,23 @@ async def websocket_endpoint(
 
     live_request_queue = LiveRequestQueue()
 
-    # ========================================
-    # Phase 3: Active Session (concurrent bidirectional communication)
-    # ========================================
-
-    async def upstream_task() -> None:
-        """Receives messages from WebSocket and sends to LiveRequestQueue."""
-        logger.debug("upstream_task started")
-        while True:
-            # Receive message from WebSocket (text or binary)
-            message = await websocket.receive()
-
-            # Handle binary frames (audio data)
-            if "bytes" in message:
-                audio_data = message["bytes"]
-                logger.debug(
-                    f"Received binary audio chunk: {len(audio_data)} bytes"
-                )
-
-                audio_blob = types.Blob(
-                    mime_type="audio/l16;rate=16000", data=audio_data
-                )
-                live_request_queue.send_realtime(audio_blob)
-
-            # Handle text frames (JSON messages)
-            elif "text" in message:
-                text_data = message["text"]
-                logger.debug(f"Received text message: {text_data[:100]}...")
-
-                json_message = json.loads(text_data)
-
-                # Extract text from JSON and send to LiveRequestQueue
-                if json_message.get("type") == "text":
-                    logger.debug(
-                        f"Sending text content: {json_message['text']}"
-                    )
-                    content = types.Content(
-                        parts=[types.Part(text=json_message["text"])]
-                    )
-                    live_request_queue.send_content(content)
-
-                # Handle image data
-                elif json_message.get("type") == "image":
-                    logger.debug("Received image data")
-
-                    # Decode base64 image data
-                    image_data = base64.b64decode(json_message["data"])
-                    mime_type = json_message.get("mimeType", "image/jpeg")
-
-                    logger.debug(
-                        f"Sending image: {len(image_data)} bytes, "
-                        f"type: {mime_type}"
-                    )
-
-                    # Send image as blob
-                    image_blob = types.Blob(
-                        mime_type=mime_type, data=image_data
-                    )
-                    live_request_queue.send_realtime(image_blob)
-
-    async def downstream_task() -> None:
-        """Receives Events from run_live() and sends to WebSocket."""
-        logger.debug("downstream_task started, calling runner.run_live()")
-        logger.debug(
-            f"Starting run_live with user_id={user_id}, session_id={session_id}"
-        )
-        async for event in runner.run_live(
-            user_id=user_id,
-            session_id=session_id,
-            live_request_queue=live_request_queue,
-            run_config=run_config,
-        ):
-            event_json = event.model_dump_json(exclude_none=True, by_alias=True)
-            logger.debug(f"[SERVER] Event: {event_json}")
-            
-            if hasattr(event, "input_transcription") and event.input_transcription:
-                transcription = event.input_transcription
-                if transcription.text:
-                    logger.info(
-                        f"[INPUT TRANSCRIPTION] [Session: {session_id}] [Finished: {transcription.finished}] {transcription.text}"
-                    )
-                    if transcription.finished:
-                        transcripts_dir = Path(__file__).parent / "transcripts"
-                        transcripts_dir.mkdir(exist_ok=True)
-                        with open(transcripts_dir / f"{session_id}.txt", "a", encoding="utf-8") as f:
-                            f.write(f"USER: {transcription.text}\n")
-
-            if hasattr(event, "output_transcription") and event.output_transcription:
-                transcription = event.output_transcription
-                if transcription.text:
-                    logger.info(
-                        f"[OUTPUT TRANSCRIPTION] [Session: {session_id}] [Finished: {transcription.finished}] {transcription.text}"
-                    )
-                    if transcription.finished:
-                        transcripts_dir = Path(__file__).parent / "transcripts"
-                        transcripts_dir.mkdir(exist_ok=True)
-                        with open(transcripts_dir / f"{session_id}.txt", "a", encoding="utf-8") as f:
-                            f.write(f"MODEL: {transcription.text}\n")
-
-            if event.content and event.content.parts:
-                for part in event.content.parts:
-                    if part.text:
-                        transcripts_dir = Path(__file__).parent / "transcripts"
-                        transcripts_dir.mkdir(exist_ok=True)
-                        with open(transcripts_dir / f"{session_id}.txt", "a", encoding="utf-8") as f:
-                             f.write(f"MODEL: {part.text}\n")
-
-            await websocket.send_text(event_json)
-        logger.debug("run_live() generator completed")
-
     # Run both tasks concurrently
     # Exceptions from either task will propagate and cancel the other task
     try:
         logger.debug(
             "Starting asyncio.gather for upstream and downstream tasks"
         )
-        await asyncio.gather(upstream_task(), downstream_task())
+        await asyncio.gather(
+            handle_upstream_audio_and_text(websocket, live_request_queue),
+            handle_downstream_events(
+                websocket=websocket,
+                runner=runner,
+                live_request_queue=live_request_queue,
+                user_id=user_id,
+                session_id=session_id,
+                run_config=run_config
+            )
+        )
         logger.debug("asyncio.gather completed normally")
     except WebSocketDisconnect:
         logger.debug("Client disconnected normally")

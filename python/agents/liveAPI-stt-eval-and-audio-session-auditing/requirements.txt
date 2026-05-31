@@ -1,3 +1,2 @@
 google-adk==2.0.0
-numpy
-python-multipart
+google-genai

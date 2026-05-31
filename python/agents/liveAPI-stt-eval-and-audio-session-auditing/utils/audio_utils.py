@@ -31,10 +31,85 @@ def extract_timestamp(filename):
     return 0
 
 
+def concatenate_and_resample_audio(audio_files, output_wav_path, orig_sr=24000, target_sr=16000):
+    """Concatenates a list of raw PCM audio files, resamples them, and saves as a WAV file."""
+    all_resampled = []
+
+    for path in audio_files:
+        with open(path, "rb") as f:
+            data = np.frombuffer(f.read(), dtype=np.int16)
+        
+        if len(data) == 0:
+            continue
+            
+        resampled = resample_audio(data, orig_sr, target_sr)
+        all_resampled.append(resampled)
+
+    if not all_resampled:
+        print("No valid audio data found in the segments.")
+        return False
+
+    merged_data = np.concatenate(all_resampled)
+    output_path = Path(output_wav_path).resolve()
+
+    with wave.open(str(output_path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)  # 16-bit
+        wav_file.setframerate(target_sr)
+        wav_file.writeframes(merged_data.tobytes())
+
+    print(f"Pruned, merged and downsampled audio saved to: {output_path}")
+    return True
+
+
+
+def _find_session_dir(pcm_file: Path, artifacts_root: Path) -> Path:
+    """Finds the parent session directory for a given pcm file."""
+    current = pcm_file.parent
+    while current != artifacts_root:
+        if current.parent.name == "sessions":
+            return current
+        current = current.parent
+    return None
+
+
+def find_sorted_output_audio_files(artifacts_dir: str) -> list:
+    """Scans the artifacts directory for output audio subdirectories and returns all sorted audio paths."""
+    artifacts_root = Path(artifacts_dir)
+    if not artifacts_root.exists():
+        return []
+
+    output_subdirs = []
+    for root, dirs, _ in os.walk(artifacts_root):
+        for d in dirs:
+            if "output" in d.lower():
+                output_subdirs.append(Path(root) / d)
+
+    audio_files = []
+    for subdir in output_subdirs:
+        for root, _, files in os.walk(subdir):
+            for f in files:
+                f_path = Path(root) / f
+                if f_path.is_file() and f_path.suffix != ".json":
+                    audio_files.append(f_path)
+
+    # Sort by timestamp to guarantee chronological order of conversation
+    audio_files.sort(key=lambda x: extract_timestamp(x.name))
+    return audio_files
+
+
 def convert_artifacts_to_wav(
-    artifacts_dir: str = "./artifacts", output_filename: str = "./session.wav"
+    artifacts_dir: str = "./artifacts",
+    output_filename: str = None,
+    session_id: str = None
 ):
     """Scans artifacts_dir for PCM audio files, merges, resamples, and saves them to output_filename."""
+    if output_filename is None:
+        if session_id:
+            output_filename = f"./{session_id}.wav"
+        else:
+            output_filename = "./session.wav"
+
     artifacts_root = Path(artifacts_dir)
     
     # Smart Fallbacks for ADK Web Framework directories
@@ -66,13 +141,8 @@ def convert_artifacts_to_wav(
         if "adk_live_audio_storage_" not in pcm_file.name:
             continue
 
-        session_dir = None
-        current = pcm_file.parent
-        while current != artifacts_root:
-            if current.parent.name == "sessions":
-                session_dir = current
-                break
-            current = current.parent
+        session_dir = _find_session_dir(pcm_file, artifacts_root)
+
 
         if not session_dir:
             continue
@@ -94,7 +164,9 @@ def convert_artifacts_to_wav(
     all_resampled_audio = []
 
     # Merge all sessions and all chunks found
-    for session_id, artifacts in sessions.items():
+    for sid, artifacts in sessions.items():
+        if session_id and sid != session_id:
+            continue
         if not artifacts:
             continue
 
