@@ -1,6 +1,6 @@
-# Gemini Live: Speech-to-Text Evaluation and Recording Audio Sessions for Audits
+# Gemini Live: Speech-to-Text and Text-to-Speech Evaluations and Recording Audio Sessions for Audits
 
-A Real-Time Speech-to-Text (STT) Evaluation and Recording framework utilizing **Google's Agent Development Kit (ADK)**, **Gemini Live**, and **FastAPI**. It is designed to capture, archive, and audit bidirectional voice interactions, featuring robust word-level Word Error Rate (WER) evaluations to quantify Automatic Speech Recognition (ASR) performance against pristine Ground Truth reference files.
+A Real-Time Speech-to-Text (STT) and Text-to-Speech (TTS) Evaluations and Recording framework utilizing **Google's Agent Development Kit (ADK)**, **Gemini Live**, and **FastAPI**. It is designed to capture, archive, and audit bidirectional voice interactions, featuring robust word-level Word Error Rate (WER) metric to quantify Automatic Speech Recognition (ASR) performance against pristine Ground Truth reference files, programmatically auditing voice output using a state-of-the-art Language Audio Model-as-a-Judge evaluation framework and finally using ADK's built-in file artifact service to store the session data.
 
 ## Features
 
