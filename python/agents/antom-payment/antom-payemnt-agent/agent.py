@@ -7,7 +7,7 @@ from mcp import StdioServerParameters
 
 root_agent = Agent(
     name="antom_payment_agent",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     description=(
         "Agent creates payment links for merchants, queries payment result details。"
     ),

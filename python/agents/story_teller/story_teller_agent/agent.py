@@ -26,7 +26,7 @@ from . import instructions
 # --- Configuration Constants ---
 APP_NAME = "collaborative_story_writer"
 SESSION_ID = "story_session_v1"
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-2.5-flash"
 USER_ID = "author_user_01"
 
 # User-Defined Constraints

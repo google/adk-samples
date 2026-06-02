@@ -21,7 +21,7 @@ from .tools.github_prompts import AGENT_INSTRUCTIONS
 
 root_agent = Agent(
     name="github_agent",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     description=(
         "Advanced GitHub, Git, and Google Cloud Storage repository "
         "management agent with full version control and cloud storage "
