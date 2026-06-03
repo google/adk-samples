@@ -85,7 +85,7 @@ def get_llm_location():
 
 def get_llm_model():
     """Return GEMINI_PRO_MODEL from env (deferred for Agent Engine compatibility)."""
-    return os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
+    return os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-flash")
 
 
 def get_llm_call_delay():

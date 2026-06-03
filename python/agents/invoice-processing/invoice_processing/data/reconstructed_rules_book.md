@@ -127,7 +127,7 @@ The general agent is designed to be domain-independent. All validation parameter
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `organization_names` | `["ACME Corp", "ACME Corporation", "ACME Ltd"]` | Valid customer names for invoice verification (Step 1.2). If empty, customer check is skipped. |
+| `organization_names` | `[]` | Valid customer names for invoice verification (Step 1.2). If empty, customer check is skipped. |
 
 ### 0.2 Tax Settings
 
@@ -135,14 +135,13 @@ The general agent is designed to be domain-independent. All validation parameter
 |-----------|---------|-------------|
 | `default_tax_rate` | `0.10` (10%) | Default tax rate when currency not found in rates table |
 | `validate_tax_id_checksum` | `true` | Whether to validate tax ID checksum |
-| `tax_id_format` | `"ABN"` | Tax ID format for checksum validation. Options: `"ABN"`, `"NONE"` |
+| `tax_id_format` | `"GSTIN"` | Tax ID format for checksum validation. Options: `"GSTIN"`, `"ABN"`, `"NONE"` |
 
 **Tax Rates by Currency:**
 
 | Currency | Tax Rate |
 |----------|----------|
-| AUD | 10% |
-| NZD | 15% |
+| INR | 18% |
 | USD | 0% |
 | EUR | 20% |
 
@@ -265,7 +264,7 @@ For each document, the classifier produces:
 | `invoice_total_ex_tax` | Decimal | Yes | Total excluding tax |
 | `tax_amount` | Decimal | Yes | Tax amount |
 | `vendor_name` | String | Yes | Vendor business name |
-| `vendor_tax_id` | String | Yes | Tax ID (ABN, VAT, EIN, etc.) |
+| `vendor_tax_id` | String | Yes | Tax ID (GSTIN, PAN, etc.) |
 | `customer_name` | String | Optional | Who invoice is addressed to |
 | `currency` | String | Yes | ISO currency code |
 | `line_items` | Array | Yes | List of line items |
@@ -297,19 +296,24 @@ For each document, the classifier produces:
 
 For regions with checksum-validated tax IDs, validation occurs during extraction.
 
-**Australian ABN (11 digits):**
-1. Normalize: remove all non-numeric characters
-2. Verify length is exactly 11 digits
-3. Subtract 1 from first digit, multiply by weight 10
-4. Multiply remaining digits by weights: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
-5. Sum all products
-6. Valid if sum is divisible by 89
+**Indian GSTIN (15 alphanumeric characters):**
+1. Normalize: remove whitespace/hyphens, convert to uppercase
+2. Verify length is exactly 15 characters
+3. Validate state code (first 2 digits): must be 01-37 or 97
+4. Validate PAN format (chars 3-12): 5 letters + 4 digits + 1 letter
+5. Validate entity code (char 13): must be alphanumeric
+6. Validate check character (char 15) using mod-36 Luhn-like algorithm:
+   - Map each character: 0-9 → 0-9, A-Z → 10-35
+   - Apply alternating factor (1, 2) to each of first 14 characters
+   - Sum all: digit = factor × code_point; digit = (digit ÷ 36) + (digit mod 36)
+   - Check character = char at position (36 - sum mod 36) mod 36
 
 **Supported Tax ID Formats:**
 
 | Format | Validation |
 |--------|------------|
-| `ABN` | Full checksum validation (algorithm above) |
+| `GSTIN` | Full checksum validation (algorithm above) |
+| `ABN` | Australian Business Number — 11-digit mod-89 checksum |
 | `NONE` | Validation disabled — always passes |
 
 > **Note:** VAT and EIN formats are configured but not yet implemented. They currently return valid by default.
@@ -583,12 +587,11 @@ Line items are classified to standard codes using keyword matching. The first ma
 
 | Currency | Tax Rate |
 |----------|----------|
-| AUD | 10% |
-| NZD | 15% |
+| INR | 18% |
 | USD | 0% |
 | EUR | 20% |
 
-Additional currencies use the `default_tax_rate` (default: 10%).
+Additional currencies use the `default_tax_rate` (default: 18%).
 
 ---
 
@@ -638,11 +641,11 @@ Additional currencies use the `default_tax_rate` (default: 10%).
     "Invoice Total": "1,100.00",
     "Pretax Total": "1,000.00",
     "Tax Amount": "100.00",
-    "Currency": "AUD"
+    "Currency": "INR"
   },
   "Vendor Information": {
-    "Vendor Name": "ABC Services Pty Ltd",
-    "Tax ID": "12345678901"
+    "Vendor Name": "ABC Services Pvt Ltd",
+    "Tax ID": "27AADCJ2080R1Z3"
   },
   "Line Items": "[{...}]",
   "Outcome Message": {
