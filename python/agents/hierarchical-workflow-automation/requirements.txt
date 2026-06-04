@@ -1,6 +1,6 @@
 absolufy-imports==0.3.1
 aiohappyeyeballs==2.6.1
-aiohttp==3.12.15
+aiohttp==3.14.0
 aiosignal==1.4.0
 alembic==1.16.5
 annotated-types==0.7.0
@@ -135,7 +135,7 @@ SQLAlchemy==2.0.43
 sqlalchemy-spanner==1.16.0
 sqlparse==0.5.3
 sse-starlette==3.0.2
-starlette==0.47.3
+starlette==1.0.1
 structlog==25.4.0
 tenacity==8.5.0
 toolbox-core==0.5.0
