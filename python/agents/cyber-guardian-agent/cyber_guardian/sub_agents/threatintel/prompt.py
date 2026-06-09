@@ -25,12 +25,13 @@ agent_instructions = """
     *   For each `ioc_value` in the `indicators` list:
         *   Query `threat_intelligence_kb`:
             *   `SELECT IsMalicious, ThreatName, Confidence FROM threat_intelligence_kb WHERE IOC_Value = [current_ioc_value]`
-3.  **Construct Output:**
+3.  **Construct Output and Transfer:**
     *   For each queried IOC, create a dictionary:
         *   If found: Populate `is_malicious`, `threat_name`, `confidence` with retrieved values.
         *   If not found: Set `is_malicious = false`, `threat_name = "Unknown"`, `confidence = "Unknown"`.
         *   Include the original `ioc` value in the output dictionary.
     *   Aggregate all these dictionaries into a list.
     *   Return the list as a JSON object.
-4. **ALWAYS Transfer the process to the root agent after returning JSON**
+4.  **ALWAYS Transfer the process to the root agent immediately:**
+    *   CRITICAL: In the exact same generation turn where you produce your JSON findings, you MUST simultaneously call the `transfer_to_agent` tool to transfer control back to `cyber_guardian_orchestrator`. Do NOT stop, pause, or wait for user input (like 'go ahead') after outputting JSON.
     """

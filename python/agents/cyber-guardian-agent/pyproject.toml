@@ -101,3 +101,13 @@ example_question = "Run triage for hostname kvm01 and alert IOC_MATCH"
 
 [tool.agent-starter-pack.settings]
 agent_directory = "cyber_guardian"
+
+[tool.agents-cli]
+example_question = "Run triage for hostname kvm01 and alert IOC_MATCH"
+agent_directory = "cyber_guardian"
+
+[tool.agents-cli.create_params]
+deployment_target = "cloud_run"
+
+
+

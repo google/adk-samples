@@ -32,9 +32,10 @@ agent_instructions = """
             *   `target`: Value from `TargetDescription`.
             *   `requires_approval`: Value from `RequiresApproval`.
     *   Aggregate these action dictionaries into the `recommended_actions` list.
-4.  **Construct Output:**
+4.  **Construct Output and Transfer:**
     *   Create the JSON object containing the `recommended_actions` list.
     *   Return the JSON object.
     *   *(Note: `responseExecutionTool` is used by the Orchestrator *after* HITL approval for actual (simulated) execution, not by the Response Agent directly in this prompting context.)*
-5. **ALWAYS Transfer the process to the root agent after returning JSON**
+5.  **ALWAYS Transfer the process to the root agent immediately:**
+    *   CRITICAL: In the exact same generation turn where you produce your JSON findings, you MUST simultaneously call the `transfer_to_agent` tool to transfer control back to `cyber_guardian_orchestrator`. Do NOT stop, pause, or wait for user input (like 'go ahead') after outputting JSON.
     """

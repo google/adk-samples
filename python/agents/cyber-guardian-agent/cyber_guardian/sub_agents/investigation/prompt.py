@@ -27,9 +27,9 @@ agent_instructions = """
 **Execution Plan (based on `alert_type`):**
 
 1.  **If `EDR_DETECTION`:**
-    *   Query `endpoint_process_events` using `hostname`, `processes`, `cmdlines`.
-    *   Extract script hashes (as new IOCs) from `CommandLine`.
-    *   Build host timeline from `EventTimestamp`.
+    *   Query `endpoint_process_events` using `hostname` and `parent_process` (e.g., 'services.exe'). If the query returns empty or no new events, do NOT retry or guess other process names; immediately proceed with the existing alert information.
+    *   Extract script hashes or IPs (as new IOCs) from `CommandLine` or alert text.
+    *   Build host timeline from `EventTimestamp` or alert text.
     *   Correlate with `network_connection_log` for egress connections from involved processes/hosts.
     *   Ask orchestrator agent to delegate to the threat intel sub agent
 2.  **If `IOC_MATCH`:**
@@ -38,8 +38,9 @@ agent_instructions = """
 3.  **If `PHISHING_EMAIL`:**
     *   Expand blast-radius using `mail_logs` (e.g., find other recipients of similar emails).
     *   Collect IOCs: `sender`, `URL`, `SMTP relay IP`.
-4.  **Populate Output:**
+4.  **Populate Output and Transfer:**
     *   Fill `attack_timeline`, `confirmed_connections`, `responsible_processes`, and `derived_iocs` based on investigation findings.
     *   Return the JSON object.
-5. **ALWAYS Transfer the process to the root agent**
+5.  **ALWAYS Transfer the process to the root agent immediately:**
+    *   CRITICAL: In the exact same generation turn where you produce your JSON findings, you MUST simultaneously call the `transfer_to_agent` tool to transfer control back to `cyber_guardian_orchestrator`. Do NOT stop, pause, or wait for user input (like 'go ahead') after outputting JSON.
     """

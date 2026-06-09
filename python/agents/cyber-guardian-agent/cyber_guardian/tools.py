@@ -46,7 +46,7 @@ def triageQueryTool(hostname: str, alert_type: str) -> str:
     - Arg alert_type: The type of the alert (e.g., 'IOC_MATCH').
     """
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-    dataset = os.getenv("BQ_DATASET")
+    dataset = os.getenv("BQ_DATASET", "cyber_guardian_dataset")
     client = bigquery.Client(project=project_id)
 
     # 1. Deduplication Check (Now uses AlertType instead of PrimaryIOC)
@@ -102,7 +102,7 @@ def investigationQueryTool(
     - Arg destination_ip: (Optional) The malicious IP for IOC_MATCH alerts.
     """
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-    dataset = os.getenv("BQ_DATASET")
+    dataset = os.getenv("BQ_DATASET", "cyber_guardian_dataset")
     client = bigquery.Client(project=project_id)
 
     if alert_type == "EDR_DETECTION" and parent_process:
@@ -143,10 +143,10 @@ def investigationQueryTool(
 
 
 # --- Threat Intel Tool ---
-def threatIntelQueryTool(indicators: list) -> str:
+def threatIntelQueryTool(indicators: list[str]) -> str:
     """Enriches indicators of compromise using the threat_intelligence_kb table."""
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-    dataset = os.getenv("BQ_DATASET")
+    dataset = os.getenv("BQ_DATASET", "cyber_guardian_dataset")
     client = bigquery.Client(project=project_id)
 
     # Assumes indicators is a list of strings, e.g., ["392a...", "d8e8fca..."]
@@ -174,7 +174,7 @@ def getPlaybookTool(triggering_condition: str) -> str:
     - Arg triggering_condition: The condition to match, e.g., "ThreatName = 'Cobalt Strike C2'".
     """
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-    dataset = os.getenv("BQ_DATASET")
+    dataset = os.getenv("BQ_DATASET", "cyber_guardian_dataset")
     client = bigquery.Client(project=project_id)
 
     query = f"""
@@ -206,7 +206,7 @@ def createIncidentTool(alert_type: str, hostname: str, user: str, severity: str)
     - Arg severity: The severity of the alert (e.g., 'Critical', 'High').
     """
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-    dataset = os.getenv("BQ_DATASET")
+    dataset = os.getenv("BQ_DATASET", "cyber_guardian_dataset")
     client = bigquery.Client(project=project_id)
 
     incident_id = f"INC-{str(uuid.uuid4())[:8]}"
