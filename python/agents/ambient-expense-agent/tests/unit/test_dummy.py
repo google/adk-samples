@@ -11,25 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""
+You can add your unit tests here.
+This is where you test your business logic, including agent functionality,
+data processing, and other core components of your application.
+"""
 
-FROM python:3.12-slim
 
-RUN pip install --no-cache-dir uv==0.8.13
-
-WORKDIR /code
-
-COPY ./pyproject.toml ./README.md ./uv.lock* ./
-
-COPY ./ambient_expense_agent ./ambient_expense_agent
-
-RUN uv sync --frozen
-
-ARG COMMIT_SHA=""
-ENV COMMIT_SHA=${COMMIT_SHA}
-
-ARG AGENT_VERSION=0.0.0
-ENV AGENT_VERSION=${AGENT_VERSION}
-
-EXPOSE 8080
-
-CMD ["uv", "run", "uvicorn", "ambient_expense_agent.agent_runtime_app:app", "--host", "0.0.0.0", "--port", "8080"]
+def test_dummy() -> None:
+    """Placeholder - replace with real tests."""
+    assert 1 == 1

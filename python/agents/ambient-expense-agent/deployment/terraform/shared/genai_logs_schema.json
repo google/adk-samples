@@ -1,0 +1,43 @@
+[
+  { "name": "logName",          "type": "STRING",    "mode": "NULLABLE" },
+  { "name": "textPayload",      "type": "STRING",    "mode": "NULLABLE" },
+  { "name": "timestamp",        "type": "TIMESTAMP", "mode": "NULLABLE" },
+  { "name": "receiveTimestamp",  "type": "TIMESTAMP", "mode": "NULLABLE" },
+  { "name": "severity",         "type": "STRING",    "mode": "NULLABLE" },
+  { "name": "insertId",         "type": "STRING",    "mode": "NULLABLE" },
+  { "name": "trace",            "type": "STRING",    "mode": "NULLABLE" },
+  { "name": "spanId",           "type": "STRING",    "mode": "NULLABLE" },
+  { "name": "traceSampled",     "type": "BOOLEAN",   "mode": "NULLABLE" },
+  {
+    "name": "resource", "type": "RECORD", "mode": "NULLABLE",
+    "fields": [
+      { "name": "type", "type": "STRING", "mode": "NULLABLE" },
+      {
+        "name": "labels", "type": "RECORD", "mode": "NULLABLE",
+        "fields": [
+          { "name": "project_id", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "location",   "type": "STRING", "mode": "NULLABLE" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "labels", "type": "RECORD", "mode": "NULLABLE",
+    "fields": [
+      { "name": "gen_ai_conversation_id",         "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gen_ai_agent_name",              "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gen_ai_input_messages_ref",      "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gen_ai_output_messages_ref",     "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gen_ai_system_instructions_ref", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gen_ai_usage_input_tokens",      "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gen_ai_usage_output_tokens",     "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gen_ai_response_finish_reasons", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gen_ai_tool_definitions",        "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gen_ai_tool_definitions_ref",    "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gcp_vertex_agent_invocation_id", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "gcp_vertex_agent_event_id",      "type": "STRING", "mode": "NULLABLE" },
+      { "name": "event_name",                     "type": "STRING", "mode": "NULLABLE" },
+      { "name": "user_id",                        "type": "STRING", "mode": "NULLABLE" }
+    ]
+  }
+]
