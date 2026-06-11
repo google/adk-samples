@@ -32,16 +32,26 @@ If the project name does not meet the constraints, ask the user for clarificatio
 
 ---
 
+## Core Rules for Template Adherence
+
+When generating the files under `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/`, you **MUST STRICTLY** adhere to the following rules:
+1. **No Structural Modifications**: Do **NOT** alter, omit, or modify the structure, headers, fields, or metadata defined in the templates below. The generated files must be an **exact, literal copy** of the templates.
+2. **Placeholder Replacement Only**: Only replace the designated placeholders (like `<PROJECT_NAME>`, `<RECIPE TITLE HERE>`, `<BRIEF DESCRIPTION HERE>`, etc.) with concrete values.
+3. **No Field Deletion**: Do **NOT** remove any metadata fields, comments, or configuration blocks (such as `Point of Contact`, telemetry configuration, or warning filters) even if they seem redundant or you think they are not needed for a specific sample.
+4. **Consistency**: Ensure that if a template has a field, it is present in the final generated file exactly as written.
+
+---
+
 ## Step 2: Generate Files and Folders
 
-Create the following files and folders under `<output-directory>/<project-name>/` in the repository.
-- **`<output-directory>`**: Defaults to `contrib/` unless the user explicitly specified a different directory in Step 1.
-- For all the file paths listed below, replace `contrib/` with the user-specified `<output-directory>` if a different one was provided.
+Create the following files and folders under `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/` in the repository.
+- **`<OUTPUT_DIRECTORY>`**: Defaults to `contrib/` unless the user explicitly specified a different directory in Step 1.
+- For all the file paths listed below, replace `contrib/` with the user-specified `<OUTPUT_DIRECTORY>` if a different one was provided.
 
-### 1. `contrib/<project-name>/pyproject.toml`
+### 1. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/pyproject.toml`
 ```toml
 [project]
-name = "<project-name>"
+name = "<PROJECT_NAME>"
 version = "0.1.0"
 description = ""
 dependencies = [
@@ -53,8 +63,7 @@ dependencies = [
     "gcsfs>=2024.11.0",
     "google-cloud-logging>=3.12.0,<4.0.0",
 ]
-requires-python = ">=3.11,<3.14"
-
+requires-python = "3.11"
 
 [dependency-groups]
 dev = [
@@ -98,7 +107,7 @@ known-first-party = ["app", "frontend"]
 # See: https://docs.astral.sh/ty/
 
 [tool.ty.environment]
-python-version = "3.10"
+python-version = "3.11"
 
 [tool.ty.src]
 exclude = [".venv/**"]
@@ -132,7 +141,7 @@ asyncio_default_fixture_loop_scope = "function"
 packages = ["app","frontend"]
 ```
 
-### 2. `contrib/<project-name>/GEMINI.md`
+### 2. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/GEMINI.md`
 ```markdown
 # Coding Agent Guide
 
@@ -166,23 +175,12 @@ Run `uv run pytest tests/unit tests/integration`. Fix issues until all tests pas
 - **Stop on repeated errors**: If the same error appears 3+ times, fix the root cause instead of retrying.
 ```
 
-### 3. `contrib/<project-name>/README.md`
+### 3. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/README.md`
 ```markdown
-# <project-name>
+# <PROJECT_NAME>
 
-Simple ReAct agent
-
-## Project Structure
-
-```
-<project-name>/
-├── app/         # Core agent code
-│   ├── agent.py               # Main agent logic
-│   └── app_utils/             # App utilities and helpers
-├── tests/                     # Unit, integration, and load tests
-├── GEMINI.md                  # AI-assisted development guide
-└── pyproject.toml             # Project dependencies
-```
+Simple ADK agent
+This is a simple agent using the ADK Python SDK to demonstrate its capabilities. 
 
 ## Requirements
 
@@ -239,7 +237,7 @@ uv run pytest tests/integration
 | `uv run pytest` | Run all test suites |
 ```
 
-### 4. `contrib/<project-name>/app/__init__.py`
+### 4. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/__init__.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -260,7 +258,7 @@ from .agent import app
 __all__ = ["app"]
 ```
 
-### 5. `contrib/<project-name>/app/agent.py`
+### 5. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/agent.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -340,7 +338,7 @@ app = App(
     name="app",
 )
 ```
-*(Note: If `GOOGLE_API_KEY` was NOT provided, replace `<VERTEX_AI_ENV_SETUP>` with the following block. If it WAS provided, replace `<VERTEX_AI_ENV_SETUP>` with an empty string)*
+*(Note: If `GEMINI_API_KEY` was NOT provided, replace `<VERTEX_AI_ENV_SETUP>` with the following block. If it WAS provided, replace `<VERTEX_AI_ENV_SETUP>` with an empty string)*
 
 **Vertex AI Env Setup Block:**
 ```python
@@ -353,13 +351,13 @@ os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 ```
 
-### 6. `contrib/<project-name>/app/.env` (Only if `GOOGLE_API_KEY` is provided)
+### 6. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/.env` (Only if `GEMINI_API_KEY` is provided)
 ```env
 # AI Studio Configuration
-GOOGLE_API_KEY=<GOOGLE_API_KEY>
+GEMINI_API_KEY=<GEMINI_API_KEY>
 ```
 
-### 7. `contrib/<project-name>/app/fast_api_app.py`
+### 7. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/fast_api_app.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -390,9 +388,9 @@ from app.app_utils.typing import Feedback
 load_dotenv()
 
 setup_telemetry()
-_, project_id = google.auth.default()
-logging_client = google_cloud_logging.Client()
-logger = logging_client.logger(__name__)
+    _, project_id = google.auth.default()
+    logging_client = google_cloud_logging.Client()
+    logger = logging_client.logger(__name__)
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",") if os.getenv("ALLOW_ORIGINS") else None
 )
@@ -414,8 +412,8 @@ app: FastAPI = get_fast_api_app(
     session_service_uri=session_service_uri,
     otel_to_cloud=True,
 )
-app.title = "<project-name>"
-app.description = "API for interacting with the Agent <project-name>"
+app.title = "<PROJECT_NAME>"
+app.description = "API for interacting with the Agent <PROJECT_NAME>"
 
 
 @app.post("/feedback")
@@ -428,7 +426,7 @@ def collect_feedback(feedback: Feedback) -> dict[str, str]:
     Returns:
         Success message
     """
-    logger.log_struct(feedback.model_dump(), severity="INFO")
+        logger.log_struct(feedback.model_dump(), severity="INFO")
     return {"status": "success"}
 
 
@@ -439,7 +437,7 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
-### 8. `contrib/<project-name>/app/app_utils/telemetry.py`
+### 8. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/app_utils/telemetry.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -479,7 +477,7 @@ def setup_telemetry() -> str | None:
         commit_sha = os.environ.get("COMMIT_SHA", "dev")
         os.environ.setdefault(
             "OTEL_RESOURCE_ATTRIBUTES",
-            f"service.namespace=<project-name>,service.version={commit_sha}",
+            f"service.namespace=<PROJECT_NAME>,service.version={commit_sha}",
         )
         path = os.environ.get("GENAI_TELEMETRY_PATH", "completions")
         os.environ.setdefault(
@@ -494,7 +492,7 @@ def setup_telemetry() -> str | None:
     return bucket
 ```
 
-### 9. `contrib/<project-name>/app/app_utils/typing.py`
+### 9. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/app_utils/typing.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -527,15 +525,15 @@ class Feedback(BaseModel):
     score: int | float
     text: str | None = ""
     log_type: Literal["feedback"] = "feedback"
-    service_name: Literal["<project-name>"] = "<project-name>"
+    service_name: Literal["<PROJECT_NAME>"] = "<PROJECT_NAME>"
     user_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 ```
 
-### 10. `contrib/<project-name>/app/app_utils/__init__.py`
+### 10. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/app_utils/__init__.py`
 *(Create an empty file)*
 
-### 11. `contrib/<project-name>/tests/unit/test_tools.py`
+### 11. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/unit/test_tools.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -579,7 +577,7 @@ def test_get_current_time_unknown_city() -> None:
     assert "Sorry, I don't have timezone information" in result
 ```
 
-### 12. `contrib/<project-name>/tests/unit/test_runnability.py`
+### 12. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/unit/test_runnability.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -615,7 +613,7 @@ def test_fast_api_app_runnability() -> None:
 
     assert app.fast_api_app.app is not None
     assert isinstance(app.fast_api_app.app, FastAPI)
-    assert app.fast_api_app.app.title == "<project-name>"
+    assert app.fast_api_app.app.title == "<PROJECT_NAME>"
 
 
 def test_agent_runnability() -> None:
@@ -647,7 +645,7 @@ def test_agent_runnability() -> None:
     assert "get_current_time" in tool_names
 ```
 
-### 13. `contrib/<project-name>/tests/integration/test_agent.py`
+### 13. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/integration/test_agent.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -708,7 +706,7 @@ def test_agent_stream() -> None:
     assert has_text_content, "Expected at least one message with text content"
 ```
 
-### 14. `contrib/<project-name>/tests/integration/test_server_e2e.py`
+### 14. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/integration/test_server_e2e.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -920,7 +918,7 @@ def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
     assert response.status_code == 200
 ```
 
-### 15. `contrib/<project-name>/tests/eval/eval_config.json`
+### 15. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/eval/eval_config.json`
 ```json
 {
   "criteria": {
@@ -945,7 +943,7 @@ def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
 }
 ```
 
-### 16. `contrib/<project-name>/tests/eval/evalsets/README.md`
+### 16. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/eval/evalsets/README.md`
 ```markdown
 # Evaluation Sets
 
@@ -981,7 +979,7 @@ Each `.evalset.json` follows the ADK evaluation format:
 ```
 ```
 
-### 17. `contrib/<project-name>/tests/eval/evalsets/basic.evalset.json`
+### 17. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/eval/evalsets/basic.evalset.json`
 ```json
 {
   "eval_set_id": "basic_eval",
@@ -1022,7 +1020,7 @@ Each `.evalset.json` follows the ADK evaluation format:
 }
 ```
 
-### 18. `contrib/<project-name>/.env.example`
+### 18. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/.env.example`
 
 ```env
 # Model Configuration
@@ -1044,22 +1042,41 @@ MODEL_NAME=gemini-flash-latest
 # ALLOW_ORIGINS=http://localhost:3000,http://localhost:8080
 ```
 
-### 19. `<output-directory>/<project-name>/sample.yaml`
+### 19. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/RECIPE.md`
 
-```yaml
-name: "<project-name>"
-team:
-  - name: "Cloud AI Developer Engineering & Evangelism"
-  - email: "caiis-advocacy@google.com"
-authors:
-  - name: "Your Name"
-    email: "your@email.com"
-description: "A short description of your agent sample."
-status: "active"
-tags:
-  - "adk"
-  - "python"
-intent: "What this agent sample demonstrates."
+```markdown
+# <RECIPE TITLE HERE>
+<BRIEF DESCRIPTION HERE>
+
+- **Recipe Type**: pattern
+- **Owner**: <TEAM NAME HERE> (<TEAM EMAIL HERE>)
+- **Point of Contact**: <POINT OF CONTACT NAME> | <POINT OF CONTACT EMAIL>
+- **Status**: active
+- **Tags**: <COMMA SEPARATED TAGS>
+- **Languages**: python, <COMMA SEPARATED LANGUAGES>
+- **Paired Skill**: `scaffold-python-sample`
+- **Evaluation**: `tests/eval/evalsets/basic.evalset.json` (min score: 0.8)
+
+## Intent
+
+It highlights a simple ADK agent with 2 python tools.
+
+## When To Use
+
+- To scaffoled a simple ADK agent.
+
+## Requires
+A GCP Project if the user wants to deploy it to Google Cloud
+
+## Constraints
+
+- **Must**: user interaction, Gemini Enterprise
+- **Must Not**: service-account-only, no UI
+
+## Composition
+
+- **Composes with**: `agent-runtime-deployment`
+- **Conflicts with**: None
 ```
 
 ---
@@ -1067,14 +1084,14 @@ intent: "What this agent sample demonstrates."
 ## Step 3: Post-Scaffold Verification and Next Steps
 
 Once all files are successfully written:
-1. Verify that the project was created under `<output-directory>/<project-name>`.
-2. Inform the user that the project is ready and point them to `<output-directory>/<project-name>/README.md`.
+1. Verify that the project was created under `<OUTPUT_DIRECTORY>/<PROJECT_NAME>`.
+2. Inform the user that the project is ready and point them to `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/README.md`.
 3. Inform the user they can get started by navigating to the project directory and running:
    - To run the agent in the command line (interactive mode):
      ```bash
-     cd <output-directory>/<project-name> && uv sync && uv run adk run app
+     cd <OUTPUT_DIRECTORY>/<PROJECT_NAME> && uv sync && uv run adk run app
      ```
    - To start the FastAPI server:
      ```bash
-     cd <output-directory>/<project-name> && uv sync && uv run uvicorn app.fast_api_app:app --reload
+     cd <OUTPUT_DIRECTORY>/<PROJECT_NAME> && uv sync && uv run uvicorn app.fast_api_app:app --reload
      ```
