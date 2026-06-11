@@ -15,6 +15,7 @@
 import pytest
 import requests
 
+
 @pytest.fixture(autouse=True, scope="session")
 def normalize_requests_url():
     original_request = requests.Session.request
