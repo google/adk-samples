@@ -14,6 +14,8 @@
 
 import pytest
 import requests
+from google.adk.artifacts import InMemoryArtifactService
+from google.adk.runners import Runner
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -29,3 +31,17 @@ def normalize_requests_url():
     requests.Session.request = new_request
     yield
     requests.Session.request = original_request
+
+
+@pytest.fixture(autouse=True, scope="session")
+def default_artifact_service_for_runner():
+    original_init = Runner.__init__
+
+    def new_init(self, *args, **kwargs):
+        if kwargs.get("artifact_service") is None:
+            kwargs["artifact_service"] = InMemoryArtifactService()
+        original_init(self, *args, **kwargs)
+
+    Runner.__init__ = new_init
+    yield
+    Runner.__init__ = original_init
