@@ -31,7 +31,7 @@ dependencies = [
     "google-cloud-aiplatform[agent-engines]>=1.142.0",
     "google-cloud-modelarmor>=0.4.0",
     "python-pptx==1.0.2",
-    "pillow==11.3.0",
+    "pillow==12.2.0",
     "pydantic>=2.12.0",
     "pydantic-settings==2.13.1",
     "python-dotenv==1.1.1",
