@@ -7,10 +7,6 @@ import os
 import requests
 from pydantic import BaseModel, Field
 
-# FEC API Key from api.open.fec.gov
-FEC_API_KEY = os.getenv("FEC_API_KEY", "DEMO_KEY")
-
-
 class FECRequest(BaseModel):
     state_abbr: str = Field(
         ..., description="Two-letter state abbreviation (e.g., 'TX')."
@@ -24,10 +20,12 @@ def analyze_political_stability(state_abbr: str, cycle: str = "2024") -> str:
     Provides site selection agents with a metric for political stability and business alignment.
     High PAC activity often correlates with high regulatory engagement or a shifting political climate.
     """
+    key = os.getenv("FEC_API_KEY", "").strip() or "DEMO_KEY"
+    
     # FEC Endpoint: Contributions by State and Cycle
     url = "https://api.open.fec.gov/v1/totals/by_state/"
     params = {
-        "api_key": FEC_API_KEY,
+        "api_key": key,
         "state": state_abbr,
         "cycle": cycle,
         "per_page": 1,
