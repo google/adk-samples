@@ -44,9 +44,6 @@ Create the following files and folders under `<output-directory>/<project-name>/
 name = "<project-name>"
 version = "0.1.0"
 description = ""
-authors = [
-    {name = "Your Name", email = "your@email.com"},
-]
 dependencies = [
     "google-adk>=2.0.0",
     "python-dotenv>=1.0.0",
@@ -215,13 +212,31 @@ Before you begin, ensure you have:
    uv run uvicorn app.fast_api_app:app --reload
    ```
 
+## Running Tests
+
+To run the unit, integration, and runnability tests:
+
+```bash
+uv run pytest
+```
+
+Or to run specific test suites:
+
+```bash
+# Run unit and runnability tests only
+uv run pytest tests/unit
+
+# Run integration tests only
+uv run pytest tests/integration
+```
+
 ## Commands
 
 | Command | Description |
 | ------- | ----------- |
 | `uv run adk run app` | Run the agent in interactive CLI mode |
 | `uv run uvicorn app.fast_api_app:app --reload` | Start the local FastAPI development server |
-| `uv run pytest tests/unit tests/integration` | Run unit and integration tests |
+| `uv run pytest` | Run all test suites |
 ```
 
 ### 4. `contrib/<project-name>/app/__init__.py`
@@ -313,7 +328,7 @@ def get_current_time(query: str) -> str:
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
-        model="gemini-flash-latest",
+        model=os.getenv("MODEL_NAME", "gemini-flash-latest"),
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction="You are a helpful AI assistant designed to provide accurate and useful information.",
@@ -520,7 +535,7 @@ class Feedback(BaseModel):
 ### 10. `contrib/<project-name>/app/app_utils/__init__.py`
 *(Create an empty file)*
 
-### 11. `contrib/<project-name>/tests/unit/test_dummy.py`
+### 11. `contrib/<project-name>/tests/unit/test_tools.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -535,19 +550,104 @@ class Feedback(BaseModel):
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-You can add your unit tests here.
-This is where you test your business logic, including agent functionality,
-data processing, and other core components of your application.
-"""
+"""Unit tests for the custom weather and time tools."""
+
+from app.agent import get_current_time, get_weather
 
 
-def test_dummy() -> None:
-    """Placeholder - replace with real tests."""
-    assert 1 == 1
+def test_get_weather_san_francisco() -> None:
+    """Tests that get_weather returns foggy weather for San Francisco."""
+    result = get_weather("San Francisco")
+    assert "60 degrees and foggy" in result
+
+
+def test_get_weather_other_city() -> None:
+    """Tests that get_weather returns sunny weather for other cities."""
+    result = get_weather("London")
+    assert "90 degrees and sunny" in result
+
+
+def test_get_current_time_san_francisco() -> None:
+    """Tests that get_current_time returns time for San Francisco."""
+    result = get_current_time("San Francisco")
+    assert "America/Los_Angeles" in result or "PDT" in result or "PST" in result
+
+
+def test_get_current_time_unknown_city() -> None:
+    """Tests that get_current_time returns error message for unknown cities."""
+    result = get_current_time("London")
+    assert "Sorry, I don't have timezone information" in result
 ```
 
-### 12. `contrib/<project-name>/tests/integration/test_agent.py`
+### 12. `contrib/<project-name>/tests/unit/test_runnability.py`
+```python
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Runnability tests for the ADK agent sample project.
+
+Verifies that the python code compiles, resolves all dependencies, and imports
+correctly under zero-configuration CI/CD conditions without throwing errors.
+"""
+
+import os
+
+from fastapi import FastAPI
+from google.adk.agents import Agent
+from google.adk.apps import App
+from google.adk.models import Gemini
+
+
+def test_fast_api_app_runnability() -> None:
+    """Verifies fast_api_app.py compiles and initializes FastAPI successfully."""
+    # Importing fast_api_app triggers the telemetry and mock global setups
+    import app.fast_api_app
+
+    assert app.fast_api_app.app is not None
+    assert isinstance(app.fast_api_app.app, FastAPI)
+    assert app.fast_api_app.app.title == "<project-name>"
+
+
+def test_agent_runnability() -> None:
+    """Verifies agent.py compiles and instantiates the agent flow successfully."""
+    # Importing agent loads the tools and the Agent runner configuration
+    import app.agent
+
+    # 1. Assert ADK App is initialized correctly
+    assert app.agent.app is not None
+    assert isinstance(app.agent.app, App)
+    assert app.agent.app.name == "app"
+
+    # 2. Assert Agent and its properties are built with matching parameters
+    assert app.agent.root_agent is not None
+    assert isinstance(app.agent.root_agent, Agent)
+    assert app.agent.root_agent.name == "root_agent"
+    assert isinstance(app.agent.root_agent.model, Gemini)
+    assert app.agent.root_agent.model.model == os.getenv(
+        "MODEL_NAME", "gemini-flash-latest"
+    )
+
+    # 3. Assert Tools set contains expected analytical tools
+    tools = app.agent.root_agent.tools
+    assert len(tools) == 2
+
+    # Find registered helper functions
+    tool_names = [getattr(t, "__name__", type(t).__name__) for t in tools]
+    assert "get_weather" in tool_names
+    assert "get_current_time" in tool_names
+```
+
+### 13. `contrib/<project-name>/tests/integration/test_agent.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -608,7 +708,7 @@ def test_agent_stream() -> None:
     assert has_text_content, "Expected at least one message with text content"
 ```
 
-### 13. `contrib/<project-name>/tests/integration/test_server_e2e.py`
+### 14. `contrib/<project-name>/tests/integration/test_server_e2e.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -820,7 +920,7 @@ def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
     assert response.status_code == 200
 ```
 
-### 14. `contrib/<project-name>/tests/eval/eval_config.json`
+### 15. `contrib/<project-name>/tests/eval/eval_config.json`
 ```json
 {
   "criteria": {
@@ -845,7 +945,7 @@ def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
 }
 ```
 
-### 15. `contrib/<project-name>/tests/eval/evalsets/README.md`
+### 16. `contrib/<project-name>/tests/eval/evalsets/README.md`
 ```markdown
 # Evaluation Sets
 
@@ -881,7 +981,7 @@ Each `.evalset.json` follows the ADK evaluation format:
 ```
 ```
 
-### 16. `contrib/<project-name>/tests/eval/evalsets/basic.evalset.json`
+### 17. `contrib/<project-name>/tests/eval/evalsets/basic.evalset.json`
 ```json
 {
   "eval_set_id": "basic_eval",
@@ -922,9 +1022,12 @@ Each `.evalset.json` follows the ADK evaluation format:
 }
 ```
 
-### 17. `contrib/<project-name>/.env.example`
+### 18. `contrib/<project-name>/.env.example`
 
 ```env
+# Model Configuration
+MODEL_NAME=gemini-flash-latest
+
 # Google Cloud Platform Configuration (for Vertex AI)
 # GOOGLE_CLOUD_PROJECT=your-gcp-project-id
 # GOOGLE_CLOUD_LOCATION=global
@@ -939,6 +1042,24 @@ Each `.evalset.json` follows the ADK evaluation format:
 
 # Web Server Configuration
 # ALLOW_ORIGINS=http://localhost:3000,http://localhost:8080
+```
+
+### 19. `<output-directory>/<project-name>/sample.yaml`
+
+```yaml
+name: "<project-name>"
+team:
+  - name: "Cloud AI Developer Engineering & Evangelism"
+  - email: "caiis-advocacy@google.com"
+authors:
+  - name: "Your Name"
+    email: "your@email.com"
+description: "A short description of your agent sample."
+status: "active"
+tags:
+  - "adk"
+  - "python"
+intent: "What this agent sample demonstrates."
 ```
 
 ---
