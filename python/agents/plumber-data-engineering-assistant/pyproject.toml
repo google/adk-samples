@@ -32,8 +32,8 @@ dependencies = [
     "google-cloud-storage==2.19.0",
     "google-generativeai==0.8.5",
     "Pillow==11.3.0",
-    "python-dotenv==1.1.1",
-    "requests==2.33.0",
+    "python-dotenv==1.2.2",
+    "requests==2.34.2",
     "apache-beam[gcp]==2.69.0",
 ]
 
