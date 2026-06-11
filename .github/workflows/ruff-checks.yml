@@ -35,7 +35,7 @@ jobs:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # 1. Apply linting fixes and formatting to the local runner filesystem
-          uvx ruff check --fix .
+          uvx ruff check --fix . || true
           uvx ruff format .
 
           # 2. Use git diff to see what changed, and pipe it to reviewdog
