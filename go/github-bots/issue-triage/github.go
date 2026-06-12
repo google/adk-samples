@@ -26,7 +26,8 @@ import (
 )
 
 // ErrIssueNotFound is returned when an issue does not exist or refers to a pull
-// request (GraphQL repository.issue returns null for PRs).
+// request. GitHub signals this either with a null repository.issue or a
+// GraphQL error of type NOT_FOUND; GetIssue maps both to this sentinel.
 var ErrIssueNotFound = errors.New("issue not found")
 
 // maxSearchPages bounds GraphQL search pagination as a safety valve.
@@ -39,14 +40,15 @@ type Client struct {
 	cfg  *Config
 	log  *slog.Logger
 
-	// authorized bounds which issue numbers the agent may mutate. It is the
-	// defense against prompt injection: a malicious issue body cannot make the
-	// agent act on an arbitrary issue, because only issues the bot legitimately
-	// targeted (the single -issue, or those returned by list_untriaged_issues)
-	// are ever authorized. Guarded by mu because the framework may execute tool
-	// calls concurrently.
+	// authorized maps each issue number the agent may mutate to the fields it
+	// still needs. It is the defense against prompt injection: a malicious issue
+	// body cannot make the agent act on an arbitrary issue, because only issues
+	// the bot legitimately targeted (the single -issue, or those returned by
+	// list_untriaged_issues) are authorized — and only for the fields that are
+	// actually missing, so an already-set type or label can't be overwritten.
+	// Guarded by mu because the framework may execute tool calls concurrently.
 	mu         sync.Mutex
-	authorized map[int]bool
+	authorized map[int]need
 }
 
 // NewClient builds an authenticated GitHub client.
@@ -55,27 +57,27 @@ func NewClient(cfg *Config, log *slog.Logger) *Client {
 		rest:       github.NewClient(nil).WithAuthToken(cfg.GitHubToken),
 		cfg:        cfg,
 		log:        log,
-		authorized: make(map[int]bool),
+		authorized: make(map[int]need),
 	}
 }
 
-// authorize marks issue numbers as eligible for mutation.
-func (c *Client) authorize(numbers ...int) {
+// authorize records that an issue may be mutated, for the given missing fields.
+func (c *Client) authorize(number int, n need) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.authorized == nil {
-		c.authorized = make(map[int]bool)
+		c.authorized = make(map[int]need)
 	}
-	for _, n := range numbers {
-		c.authorized[n] = true
-	}
+	c.authorized[number] = n
 }
 
-// isAuthorized reports whether an issue number may be mutated.
-func (c *Client) isAuthorized(number int) bool {
+// authorizedNeed returns the fields an issue still needs and whether it is
+// authorized for mutation at all.
+func (c *Client) authorizedNeed(number int) (need, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.authorized[number]
+	n, ok := c.authorized[number]
+	return n, ok
 }
 
 // shouldSkip is the single dry-run chokepoint for every mutation. It logs the
@@ -222,7 +224,7 @@ func (c *Client) ListUntriaged(ctx context.Context, count int) ([]Issue, error) 
 			if iss.Number == 0 {
 				continue // not an Issue node
 			}
-			if needsType, needsLabel := needsTriage(iss, c.cfg.AllowedLabels); needsType || needsLabel {
+			if needsTriage(iss, c.cfg.AllowedLabels).any() {
 				out = append(out, iss)
 				if len(out) >= count {
 					break

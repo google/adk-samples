@@ -69,49 +69,54 @@ func TestNeedsTriage(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gotType, gotLabel := needsTriage(tc.issue, allowed)
-			if gotType != tc.wantNeedsType || gotLabel != tc.wantNeedsLabel {
+			got := needsTriage(tc.issue, allowed)
+			if got.typ != tc.wantNeedsType || got.label != tc.wantNeedsLabel {
 				t.Errorf("needsTriage() = (type:%t, label:%t), want (type:%t, label:%t)",
-					gotType, gotLabel, tc.wantNeedsType, tc.wantNeedsLabel)
+					got.typ, got.label, tc.wantNeedsType, tc.wantNeedsLabel)
 			}
 		})
 	}
 }
 
-func TestIsAllowedLabel(t *testing.T) {
+func TestCanonicalLabel(t *testing.T) {
 	allowed := []string{"bug", "enhancement"}
 	tests := []struct {
-		label string
-		want  bool
+		label    string
+		wantOK   bool
+		wantName string
 	}{
-		{"bug", true},
-		{"BUG", true},
-		{" enhancement ", true},
-		{"documentation", false},
-		{"", false},
+		{"bug", true, "bug"},
+		{"BUG", true, "bug"}, // canonicalized to the allowlist's spelling
+		{" enhancement ", true, "enhancement"},
+		{"documentation", false, ""},
+		{"", false, ""},
 	}
 	for _, tc := range tests {
-		if got := isAllowedLabel(tc.label, allowed); got != tc.want {
-			t.Errorf("isAllowedLabel(%q) = %t, want %t", tc.label, got, tc.want)
+		got, ok := canonicalLabel(tc.label, allowed)
+		if ok != tc.wantOK || got != tc.wantName {
+			t.Errorf("canonicalLabel(%q) = (%q, %t), want (%q, %t)", tc.label, got, ok, tc.wantName, tc.wantOK)
 		}
 	}
 }
 
-func TestIsValidType(t *testing.T) {
+func TestCanonicalType(t *testing.T) {
 	tests := []struct {
-		t    string
-		want bool
+		t        string
+		wantOK   bool
+		wantName string
 	}{
-		{"Bug", true},
-		{"Feature", true},
-		{"Task", true},
-		{"bug", false}, // case-sensitive: GitHub type names are capitalized
-		{"Epic", false},
-		{"", false},
+		{"Bug", true, "Bug"},
+		{"Feature", true, "Feature"},
+		{"Task", true, "Task"},
+		{"bug", true, "Bug"}, // any casing is accepted and canonicalized
+		{" task ", true, "Task"},
+		{"Epic", false, ""},
+		{"", false, ""},
 	}
 	for _, tc := range tests {
-		if got := isValidType(tc.t); got != tc.want {
-			t.Errorf("isValidType(%q) = %t, want %t", tc.t, got, tc.want)
+		got, ok := canonicalType(tc.t)
+		if ok != tc.wantOK || got != tc.wantName {
+			t.Errorf("canonicalType(%q) = (%q, %t), want (%q, %t)", tc.t, got, ok, tc.wantName, tc.wantOK)
 		}
 	}
 }

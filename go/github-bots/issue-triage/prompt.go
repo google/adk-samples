@@ -27,6 +27,11 @@ var promptTemplate string
 // IMPORTANT: llmagent.Config.Instruction treats {placeholder} tokens as
 // session-state references and errors on unknown keys. renderPrompt must
 // therefore leave zero stray braces; this is enforced by a test.
+//
+// Note: prompt_instruction.txt only parameterizes the label/type *names*. Its
+// per-label rubric ("How to choose the categorization label") is written for the
+// default labels, so overriding ALLOWED_LABELS with a different vocabulary also
+// warrants updating that section.
 func renderPrompt(cfg *Config) string {
 	r := strings.NewReplacer(
 		"{OWNER}", cfg.Owner,

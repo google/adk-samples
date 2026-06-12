@@ -75,7 +75,7 @@ func (c *Client) doList(ctx context.Context, count int) (listResult, error) {
 		return listResult{}, err
 	}
 	for _, iss := range issues {
-		c.authorize(iss.Number)
+		c.authorize(iss.Number, needsTriage(iss, c.cfg.AllowedLabels))
 	}
 	return listResult{Status: "success", Issues: issues}, nil
 }
@@ -87,16 +87,21 @@ func (c *Client) doChangeType(ctx context.Context, number int, issueType string)
 	if number <= 0 {
 		return errResult("invalid issue number %d", number), nil
 	}
-	if !isValidType(issueType) {
+	canonical, ok := canonicalType(issueType)
+	if !ok {
 		return errResult("issue type %q is not allowed; use one of: %s", issueType, strings.Join(allowedTypes, ", ")), nil
 	}
-	if !c.isAuthorized(number) {
+	n, ok := c.authorizedNeed(number)
+	if !ok {
 		return errResult("issue #%d is not part of the current triage set; only triage issues you fetched", number), nil
 	}
-	if err := c.SetType(ctx, number, issueType); err != nil {
+	if !n.typ {
+		return errResult("issue #%d already has a type; not overwriting", number), nil
+	}
+	if err := c.SetType(ctx, number, canonical); err != nil {
 		return actionResult{}, err
 	}
-	return okResult("set issue #%d type to %s", number, issueType), nil
+	return okResult("set issue #%d type to %s", number, canonical), nil
 }
 
 // doAddLabel validates and applies a label addition, with the same error
@@ -105,16 +110,21 @@ func (c *Client) doAddLabel(ctx context.Context, number int, label string) (acti
 	if number <= 0 {
 		return errResult("invalid issue number %d", number), nil
 	}
-	if !isAllowedLabel(label, c.cfg.AllowedLabels) {
+	canonical, ok := canonicalLabel(label, c.cfg.AllowedLabels)
+	if !ok {
 		return errResult("label %q is not in the allowlist; will not apply", label), nil
 	}
-	if !c.isAuthorized(number) {
+	n, ok := c.authorizedNeed(number)
+	if !ok {
 		return errResult("issue #%d is not part of the current triage set; only triage issues you fetched", number), nil
 	}
-	if err := c.AddLabel(ctx, number, label); err != nil {
+	if !n.label {
+		return errResult("issue #%d already has a categorization label; not adding another", number), nil
+	}
+	if err := c.AddLabel(ctx, number, canonical); err != nil {
 		return actionResult{}, err
 	}
-	return okResult("added label %q to issue #%d", label, number), nil
+	return okResult("added label %q to issue #%d", canonical, number), nil
 }
 
 // tools builds the agent's toolset. Construction errors are accumulated and

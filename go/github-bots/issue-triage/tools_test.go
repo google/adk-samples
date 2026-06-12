@@ -16,11 +16,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/google/go-github/v66/github"
@@ -44,7 +46,7 @@ func countingClient(t *testing.T, cfg *Config, status int, body string) (*Client
 		rest:       rest,
 		cfg:        cfg,
 		log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-		authorized: make(map[int]bool),
+		authorized: make(map[int]need),
 	}, &calls
 }
 
@@ -64,7 +66,7 @@ func TestDoChangeTypeRejectsWithoutHTTP(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c, calls := countingClient(t, testConfig(), http.StatusOK, `{}`)
 			if tc.authorize {
-				c.authorize(tc.number)
+				c.authorize(tc.number, need{typ: true})
 			}
 			res, err := c.doChangeType(context.Background(), tc.number, tc.issueType)
 			if err != nil {
@@ -82,7 +84,7 @@ func TestDoChangeTypeRejectsWithoutHTTP(t *testing.T) {
 
 func TestDoChangeTypeAuthorizedSucceeds(t *testing.T) {
 	c, calls := countingClient(t, testConfig(), http.StatusOK, `{}`)
-	c.authorize(7)
+	c.authorize(7, need{typ: true})
 	res, err := c.doChangeType(context.Background(), 7, "Bug")
 	if err != nil {
 		t.Fatalf("doChangeType() error = %v", err)
@@ -110,7 +112,7 @@ func TestDoAddLabelRejectsWithoutHTTP(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c, calls := countingClient(t, testConfig(), http.StatusOK, `[]`)
 			if tc.authorize {
-				c.authorize(tc.number)
+				c.authorize(tc.number, need{label: true})
 			}
 			res, err := c.doAddLabel(context.Background(), tc.number, tc.label)
 			if err != nil {
@@ -130,9 +132,54 @@ func TestDoChangeTypeRESTErrorIsGoError(t *testing.T) {
 	// Infrastructure failures (non-2xx) must surface as a Go error, not an
 	// errResult, so the OnToolError callback fires.
 	c, _ := countingClient(t, testConfig(), http.StatusInternalServerError, `{"message":"boom"}`)
-	c.authorize(7)
+	c.authorize(7, need{typ: true})
 	if _, err := c.doChangeType(context.Background(), 7, "Bug"); err == nil {
 		t.Fatal("doChangeType() expected Go error on HTTP 500, got nil")
+	}
+}
+
+func TestDoChangeTypeCanonicalizesCasing(t *testing.T) {
+	// The model may emit a lowercase type; GitHub must still receive the
+	// canonical "Bug".
+	var gotType any
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotType = body["type"]
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	c.authorize(7, need{typ: true})
+	res, err := c.doChangeType(context.Background(), 7, "bug")
+	if err != nil {
+		t.Fatalf("doChangeType() error = %v", err)
+	}
+	if res.Status != "success" {
+		t.Fatalf("status = %q, want success", res.Status)
+	}
+	if gotType != "Bug" {
+		t.Errorf("GitHub received type %v, want canonical \"Bug\"", gotType)
+	}
+}
+
+func TestDoAddLabelCanonicalizesCasing(t *testing.T) {
+	// The model may emit a differently-cased label; GitHub must receive the
+	// allowlist's exact spelling so it matches an existing label.
+	var gotBody string
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		_, _ = io.WriteString(w, `[{"name":"bug"}]`)
+	}))
+	c.authorize(7, need{label: true})
+	res, err := c.doAddLabel(context.Background(), 7, "BUG")
+	if err != nil {
+		t.Fatalf("doAddLabel() error = %v", err)
+	}
+	if res.Status != "success" {
+		t.Fatalf("status = %q, want success", res.Status)
+	}
+	if !strings.Contains(gotBody, `"bug"`) || strings.Contains(gotBody, `"BUG"`) {
+		t.Errorf("GitHub received label body %q, want canonical \"bug\"", gotBody)
 	}
 }
 
@@ -152,10 +199,45 @@ func TestDoListAuthorizesReturnedIssues(t *testing.T) {
 	if len(res.Issues) != 2 {
 		t.Fatalf("got %d issues, want 2", len(res.Issues))
 	}
-	if !c.isAuthorized(10) || !c.isAuthorized(11) {
-		t.Error("doList did not authorize the returned issues")
+	if _, ok := c.authorizedNeed(10); !ok {
+		t.Error("doList did not authorize issue 10")
 	}
-	if c.isAuthorized(999) {
+	if _, ok := c.authorizedNeed(11); !ok {
+		t.Error("doList did not authorize issue 11")
+	}
+	if _, ok := c.authorizedNeed(999); ok {
 		t.Error("an issue that was never listed must not be authorized")
+	}
+}
+
+func TestDoChangeTypeDoesNotOverwriteExistingField(t *testing.T) {
+	// An issue can appear in the triage set because it needs a *label* while
+	// already having a type. The type tool must refuse to overwrite it, in code.
+	c, calls := countingClient(t, testConfig(), http.StatusOK, `{}`)
+	c.authorize(7, need{label: true}) // type already set
+	res, err := c.doChangeType(context.Background(), 7, "Bug")
+	if err != nil {
+		t.Fatalf("doChangeType() error = %v", err)
+	}
+	if res.Status != "error" {
+		t.Errorf("status = %q, want error (must not overwrite existing type)", res.Status)
+	}
+	if *calls != 0 {
+		t.Errorf("made %d HTTP calls, want 0", *calls)
+	}
+}
+
+func TestDoAddLabelDoesNotOverwriteExistingField(t *testing.T) {
+	c, calls := countingClient(t, testConfig(), http.StatusOK, `[]`)
+	c.authorize(7, need{typ: true}) // label already set
+	res, err := c.doAddLabel(context.Background(), 7, "bug")
+	if err != nil {
+		t.Fatalf("doAddLabel() error = %v", err)
+	}
+	if res.Status != "error" {
+		t.Errorf("status = %q, want error (must not add a second label)", res.Status)
+	}
+	if *calls != 0 {
+		t.Errorf("made %d HTTP calls, want 0", *calls)
 	}
 }

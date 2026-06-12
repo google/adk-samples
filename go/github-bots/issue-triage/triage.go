@@ -28,50 +28,63 @@ type Issue struct {
 	Type string `json:"type"`
 }
 
-// needsTriage reports whether an issue is missing an issue type and/or a
+// need records which fields an issue still requires. It lets the agent fill
+// only the gaps: authorization carries the need so the tools can reject an
+// attempt to overwrite a type or label that is already set (enforced in code,
+// not merely requested in the prompt).
+type need struct {
+	typ   bool
+	label bool
+}
+
+func (n need) any() bool { return n.typ || n.label }
+
+// needsTriage reports which fields an issue is missing: an issue type and/or a
 // categorization label from the allowlist. It is pure so it can be exhaustively
 // table-tested.
-func needsTriage(iss Issue, allowedLabels []string) (needsType, needsLabel bool) {
-	needsType = strings.TrimSpace(iss.Type) == ""
-	needsLabel = !hasAllowedLabel(iss.Labels, allowedLabels)
-	return needsType, needsLabel
+func needsTriage(iss Issue, allowedLabels []string) need {
+	return need{
+		typ:   strings.TrimSpace(iss.Type) == "",
+		label: !hasAllowedLabel(iss.Labels, allowedLabels),
+	}
 }
 
 // hasAllowedLabel reports whether the issue already carries at least one label
 // from the allowlist (case-insensitive).
 func hasAllowedLabel(labels, allowed []string) bool {
-	allowedSet := toLowerSet(allowed)
 	for _, l := range labels {
-		if _, ok := allowedSet[strings.ToLower(strings.TrimSpace(l))]; ok {
+		if _, ok := canonicalLabel(l, allowed); ok {
 			return true
 		}
 	}
 	return false
 }
 
-// isAllowedLabel reports whether label is in the allowlist (case-insensitive).
-func isAllowedLabel(label string, allowed []string) bool {
-	_, ok := toLowerSet(allowed)[strings.ToLower(strings.TrimSpace(label))]
-	return ok
+// canonicalLabel matches label against the allowlist case-insensitively and
+// returns the allowlist's spelling, so GitHub always receives the label name
+// exactly as it exists in the repository (regardless of the model's casing).
+func canonicalLabel(label string, allowed []string) (string, bool) {
+	label = strings.TrimSpace(label)
+	for _, a := range allowed {
+		if strings.EqualFold(a, label) {
+			return a, true
+		}
+	}
+	return "", false
 }
 
-// isValidType reports whether t is one of the allowed GitHub issue types
-// (case-sensitive; GitHub type names are capitalized, e.g. "Bug").
-func isValidType(t string) bool {
+// canonicalType matches t against the allowed GitHub issue types
+// case-insensitively and returns the canonical name (GitHub type names are
+// capitalized, e.g. "Bug"). Accepting any casing makes the bot robust to model
+// output variance while always sending GitHub the exact name.
+func canonicalType(t string) (string, bool) {
+	t = strings.TrimSpace(t)
 	for _, v := range allowedTypes {
-		if v == t {
-			return true
+		if strings.EqualFold(v, t) {
+			return v, true
 		}
 	}
-	return false
-}
-
-func toLowerSet(items []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(items))
-	for _, it := range items {
-		set[strings.ToLower(strings.TrimSpace(it))] = struct{}{}
-	}
-	return set
+	return "", false
 }
 
 // truncate shortens s to at most n runes, appending an ellipsis marker when it
