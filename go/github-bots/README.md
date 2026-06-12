@@ -15,6 +15,7 @@ copying the code, simply by adding a small caller workflow that references it.
 | Bot | Description |
 | --- | --- |
 | [`issue-triage`](./issue-triage) | Sets each open issue's type (Bug/Feature/Task) and a categorization label. |
+| [`stale-issues`](./stale-issues) | Audits open issues for staleness; warns then closes issues left waiting on the author. |
 
 ## How the cross-repo wiring works
 
