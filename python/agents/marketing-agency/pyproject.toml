@@ -8,7 +8,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.13"
 
 dependencies = [
-    "google-adk>=1.0.0",
+    "google-adk>=1.31.0",
     "google-auth>=2.30.0",
     "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",
     "google-genai>=1.9.0",
@@ -20,7 +20,7 @@ dependencies = [
 dev = [
     "pytest>=8.3.2",
     "pytest-asyncio>=0.23.7",
-    "google-adk[eval]>=1.0.0",
+    "google-adk[eval]>=1.31.0",
     "nest-asyncio>=1.6.0",
     "agent-starter-pack>=0.14.1",
     "ruff>=0.4.6",
