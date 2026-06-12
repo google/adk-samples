@@ -345,6 +345,7 @@ GEMINI_API_KEY=<GEMINI_API_KEY>
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 
 import google.auth
@@ -361,8 +362,11 @@ load_dotenv()
 
 setup_telemetry()
 _, project_id = google.auth.default()
-logging_client = google_cloud_logging.Client()
-logger = logging_client.logger(__name__)
+try:
+    _cloud_logging_client = google_cloud_logging.Client()
+    _cloud_logger = _cloud_logging_client.logger(__name__)
+except Exception:
+    _cloud_logger = None
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",") if os.getenv("ALLOW_ORIGINS") else None
 )
@@ -398,7 +402,14 @@ def collect_feedback(feedback: Feedback) -> dict[str, str]:
     Returns:
         Success message
     """
-    logger.log_struct(feedback.model_dump(), severity="INFO")
+    if _cloud_logger is not None:
+        try:
+            _cloud_logger.log_struct(feedback.model_dump(), severity="INFO")
+        except Exception:
+            logging.warning("Cloud Logging unavailable; falling back to local logger.")
+            logging.info(feedback.model_dump())
+    else:
+        logging.info(feedback.model_dump())
     return {"status": "success"}
 
 
@@ -564,11 +575,13 @@ def test_get_current_time_unknown_city() -> None:
 # limitations under the License.
 """Runnability tests for the ADK agent sample project.
 
-Verifies that the python code compiles, resolves all dependencies, and imports
-correctly under zero-configuration CI/CD conditions without throwing errors.
-"""
+Verifies that the Python code compiles, resolves all dependencies, and that
+the ADK entry points are correctly wired — matching what `adk run app` and
+`uvicorn app.fast_api_app:app` require at startup.
 
-import os
+These tests are intentionally agnostic to business logic (tools, instructions,
+etc.). Tool-level correctness belongs in test_tools.py.
+"""
 
 from fastapi import FastAPI
 from google.adk.agents import Agent
@@ -576,43 +589,42 @@ from google.adk.apps import App
 from google.adk.models import Gemini
 
 
-def test_fast_api_app_runnability() -> None:
-    """Verifies fast_api_app.py compiles and initializes FastAPI successfully."""
-    # Importing fast_api_app triggers the telemetry and mock global setups
+def test_adk_run_runnability() -> None:
+    """Verifies the entry point required by `adk run app` is correctly wired.
+
+    `adk run app` imports the `app` package and expects `root_agent` to be
+    an Agent instance exposed at the package level via app/__init__.py.
+    """
+    import app
+    import app.agent
+
+    # app/__init__.py must re-export root_agent for `adk run app` to work
+    assert hasattr(app, "root_agent") or hasattr(app, "app"), (
+        "app/__init__.py must export either `root_agent` or `app` "
+        "for `adk run app` to work."
+    )
+
+    # root_agent must be a valid Agent instance
+    assert app.agent.root_agent is not None
+    assert isinstance(app.agent.root_agent, Agent)
+    assert isinstance(app.agent.root_agent.model, Gemini)
+
+    # Agent must have at least one tool registered
+    assert len(app.agent.root_agent.tools) > 0, (
+        "root_agent has no tools registered."
+    )
+
+    # App wrapper must be present and valid
+    assert app.agent.app is not None
+    assert isinstance(app.agent.app, App)
+
+
+def test_web_server_runnability() -> None:
+    """Verifies the entry point required by `uvicorn app.fast_api_app:app` starts cleanly."""
     import app.fast_api_app
 
     assert app.fast_api_app.app is not None
     assert isinstance(app.fast_api_app.app, FastAPI)
-    assert app.fast_api_app.app.title == "<PROJECT_NAME>"
-
-
-def test_agent_runnability() -> None:
-    """Verifies agent.py compiles and instantiates the agent flow successfully."""
-    # Importing agent loads the tools and the Agent runner configuration
-    import app.agent
-
-    # 1. Assert ADK App is initialized correctly
-    assert app.agent.app is not None
-    assert isinstance(app.agent.app, App)
-    assert app.agent.app.name == "app"
-
-    # 2. Assert Agent and its properties are built with matching parameters
-    assert app.agent.root_agent is not None
-    assert isinstance(app.agent.root_agent, Agent)
-    assert app.agent.root_agent.name == "root_agent"
-    assert isinstance(app.agent.root_agent.model, Gemini)
-    assert app.agent.root_agent.model.model == os.getenv(
-        "MODEL_NAME", "gemini-flash-latest"
-    )
-
-    # 3. Assert Tools set contains expected analytical tools
-    tools = app.agent.root_agent.tools
-    assert len(tools) == 2
-
-    # Find registered helper functions
-    tool_names = [getattr(t, "__name__", type(t).__name__) for t in tools]
-    assert "get_weather" in tool_names
-    assert "get_current_time" in tool_names
 ```
 
 ### 12. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/integration/test_agent.py`
