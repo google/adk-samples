@@ -23,8 +23,12 @@ Use this skill to create and scaffold a new Python ADK sample project inside the
 Before scaffolding the project, ensure you have the following information from the user:
 1. **Project Name** (Required): The name of the new sample project.
    - **Constraints**: Must be **26 characters or less**, lowercase letters, numbers, and hyphens only.
-2. **Google AI Studio API Key** (Optional): A `GEMINI_API_KEY` to use Google AI Studio instead of Vertex AI.
-3. **Output Directory** (Optional): The directory inside the repository where the project should be created.
+2. **Recipe Title** (Optional): A human-readable title for `RECIPE.md` (e.g., `"Simple Weather & Time Agent"`).
+   - **Default**: If not provided, infer a concise, descriptive title from the project name.
+3. **Brief Description** (Optional): A one-sentence description of what the sample does.
+   - **Default**: If not provided, infer a reasonable description from the project name and context.
+4. **Google AI Studio API Key** (Optional): A `GEMINI_API_KEY` to use Google AI Studio instead of Vertex AI.
+5. **Output Directory** (Optional): The directory inside the repository where the project should be created.
    - **Default**: `contrib/`
    - **Constraints**: Must be a relative path inside the repository (e.g., `contrib/`, `samples/`, or `python/`).
 
@@ -35,10 +39,11 @@ If the project name does not meet the constraints, ask the user for clarificatio
 ## Core Rules for Template Adherence
 
 When generating the files under `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/`, you **MUST STRICTLY** adhere to the following rules:
-1. **No Structural Modifications**: Do **NOT** alter, omit, or modify the structure, headers, fields, or metadata defined in the templates below. The generated files must be an **exact, literal copy** of the templates.
+1. **No Structural Modifications**: Do **NOT** alter, omit, or modify the structure, headers, fields, or metadata defined in the templates below. Preserve all structural elements exactly as written — only designated placeholders (angle-bracket tokens) may differ in the output.
 2. **Placeholder Replacement Only**: Only replace the designated placeholders (like `<PROJECT_NAME>`, `<RECIPE TITLE HERE>`, `<BRIEF DESCRIPTION HERE>`, etc.) with concrete values.
 3. **No Field Deletion**: Do **NOT** remove any metadata fields, comments, or configuration blocks (such as `Point of Contact`, telemetry configuration, or warning filters) even if they seem redundant or you think they are not needed for a specific sample.
 4. **Consistency**: Ensure that if a template has a field, it is present in the final generated file exactly as written.
+5. **Resolve All Placeholders**: Before writing any file, scan it for any remaining string matching the pattern `<SOMETHING HERE>` (angle-bracket-wrapped uppercase text). Replace every such occurrence with an appropriate concrete value inferred from context. If a placeholder cannot be reasonably inferred, write the file as-is and explicitly inform the user which placeholders remain and in which files, so they can fill them in manually.
 
 ---
 
@@ -63,7 +68,7 @@ dependencies = [
     "gcsfs>=2024.11.0",
     "google-cloud-logging>=3.12.0,<4.0.0",
 ]
-requires-python = "3.11"
+requires-python = ">=3.11"
 
 [dependency-groups]
 dev = [
@@ -100,7 +105,7 @@ select = [
 ignore = ["E501", "C901", "B006"] # ignore line too long, too complex
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "frontend"]
+known-first-party = ["app"]
 
 [tool.ty]
 # ty is Astral's Rust-based type checker (same team as ruff/uv)
@@ -138,49 +143,14 @@ pythonpath = "."
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.hatch.build.targets.wheel]
-packages = ["app","frontend"]
+packages = ["app"]
 ```
 
-### 2. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/GEMINI.md`
-```markdown
-# Coding Agent Guide
-
-## Prerequisites
-
-Install uv (one-time):
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
----
-
-## Development Phases
-
-### Phase 1: Understand Requirements
-Before writing any code, understand the project's requirements, constraints, and success criteria.
-
-### Phase 2: Build and Implement
-Implement agent logic in `app/`. Iterate based on user feedback.
-
-### Phase 3: Pre-Deployment Tests
-Run `uv run pytest tests/unit tests/integration`. Fix issues until all tests pass.
-
-## Operational Guidelines for Coding Agents
-
-- **Code preservation**: Only modify code directly targeted by the user's request. Preserve all surrounding code, config values (e.g., `model`), comments, and formatting.
-- **NEVER change the model** unless explicitly asked.
-- **Model 404 errors**: Fix `GOOGLE_CLOUD_LOCATION` (e.g., `global` instead of `us-east1`), not the model name.
-- **ADK tool imports**: Import the tool instance, not the module: `from google.adk.tools.load_web_page import load_web_page`
-- **Run Python with `uv`**: `uv run python script.py`.
-- **Stop on repeated errors**: If the same error appears 3+ times, fix the root cause instead of retrying.
-```
-
-### 3. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/README.md`
+### 2. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/README.md`
 ```markdown
 # <PROJECT_NAME>
 
-Simple ADK agent
-This is a simple agent using the ADK Python SDK to demonstrate its capabilities. 
+This is a simple agent using the ADK Python SDK to demonstrate its capabilities.
 
 ## Requirements
 
@@ -188,6 +158,8 @@ Before you begin, ensure you have:
 - **uv**: Python package manager - [Install](https://docs.astral.sh/uv/getting-started/installation/)
 
 ## Quick Start
+
+> **Note**: All commands below must be run from the project root directory (`<OUTPUT_DIRECTORY>/<PROJECT_NAME>/`).
 
 1. Install required packages:
    ```bash
@@ -237,7 +209,7 @@ uv run pytest tests/integration
 | `uv run pytest` | Run all test suites |
 ```
 
-### 4. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/__init__.py`
+### 3. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/__init__.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -258,7 +230,7 @@ from .agent import app
 __all__ = ["app"]
 ```
 
-### 5. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/agent.py`
+### 4. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/agent.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -304,7 +276,7 @@ def get_weather(query: str) -> str:
     return "It's 90 degrees and sunny."
 
 
-def get_current_time(query: str) -> str:
+def get_current_time(city: str) -> str:
     """Simulates getting the current time for a city.
 
     Args:
@@ -313,14 +285,14 @@ def get_current_time(query: str) -> str:
     Returns:
         A string with the current time information.
     """
-    if "sf" in query.lower() or "san francisco" in query.lower():
+    if "sf" in city.lower() or "san francisco" in city.lower():
         tz_identifier = "America/Los_Angeles"
     else:
-        return f"Sorry, I don't have timezone information for query: {query}."
+        return f"Sorry, I don't have timezone information for city: {city}."
 
     tz = ZoneInfo(tz_identifier)
     now = datetime.datetime.now(tz)
-    return f"The current time for query {query} is {now.strftime('%Y-%m-%d %H:%M:%S %Z%z')}"
+    return f"The current time for city {city} is {now.strftime('%Y-%m-%d %H:%M:%S %Z%z')}"
 
 
 root_agent = Agent(
@@ -338,26 +310,26 @@ app = App(
     name="app",
 )
 ```
-*(Note: If `GEMINI_API_KEY` was NOT provided, replace `<VERTEX_AI_ENV_SETUP>` with the following block. If it WAS provided, replace `<VERTEX_AI_ENV_SETUP>` with an empty string)*
+*(Note: `<VERTEX_AI_ENV_SETUP>` is a placeholder — replace it based on whether `GEMINI_API_KEY` was provided:*
+- *If **NOT** provided (Vertex AI path): replace with the block below.*
+- *If provided (AI Studio path): replace with an empty string (delete the line entirely).*
 
 **Vertex AI Env Setup Block:**
 ```python
-import os
-import google.auth
-
 _, project_id = google.auth.default()
 os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
 os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 ```
+*Note: `os` and `google.auth` are already imported above — do not re-import them.)*
 
-### 6. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/.env` (Only if `GEMINI_API_KEY` is provided)
+### 5. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/.env` (Only if `GEMINI_API_KEY` is provided)
 ```env
 # AI Studio Configuration
 GEMINI_API_KEY=<GEMINI_API_KEY>
 ```
 
-### 7. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/fast_api_app.py`
+### 6. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/fast_api_app.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -388,9 +360,9 @@ from app.app_utils.typing import Feedback
 load_dotenv()
 
 setup_telemetry()
-    _, project_id = google.auth.default()
-    logging_client = google_cloud_logging.Client()
-    logger = logging_client.logger(__name__)
+_, project_id = google.auth.default()
+logging_client = google_cloud_logging.Client()
+logger = logging_client.logger(__name__)
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",") if os.getenv("ALLOW_ORIGINS") else None
 )
@@ -426,7 +398,7 @@ def collect_feedback(feedback: Feedback) -> dict[str, str]:
     Returns:
         Success message
     """
-        logger.log_struct(feedback.model_dump(), severity="INFO")
+    logger.log_struct(feedback.model_dump(), severity="INFO")
     return {"status": "success"}
 
 
@@ -437,7 +409,7 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
-### 8. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/app_utils/telemetry.py`
+### 7. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/app_utils/telemetry.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -457,7 +429,7 @@ import logging
 import os
 
 
-def setup_telemetry() -> str | None:
+def setup_telemetry() -> None:
     """Configure OpenTelemetry and GenAI telemetry with GCS upload."""
 
     bucket = os.environ.get("LOGS_BUCKET_NAME")
@@ -488,11 +460,9 @@ def setup_telemetry() -> str | None:
         logging.info(
             "Prompt-response logging disabled (set LOGS_BUCKET_NAME=gs://your-bucket and OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT to enable)"
         )
-
-    return bucket
 ```
 
-### 9. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/app_utils/typing.py`
+### 8. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/app_utils/typing.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -530,10 +500,10 @@ class Feedback(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 ```
 
-### 10. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/app_utils/__init__.py`
+### 9. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/app/app_utils/__init__.py`
 *(Create an empty file)*
 
-### 11. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/unit/test_tools.py`
+### 10. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/unit/test_tools.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -577,7 +547,7 @@ def test_get_current_time_unknown_city() -> None:
     assert "Sorry, I don't have timezone information" in result
 ```
 
-### 12. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/unit/test_runnability.py`
+### 11. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/unit/test_runnability.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -645,7 +615,7 @@ def test_agent_runnability() -> None:
     assert "get_current_time" in tool_names
 ```
 
-### 13. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/integration/test_agent.py`
+### 12. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/integration/test_agent.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -706,7 +676,7 @@ def test_agent_stream() -> None:
     assert has_text_content, "Expected at least one message with text content"
 ```
 
-### 14. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/integration/test_server_e2e.py`
+### 13. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/integration/test_server_e2e.py`
 ```python
 # Copyright 2026 Google LLC
 #
@@ -918,7 +888,7 @@ def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
     assert response.status_code == 200
 ```
 
-### 15. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/eval/eval_config.json`
+### 14. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/eval/eval_config.json`
 ```json
 {
   "criteria": {
@@ -943,7 +913,7 @@ def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
 }
 ```
 
-### 16. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/eval/evalsets/README.md`
+### 15. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/eval/evalsets/README.md`
 ```markdown
 # Evaluation Sets
 
@@ -979,7 +949,7 @@ Each `.evalset.json` follows the ADK evaluation format:
 ```
 ```
 
-### 17. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/eval/evalsets/basic.evalset.json`
+### 16. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/tests/eval/evalsets/basic.evalset.json`
 ```json
 {
   "eval_set_id": "basic_eval",
@@ -1020,7 +990,7 @@ Each `.evalset.json` follows the ADK evaluation format:
 }
 ```
 
-### 18. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/.env.example`
+### 17. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/.env.example`
 
 ```env
 # Model Configuration
@@ -1042,7 +1012,7 @@ MODEL_NAME=gemini-flash-latest
 # ALLOW_ORIGINS=http://localhost:3000,http://localhost:8080
 ```
 
-### 19. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/RECIPE.md`
+### 18. `<OUTPUT_DIRECTORY>/<PROJECT_NAME>/RECIPE.md`
 
 ```markdown
 # <RECIPE TITLE HERE>
@@ -1063,7 +1033,7 @@ It highlights a simple ADK agent with 2 python tools.
 
 ## When To Use
 
-- To scaffoled a simple ADK agent.
+- To scaffold a simple ADK agent.
 
 ## Requires
 A GCP Project if the user wants to deploy it to Google Cloud
