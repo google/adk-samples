@@ -13,3 +13,6 @@ except Exception:
 
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-east1")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+
+from .agent import agent
+
