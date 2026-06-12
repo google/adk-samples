@@ -53,10 +53,9 @@ def create_agent() -> Agent:
         tools=[get_weather],
     )
 
-
 root_agent = create_agent()
 
 app = App(
     root_agent=root_agent,
-    name="app",
+    name="weather-app",
 )

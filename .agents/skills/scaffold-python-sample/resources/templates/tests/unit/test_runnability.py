@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Runnability tests for the ADK agent sample project.
+"""Runnability tests for the ADK agent recipe.
 
 Verifies that the Python code compiles, resolves all dependencies, and that
 the ADK entry points are correctly wired — matching what `adk run app` and

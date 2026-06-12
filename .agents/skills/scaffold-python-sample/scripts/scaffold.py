@@ -41,7 +41,7 @@ def scaffold(
 
     # Define placeholder replacements
     replacements = {
-        "<PROJECT_NAME>": name,
+        "<RECIPE_NAME>": name,
         "<OUTPUT_DIRECTORY>": output_dir.rstrip("/"),
     }
 
@@ -54,7 +54,7 @@ def scaffold(
             except Exception as e:
                 print(f"Warning: Could not process placeholders in {file}: {e}")
 
-    print(f"Successfully scaffolded project '{name}' at {target_dir}")
+    print(f"Successfully scaffolded recipe '{name}' at {target_dir}")
     return True
 
 
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Scaffold a new Python ADK sample."
     )
-    parser.add_argument("--name", required=True, help="Name of the project")
+    parser.add_argument("--name", required=True, help="Name of the recipe")
     parser.add_argument(
         "--output-dir", default="contrib", help="Output directory inside repository"
     )

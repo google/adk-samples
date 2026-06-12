@@ -1,4 +1,4 @@
-# <PROJECT_NAME>
+# <RECIPE_NAME>
 
 This is a simple agent using the ADK Python SDK to demonstrate its capabilities.
 
@@ -9,7 +9,7 @@ Before you begin, ensure you have:
 
 ## Quick Start
 
-> **Note**: All commands below must be run from the project root directory (`<OUTPUT_DIRECTORY>/<PROJECT_NAME>/`).
+> **Note**: All commands below must be run from the recipe root directory (`<OUTPUT_DIRECTORY>/<RECIPE_NAME>/`).
 
 1. Install required packages:
    ```bash
