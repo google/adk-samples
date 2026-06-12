@@ -1,0 +1,84 @@
+name: 'Go Issue Triage Bot (reusable)'
+
+# Reusable workflow: a caller repository triages ITS OWN issues with the
+# go/github-bots/issue-triage bot, without copying the bot's code.
+#
+# Because a reusable workflow runs in the caller's context, the built-in
+# GITHUB_TOKEN (scoped by the caller's `permissions:` block) writes to the
+# caller repo, and OWNER/REPO resolve to the caller. See
+# go/github-bots/issue-triage/README.md for the caller snippet.
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        description: 'Issue number to triage (empty = sweep the backlog).'
+        type: 'string'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Log intended actions without modifying any issues.'
+        type: 'boolean'
+        required: false
+        default: false
+      issue_count:
+        description: 'Max issues per sweep (newest first).'
+        type: 'string'
+        required: false
+        default: '3'
+      samples_ref:
+        description: 'Ref of google/adk-samples to run the bot code from.'
+        type: 'string'
+        required: false
+        default: 'main'
+    secrets:
+      GEMINI_API_KEY:
+        description: 'Gemini API key. Omit only if the caller configures Vertex AI.'
+        required: false
+
+permissions:
+  contents: 'read'
+  issues: 'write'
+
+jobs:
+  triage:
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 20
+    steps:
+      # Check out adk-samples (the bot code). A reusable workflow's default
+      # checkout would fetch the CALLER repo, so we target adk-samples explicitly.
+      - name: 'Checkout adk-samples'
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          repository: 'google/adk-samples'
+          ref: '${{ inputs.samples_ref }}'
+
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff' # ratchet:actions/setup-go@v5
+        with:
+          go-version-file: 'go/github-bots/issue-triage/go.mod'
+
+      - name: 'Run issue triage bot'
+        working-directory: 'go/github-bots/issue-triage'
+        env:
+          # Caller-context values (resolve to the repo that called this workflow).
+          GITHUB_TOKEN: '${{ github.token }}'
+          OWNER: '${{ github.repository_owner }}'
+          REPO: '${{ github.event.repository.name }}'
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+          DRY_RUN: '${{ inputs.dry_run }}'
+          ISSUE_COUNT: '${{ inputs.issue_count }}'
+          # Untrusted input passed via env (never interpolated into the script),
+          # validated as numeric below.
+          ISSUE_NUMBER: '${{ inputs.issue_number }}'
+        run: |
+          set -euo pipefail
+          if [[ -n "${ISSUE_NUMBER}" ]]; then
+            if [[ "${ISSUE_NUMBER}" =~ ^[0-9]+$ ]]; then
+              go run . "-issue=${ISSUE_NUMBER}"
+            else
+              echo "Ignoring non-numeric issue input: ${ISSUE_NUMBER}" >&2
+              exit 1
+            fi
+          else
+            go run .
+          fi

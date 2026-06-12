@@ -77,5 +77,9 @@ other models for these samples.
 │   │   ├── agent2
 │   │   │   └── README.md
 │   │   ├── ...
+│   ├── github-bots             # GitHub-automation bots (runnable as reusable workflows)
+│   │   ├── issue-triage
+│   │   │   └── README.md
+│   │   └── README.md
 │   └── README.md               # This file (Repository overview)
 ```
