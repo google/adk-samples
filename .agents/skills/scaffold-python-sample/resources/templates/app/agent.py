@@ -57,5 +57,5 @@ root_agent = create_agent()
 
 app = App(
     root_agent=root_agent,
-    name="weather-app",
+    name="app",
 )
