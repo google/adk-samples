@@ -32,7 +32,10 @@
 //     comment;
 //   - drops comments from maintainers, "[bot]" accounts, and its own identity;
 //   - truncates long text (it does not strip fenced code blocks, so spam cannot
-//     hide inside a ``` fence).
+//     hide inside a ``` fence);
+//   - annotates each remaining author with their GitHub author association
+//     (e.g. FIRST_TIME_CONTRIBUTOR), which the prompt uses as a spam-likelihood
+//     prior alongside a few worked examples.
 //
 // If nothing reviewable remains, the issue is skipped without spending a single
 // model token (the "zero-waste" optimization from the original Python sample).

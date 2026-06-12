@@ -64,7 +64,14 @@ func TestMaintainersWarning(t *testing.T) {
 }
 
 func TestNewNonce(t *testing.T) {
-	a, b := newNonce(), newNonce()
+	a, err := newNonce()
+	if err != nil {
+		t.Fatalf("newNonce() error = %v", err)
+	}
+	b, err := newNonce()
+	if err != nil {
+		t.Fatalf("newNonce() error = %v", err)
+	}
 	if len(a) != 16 {
 		t.Errorf("nonce length = %d, want 16 hex chars", len(a))
 	}

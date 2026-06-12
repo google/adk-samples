@@ -179,16 +179,18 @@ type ghActor struct {
 }
 
 type ghComment struct {
-	Author *ghActor `json:"author"`
-	Body   string   `json:"body"`
+	Author            *ghActor `json:"author"`
+	AuthorAssociation string   `json:"authorAssociation"`
+	Body              string   `json:"body"`
 }
 
 type rawIssue struct {
-	Number int      `json:"number"`
-	Title  string   `json:"title"`
-	Body   string   `json:"body"`
-	Author *ghActor `json:"author"`
-	Labels struct {
+	Number            int      `json:"number"`
+	Title             string   `json:"title"`
+	Body              string   `json:"body"`
+	Author            *ghActor `json:"author"`
+	AuthorAssociation string   `json:"authorAssociation"`
+	Labels            struct {
 		Nodes []struct {
 			Name string `json:"name"`
 		} `json:"nodes"`
@@ -212,15 +214,16 @@ func (r *rawIssue) toIssue() Issue {
 	}
 	comments := make([]Comment, 0, len(r.Comments.Nodes))
 	for _, c := range r.Comments.Nodes {
-		comments = append(comments, Comment{Author: login(c.Author), Body: c.Body})
+		comments = append(comments, Comment{Author: login(c.Author), Association: c.AuthorAssociation, Body: c.Body})
 	}
 	return Issue{
-		Number:   r.Number,
-		Title:    r.Title,
-		Body:     r.Body,
-		Author:   login(r.Author),
-		Labels:   labels,
-		Comments: comments,
+		Number:      r.Number,
+		Title:       r.Title,
+		Body:        r.Body,
+		Author:      login(r.Author),
+		Association: r.AuthorAssociation,
+		Labels:      labels,
+		Comments:    comments,
 	}
 }
 
@@ -232,9 +235,10 @@ query($owner: String!, $name: String!, $number: Int!, $commentLimit: Int!) {
       title
       body
       author { login }
+      authorAssociation
       labels(first: 20) { nodes { name } }
       comments(last: $commentLimit) {
-        nodes { author { login } body }
+        nodes { author { login } authorAssociation body }
       }
     }
   }

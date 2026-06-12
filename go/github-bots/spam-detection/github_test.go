@@ -122,9 +122,9 @@ func TestSearchSpamCandidatesQueryExcludesLabelAndFreshness(t *testing.T) {
 
 func TestFetchIssueFound(t *testing.T) {
 	const body = `{"data":{"repository":{"issue":{
-		"number":42,"title":"t","body":"b","author":{"login":"alice"},
+		"number":42,"title":"t","body":"b","author":{"login":"alice"},"authorAssociation":"FIRST_TIME_CONTRIBUTOR",
 		"labels":{"nodes":[{"name":"bug"}]},
-		"comments":{"nodes":[{"author":{"login":"bob"},"body":"hi"},{"author":null,"body":"ghost"}]}
+		"comments":{"nodes":[{"author":{"login":"bob"},"authorAssociation":"NONE","body":"hi"},{"author":null,"body":"ghost"}]}
 	}}}}`
 	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/graphql" {
@@ -139,11 +139,17 @@ func TestFetchIssueFound(t *testing.T) {
 	if iss.Number != 42 || iss.Author != "alice" || iss.Title != "t" || iss.Body != "b" {
 		t.Errorf("unexpected issue: %+v", iss)
 	}
+	if iss.Association != "FIRST_TIME_CONTRIBUTOR" {
+		t.Errorf("issue association = %q, want FIRST_TIME_CONTRIBUTOR", iss.Association)
+	}
 	if len(iss.Labels) != 1 || iss.Labels[0] != "bug" {
 		t.Errorf("labels = %v, want [bug]", iss.Labels)
 	}
 	if len(iss.Comments) != 2 || iss.Comments[0].Author != "bob" || iss.Comments[1].Author != "" {
 		t.Errorf("comments = %+v (want bob + empty-author ghost)", iss.Comments)
+	}
+	if iss.Comments[0].Association != "NONE" {
+		t.Errorf("comment association = %q, want NONE", iss.Comments[0].Association)
 	}
 }
 

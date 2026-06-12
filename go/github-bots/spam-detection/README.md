@@ -22,8 +22,10 @@ flag the single issue its session is scoped to, so injected instructions in
   classifies.
 - A clean split between deterministic work done **in code** and the fuzzy
   judgment delegated to the **model**: the bot fetches the issue, filters out
-  maintainer/bot/already-handled content, and truncates long text in `spam.go`,
-  then asks the model only "is this spam?".
+  maintainer/bot/already-handled content, truncates long text, and annotates each
+  author with their GitHub **author association** (a spam-likelihood prior) in
+  `spam.go`, then asks the model only "is this spam?" — guided by that signal and
+  a few worked examples in the prompt.
 - The **zero-waste** optimization from the original Python sample: if nothing
   reviewable remains after filtering (or the issue was already handled), the
   model is never invoked.
@@ -188,3 +190,13 @@ differs in a few deliberate ways:
   review rather than deleting or blocking. It deliberately errs toward inaction —
   the prompt instructs the model not to flag merely unhelpful, off-topic, or
   beginner content.
+
+## Known limitations
+
+- **Truncation padding.** Each snippet is truncated to ~1500 runes before review,
+  so a determined spammer can pad with benign text ahead of a spam link to push
+  it past the cutoff. A production system would prioritize link-bearing regions
+  (or raise the cap); this sample keeps the simple bound.
+- **Author association is a prior, not proof.** It nudges borderline calls; it
+  is not a substitute for reading the content, and spam from an established
+  account is still flagged on its merits.

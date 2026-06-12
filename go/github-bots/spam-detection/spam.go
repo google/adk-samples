@@ -33,19 +33,25 @@ const maxSnippetRunes = 1500
 // Comment is the normalized view of a single issue comment.
 type Comment struct {
 	Author string
-	Body   string
+	// Association is the commenter's GitHub author association (e.g.
+	// FIRST_TIME_CONTRIBUTOR, NONE, MEMBER). It is a spam-likelihood prior fed to
+	// the model, not a filter.
+	Association string
+	Body        string
 }
 
 // Issue is the normalized view of a GitHub issue used for spam review. It is
 // deliberately small: only the fields needed to decide whether the content is
 // spam.
 type Issue struct {
-	Number   int
-	Title    string
-	Body     string
-	Author   string
-	Labels   []string
-	Comments []Comment
+	Number int
+	Title  string
+	Body   string
+	Author string
+	// Association is the issue author's GitHub author association (see Comment).
+	Association string
+	Labels      []string
+	Comments    []Comment
 }
 
 // maintainerSet builds a lowercased lookup set of maintainer logins. GitHub
@@ -144,21 +150,36 @@ func truncateRunes(s string, n int) string {
 // nothing to review (e.g. every author is a maintainer or a bot), which lets the
 // caller skip the issue without invoking the model.
 //
+// Trust boundary: the authorship/association headers are TRUSTED scaffolding
+// generated here from GitHub API metadata and are emitted OUTSIDE the fence.
+// Each user-controlled blob (title+body, or a comment body) is wrapped in its
+// own [UNTRUSTED:nonce] ... [/UNTRUSTED:nonce] fence. Because the nonce is
+// unguessable, a spammer cannot close the fence to escape it, and because the
+// headers live outside the fence they cannot forge a "Comment by @owner
+// [author association: OWNER]" line inside their own text — any such attempt
+// stays trapped inside the fence as inert data.
+//
 // It is pure so it can be exhaustively table-tested.
-func assembleSuspectText(iss Issue, selfLogin string, maintainers map[string]bool, maxRunes int) string {
+func assembleSuspectText(iss Issue, selfLogin string, maintainers map[string]bool, maxRunes int, nonce string) string {
+	open, closeTag := "[UNTRUSTED:"+nonce+"]", "[/UNTRUSTED:"+nonce+"]"
+	fence := func(s string) string { return open + "\n" + s + "\n" + closeTag }
+
 	var sections []string
 
 	if !isIgnoredAuthor(iss.Author, selfLogin, maintainers) {
-		body := clean(iss.Body, maxRunes)
-		header := fmt.Sprintf("Issue #%d opened by @%s", iss.Number, iss.Author)
-		if title := strings.TrimSpace(iss.Title); title != "" {
-			header += fmt.Sprintf("\nTitle: %s", title)
+		var content strings.Builder
+		if title := clean(iss.Title, maxRunes); title != "" {
+			content.WriteString("Title: " + title)
 		}
-		if body != "" {
-			sections = append(sections, header+"\nBody:\n"+body)
-		} else if strings.TrimSpace(iss.Title) != "" {
-			// A title with an empty body is still worth reviewing (spam titles).
-			sections = append(sections, header)
+		if body := clean(iss.Body, maxRunes); body != "" {
+			if content.Len() > 0 {
+				content.WriteString("\n")
+			}
+			content.WriteString("Body:\n" + body)
+		}
+		if content.Len() > 0 {
+			header := fmt.Sprintf("Issue #%d opened by @%s%s", iss.Number, iss.Author, assocNote(iss.Association))
+			sections = append(sections, header+"\n"+fence(content.String()))
 		}
 	}
 
@@ -167,11 +188,22 @@ func assembleSuspectText(iss Issue, selfLogin string, maintainers map[string]boo
 			continue
 		}
 		if body := clean(c.Body, maxRunes); body != "" {
-			sections = append(sections, fmt.Sprintf("Comment by @%s:\n%s", c.Author, body))
+			header := fmt.Sprintf("Comment by @%s%s:", c.Author, assocNote(c.Association))
+			sections = append(sections, header+"\n"+fence(body))
 		}
 	}
 
 	return strings.Join(sections, "\n\n---\n\n")
+}
+
+// assocNote renders an author-association annotation for the prompt, e.g.
+// " [author association: FIRST_TIME_CONTRIBUTOR]". It returns "" when the
+// association is unknown so the prompt stays clean.
+func assocNote(association string) string {
+	if a := strings.TrimSpace(association); a != "" {
+		return fmt.Sprintf(" [author association: %s]", a)
+	}
+	return ""
 }
 
 // buildAlertComment renders the maintainer-facing comment the bot posts when it

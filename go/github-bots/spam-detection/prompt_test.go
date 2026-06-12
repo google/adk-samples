@@ -38,7 +38,9 @@ func TestRenderPromptSubstitutesPlaceholders(t *testing.T) {
 			t.Errorf("rendered prompt missing %q", want)
 		}
 	}
-	if strings.Contains(out, "OWNER") || strings.Contains(out, "SPAM_LABEL_NAME") {
+	// Check for the un-substituted {TOKEN} forms, not the bare words: "OWNER"
+	// now legitimately appears as a GitHub author-association value.
+	if strings.Contains(out, "{OWNER}") || strings.Contains(out, "{SPAM_LABEL_NAME}") {
 		t.Errorf("rendered prompt still contains placeholder tokens:\n%s", out)
 	}
 }
