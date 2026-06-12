@@ -45,6 +45,7 @@ const (
 	eventEditedDesc   eventType = "edited_description"
 	eventRenamedTitle eventType = "renamed_title"
 	eventReopened     eventType = "reopened"
+	eventUnlabeled    eventType = "unlabeled_stale"
 )
 
 // historyEvent is a single normalized, human-attributed event on the issue
@@ -131,6 +132,13 @@ func isIgnoredActor(login, selfLogin string) bool {
 	return login == "" || strings.HasSuffix(login, "[bot]") || (selfLogin != "" && login == selfLogin)
 }
 
+// isBotActor reports whether a login belongs to the bot itself (its resolved
+// identity or any "[bot]" account). Used to authenticate the bot's own alert
+// comments so a regular user cannot spoof them.
+func isBotActor(login, selfLogin string) bool {
+	return login != "" && (strings.HasSuffix(login, "[bot]") || (selfLogin != "" && login == selfLogin))
+}
+
 // buildTimeline normalizes the raw GraphQL data into a chronologically sorted
 // list of human events. It also returns the times the stale label was applied
 // and the most recent time the bot posted a silent-edit alert (used for spam
@@ -144,8 +152,10 @@ func buildTimeline(raw *rawIssue, selfLogin, staleLabel string) (events []histor
 	// Comments.
 	for _, c := range raw.Comments.Nodes {
 		actor := actorLogin(c.Author)
-		// Track the bot's own silent-edit alerts; never add them to history.
-		if strings.Contains(c.Body, botAlertSignature) {
+		// Track the bot's own silent-edit alerts; never add them to history. The
+		// author check stops a regular user from spoofing the signature to
+		// suppress future genuine alerts.
+		if isBotActor(actor, selfLogin) && strings.Contains(c.Body, botAlertSignature) {
 			if lastBotAlert.IsZero() || c.CreatedAt.After(lastBotAlert) {
 				lastBotAlert = c.CreatedAt
 			}
@@ -177,6 +187,18 @@ func buildTimeline(raw *rawIssue, selfLogin, staleLabel string) (events []histor
 		case "LabeledEvent":
 			if t.Label != nil && t.Label.Name == staleLabel {
 				staleLabelTimes = append(staleLabelTimes, t.CreatedAt)
+			}
+			continue
+		case "UnlabeledEvent":
+			// A human removing the stale label is meaningful activity: record it
+			// so the staleness clock resets and the bot does not immediately
+			// re-mark the issue, overriding the person who cleared it. Removal of
+			// other labels is ignored.
+			if t.Label != nil && t.Label.Name == staleLabel {
+				actor := actorLogin(t.Actor)
+				if !isIgnoredActor(actor, selfLogin) {
+					events = append(events, historyEvent{Type: eventUnlabeled, Actor: actor, Time: t.CreatedAt})
+				}
 			}
 			continue
 		}

@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -22,6 +23,40 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 )
+
+// auditedIssueKey scopes a session to a single issue number. The runner builds
+// the invocation context from the context passed to Run (which embeds it), so a
+// value set here is visible to every tool via ctx.Value.
+type auditedIssueKey struct{}
+
+// withAuditedIssue binds the issue this session is allowed to mutate.
+func withAuditedIssue(ctx context.Context, number int) context.Context {
+	return context.WithValue(ctx, auditedIssueKey{}, number)
+}
+
+// authorizeIssue reports whether the tool may act on the requested issue. It is
+// the defense against prompt injection: untrusted issue content cannot make the
+// agent mutate an issue other than the one this session is auditing.
+func authorizeIssue(ctx context.Context, requested int) (string, bool) {
+	audited, ok := ctx.Value(auditedIssueKey{}).(int)
+	if !ok {
+		return "no issue is authorized for this session", false
+	}
+	if requested != audited {
+		return fmt.Sprintf("session is scoped to issue #%d; refusing to act on issue #%d", audited, requested), false
+	}
+	return "", true
+}
+
+// isManagedLabel reports whether the bot is allowed to add/remove this label.
+// It only ever manages the stale and request-clarification labels.
+func (c *GitHubClient) isManagedLabel(label string) bool {
+	return label == c.cfg.StaleLabel || label == c.cfg.RequestClarificationLabel
+}
+
+func errResult(format string, a ...any) actionResult {
+	return actionResult{Status: "error", Message: fmt.Sprintf(format, a...)}
+}
 
 // issueArg is the input for tools that operate on a single issue.
 type issueArg struct {
@@ -70,6 +105,12 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 		Name:        "add_label_to_issue",
 		Description: "Adds the specified label to the issue.",
 	}, func(ctx agent.ToolContext, a labelArg) (actionResult, error) {
+		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
+			return errResult("%s", msg), nil
+		}
+		if !c.isManagedLabel(a.Label) {
+			return errResult("label %q is not managed by this bot", a.Label), nil
+		}
 		if err := c.AddLabel(ctx, a.IssueNumber, a.Label); err != nil {
 			return actionResult{}, err
 		}
@@ -80,6 +121,12 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 		Name:        "remove_label_from_issue",
 		Description: "Removes the specified label from the issue.",
 	}, func(ctx agent.ToolContext, a labelArg) (actionResult, error) {
+		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
+			return errResult("%s", msg), nil
+		}
+		if !c.isManagedLabel(a.Label) {
+			return errResult("label %q is not managed by this bot", a.Label), nil
+		}
 		if err := c.RemoveLabel(ctx, a.IssueNumber, a.Label); err != nil {
 			return actionResult{}, err
 		}
@@ -90,6 +137,9 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 		Name:        "add_stale_label_and_comment",
 		Description: "Marks the issue as stale by adding the stale label and posting an explanatory comment.",
 	}, func(ctx agent.ToolContext, a issueArg) (actionResult, error) {
+		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
+			return errResult("%s", msg), nil
+		}
 		comment := fmt.Sprintf(
 			"This issue has been automatically marked as stale because it has not had recent "+
 				"activity for %s days after a maintainer requested clarification. It will be "+
@@ -106,6 +156,9 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 		Name:        "alert_maintainer_of_edit",
 		Description: "Posts a comment alerting maintainers that the author silently edited the issue description.",
 	}, func(ctx agent.ToolContext, a issueArg) (actionResult, error) {
+		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
+			return errResult("%s", msg), nil
+		}
 		// The body must start with botAlertSignature so the bot recognizes its
 		// own alert on future runs and avoids spamming.
 		if err := c.Comment(ctx, a.IssueNumber, botAlertSignature+". Maintainers, please review."); err != nil {
@@ -118,6 +171,9 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 		Name:        "close_as_stale",
 		Description: "Closes the issue as not planned after it has remained stale past the close threshold.",
 	}, func(ctx agent.ToolContext, a issueArg) (actionResult, error) {
+		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
+			return errResult("%s", msg), nil
+		}
 		comment := fmt.Sprintf(
 			"This has been automatically closed because it has been marked as stale for over %s days.",
 			formatDays(c.cfg.CloseAfter),

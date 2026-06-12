@@ -161,6 +161,9 @@ func auditAll(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Co
 func auditIssue(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Config, log *slog.Logger, number int) {
 	ictx, cancel := context.WithTimeout(ctx, cfg.IssueTimeout)
 	defer cancel()
+	// Scope this session to the audited issue so injected instructions in the
+	// issue's (untrusted) content cannot make a tool mutate a different issue.
+	ictx = withAuditedIssue(ictx, number)
 	start := time.Now()
 	l := log.With("issue", number)
 

@@ -120,10 +120,11 @@ query($owner: String!, $name: String!, $number: Int!, $commentLimit: Int!, $edit
       userContentEdits(last: $editLimit) {
         nodes { editor { login } editedAt }
       }
-      timelineItems(itemTypes: [LABELED_EVENT, RENAMED_TITLE_EVENT, REOPENED_EVENT], last: $timelineLimit) {
+      timelineItems(itemTypes: [LABELED_EVENT, UNLABELED_EVENT, RENAMED_TITLE_EVENT, REOPENED_EVENT], last: $timelineLimit) {
         nodes {
           __typename
           ... on LabeledEvent { createdAt actor { login } label { name } }
+          ... on UnlabeledEvent { createdAt actor { login } label { name } }
           ... on RenamedTitleEvent { createdAt actor { login } }
           ... on ReopenedEvent { createdAt actor { login } }
         }

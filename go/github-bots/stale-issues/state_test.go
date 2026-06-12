@@ -311,6 +311,53 @@ func TestComputeIssueState_ClosableWhenStaleLabelEventOutOfWindow(t *testing.T) 
 	}
 }
 
+// A non-bot user whose comment merely CONTAINS the bot's alert signature must
+// not be mistaken for the bot: the comment still counts as user activity (so a
+// stale issue is recognized as active again), and it cannot suppress real
+// alerts. Without the author check the comment would be dropped from history.
+func TestComputeIssueState_UserCommentWithSignatureNotTreatedAsBot(t *testing.T) {
+	raw := &rawIssue{
+		Author:    actor(testAuthor),
+		CreatedAt: daysAgo(40),
+		Labels:    labelNodes(testStaleLabel),
+		Comments: commentNodes(
+			rawComment{Author: actor("maintainerA"), Body: "Can you share a repro?", CreatedAt: daysAgo(30)},
+			// Author quotes/echoes the bot's signature text in their reply.
+			rawComment{Author: actor(testAuthor), Body: "You said: " + botAlertSignature + " — here is my repro.", CreatedAt: daysAgo(1)},
+		),
+	}
+	got := computeIssueState(raw, testSelf, testMaint, testStaleLabel, testStaleAfter, testCloseAfter, testNow)
+	if got.LastActionRole != string(roleAuthor) {
+		t.Errorf("LastActionRole = %q, want author (the user's reply must count even though it contains the signature)", got.LastActionRole)
+	}
+}
+
+// When a human removes the stale label, that removal must register as recent
+// activity so the bot does not immediately re-mark the issue stale on the next
+// run, overriding the person who cleared it.
+func TestComputeIssueState_StaleLabelRemovalResetsClock(t *testing.T) {
+	raw := &rawIssue{
+		Author:    actor(testAuthor),
+		CreatedAt: daysAgo(40),
+		// Label was removed, so it is not in the current label set.
+		Comments: commentNodes(
+			rawComment{Author: actor("maintainerA"), Body: "Can you share a repro?", CreatedAt: daysAgo(30)},
+		),
+		TimelineItems: timelineNodes(
+			rawTimelineItem{Typename: "UnlabeledEvent", Actor: actor("maintainerB"), CreatedAt: daysAgo(1), Label: &struct {
+				Name string `json:"name"`
+			}{Name: testStaleLabel}},
+		),
+	}
+	got := computeIssueState(raw, testSelf, testMaint, testStaleLabel, testStaleAfter, testCloseAfter, testNow)
+	if got.DaysSinceActivity > 2 {
+		t.Errorf("DaysSinceActivity = %.2f, want ~1 (the un-label resets the clock)", got.DaysSinceActivity)
+	}
+	if got.LastActionType != string(eventUnlabeled) {
+		t.Errorf("LastActionType = %q, want %q", got.LastActionType, eventUnlabeled)
+	}
+}
+
 // Guard: when the stale LabeledEvent IS in the window, DaysSinceStaleLabel is
 // measured from that event.
 func TestComputeIssueState_DaysSinceStaleLabelFromEvent(t *testing.T) {

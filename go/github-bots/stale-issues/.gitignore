@@ -1,0 +1,5 @@
+# Compiled binary produced by `go build` in this directory.
+/staleissues
+/stale-issues
+# Local environment file (see .env.example).
+.env
