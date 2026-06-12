@@ -72,6 +72,7 @@ func (c *Client) doList(ctx context.Context, count int) (listResult, error) {
 	}
 	issues, err := c.ListUntriaged(ctx, count)
 	if err != nil {
+		c.recordToolError()
 		return listResult{}, err
 	}
 	for _, iss := range issues {
@@ -99,8 +100,10 @@ func (c *Client) doChangeType(ctx context.Context, number int, issueType string)
 		return errResult("issue #%d already has a type; not overwriting", number), nil
 	}
 	if err := c.SetType(ctx, number, canonical); err != nil {
+		c.recordToolError()
 		return actionResult{}, err
 	}
+	c.consumeType(number) // prevent a second set on the same issue this run
 	return okResult("set issue #%d type to %s", number, canonical), nil
 }
 
@@ -122,8 +125,10 @@ func (c *Client) doAddLabel(ctx context.Context, number int, label string) (acti
 		return errResult("issue #%d already has a categorization label; not adding another", number), nil
 	}
 	if err := c.AddLabel(ctx, number, canonical); err != nil {
+		c.recordToolError()
 		return actionResult{}, err
 	}
+	c.consumeLabel(number) // prevent adding a second label on the same issue this run
 	return okResult("added label %q to issue #%d", canonical, number), nil
 }
 

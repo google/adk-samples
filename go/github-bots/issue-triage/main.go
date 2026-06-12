@@ -118,7 +118,16 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 		log.Info("nothing to triage")
 		return nil
 	}
-	return runAgent(rctx, r, sessions, cfg, log, prompt)
+	if err := runAgent(rctx, r, sessions, cfg, log, prompt); err != nil {
+		return err
+	}
+	// Tool errors are handed back to the model as data (so it can react), which
+	// means a failed mutation would otherwise leave the process exiting 0. Fail
+	// loudly so scheduled/CI runs surface infrastructure problems.
+	if client.hadToolError() {
+		return errors.New("one or more tool calls failed; see logs above")
+	}
+	return nil
 }
 
 // newModel builds the Gemini model. If a Gemini API key is configured it is

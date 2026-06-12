@@ -136,6 +136,8 @@ go test ./...
 ## Notes
 
 - **Issue types** must be enabled at the organization level (they are for the
-  `google` org: Bug/Feature/Task).
+  `google` org: Bug/Feature/Task). Setting a type also requires the token to have
+  push access; otherwise GitHub silently drops the change (so confirm your first
+  non-dry-run run actually applied a type).
 - **Component labels / owner assignment** from the original Python
   `adk_triaging_agent` are intentionally omitted; both are natural extensions.

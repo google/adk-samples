@@ -49,6 +49,10 @@ type Client struct {
 	// Guarded by mu because the framework may execute tool calls concurrently.
 	mu         sync.Mutex
 	authorized map[int]need
+	// toolErrored records whether any tool hit an infrastructure (non-validation)
+	// error during the run, so the program can exit non-zero and CI fails loudly
+	// even though such errors are also handed back to the model as data.
+	toolErrored bool
 }
 
 // NewClient builds an authenticated GitHub client.
@@ -78,6 +82,41 @@ func (c *Client) authorizedNeed(number int) (need, bool) {
 	defer c.mu.Unlock()
 	n, ok := c.authorized[number]
 	return n, ok
+}
+
+// consumeType marks an issue's type need as satisfied after a successful set, so
+// the same run cannot set (and thus overwrite) it again.
+func (c *Client) consumeType(number int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n, ok := c.authorized[number]; ok {
+		n.typ = false
+		c.authorized[number] = n
+	}
+}
+
+// consumeLabel marks an issue's label need as satisfied after a successful add.
+func (c *Client) consumeLabel(number int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n, ok := c.authorized[number]; ok {
+		n.label = false
+		c.authorized[number] = n
+	}
+}
+
+// recordToolError flags that a tool hit an infrastructure error this run.
+func (c *Client) recordToolError() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.toolErrored = true
+}
+
+// hadToolError reports whether any tool hit an infrastructure error this run.
+func (c *Client) hadToolError() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.toolErrored
 }
 
 // shouldSkip is the single dry-run chokepoint for every mutation. It logs the
@@ -231,7 +270,9 @@ func (c *Client) ListUntriaged(ctx context.Context, count int) ([]Issue, error) 
 				}
 			}
 		}
-		if !resp.Data.Search.PageInfo.HasNextPage {
+		// Stop if there's no next page, or if the cursor is missing (guards
+		// against re-requesting the same page on a malformed response).
+		if !resp.Data.Search.PageInfo.HasNextPage || resp.Data.Search.PageInfo.EndCursor == "" {
 			break
 		}
 		after = resp.Data.Search.PageInfo.EndCursor

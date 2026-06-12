@@ -129,12 +129,64 @@ func TestDoAddLabelRejectsWithoutHTTP(t *testing.T) {
 }
 
 func TestDoChangeTypeRESTErrorIsGoError(t *testing.T) {
-	// Infrastructure failures (non-2xx) must surface as a Go error, not an
-	// errResult, so the OnToolError callback fires.
+	// Infrastructure failures (non-2xx) must surface as a Go error (not an
+	// errResult) AND be recorded so the run fails loudly.
 	c, _ := countingClient(t, testConfig(), http.StatusInternalServerError, `{"message":"boom"}`)
 	c.authorize(7, need{typ: true})
+	if c.hadToolError() {
+		t.Fatal("hadToolError() should start false")
+	}
 	if _, err := c.doChangeType(context.Background(), 7, "Bug"); err == nil {
 		t.Fatal("doChangeType() expected Go error on HTTP 500, got nil")
+	}
+	if !c.hadToolError() {
+		t.Error("doChangeType() did not record the infrastructure error")
+	}
+}
+
+func TestDoChangeTypeConsumesNeed(t *testing.T) {
+	// After a successful type set, a second set on the same issue this run must
+	// be refused (don't overwrite what we just set) without an HTTP call.
+	var calls int
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	c.authorize(7, need{typ: true})
+	if res, err := c.doChangeType(context.Background(), 7, "Bug"); err != nil || res.Status != "success" {
+		t.Fatalf("first doChangeType() = (%+v, %v), want success", res, err)
+	}
+	res, err := c.doChangeType(context.Background(), 7, "Feature")
+	if err != nil {
+		t.Fatalf("second doChangeType() error = %v", err)
+	}
+	if res.Status != "error" {
+		t.Errorf("second set status = %q, want error (need already consumed)", res.Status)
+	}
+	if calls != 1 {
+		t.Errorf("made %d HTTP calls, want 1 (second set must not call the API)", calls)
+	}
+}
+
+func TestDoAddLabelConsumesNeed(t *testing.T) {
+	var calls int
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = io.WriteString(w, `[{"name":"bug"}]`)
+	}))
+	c.authorize(7, need{label: true})
+	if res, err := c.doAddLabel(context.Background(), 7, "bug"); err != nil || res.Status != "success" {
+		t.Fatalf("first doAddLabel() = (%+v, %v), want success", res, err)
+	}
+	res, err := c.doAddLabel(context.Background(), 7, "enhancement")
+	if err != nil {
+		t.Fatalf("second doAddLabel() error = %v", err)
+	}
+	if res.Status != "error" {
+		t.Errorf("second add status = %q, want error (need already consumed)", res.Status)
+	}
+	if calls != 1 {
+		t.Errorf("made %d HTTP calls, want 1 (second add must not call the API)", calls)
 	}
 }
 
