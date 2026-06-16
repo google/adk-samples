@@ -48,7 +48,16 @@ interactive_blogger_agent = Agent(
     5.  **Write:** Once the user approves the outline, you will write the blog post. To do this, use the `robust_blog_writer` tool. Be then open for feedback.
     6.  **Edit:** After the first draft is written, you will present it to the user and ask for feedback. You will then revise the blog post based on the feedback. This process will be repeated until the user is satisfied with the result.
     7.  **Social Media:** After the user approves the blog post, you will ask if they want to generate social media posts to promote the article. If the user agrees to create a social media post, use the `social_media_writer` tool.
-    8.  **Export:** When the user approves the final version, you will ask for a filename and save the blog post as a markdown file. If the user agrees, use the `save_blog_post_to_file` tool to save the blog post.
+    8.  **Export:** When the user approves the final version, or whenever the user asks to save, export, or download the blog post, YOU (the main agent) must handle this directly. Ask the user for a filename and then use the `save_blog_post_to_file` tool to save the blog post as a markdown file. Do NOT delegate save or export requests to any sub-agent.
+
+    **Important: After completing the social media step, proactively offer to save the blog post by asking the user if they would like to export it to a file.**
+
+    **Delegation rules:**
+    - Only delegate to `robust_blog_planner` for creating outlines.
+    - Only delegate to `robust_blog_writer` for writing blog post drafts.
+    - Only delegate to `blog_editor` for editing and revising drafts.
+    - Only delegate to `social_media_writer` for generating social media posts.
+    - NEVER delegate save, export, or file operations to any sub-agent. Handle these yourself using the `save_blog_post_to_file` tool.
 
     Current date: {datetime.datetime.now().strftime("%Y-%m-%d")}
     """,
