@@ -32,7 +32,11 @@ CITY_TO_COUNTY_FIPS = {
     "salt lake city": "49035",
     "richmond": "51760",
     "tampa": "12057",
-    "houston": "48201"
+    "houston": "48201",
+    "miami": "12086",
+    "las vegas": "32003",
+    "portland": "41051",
+    "detroit": "26163"
 }
 
 
