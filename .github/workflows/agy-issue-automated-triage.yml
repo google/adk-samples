@@ -1,4 +1,4 @@
-name: '🏷️ Gemini Automated Issue Triage'
+name: '🏷️ Antigravity Automated Issue Triage'
 
 on:
   issues:
@@ -16,7 +16,7 @@ on:
         type: 'number'
 
 concurrency:
-  group: '${{ github.workflow }}-${{ github.event.issue.number }}'
+  group: '${{ github.workflow }}-${{ github.event.issue.number || github.event.inputs.issue_number }}'
   cancel-in-progress: true
 
 defaults:
@@ -27,16 +27,15 @@ permissions:
   contents: 'read'
   id-token: 'write'
   issues: 'write'
-  statuses: 'write'
 
 jobs:
-  triage-issue:
+  agy-triage-issue:
     if: |-
       github.event_name == 'issues' ||
       github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'issue_comment' &&
-        contains(github.event.comment.body, '@gemini-cli /triage') &&
+        contains(github.event.comment.body, '@agy /triage') &&
         contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
       )
     timeout-minutes: 5
@@ -45,48 +44,77 @@ jobs:
     steps:
       - name: 'Checkout repository'
         uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          sparse-checkout: '.github/actions'
+          sparse-checkout-cone-mode: false
 
       - name: 'Generate GitHub App Token'
         id: 'generate_token'
-        if: |-
-          ${{ vars.APP_ID }}
+        if: vars.APP_ID != ''
         uses: 'actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42' # ratchet:actions/create-github-app-token@v2
         with:
           app-id: '${{ vars.APP_ID }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
 
-      - name: 'Run Gemini Issue Triage'
-        uses: 'google-github-actions/run-gemini-cli@v0'
-        id: 'gemini_issue_triage'
+      - name: 'Validate required configuration'
+        env:
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+        run: |-
+          set -euo pipefail
+          if [[ -z "${GEMINI_API_KEY}" && -z "${GOOGLE_CLOUD_PROJECT}" ]]; then
+            echo "::error::Neither GEMINI_API_KEY nor GOOGLE_CLOUD_PROJECT is configured. At least one must be set for the Antigravity CLI to authenticate."
+            exit 1
+          fi
+
+      - name: 'Authenticate to Google Cloud'
+        if: vars.GCP_WIF_PROVIDER != '' && vars.SERVICE_ACCOUNT_EMAIL != ''
+        uses: 'google-github-actions/auth@71f986410dfbcd8b4b5e0f7ef2a45b2dcd9a8c35' # ratchet:google-github-actions/auth@v2
+        with:
+          workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
+          service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
+
+      - name: 'Install Antigravity CLI'
+        uses: './.github/actions/install-agy'
+
+      - name: 'Get issue details'
+        id: 'get_issue'
         env:
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
-          ISSUE_TITLE: '${{ github.event.issue.title }}'
-          ISSUE_BODY: '${{ github.event.issue.body }}'
-          ISSUE_NUMBER: '${{ github.event.issue.number }}'
+          ISSUE_NUMBER: '${{ github.event.issue.number || github.event.inputs.issue_number }}'
+        run: |-
+          set -euo pipefail
+          DELIMITER="$(openssl rand -hex 16)"
+          TITLE=$(gh issue view "${ISSUE_NUMBER}" --json title --template '{{.title}}')
+          {
+            echo "title<<${DELIMITER}"
+            echo "${TITLE}"
+            echo "${DELIMITER}"
+          } >> "${GITHUB_OUTPUT}"
+          BODY=$(gh issue view "${ISSUE_NUMBER}" --json body --template '{{.body}}')
+          DELIMITER="$(openssl rand -hex 16)"
+          {
+            echo "body<<${DELIMITER}"
+            echo "${BODY}"
+            echo "${DELIMITER}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: 'Run Antigravity Issue Triage'
+        id: 'agy_issue_triage'
+        env:
+          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
+          GOOGLE_GENAI_USE_VERTEXAI: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
+          ISSUE_NUMBER: '${{ github.event.issue.number || github.event.inputs.issue_number }}'
+          ISSUE_TITLE: '${{ steps.get_issue.outputs.title }}'
+          ISSUE_BODY: '${{ steps.get_issue.outputs.body }}'
           REPOSITORY: '${{ github.repository }}'
-        with:
-          gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
-          gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
-          gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
-          gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
-          gcp_service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
-          gemini_api_key: '${{ secrets.GEMINI_API_KEY }}'
-          use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
-          use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
-          settings: |-
-            {
-              "maxSessionTurns": 25,
-              "coreTools": [
-                "run_shell_command(echo)",
-                "run_shell_command(gh label list)",
-                "run_shell_command(gh issue edit)"
-              ],
-              "telemetry": {
-                "enabled": false,
-                "target": "gcp"
-              }
-            }
-          prompt: |-
+        run: |-
+          set -euo pipefail
+          trap 'rm -f /tmp/agy_triage_prompt.txt' EXIT
+          cat > /tmp/agy_triage_prompt.txt <<PROMPT
             ## Role
 
             You are an issue triage assistant. Analyze the current GitHub issue
@@ -94,18 +122,25 @@ jobs:
             tools to gather information; do not ask for information to be
             provided.
 
+            ## Context
+
+            - **Repository**: ${REPOSITORY}
+            - **Issue Number**: ${ISSUE_NUMBER}
+            - **Issue Title**: ${ISSUE_TITLE}
+            - **Issue Body**:
+            ${ISSUE_BODY}
+
             ## Steps
 
-            1. Run: `gh label list` to get all available labels.
-            2. Review the issue title and body provided in the environment
-               variables: "${ISSUE_TITLE}" and "${ISSUE_BODY}".
+            1. Run: gh label list --repo "${REPOSITORY}" to get all available labels.
+            2. Review the issue title and body provided above.
             3. Classify issues by their kind (bug, enhancement, documentation,
                cleanup, etc) and their priority (p0, p1, p2, p3). Set the
-               labels accoridng to the format `kind/*` and `priority/*` patterns.
+               labels according to the format kind/* and priority/* patterns.
             4. Apply the selected labels to this issue using:
-               `gh issue edit "${ISSUE_NUMBER}" --add-label "label1,label2"`
+               gh issue edit "${ISSUE_NUMBER}" --add-label "label1,label2" --repo "${REPOSITORY}"
             5. If the "status/needs-triage" label is present, remove it using:
-               `gh issue edit "${ISSUE_NUMBER}" --remove-label "status/needs-triage"`
+               gh issue edit "${ISSUE_NUMBER}" --remove-label "status/needs-triage" --repo "${REPOSITORY}"
 
             ## Guidelines
 
@@ -114,10 +149,11 @@ jobs:
             - Triage only the current issue
             - Assign all applicable labels based on the issue content
             - Reference all shell variables as "${VAR}" (with quotes and braces)
+          PROMPT
+          agy --print --dangerously-skip-permissions "$(cat /tmp/agy_triage_prompt.txt)"
 
       - name: 'Post Issue Triage Failure Comment'
-        if: |-
-          ${{ failure() && steps.gemini_issue_triage.outcome == 'failure' }}
+        if: failure() && steps.agy_issue_triage.outcome == 'failure'
         uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
         with:
           github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
@@ -125,6 +161,6 @@ jobs:
             github.rest.issues.createComment({
               owner: '${{ github.repository }}'.split('/')[0],
               repo: '${{ github.repository }}'.split('/')[1],
-              issue_number: '${{ github.event.issue.number }}',
-              body: 'There is a problem with the Gemini CLI issue triaging. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
+              issue_number: '${{ github.event.issue.number || github.event.inputs.issue_number }}',
+              body: 'There is a problem with the Antigravity CLI issue triaging. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
             })

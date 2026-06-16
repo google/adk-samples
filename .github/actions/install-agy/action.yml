@@ -1,0 +1,13 @@
+name: 'Install Antigravity CLI'
+description: 'Installs the Antigravity (agy) CLI on the runner'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Install Antigravity CLI'
+      shell: 'bash'
+      run: |-
+        # TODO: Replace this curl-based install with a permanent method (e.g. npm install -g @google/agy)
+        # once the package is published to npm.
+        curl -fsSL https://antigravity.google/cli/install.sh | bash
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
