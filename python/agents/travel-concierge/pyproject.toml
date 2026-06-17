@@ -13,25 +13,25 @@ authors = [
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",
-    "pydantic>=2.10.6",
+    "google-cloud-aiplatform[adk,agent-engines]>=1.157.0",
+    "pydantic>=2.13.4",
     "python-dotenv>=1.0.1",
     "google-genai>=1.21.1,<2.0.0",
     "google-adk>=1.31.0,<2.0.0",
     "arize-otel>=0.8.2; python_version >= '3.11' and python_version < '3.13'",
     "openinference-instrumentation-google-adk>=0.1.0; python_version >= '3.11' and python_version < '3.14'",
-    "openinference-instrumentation>=0.1.34",
-    "arize>=7.36.0",
-    "arize-phoenix-evals>=0.20.8",
-    "scikit-learn>=1.7.0",
+    "openinference-instrumentation>=0.1.53",
+    "arize>=8.35.0",
+    "arize-phoenix-evals>=3.1.0",
+    "scikit-learn>=1.9.0",
     "pandas>=2.3.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.5",
+    "pytest>=9.1.0",
     "google-adk[eval]>=1.18.0,<2.0.0",
-    "pytest-asyncio>=0.26.0",
+    "pytest-asyncio>=1.4.0",
     "agent-starter-pack>=0.32.0",
 ]
 
@@ -43,11 +43,11 @@ deployment = [
 
 [project.optional-dependencies]
 lint = [
-    "ruff>=0.4.6",
-    "mypy>=1.15.0",
+    "ruff>=0.15.17",
+    "mypy>=2.1.0",
     "codespell>=2.2.0",
-    "types-pyyaml>=6.0.12.20240917",
-    "types-requests>=2.32.0.20240914",
+    "types-pyyaml>=6.0.12.20260518",
+    "types-requests>=2.33.0.20260518",
 ]
 
 [tool.ruff]
