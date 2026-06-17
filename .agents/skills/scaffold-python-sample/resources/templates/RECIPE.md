@@ -1,9 +1,9 @@
-# Recipt Title - Please update it
+# Recipe Title - Please update it
 This is a description of this recipe. Please update it
 
 - **Recipe Type**: pattern
-- **Owner**: Team Name | Team Email 
-- **Point of Contact**: POC Name | POC Email
+- **Owner**: Team Name | Team Email <!-- Update with your team name and email. Used for tracking ownership and notifications. -->
+- **Point of Contact**: POC Name | POC Email <!-- Update with the primary maintainer's name and email for questions or support. -->
 - **Status**: active
 - **Tags**: A list of comma-separated tags
 - **Languages**: python

@@ -9,7 +9,7 @@ import shutil
 
 def replace_in_file(filepath: str, replacements: dict[str, str]) -> None:
     """Reads a file, replaces placeholder tokens, and writes it back."""
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         content = f.read()
 
     for placeholder, value in replacements.items():

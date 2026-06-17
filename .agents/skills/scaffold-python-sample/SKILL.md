@@ -42,10 +42,9 @@ python3 .agents/skills/scaffold-python-sample/scripts/scaffold.py --name <RECIPE
 *The script accepts exactly two flags: `--name` (required) and `--output-dir` (optional, defaults to `contrib/`). Do not pass any other flags.*
 
 ---
-
 ## Respond
 
-Once the script succeeds, inform the user the recipe is ready and provide these quick-start commands:
+Once the script succeeds, inform the user the recipe is ready. Remind them to update `RECIPE.md` (specifically the Title, Description, Owner, and Point of Contact, which are used to track ownership and support). Then, provide these quick-start commands:
 ```bash
 cd <OUTPUT_DIRECTORY>/<RECIPE_NAME>
 uv sync                  # install dependencies

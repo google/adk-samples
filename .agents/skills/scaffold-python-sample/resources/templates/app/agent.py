@@ -12,11 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import datetime
 import os
-from zoneinfo import ZoneInfo
 
-import google.auth
 from dotenv import load_dotenv
 from google.adk.agents import Agent
 from google.adk.apps import App
@@ -46,7 +43,7 @@ def create_agent() -> Agent:
     return Agent(
         name="root_agent",
         model=Gemini(
-            model=os.getenv("MODEL_NAME", "gemini-flash-latest"),
+            model=os.getenv("MODEL_NAME"),
             retry_options=types.HttpRetryOptions(attempts=3),
         ),
         instruction="You are a helpful AI assistant designed to provide accurate and useful information.",

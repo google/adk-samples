@@ -3,7 +3,7 @@
     "rubric_based_final_response_quality_v1": {
       "threshold": 0.8,
       "judgeModelOptions": {
-        "judgeModel": "gemini-flash-latest",
+        "judgeModel": "gemini-3.5-flash",
         "numSamples": 1
       },
       "rubrics": [
