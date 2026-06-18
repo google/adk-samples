@@ -35,7 +35,7 @@ dependencies = [
     # Web framework
     "fastapi>=0.115.8,<1.0.0",
     "uvicorn[standard]>=0.34.0",
-    "python-multipart>=0.0.20",
+    "python-multipart>=0.0.31",
     "python-dotenv>=1.2.2",
     # Google AI
     "google-genai>=1.62.0",
