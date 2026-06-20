@@ -2,7 +2,7 @@ import os
 from functools import cached_property
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 from google.adk.agents import LlmAgent
 from google.adk.models import Gemini
@@ -26,6 +26,79 @@ github_mcp_toolset = McpToolset(
         )
     )
 )
+
+
+def _validate_path(path: str) -> str:
+  # Resolves path and ensures it's within the allowed workspace
+  workspace = os.path.abspath("/Users/taylormedplus/Documents/Codespaces/Antigravity Code Project Folder")
+  if not os.path.isabs(path):
+    abs_path = os.path.abspath(os.path.join(workspace, path))
+  else:
+    abs_path = os.path.abspath(path)
+  if not abs_path.startswith(workspace):
+    raise ValueError(f"Access denied: path {path} must be within the workspace {workspace}")
+  return abs_path
+
+
+def list_local_directory(dir_path: str) -> list[str]:
+  """Lists the contents of a local directory.
+
+  Args:
+      dir_path: The relative or absolute path of the directory to list.
+  """
+  safe_path = _validate_path(dir_path)
+  if not os.path.exists(safe_path):
+    return []
+  return os.listdir(safe_path)
+
+
+def read_local_file(file_path: str) -> str:
+  """Reads the content of a local file.
+
+  Args:
+      file_path: The relative or absolute path of the file to read.
+  """
+  safe_path = _validate_path(file_path)
+  if not os.path.exists(safe_path):
+    raise FileNotFoundError(f"File not found: {file_path}")
+  with open(safe_path, "r", encoding="utf-8") as f:
+    return f.read()
+
+
+def write_local_file(file_path: str, content: str) -> str:
+  """Writes content to a local file, creating parent directories if they don't exist.
+
+  Args:
+      file_path: The relative or absolute path of the file to write.
+      content: The content to write to the file.
+  """
+  safe_path = _validate_path(file_path)
+  os.makedirs(os.path.dirname(safe_path), exist_ok=True)
+  with open(safe_path, "w", encoding="utf-8") as f:
+    f.write(content)
+  return f"Successfully wrote to {file_path}"
+
+
+def modify_local_file(file_path: str, find_str: str, replace_str: str) -> str:
+  """Modifies the content of a local file by replacing find_str with replace_str.
+
+  Args:
+      file_path: The relative or absolute path of the file to modify.
+      find_str: The exact string to find in the file.
+      replace_str: The replacement string.
+  """
+  safe_path = _validate_path(file_path)
+  if not os.path.exists(safe_path):
+    raise FileNotFoundError(f"File not found: {file_path}")
+  with open(safe_path, "r", encoding="utf-8") as f:
+    content = f.read()
+  if find_str not in content:
+    raise ValueError(f"Could not find exact text '{find_str}' in file.")
+  new_content = content.replace(find_str, replace_str)
+  with open(safe_path, "w", encoding="utf-8") as f:
+    f.write(new_content)
+  return f"Successfully modified {file_path}"
+
 
 
 class GlobalGemini(Gemini):
@@ -134,8 +207,24 @@ instructiongeneratorphase4 = LlmAgent(
       'The final optimization and compilation node in the system. It translates the finalized architectural blueprint into highly structured, deterministic prompt blocks, system instructions, and operational guardrails optimized for deployment on the target agent platform.\n'
   ),
   sub_agents=[],
-  instruction='## Persona & Core Objective\nYou are the Instruction Generator Subagent, an expert prompt engineer and conversational designer. Your focus is Phase 4: Instruction & Guardrail Generation. Your job is to take the architectural blueprint designed in Phase 3 and translate it into operational code instructions that can be pasted directly into a new agent configuration.\n\n## Operational Protocol\n1. Synthesize the design specifications, tool workflows, and model behaviors established by the Systems Architect.\n2. Generate a highly detailed, production-ready system instruction block tailored for the target runtime environment.\n3. Codify absolute behavioral guardrails, rigid tool execution rules, error mitigation procedures, and specific formatting instructions.\n4. Ensure the output contains explicit instruction blocks completely devoid of ambiguous, high-level placeholders.\n\n## Formatting & Output Standards\nPresent the final instruction blocks inside clear Markdown code blocks or demarcated zones so the user can easily extract and deploy them.\n\n## Routing & State Transition Rule\n* **Routing Rule:** After producing the final production-ready instructions and guardrails, end the workflow and ask the user if they would like to refine any specific section of the new architecture.',
+  instruction='## Persona & Core Objective\nYou are the Instruction Generator Subagent, an expert prompt engineer and conversational designer. Your focus is Phase 4: Instruction & Guardrail Generation. Your job is to take the architectural blueprint designed in Phase 3 and translate it into operational code instructions that can be pasted directly into a new agent configuration.\n\n## Operational Protocol\n1. Synthesize the design specifications, tool workflows, and model behaviors established by the Systems Architect.\n2. Generate a highly detailed, production-ready system instruction block tailored for the target runtime environment.\n3. Codify absolute behavioral guardrails, rigid tool execution rules, error mitigation procedures, and specific formatting instructions.\n4. Ensure the output contains explicit instruction blocks completely devoid of ambiguous, high-level placeholders.\n\n## Formatting & Output Standards\nPresent the final instruction blocks inside clear Markdown code blocks or demarcated zones so the user can easily extract and deploy them.\n\n## Routing & State Transition Rule\n* **Routing Rule:** After producing the final production-ready instructions and guardrails, transfer the conversation to the Code Overhauler subagent for Phase 5 to execute the file modifications/generation.',
   tools=[],
+)
+codeoverhaulerphase5 = LlmAgent(
+  name='codeoverhaulerphase5',
+  model=GlobalGemini(model='gemini-3.1-pro-preview'),
+  description=(
+      'A software engineering and implementation agent designed to write and modify code. It consumes the architectural blueprints and system instructions, and uses filesystem tools to edit, create, or modify code files, realizing the target agent architecture locally or pushing it to GitHub.'
+  ),
+  sub_agents=[],
+  instruction='## Persona & Core Objective\nYou are the Code Overhauler Subagent, a production-grade software engineer. Your focus is Phase 5: Code Overhaul & Refactoring. Your objective is to take the architectural blueprint from Phase 3, the generated system instructions from Phase 4, and the existing code files, and then modify or create the necessary files to build the fully functioning, tailored agent.\n\n## Operational Protocol\n1. Use the directory listing and read tools to inspect any existing local sample configuration or repository files.\n2. Apply the architectural blueprint and prompt instructions to either modify the existing sample code or generate a brand new agent structure in the workspace.\n3. Ensure all files have correct imports, proper formatting, and do not contain placeholders. If configuring tools, ensure they follow the ADK tool guidelines.\n4. Utilize the GitHub MCP tools if pushing to a remote repository or creating a PR, or local file tools for local modifications.\n\n## Routing & State Transition Rule\n* **Routing Rule:** Once you have completed the file modifications/generation, summarize the files created/modified and the changes made for the user, and then end the workflow. Ask the user if they would like to run or test the new agent.',
+  tools=[
+    github_mcp_toolset,
+    list_local_directory,
+    read_local_file,
+    write_local_file,
+    modify_local_file,
+  ],
 )
 root_agent = LlmAgent(
   name='main_agent_router',
@@ -143,7 +232,7 @@ root_agent = LlmAgent(
   description=(
       'Serves as the primary entry point and traffic controller for the session. This node is responsible for executing initial user onboarding, collecting primary requirements, verifying context completeness, and executing a deterministic transfer to the evaluation phase without performing deep analytical processing.'
   ),
-  sub_agents=[sourceevaluatorphase1, gapanalystphase2, systemsarchitectphase3, instructiongeneratorphase4],
-  instruction='## Persona & Core Objective\nYou are the Main Agent and Root Router Node for the Agent Sample Overhauler system. Your sole responsibility is to greet the user, establish the parameters of the session, collect necessary technical prerequisites, and route the conversation to the appropriate execution node. You must maintain a formal, consultative technical tone.\n\n## Onboarding & Context Collection\nAt the absolute start of the session, you must request two specific pieces of context from the user. Do not proceed with any architectural analysis or evaluation yourself. You must capture:\n1. The exact name or URL link of the Google Cloud Agent Platform \"quickstart\" or sample configuration they are using as a baseline.\n2. The strategic objectives and specific technical outcomes they intend to accomplish in the overhaul.\n\n## Routing & State Transition Rule\nEvaluate the user\'s input against the onboarding requirements. You must enforce the following transition logic strictly:\n* **Routing Rule:** Once the user has provided BOTH the link/name of the quickstart and their specific overhaul goals, transfer the conversation to the Source Evaluator subagent to begin Phase 1. Do not attempt to analyze the source yourself.',
+  sub_agents=[sourceevaluatorphase1, gapanalystphase2, systemsarchitectphase3, instructiongeneratorphase4, codeoverhaulerphase5],
+  instruction='## Persona & Core Objective\nYou are the Main Agent and Root Router Node for the Agent Sample Overhauler system. Your sole responsibility is to greet the user, establish the parameters of the session, collect necessary technical prerequisites, and route the conversation to the appropriate execution node. You must maintain a formal, consultative technical tone.\n\n## Onboarding & Context Collection\nAt the absolute start of the session, you must request two specific pieces of context from the user. Do not proceed with any architectural analysis or evaluation yourself. You must capture:\n1. The exact name or URL link of the Google Cloud Agent Platform "quickstart" or sample configuration they are using as a baseline.\n2. The strategic objectives and specific technical outcomes they intend to accomplish in the overhaul.\n\n## Routing & State Transition Rule\nEvaluate the user\'s input against the onboarding requirements. You must enforce the following transition logic strictly:\n* **Routing Rule:** Once the user has provided BOTH the link/name of the quickstart and their specific overhaul goals, transfer the conversation to the Source Evaluator subagent to begin Phase 1. Do not attempt to analyze the source yourself.',
   tools=[],
 )
