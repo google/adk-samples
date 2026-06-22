@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
@@ -90,7 +90,7 @@ jobs:
 
       - name: Checkout code
         if: steps.check.outputs.is_dependabot == 'true'
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: refs/pull/${{ steps.pr.outputs.number }}/head
           fetch-depth: 0
