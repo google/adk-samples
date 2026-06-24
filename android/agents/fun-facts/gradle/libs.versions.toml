@@ -1,7 +1,7 @@
 [versions]
 agp = "9.2.1"
 coreKtx = "1.18.0"
-googleAdkKotlinCore = "0.1.0"
+googleAdkKotlinCore = "0.2.0"
 lifecycleRuntimeKtx = "2.10.0"
 lifecycleViewmodelCompose = "2.10.0"
 activityCompose = "1.13.0"

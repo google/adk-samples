@@ -17,7 +17,6 @@
 package com.google.adk.samples.agents.llmauditor
 
 import com.google.adk.kt.artifacts.InMemoryArtifactService
-import com.google.adk.kt.runners.InMemoryRunner
 import com.google.adk.kt.sessions.InMemorySessionService
 import com.google.adk.kt.webserver.AdkWebServer
 import com.google.adk.kt.webserver.loaders.SingleAgentLoader
@@ -33,11 +32,6 @@ fun main() {
         sessionService = sessionService,
         artifactService = artifactService,
         agentLoader = SingleAgentLoader(agent),
-        runner = InMemoryRunner(
-            agent = agent,
-            sessionService = sessionService,
-            artifactService = artifactService,
-        ),
         apiServerSpanExporter = ApiServerSpanExporter(),
     )
 

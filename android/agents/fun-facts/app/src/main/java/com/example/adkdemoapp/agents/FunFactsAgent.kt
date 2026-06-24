@@ -29,7 +29,7 @@ object FunFactsAgent {
     val rootAgent = LlmAgent(
         name = "fun_facts",
         description = "An agent that provides fun facts about a given topic.",
-        model = Gemini(name = "gemini-3-flash-preview", apiKey = BuildConfig.GEMINI_API_KEY),
+        model = Gemini(name = "gemini-flash-latest", apiKey = BuildConfig.GEMINI_API_KEY),
         instruction = Instruction(
             "Provide the most mind-blowing, obscure, and wacky fun facts about "
                     + "the topic. Aim for maximum 'wow' factor with rare and surprising "

@@ -25,3 +25,7 @@ root_agent = Agent(
     ),
     sub_agents=[threatintel_agent, investigation_agent, triage_agent, response_agent],
 )
+
+from google.adk.apps import App  # ruff: noqa: E402
+
+app = App(root_agent=root_agent, name="cyber_guardian")

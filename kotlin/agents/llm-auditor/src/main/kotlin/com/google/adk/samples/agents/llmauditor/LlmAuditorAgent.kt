@@ -29,7 +29,7 @@ import com.google.adk.kt.models.Gemini
  *    minimally edits the answer to correct any inaccuracies.
  */
 object LlmAuditorAgent {
-    private val model = Gemini(name = "gemini-2.5-flash")
+    private val model = Gemini(name = "gemini-flash-latest")
 
     @JvmField
     val rootAgent = SequentialAgent(

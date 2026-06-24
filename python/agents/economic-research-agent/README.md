@@ -47,7 +47,15 @@ The **Economic Research Agent (ERA)** is a production-grade site-selection and m
 | **EIA** | "Compare industrial electricity rates in Texas vs. Ohio for a data center." | Operational Utility Benchmarking |
 | **Register** | "Are there any recent regulatory notices regarding semiconductors in Texas?" | Live Regulatory Drift & Compliance |
 | **Tax F.** | "What are the corporate income tax brackets for North Carolina in 2024?" | Fiscal Competitiveness |
+| **Workforce** | "Analyze the workforce AI exposure and automation potential for Customer Service Representatives vs. Software Developers." | AI Workforce Adaptation Strategy |
+| **MLS Sourcing** | "Find multifamily investment properties in Columbus, OH and estimate their Cap Rates using HUD rents." | Real Estate Sourcing & Yield Yields |
+| **USPS Cross.** | "Find the county FIPS code for ZIP code 78702 using USPS crosswalk." | Dynamic ZIP-to-FIPS Lookup |
+| **CHAS** | "What is the percentage of cost-burdened households in Travis County, TX (FIPS 48453) using CHAS data?" | Regional Housing Problems & Supply Burden |
+| **Labor Shifts** | "Compare Austin and Columbus for AI-driven labor market disruption and forecast their 3-year displacement outlook." | Labor Market Disruption Forecasting |
 | **Combined** | "Create a Metro Matrix comparing Denver and Seattle for a new Tech Hub." | 360-Degree Site Selection (Level 3) |
+
+
+
 
 ### 📡 Consultative Capabilities
 
@@ -69,6 +77,17 @@ The **Economic Research Agent (ERA)** is a production-grade site-selection and m
 - **Workforce Burden Analysis**: Correlation of Fair Market Rents (FMR) against Area Median Income (AMI).
 - **Relocation COLA**: Precise cost-of-living benchmarking for talent retention strategy.
 - **Demographic Depth**: Hyper-localized education and age-bucket analysis (Census ACS).
+
+#### 🤖 AI Labor Exposure & MLS Investment Sourcing (New!)
+- **AI Task Exposure & Automation Risk**: Maps job categories against O*NET tasks to determine displacement risk (automation) vs. augmentation support potential.
+- **MLS Sourcing & Cap Rate Calculation**: Fetches active property listings from MLS data and correlates them with local HUD FMR rents to calculate Estimated Cap Rates and price-to-rent yield ratios.
+
+#### 🧮 Quantitative Decision-Support & Econometrics (New!)
+- **Isolated Econometrics Sandbox (`run_econometric_regression`)**: Executes formal OLS regressions, Pearson/Spearman correlations, and ADF stationarity tests on live vectors in a secure Python environment.
+- **Acquisitions Deal Underwriting (`underwrite_deal_leverage`)**: Models compound real estate amortization, Net Operating Income (NOI), Debt Service Coverage Ratio (DSCR), and Debt Yield tables from HUD/MLS inputs.
+- **Location Scorecard Generator (`generate_location_scorecard`)**: Normalizes and scores candidate states based on weighted criteria (corporate tax, electricity cost, wages).
+- **Employee Relocation Estimator (`estimate_employee_relocation`)**: Compares state income tax brackets and HUD FMR rents between counties to project net disposable income changes for relocating talent.
+- **FRED Series Search (`search_macro_series`)**: Maps semantic keywords directly to valid FRED Series IDs to prevent lookup errors.
 
 ---
 
