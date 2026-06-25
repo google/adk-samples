@@ -50,7 +50,7 @@ A general-purpose AI coding assistant that responds to `@agy` mentions in issues
 | PR review submitted | Review body contains `@agy` (but not `@agy /review` or `@agy /triage`) |
 | PR review comment created | Comment contains `@agy` (but not `@agy /review` or `@agy /triage`) |
 
-Only users with `OWNER`, `MEMBER`, or `COLLABORATOR` association can invoke the bot.
+Only users with `OWNER`, `MEMBER`, or `COLLABORATOR` association can invoke the bot. Bot senders are explicitly blocked to prevent infinite loops.
 
 #### Usage examples
 
@@ -82,9 +82,9 @@ Automatically triages a single issue by analyzing its title and body and applyin
 
 | Event | Condition |
 |-------|-----------|
-| Issue opened | Always |
-| Issue reopened | Always |
-| Issue comment created | Comment contains `@agy /triage` |
+| Issue opened | Sender is not a bot |
+| Issue reopened | Sender is not a bot |
+| Issue comment created | Comment contains `@agy /triage`, sender is not a bot |
 
 Only users with `OWNER`, `MEMBER`, or `COLLABORATOR` association can invoke via comment.
 
@@ -143,13 +143,13 @@ Performs an automated AI code review on a pull request, posting inline comments 
 
 | Event | Condition |
 |-------|-----------|
-| PR opened | Author has `OWNER`, `MEMBER`, or `COLLABORATOR` association |
-| PR reopened | Author has `OWNER`, `MEMBER`, or `COLLABORATOR` association |
-| Issue comment on a PR | Comment contains `@agy /review` |
-| PR review comment | Comment contains `@agy /review` |
-| PR review submitted | Review body contains `@agy /review` |
+| PR opened | Author has `OWNER`, `MEMBER`, or `COLLABORATOR` association, sender is not a bot |
+| PR reopened | Author has `OWNER`, `MEMBER`, or `COLLABORATOR` association, sender is not a bot |
+| Issue comment on a PR | Comment contains `@agy /review`, sender is not a bot |
+| PR review comment | Comment contains `@agy /review`, sender is not a bot |
+| PR review submitted | Review body contains `@agy /review`, sender is not a bot |
 
-Only users with `OWNER`, `MEMBER`, or `COLLABORATOR` association can invoke via comment.
+Only users with `OWNER`, `MEMBER`, or `COLLABORATOR` association can invoke via comment. Bot senders are explicitly blocked to prevent infinite loops.
 
 #### Usage examples
 
