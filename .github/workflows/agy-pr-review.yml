@@ -109,7 +109,7 @@ jobs:
           echo "${PR_DATA}" > /tmp/pr_data.json
 
           # Extract head repo and branch for checkout
-          HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.owner.login + "/" + .headRepository.name')"
+          HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.nameWithOwner')"
           BRANCH="$(echo "${PR_DATA}" | jq -r '.headRefName')"
           IS_FORK="false"
           if [[ "${HEAD_REPO}" != "${{ github.repository }}" ]]; then
@@ -160,7 +160,7 @@ jobs:
           echo "${PR_DATA}" > /tmp/pr_data.json
 
           # Extract head repo and branch for checkout
-          HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.owner.login + "/" + .headRepository.name')"
+          HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.nameWithOwner')"
           BRANCH="$(echo "${PR_DATA}" | jq -r '.headRefName')"
           IS_FORK="false"
           if [[ "${HEAD_REPO}" != "${{ github.repository }}" ]]; then
@@ -216,7 +216,7 @@ jobs:
           echo "${PR_DATA}" > /tmp/pr_data.json
 
           # Extract head repo and branch for checkout
-          HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.owner.login + "/" + .headRepository.name')"
+          HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.nameWithOwner')"
           BRANCH="$(echo "${PR_DATA}" | jq -r '.headRefName')"
           IS_FORK="false"
           if [[ "${HEAD_REPO}" != "${{ github.repository }}" ]]; then
