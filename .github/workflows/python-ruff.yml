@@ -1,0 +1,166 @@
+name: ✅ Ruff PR Checks
+
+on:
+  pull_request:
+    paths:
+      - "core/**/*.py"
+      - "contrib/**/*.py"
+      - "**/pyproject.toml"
+
+permissions:
+  contents: read
+  pull-requests: write # Essential for posting reviewdog suggestion comments
+
+# Configurable settings shared globally across checking jobs
+env:
+  # Maximum allowed line length for Python files
+  LINE_LENGTH: "80"
+  
+  # Styling and coding rules to select
+  # - E: pycodestyle errors (includes E501 line length checks)
+  # - F: pyflakes (checks logic errors, undefined vars, unused imports)
+  # - W: pycodestyle warnings
+  # - I: isort (checks import statement ordering and format)
+  # - C: flake8-comprehensions
+  # - B: flake8-bugbear
+  # - UP: pyupgrade
+  # - RUF: ruff specific rules
+  RULE_SELECT: "E,F,W,I,C,B,UP,RUF"
+  
+  # Styling rules to ignore
+  # - C901: Code complexity (keeps checks flexible)
+  # - B006: Mutable default arguments (required by some agent templates)
+  # - Note: E501 (line-too-long) is NOT here, so the 80 character limit is enforced!
+  RULE_IGNORE: "C901,B006"
+
+jobs:
+  ruff-format:
+    name: Ruff Format Suggestions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+    
+      - name: Install Reviewdog
+        uses: reviewdog/action-setup@v1
+        with:
+          reviewdog_version: latest
+
+      - name: Run Ruff Format & Suggest Changes
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. Fetch the target branch reference commits
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          
+          # 2. Resolve Python files modified in this PR diff
+          CHANGED_FILES=$(git diff --name-only --diff-filter=d origin/${{ github.event.pull_request.base.ref }}...HEAD | grep '\.py$' || true)
+          
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No Python files were modified in this pull request. Skipping formatting."
+            exit 0
+          fi
+          
+          echo "Formatting files: $CHANGED_FILES"
+          
+          # 3. Format ONLY the modified python files
+          uvx ruff format --line-length=${{ env.LINE_LENGTH }} --force-exclude $CHANGED_FILES
+
+          # 4. Post formatting suggestion comments strictly targeting modified files
+          git diff $CHANGED_FILES | reviewdog -f=diff \
+                                              -name="ruff-formatter" \
+                                              -reporter=github-pr-review \
+                                              -filter-mode=added \
+                                              -fail-on-error=true
+
+  ruff-lint:
+    name: Ruff Lint Suggestions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+    
+      - name: Install Reviewdog
+        uses: reviewdog/action-setup@v1
+        with:
+          reviewdog_version: latest
+
+      - name: Post Lint Auto-Fix Suggestions
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. Fetch the target branch reference commits
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          
+          # 2. Resolve Python files modified in this PR diff
+          CHANGED_FILES=$(git diff --name-only --diff-filter=d origin/${{ github.event.pull_request.base.ref }}...HEAD | grep '\.py$' || true)
+          
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No Python files were modified in this pull request. Skipping auto-fixes."
+            exit 0
+          fi
+          
+          echo "Applying auto-fixes to: $CHANGED_FILES"
+          
+          # 3. Apply auto-fixes ONLY to the modified python files
+          uvx ruff check \
+            --line-length=${{ env.LINE_LENGTH }} \
+            --select=${{ env.RULE_SELECT }} \
+            --ignore=${{ env.RULE_IGNORE }} \
+            --force-exclude \
+            --fix $CHANGED_FILES || true
+
+          # 4. Post auto-fix suggestion comments strictly targeting modified files
+          git diff $CHANGED_FILES | reviewdog -f=diff \
+                                              -name="ruff-linter-suggestions" \
+                                              -reporter=github-pr-review \
+                                              -filter-mode=added \
+                                              -fail-on-error=false
+
+      # Restore files so we can find non-fixable errors on the original user commits
+      - name: Restore files to original state
+        run: git checkout -- .
+
+      - name: Run Ruff Linter & Fail on Violations
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. Fetch the target branch reference commits
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          
+          # 2. Resolve Python files modified in this PR diff
+          CHANGED_FILES=$(git diff --name-only --diff-filter=d origin/${{ github.event.pull_request.base.ref }}...HEAD | grep '\.py$' || true)
+          
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No Python files were modified in this pull request. Skipping diagnostics check."
+            exit 0
+          fi
+          
+          echo "Running diagnostics linter on: $CHANGED_FILES"
+          
+          # 3. Run strict diagnostic linter in RDJSON format on only the modified python files
+          uvx ruff check \
+            --line-length=${{ env.LINE_LENGTH }} \
+            --select=${{ env.RULE_SELECT }} \
+            --ignore=${{ env.RULE_IGNORE }} \
+            --force-exclude \
+            --output-format=rdjson \
+            --exit-zero $CHANGED_FILES | reviewdog -f=rdjson \
+                                                   -name="ruff-linter" \
+                                                   -reporter=github-pr-review \
+                                                   -filter-mode=added \
+                                                   -fail-on-error=true
