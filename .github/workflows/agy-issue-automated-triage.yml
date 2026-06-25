@@ -31,12 +31,14 @@ permissions:
 jobs:
   agy-triage-issue:
     if: |-
-      github.event_name == 'issues' ||
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'issue_comment' &&
-        contains(github.event.comment.body, '@agy /triage') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      github.event.sender.type != 'Bot' && (
+        github.event_name == 'issues' ||
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'issue_comment' &&
+          contains(github.event.comment.body, '@agy /triage') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+        )
       )
     timeout-minutes: 5
     runs-on: 'ubuntu-latest'
@@ -84,8 +86,8 @@ jobs:
           ISSUE_NUMBER: '${{ github.event.issue.number || github.event.inputs.issue_number }}'
         run: |-
           set -euo pipefail
-          DELIMITER="$(openssl rand -hex 16)"
           TITLE=$(gh issue view "${ISSUE_NUMBER}" --json title --template '{{.title}}')
+          DELIMITER="$(openssl rand -hex 16)"
           {
             echo "title<<${DELIMITER}"
             echo "${TITLE}"
@@ -113,8 +115,9 @@ jobs:
           REPOSITORY: '${{ github.repository }}'
         run: |-
           set -euo pipefail
-          trap 'rm -f /tmp/agy_triage_prompt.txt' EXIT
-          cat > /tmp/agy_triage_prompt.txt <<PROMPT
+          trap 'rm -f /tmp/agy_triage_prompt.txt /tmp/agy_triage_prompt_raw.txt' EXIT
+          HEREDOC_DELIMITER="$(openssl rand -hex 16)"
+          cat > /tmp/agy_triage_prompt_raw.txt <<${HEREDOC_DELIMITER}
             ## Role
 
             You are an issue triage assistant. Analyze the current GitHub issue
@@ -149,7 +152,9 @@ jobs:
             - Triage only the current issue
             - Assign all applicable labels based on the issue content
             - Reference all shell variables as "${VAR}" (with quotes and braces)
-          PROMPT
+          ${HEREDOC_DELIMITER}
+          sed 's/^          //' /tmp/agy_triage_prompt_raw.txt > /tmp/agy_triage_prompt.txt
+          rm -f /tmp/agy_triage_prompt_raw.txt
           agy --print --dangerously-skip-permissions "$(cat /tmp/agy_triage_prompt.txt)"
 
       - name: 'Post Issue Triage Failure Comment'

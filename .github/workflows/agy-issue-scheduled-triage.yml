@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: '${{ github.workflow }}'
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 defaults:
   run:
@@ -60,18 +60,13 @@ jobs:
           ISSUES="$(echo "${NO_LABEL_ISSUES}" "${NEED_TRIAGE_ISSUES}" | jq -c -s 'add | unique_by(.number)')"
 
           echo '📝 Setting output for GitHub Actions...'
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "issues_to_triage<<${DELIMITER}"
-            echo "${ISSUES}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
-
+          echo "${ISSUES}" > /tmp/issues_to_triage.json
           ISSUE_COUNT="$(echo "${ISSUES}" | jq 'length')"
+          echo "issue_count=${ISSUE_COUNT}" >> "${GITHUB_OUTPUT}"
           echo "✅ Found ${ISSUE_COUNT} issues to triage! 🎯"
 
       - name: 'Validate required configuration'
-        if: steps.find_issues.outputs.issues_to_triage != '[]'
+        if: steps.find_issues.outputs.issue_count != '0'
         env:
           GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
@@ -83,18 +78,18 @@ jobs:
           fi
 
       - name: 'Authenticate to Google Cloud'
-        if: steps.find_issues.outputs.issues_to_triage != '[]' && vars.GCP_WIF_PROVIDER != '' && vars.SERVICE_ACCOUNT_EMAIL != ''
+        if: steps.find_issues.outputs.issue_count != '0' && vars.GCP_WIF_PROVIDER != '' && vars.SERVICE_ACCOUNT_EMAIL != ''
         uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # ratchet:google-github-actions/auth@v2
         with:
           workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
           service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
 
       - name: 'Install Antigravity CLI'
-        if: steps.find_issues.outputs.issues_to_triage != '[]'
+        if: steps.find_issues.outputs.issue_count != '0'
         uses: './.github/actions/install-agy'
 
       - name: 'Run Antigravity Issue Triage'
-        if: steps.find_issues.outputs.issues_to_triage != '[]'
+        if: steps.find_issues.outputs.issue_count != '0'
         id: 'agy_issue_triage'
         env:
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
@@ -102,12 +97,13 @@ jobs:
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           GOOGLE_GENAI_USE_VERTEXAI: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
-          ISSUES_TO_TRIAGE: '${{ steps.find_issues.outputs.issues_to_triage }}'
           REPOSITORY: '${{ github.repository }}'
         run: |-
           set -euo pipefail
-          trap 'rm -f /tmp/agy_scheduled_triage_prompt.txt' EXIT
-          cat > /tmp/agy_scheduled_triage_prompt.txt <<PROMPT
+          trap 'rm -f /tmp/agy_scheduled_triage_prompt.txt /tmp/agy_scheduled_triage_prompt_raw.txt /tmp/issues_to_triage.json' EXIT
+          ISSUES_TO_TRIAGE="$(cat /tmp/issues_to_triage.json)"
+          HEREDOC_DELIMITER="$(openssl rand -hex 16)"
+          cat > /tmp/agy_scheduled_triage_prompt_raw.txt <<${HEREDOC_DELIMITER}
             ## Role
 
             You are an issue triage assistant. Analyze issues and apply
@@ -139,5 +135,11 @@ jobs:
             - Do not add comments
             - Triage each issue independently
             - Reference all shell variables as "${VAR}" (with quotes and braces)
-          PROMPT
+          ${HEREDOC_DELIMITER}
+          sed 's/^          //' /tmp/agy_scheduled_triage_prompt_raw.txt > /tmp/agy_scheduled_triage_prompt.txt
+          rm -f /tmp/agy_scheduled_triage_prompt_raw.txt
           agy --print --dangerously-skip-permissions "$(cat /tmp/agy_scheduled_triage_prompt.txt)"
+
+      - name: 'Cleanup'
+        if: always()
+        run: rm -f /tmp/issues_to_triage.json /tmp/agy_scheduled_triage_prompt.txt /tmp/agy_scheduled_triage_prompt_raw.txt

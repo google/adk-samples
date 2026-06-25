@@ -38,26 +38,28 @@ permissions:
 jobs:
   agy-review-pr:
     if: |-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'pull_request' &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
-      ) ||
-      (
+      github.event.sender.type != 'Bot' && (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'pull_request' &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+        ) ||
         (
           (
-            github.event_name == 'issue_comment' &&
-            github.event.issue.pull_request
-          ) ||
-          github.event_name == 'pull_request_review_comment'
-        ) &&
-        contains(github.event.comment.body, '@agy /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
-      ) ||
-      (
-        github.event_name == 'pull_request_review' &&
-        contains(github.event.review.body, '@agy /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+            (
+              github.event_name == 'issue_comment' &&
+              github.event.issue.pull_request
+            ) ||
+            github.event_name == 'pull_request_review_comment'
+          ) &&
+          contains(github.event.comment.body, '@agy /review') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+        ) ||
+        (
+          github.event_name == 'pull_request_review' &&
+          contains(github.event.review.body, '@agy /review') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+        )
       )
     timeout-minutes: 20
     runs-on: 'ubuntu-latest'
@@ -97,16 +99,15 @@ jobs:
 
           # Get PR details
           PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName,headRepository)"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "pr_data<<${DELIMITER}"
-            echo "${PR_DATA}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
+          echo "${PR_DATA}" > /tmp/pr_data.json
 
           # Extract head repo and branch for checkout
           HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.owner.login + "/" + .headRepository.name')"
           BRANCH="$(echo "${PR_DATA}" | jq -r '.headRefName')"
+          IS_FORK="false"
+          if [[ "${HEAD_REPO}" != "${{ github.repository }}" ]]; then
+            IS_FORK="true"
+          fi
           DELIMITER="$(openssl rand -hex 16)"
           {
             echo "head_repo<<${DELIMITER}"
@@ -119,15 +120,10 @@ jobs:
             echo "${BRANCH}"
             echo "${DELIMITER}"
           } >> "${GITHUB_OUTPUT}"
+          echo "is_fork=${IS_FORK}" >> "${GITHUB_OUTPUT}"
 
           # Get file changes
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "changed_files<<${DELIMITER}"
-            echo "${CHANGED_FILES}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
+          gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
 
       - name: 'Get PR details (issue_comment)'
         id: 'get_pr_comment'
@@ -148,27 +144,21 @@ jobs:
             echo "${DELIMITER}"
           } >> "${GITHUB_OUTPUT}"
 
-          # Extract additional instructions from comment (everything after @agy /review, trimmed)
-          ADDITIONAL_INSTRUCTIONS="$(echo "${COMMENT_BODY}" | sed 's/.*@agy \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "additional_instructions<<${DELIMITER}"
-            echo "${ADDITIONAL_INSTRUCTIONS}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
+          # Extract additional instructions from comment (everything after first @agy /review, trimmed)
+          ADDITIONAL_INSTRUCTIONS="$(echo "${COMMENT_BODY}" | sed 's/@agy \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          echo "${ADDITIONAL_INSTRUCTIONS}" > /tmp/additional_instructions.txt
 
           # Get PR details
           PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName,headRepository)"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "pr_data<<${DELIMITER}"
-            echo "${PR_DATA}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
+          echo "${PR_DATA}" > /tmp/pr_data.json
 
           # Extract head repo and branch for checkout
           HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.owner.login + "/" + .headRepository.name')"
           BRANCH="$(echo "${PR_DATA}" | jq -r '.headRefName')"
+          IS_FORK="false"
+          if [[ "${HEAD_REPO}" != "${{ github.repository }}" ]]; then
+            IS_FORK="true"
+          fi
           DELIMITER="$(openssl rand -hex 16)"
           {
             echo "head_repo<<${DELIMITER}"
@@ -181,15 +171,10 @@ jobs:
             echo "${BRANCH}"
             echo "${DELIMITER}"
           } >> "${GITHUB_OUTPUT}"
+          echo "is_fork=${IS_FORK}" >> "${GITHUB_OUTPUT}"
 
           # Get file changes
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "changed_files<<${DELIMITER}"
-            echo "${CHANGED_FILES}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
+          gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
 
       - name: 'Get PR details (pull_request_review & pull_request_review_comment)'
         id: 'get_pr_review'
@@ -215,27 +200,21 @@ jobs:
             echo "${DELIMITER}"
           } >> "${GITHUB_OUTPUT}"
 
-          # Extract additional instructions from review body (everything after @agy /review, trimmed)
-          ADDITIONAL_INSTRUCTIONS="$(echo "${REVIEW_BODY}" | sed 's/.*@agy \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "additional_instructions<<${DELIMITER}"
-            echo "${ADDITIONAL_INSTRUCTIONS}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
+          # Extract additional instructions from review body (everything after first @agy /review, trimmed)
+          ADDITIONAL_INSTRUCTIONS="$(echo "${REVIEW_BODY}" | sed 's/@agy \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          echo "${ADDITIONAL_INSTRUCTIONS}" > /tmp/additional_instructions.txt
 
           # Get PR details
           PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName,headRepository)"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "pr_data<<${DELIMITER}"
-            echo "${PR_DATA}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
+          echo "${PR_DATA}" > /tmp/pr_data.json
 
           # Extract head repo and branch for checkout
           HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.owner.login + "/" + .headRepository.name')"
           BRANCH="$(echo "${PR_DATA}" | jq -r '.headRefName')"
+          IS_FORK="false"
+          if [[ "${HEAD_REPO}" != "${{ github.repository }}" ]]; then
+            IS_FORK="true"
+          fi
           DELIMITER="$(openssl rand -hex 16)"
           {
             echo "head_repo<<${DELIMITER}"
@@ -248,23 +227,38 @@ jobs:
             echo "${BRANCH}"
             echo "${DELIMITER}"
           } >> "${GITHUB_OUTPUT}"
+          echo "is_fork=${IS_FORK}" >> "${GITHUB_OUTPUT}"
 
           # Get file changes
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "changed_files<<${DELIMITER}"
-            echo "${CHANGED_FILES}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
+          gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
 
-      - name: 'Checkout actual PR branch'
+      - name: 'Checkout base repository'
         uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
         with:
           token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
-          repository: '${{ steps.get_pr.outputs.head_repo || steps.get_pr_comment.outputs.head_repo || steps.get_pr_review.outputs.head_repo }}'
-          ref: '${{ steps.get_pr.outputs.branch || steps.get_pr_comment.outputs.branch || steps.get_pr_review.outputs.branch }}'
+          repository: '${{ github.repository }}'
           fetch-depth: 0
+
+      - name: 'Fetch fork branch into base repo'
+        if: steps.get_pr.outputs.is_fork == 'true' || steps.get_pr_comment.outputs.is_fork == 'true' || steps.get_pr_review.outputs.is_fork == 'true'
+        env:
+          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          HEAD_REPO: '${{ steps.get_pr.outputs.head_repo || steps.get_pr_comment.outputs.head_repo || steps.get_pr_review.outputs.head_repo }}'
+          BRANCH: '${{ steps.get_pr.outputs.branch || steps.get_pr_comment.outputs.branch || steps.get_pr_review.outputs.branch }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+        run: |-
+          set -euo pipefail
+          git remote add fork "https://x-access-token:${GITHUB_TOKEN}@github.com/${HEAD_REPO}.git"
+          git fetch fork "${BRANCH}"
+          git checkout -b "pr/${PR_NUMBER}/fork-branch" "fork/${BRANCH}"
+
+      - name: 'Checkout PR branch (same repo)'
+        if: steps.get_pr.outputs.is_fork != 'true' && steps.get_pr_comment.outputs.is_fork != 'true' && steps.get_pr_review.outputs.is_fork != 'true'
+        env:
+          BRANCH: '${{ steps.get_pr.outputs.branch || steps.get_pr_comment.outputs.branch || steps.get_pr_review.outputs.branch }}'
+        run: |-
+          set -euo pipefail
+          git checkout "${BRANCH}"
 
       - name: 'Validate required configuration'
         env:
@@ -296,14 +290,15 @@ jobs:
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           GOOGLE_GENAI_USE_VERTEXAI: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
-          PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'
-          CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files || steps.get_pr_review.outputs.changed_files }}'
-          ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions || steps.get_pr_review.outputs.additional_instructions }}'
           REPOSITORY: '${{ github.repository }}'
         run: |-
           set -euo pipefail
-          trap 'rm -f /tmp/agy_prompt.txt' EXIT
-          cat > /tmp/agy_prompt.txt <<PROMPT
+          trap 'rm -f /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt /tmp/pr_data.json /tmp/changed_files.txt /tmp/additional_instructions.txt' EXIT
+          PR_DATA="$(cat /tmp/pr_data.json)"
+          CHANGED_FILES="$(cat /tmp/changed_files.txt)"
+          ADDITIONAL_INSTRUCTIONS="$(cat /tmp/additional_instructions.txt 2>/dev/null || true)"
+          HEREDOC_DELIMITER="$(openssl rand -hex 16)"
+          cat > /tmp/agy_prompt_raw.txt <<${HEREDOC_DELIMITER}
             ## Role
 
             You are an expert code reviewer. You have access to tools to gather
@@ -545,10 +540,16 @@ jobs:
             ## Final Instructions
 
             Remember, you are running in a VM and no one reviewing your output. Your review must be posted to GitHub using the MCP tools to create a pending review, add comments to the pending review, and submit the pending review.
-          PROMPT
+          ${HEREDOC_DELIMITER}
+          sed 's/^          //' /tmp/agy_prompt_raw.txt > /tmp/agy_prompt.txt
+          rm -f /tmp/agy_prompt_raw.txt
 
           agy --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)"
 
+
+      - name: 'Cleanup'
+        if: always()
+        run: rm -f /tmp/pr_data.json /tmp/changed_files.txt /tmp/additional_instructions.txt /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt
 
       - name: 'Post PR review failure comment'
         if: failure() && steps.agy_pr_review.outcome == 'failure'

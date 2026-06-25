@@ -16,9 +16,8 @@ on:
       - 'created'
 
 concurrency:
-  group: '${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}'
-  cancel-in-progress: |-
-    ${{ github.event.sender.type == 'User' && ( github.event.issue.author_association == 'OWNER' || github.event.issue.author_association == 'MEMBER' || github.event.issue.author_association == 'COLLABORATOR') }}
+  group: '${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}'
+  cancel-in-progress: '${{ github.event.sender.type == ''User'' }}'
 
 defaults:
   run:
@@ -34,30 +33,32 @@ jobs:
   antigravity-cli:
     # This condition is complex to ensure we only run when explicitly invoked.
     if: |-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'issues' && github.event.action == 'opened' &&
-        contains(github.event.issue.body, '@agy') &&
-        !contains(github.event.issue.body, '@agy /review') &&
-        !contains(github.event.issue.body, '@agy /triage') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
-      ) ||
-      (
+      github.event.sender.type != 'Bot' && (
+        github.event_name == 'workflow_dispatch' ||
         (
-          github.event_name == 'issue_comment' ||
-          github.event_name == 'pull_request_review_comment'
-        ) &&
-        contains(github.event.comment.body, '@agy') &&
-        !contains(github.event.comment.body, '@agy /review') &&
-        !contains(github.event.comment.body, '@agy /triage') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
-      ) ||
-      (
-        github.event_name == 'pull_request_review' &&
-        contains(github.event.review.body, '@agy') &&
-        !contains(github.event.review.body, '@agy /review') &&
-        !contains(github.event.review.body, '@agy /triage') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+          github.event_name == 'issues' && github.event.action == 'opened' &&
+          contains(github.event.issue.body, '@agy') &&
+          !contains(github.event.issue.body, '@agy /review') &&
+          !contains(github.event.issue.body, '@agy /triage') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
+        ) ||
+        (
+          (
+            github.event_name == 'issue_comment' ||
+            github.event_name == 'pull_request_review_comment'
+          ) &&
+          contains(github.event.comment.body, '@agy') &&
+          !contains(github.event.comment.body, '@agy /review') &&
+          !contains(github.event.comment.body, '@agy /triage') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+        ) ||
+        (
+          github.event_name == 'pull_request_review' &&
+          contains(github.event.review.body, '@agy') &&
+          !contains(github.event.review.body, '@agy /review') &&
+          !contains(github.event.review.body, '@agy /triage') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+        )
       )
     timeout-minutes: 10
     runs-on: 'ubuntu-latest'
@@ -88,26 +89,29 @@ jobs:
             ISSUE_NUMBER=""
             IS_PR="false"
           elif [[ "${EVENT_NAME}" == "issues" ]]; then
-            USER_REQUEST=$(echo "${EVENT_PAYLOAD}" | jq -r .issue.body)
+            USER_REQUEST=$(echo "${EVENT_PAYLOAD}" | jq -r '.issue.body // empty')
             ISSUE_NUMBER=$(echo "${EVENT_PAYLOAD}" | jq -r .issue.number)
+            IS_PR="false"
           elif [[ "${EVENT_NAME}" == "issue_comment" ]]; then
-            USER_REQUEST=$(echo "${EVENT_PAYLOAD}" | jq -r .comment.body)
+            USER_REQUEST=$(echo "${EVENT_PAYLOAD}" | jq -r '.comment.body // empty')
             ISSUE_NUMBER=$(echo "${EVENT_PAYLOAD}" | jq -r .issue.number)
             if [[ $(echo "${EVENT_PAYLOAD}" | jq -r .issue.pull_request) != "null" ]]; then
               IS_PR="true"
+            else
+              IS_PR="false"
             fi
           elif [[ "${EVENT_NAME}" == "pull_request_review" ]]; then
-            USER_REQUEST=$(echo "${EVENT_PAYLOAD}" | jq -r .review.body)
+            USER_REQUEST=$(echo "${EVENT_PAYLOAD}" | jq -r '.review.body // empty')
             ISSUE_NUMBER=$(echo "${EVENT_PAYLOAD}" | jq -r .pull_request.number)
             IS_PR="true"
           elif [[ "${EVENT_NAME}" == "pull_request_review_comment" ]]; then
-            USER_REQUEST=$(echo "${EVENT_PAYLOAD}" | jq -r .comment.body)
+            USER_REQUEST=$(echo "${EVENT_PAYLOAD}" | jq -r '.comment.body // empty')
             ISSUE_NUMBER=$(echo "${EVENT_PAYLOAD}" | jq -r .pull_request.number)
             IS_PR="true"
           fi
 
-          # Clean up user request
-          USER_REQUEST=$(echo "${USER_REQUEST}" | sed 's/.*@agy//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          # Clean up user request: strip the leading @agy mention (non-greedy, first occurrence only)
+          USER_REQUEST=$(echo "${USER_REQUEST}" | sed 's/@agy//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
           DELIMITER="$(openssl rand -hex 16)"
           {
@@ -117,11 +121,6 @@ jobs:
             echo "issue_number=${ISSUE_NUMBER}"
             echo "is_pr=${IS_PR}"
           } >> "${GITHUB_OUTPUT}"
-
-      - name: 'Set up git user for commits'
-        run: |-
-          git config --global user.name 'antigravity-cli[bot]'
-          git config --global user.email 'antigravity-cli[bot]@users.noreply.github.com'
 
       - name: 'Get PR branch name'
         id: 'get_pr_branch'
@@ -181,6 +180,12 @@ jobs:
           repository: '${{ github.repository }}'
           ref: '${{ github.event.repository.default_branch }}'
           fetch-depth: 0
+
+      - name: 'Set up git user for commits'
+        run: |-
+          set -euo pipefail
+          git config --global user.name 'antigravity-cli[bot]'
+          git config --global user.email 'antigravity-cli[bot]@users.noreply.github.com'
 
       - name: 'Acknowledge request'
         if: steps.get_context.outputs.issue_number != ''
@@ -285,8 +290,9 @@ jobs:
           COMMENTS: '${{ steps.get_comments.outputs.comments }}'
         run: |-
           set -euo pipefail
-          trap 'rm -f /tmp/agy_prompt.txt' EXIT
-          cat > /tmp/agy_prompt.txt <<PROMPT
+          trap 'rm -f /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt response.md' EXIT
+          HEREDOC_DELIMITER="$(openssl rand -hex 16)"
+          cat > /tmp/agy_prompt_raw.txt <<${HEREDOC_DELIMITER}
           ## Role
 
           You are a helpful AI assistant invoked via a CLI interface in a GitHub workflow. You have access to tools to interact with the repository and respond to the user.
@@ -378,12 +384,15 @@ jobs:
              - If the question requires code or documentation changes, follow the fix process above, including creating and updating a checklist plan and **creating a new branch for your changes as described in section 1.**
              - Write a clear, concise answer in `response.md` and post it as an issue comment: `gh issue comment "${ISSUE_NUMBER}" --body-file response.md`
 
-          ## Guidelines
+           ## Guidelines
 
           - **Be concise and actionable.** Focus on solving the user's problem efficiently.
           - **Always commit and push your changes if you modify code or documentation.**
           - **If you are unsure about the fix or answer, explain your reasoning and ask clarifying questions.**
           - **Follow project conventions and best practices.**
-          PROMPT
+          ${HEREDOC_DELIMITER}
+          # Strip the leading spaces introduced by YAML block scalar indentation
+          sed 's/^          //' /tmp/agy_prompt_raw.txt > /tmp/agy_prompt.txt
+          rm -f /tmp/agy_prompt_raw.txt
 
           agy --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)"
