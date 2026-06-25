@@ -103,7 +103,7 @@ jobs:
           trap 'rm -f /tmp/agy_scheduled_triage_prompt.txt /tmp/agy_scheduled_triage_prompt_raw.txt /tmp/issues_to_triage.json' EXIT
           ISSUES_TO_TRIAGE="$(cat /tmp/issues_to_triage.json)"
           HEREDOC_DELIMITER="$(openssl rand -hex 16)"
-          cat > /tmp/agy_scheduled_triage_prompt_raw.txt <<${HEREDOC_DELIMITER}
+          cat > /tmp/agy_scheduled_triage_prompt_raw.txt <<"${HEREDOC_DELIMITER}"
             ## Role
 
             You are an issue triage assistant. Analyze issues and apply
