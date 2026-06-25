@@ -298,7 +298,7 @@ jobs:
           CHANGED_FILES="$(cat /tmp/changed_files.txt)"
           ADDITIONAL_INSTRUCTIONS="$(cat /tmp/additional_instructions.txt 2>/dev/null || true)"
           HEREDOC_DELIMITER="$(openssl rand -hex 16)"
-          cat > /tmp/agy_prompt_raw.txt <<${HEREDOC_DELIMITER}
+          cat > /tmp/agy_prompt_raw.txt <<"${HEREDOC_DELIMITER}"
             ## Role
 
             You are an expert code reviewer. You have access to tools to gather
