@@ -73,6 +73,13 @@ jobs:
           app-id: '${{ vars.APP_ID }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
 
+      - name: 'Checkout base repository'
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          repository: '${{ github.repository }}'
+          fetch-depth: 0
+
       - name: 'Get PR details (pull_request & workflow_dispatch)'
         id: 'get_pr'
         if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
@@ -231,13 +238,6 @@ jobs:
 
           # Get file changes
           gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
-
-      - name: 'Checkout base repository'
-        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
-        with:
-          token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
-          repository: '${{ github.repository }}'
-          fetch-depth: 0
 
       - name: 'Fetch fork branch into base repo'
         if: steps.get_pr.outputs.is_fork == 'true' || steps.get_pr_comment.outputs.is_fork == 'true' || steps.get_pr_review.outputs.is_fork == 'true'
