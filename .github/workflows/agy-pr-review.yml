@@ -279,6 +279,13 @@ jobs:
           workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
           service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
 
+      - name: 'Debug GCP Authentication'
+        if: vars.GCP_WIF_PROVIDER != '' && vars.SERVICE_ACCOUNT_EMAIL != ''
+        run: |-
+          gcloud auth list
+          gcloud config list
+          gcloud projects list || echo "gcloud projects list failed"
+
       - name: 'Install Antigravity CLI'
         uses: './.github/actions/install-agy'
 
