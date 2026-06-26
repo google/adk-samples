@@ -297,13 +297,13 @@ jobs:
           GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
-          GOOGLE_GENAI_USE_VERTEXAI: 'true'
+          GOOGLE_GENAI_USE_VERTEXAI: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
           GOOGLE_GENAI_USE_GCA: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
           REPOSITORY: '${{ github.repository }}'
         run: |-
           set -euo pipefail
-          trap 'rm -f /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt /tmp/pr_data.json /tmp/changed_files.txt /tmp/additional_instructions.txt' EXIT
+          trap 'rm -f /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt /tmp/pr_data.json /tmp/changed_files.txt /tmp/additional_instructions.txt /tmp/agy_output.txt' EXIT
           PR_DATA="$(cat /tmp/pr_data.json)"
           CHANGED_FILES="$(cat /tmp/changed_files.txt)"
           ADDITIONAL_INSTRUCTIONS="$(cat /tmp/additional_instructions.txt 2>/dev/null || true)"
@@ -554,7 +554,15 @@ jobs:
           sed 's/^          //' /tmp/agy_prompt_raw.txt > /tmp/agy_prompt.txt
           rm -f /tmp/agy_prompt_raw.txt
 
-          agy --project "${GOOGLE_CLOUD_PROJECT}" --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)" < /dev/null
+          # Run agy and capture its output, but still print it live.
+          # Note: under set -o pipefail, if agy exits with non-zero, the pipeline fails.
+          # If agy exits with 0 but prints an error, we catch and fail it.
+          agy --project "${GOOGLE_CLOUD_PROJECT}" --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)" < /dev/null 2>&1 | tee /tmp/agy_output.txt
+
+          if grep -q "^Error:" /tmp/agy_output.txt; then
+            echo "::error::Antigravity CLI failed with error: $(cat /tmp/agy_output.txt)"
+            exit 1
+          fi
 
 
       - name: 'Cleanup'
