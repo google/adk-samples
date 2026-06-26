@@ -547,7 +547,7 @@ jobs:
           sed 's/^          //' /tmp/agy_prompt_raw.txt > /tmp/agy_prompt.txt
           rm -f /tmp/agy_prompt_raw.txt
 
-          agy --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)" < /dev/null
+          agy --project "${GOOGLE_CLOUD_PROJECT}" --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)" < /dev/null
 
 
       - name: 'Cleanup'
