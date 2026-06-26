@@ -262,12 +262,12 @@ jobs:
 
       - name: 'Validate required configuration'
         env:
-          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+          ANTIGRAVITY_TOKEN: '${{ secrets.ANTIGRAVITY_TOKEN || secrets.GEMINI_API_KEY }}'
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
         run: |-
           set -euo pipefail
-          if [[ -z "${GEMINI_API_KEY}" && -z "${GOOGLE_CLOUD_PROJECT}" ]]; then
-            echo "::error::Neither GEMINI_API_KEY nor GOOGLE_CLOUD_PROJECT is configured. At least one must be set for the Antigravity CLI to authenticate."
+          if [[ -z "${ANTIGRAVITY_TOKEN}" && -z "${GOOGLE_CLOUD_PROJECT}" ]]; then
+            echo "::error::Neither ANTIGRAVITY_TOKEN nor GOOGLE_CLOUD_PROJECT is configured. At least one must be set for the Antigravity CLI to authenticate."
             exit 1
           fi
 
@@ -285,6 +285,7 @@ jobs:
         id: 'agy_pr_review'
         env:
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          ANTIGRAVITY_TOKEN: '${{ secrets.ANTIGRAVITY_TOKEN || secrets.GEMINI_API_KEY }}'
           GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
@@ -545,7 +546,7 @@ jobs:
           sed 's/^          //' /tmp/agy_prompt_raw.txt > /tmp/agy_prompt.txt
           rm -f /tmp/agy_prompt_raw.txt
 
-          agy --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)"
+          agy --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)" < /dev/null
 
 
       - name: 'Cleanup'
