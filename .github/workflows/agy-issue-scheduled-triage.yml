@@ -22,6 +22,7 @@ jobs:
   agy-triage-issues:
     timeout-minutes: 30
     runs-on: 'ubuntu-latest'
+    environment: 'PROD'
 
     steps:
       - name: 'Checkout repository'
@@ -93,14 +94,16 @@ jobs:
         id: 'agy_issue_triage'
         env:
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          USE_ADC: '1'
           GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           GOOGLE_GENAI_USE_VERTEXAI: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
+          GOOGLE_GENAI_USE_GCA: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           REPOSITORY: '${{ github.repository }}'
         run: |-
           set -euo pipefail
-          trap 'rm -f /tmp/agy_scheduled_triage_prompt.txt /tmp/agy_scheduled_triage_prompt_raw.txt /tmp/issues_to_triage.json' EXIT
+          trap 'rm -f /tmp/agy_scheduled_triage_prompt.txt /tmp/agy_scheduled_triage_prompt_raw.txt /tmp/issues_to_triage.json /tmp/agy_output.txt' EXIT
           ISSUES_TO_TRIAGE="$(cat /tmp/issues_to_triage.json)"
           HEREDOC_DELIMITER="$(openssl rand -hex 16)"
           cat > /tmp/agy_scheduled_triage_prompt_raw.txt <<"${HEREDOC_DELIMITER}"
@@ -136,10 +139,15 @@ jobs:
             - Triage each issue independently
             - Reference all shell variables as "${VAR}" (with quotes and braces)
           ${HEREDOC_DELIMITER}
-          sed 's/^          //' /tmp/agy_scheduled_triage_prompt_raw.txt > /tmp/agy_scheduled_triage_prompt.txt
+          sed 's/^            //' /tmp/agy_scheduled_triage_prompt_raw.txt > /tmp/agy_scheduled_triage_prompt.txt
           rm -f /tmp/agy_scheduled_triage_prompt_raw.txt
-          agy --print --dangerously-skip-permissions "$(cat /tmp/agy_scheduled_triage_prompt.txt)"
+          agy --project "${GOOGLE_CLOUD_PROJECT}" --print --dangerously-skip-permissions "$(cat /tmp/agy_scheduled_triage_prompt.txt)" < /dev/null 2>&1 | tee /tmp/agy_output.txt
+
+          if grep -q "^Error:" /tmp/agy_output.txt; then
+            echo "::error::Antigravity CLI failed with error: $(cat /tmp/agy_output.txt)"
+            exit 1
+          fi
 
       - name: 'Cleanup'
         if: always()
-        run: rm -f /tmp/issues_to_triage.json /tmp/agy_scheduled_triage_prompt.txt /tmp/agy_scheduled_triage_prompt_raw.txt
+        run: rm -f /tmp/issues_to_triage.json /tmp/agy_scheduled_triage_prompt.txt /tmp/agy_scheduled_triage_prompt_raw.txt /tmp/agy_output.txt

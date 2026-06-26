@@ -279,13 +279,6 @@ jobs:
           workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
           service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
 
-      - name: 'Debug GCP Authentication'
-        if: vars.GCP_WIF_PROVIDER != '' && vars.SERVICE_ACCOUNT_EMAIL != ''
-        run: |-
-          gcloud auth list
-          gcloud config list
-          gcloud projects list || echo "gcloud projects list failed"
-
       - name: 'Install Antigravity CLI'
         uses: './.github/actions/install-agy'
 
@@ -551,7 +544,7 @@ jobs:
 
             Remember, you are running in a VM and no one reviewing your output. Your review must be posted to GitHub using the MCP tools to create a pending review, add comments to the pending review, and submit the pending review.
           ${HEREDOC_DELIMITER}
-          sed 's/^          //' /tmp/agy_prompt_raw.txt > /tmp/agy_prompt.txt
+          sed 's/^            //' /tmp/agy_prompt_raw.txt > /tmp/agy_prompt.txt
           rm -f /tmp/agy_prompt_raw.txt
 
           # Run agy and capture its output, but still print it live.
@@ -564,10 +557,9 @@ jobs:
             exit 1
           fi
 
-
       - name: 'Cleanup'
         if: always()
-        run: rm -f /tmp/pr_data.json /tmp/changed_files.txt /tmp/additional_instructions.txt /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt
+        run: rm -f /tmp/pr_data.json /tmp/changed_files.txt /tmp/additional_instructions.txt /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt /tmp/agy_output.txt
 
       - name: 'Post PR review failure comment'
         if: failure() && steps.agy_pr_review.outcome == 'failure'

@@ -31,7 +31,6 @@ permissions:
 
 jobs:
   antigravity-cli:
-    # This condition is complex to ensure we only run when explicitly invoked.
     if: |-
       github.event.sender.type != 'Bot' && (
         github.event_name == 'workflow_dispatch' ||
@@ -62,6 +61,7 @@ jobs:
       )
     timeout-minutes: 10
     runs-on: 'ubuntu-latest'
+    environment: 'PROD'
 
     steps:
       - name: 'Generate GitHub App Token'
@@ -146,8 +146,6 @@ jobs:
           echo "branch=${BRANCH}" >> "${GITHUB_OUTPUT}"
           echo "head_repo=${HEAD_REPO}" >> "${GITHUB_OUTPUT}"
           echo "is_fork=${IS_FORK}" >> "${GITHUB_OUTPUT}"
-
-
 
       - name: 'Fetch fork branch into base repo'
         if: steps.get_context.outputs.is_pr == 'true' && steps.get_pr_branch.outputs.is_fork == 'true'
@@ -273,10 +271,12 @@ jobs:
         id: 'run_agy'
         env:
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          USE_ADC: '1'
           GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           GOOGLE_GENAI_USE_VERTEXAI: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
+          GOOGLE_GENAI_USE_GCA: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           REPOSITORY: '${{ github.repository }}'
           USER_REQUEST: '${{ steps.get_context.outputs.user_request }}'
           ISSUE_NUMBER: '${{ steps.get_context.outputs.issue_number }}'
@@ -288,7 +288,7 @@ jobs:
           COMMENTS: '${{ steps.get_comments.outputs.comments }}'
         run: |-
           set -euo pipefail
-          trap 'rm -f /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt response.md' EXIT
+          trap 'rm -f /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt /tmp/agy_output.txt response.md' EXIT
           HEREDOC_DELIMITER="$(openssl rand -hex 16)"
           cat > /tmp/agy_prompt_raw.txt <<"${HEREDOC_DELIMITER}"
           ## Role
@@ -393,4 +393,9 @@ jobs:
           sed 's/^          //' /tmp/agy_prompt_raw.txt > /tmp/agy_prompt.txt
           rm -f /tmp/agy_prompt_raw.txt
 
-          agy --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)"
+          agy --project "${GOOGLE_CLOUD_PROJECT}" --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)" < /dev/null 2>&1 | tee /tmp/agy_output.txt
+
+          if grep -q "^Error:" /tmp/agy_output.txt; then
+            echo "::error::Antigravity CLI failed with error: $(cat /tmp/agy_output.txt)"
+            exit 1
+          fi

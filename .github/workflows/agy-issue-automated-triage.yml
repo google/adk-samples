@@ -42,6 +42,7 @@ jobs:
       )
     timeout-minutes: 5
     runs-on: 'ubuntu-latest'
+    environment: 'PROD'
 
     steps:
       - name: 'Checkout repository'
@@ -105,17 +106,19 @@ jobs:
         id: 'agy_issue_triage'
         env:
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          USE_ADC: '1'
           GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           GOOGLE_GENAI_USE_VERTEXAI: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
+          GOOGLE_GENAI_USE_GCA: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           ISSUE_NUMBER: '${{ github.event.issue.number || github.event.inputs.issue_number }}'
           ISSUE_TITLE: '${{ steps.get_issue.outputs.title }}'
           ISSUE_BODY: '${{ steps.get_issue.outputs.body }}'
           REPOSITORY: '${{ github.repository }}'
         run: |-
           set -euo pipefail
-          trap 'rm -f /tmp/agy_triage_prompt.txt /tmp/agy_triage_prompt_raw.txt' EXIT
+          trap 'rm -f /tmp/agy_triage_prompt.txt /tmp/agy_triage_prompt_raw.txt /tmp/agy_output.txt' EXIT
           HEREDOC_DELIMITER="$(openssl rand -hex 16)"
           cat > /tmp/agy_triage_prompt_raw.txt <<"${HEREDOC_DELIMITER}"
             ## Role
@@ -153,9 +156,14 @@ jobs:
             - Assign all applicable labels based on the issue content
             - Reference all shell variables as "${VAR}" (with quotes and braces)
           ${HEREDOC_DELIMITER}
-          sed 's/^          //' /tmp/agy_triage_prompt_raw.txt > /tmp/agy_triage_prompt.txt
+          sed 's/^            //' /tmp/agy_triage_prompt_raw.txt > /tmp/agy_triage_prompt.txt
           rm -f /tmp/agy_triage_prompt_raw.txt
-          agy --print --dangerously-skip-permissions "$(cat /tmp/agy_triage_prompt.txt)"
+          agy --project "${GOOGLE_CLOUD_PROJECT}" --print --dangerously-skip-permissions "$(cat /tmp/agy_triage_prompt.txt)" < /dev/null 2>&1 | tee /tmp/agy_output.txt
+
+          if grep -q "^Error:" /tmp/agy_output.txt; then
+            echo "::error::Antigravity CLI failed with error: $(cat /tmp/agy_output.txt)"
+            exit 1
+          fi
 
       - name: 'Post Issue Triage Failure Comment'
         if: failure() && steps.agy_issue_triage.outcome == 'failure'
