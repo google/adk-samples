@@ -27,7 +27,7 @@ dev = [
 
 [tool.ruff]
 # Point back to the Master template in the root
-extend = "../../../../pyproject.toml"
+extend = "../../../pyproject.toml"
 
 [tool.ruff.lint]
 ignore = ["C901", "PLR0912"]
