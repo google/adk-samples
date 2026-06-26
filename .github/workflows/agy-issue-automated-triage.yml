@@ -87,20 +87,15 @@ jobs:
           ISSUE_NUMBER: '${{ github.event.issue.number || github.event.inputs.issue_number }}'
         run: |-
           set -euo pipefail
-          TITLE=$(gh issue view "${ISSUE_NUMBER}" --json title --template '{{.title}}')
+          gh issue view "${ISSUE_NUMBER}" --json title,body > /tmp/issue_data.json
+          TITLE="$(jq -r '.title' /tmp/issue_data.json)"
           DELIMITER="$(openssl rand -hex 16)"
           {
             echo "title<<${DELIMITER}"
             echo "${TITLE}"
             echo "${DELIMITER}"
           } >> "${GITHUB_OUTPUT}"
-          BODY=$(gh issue view "${ISSUE_NUMBER}" --json body --template '{{.body}}')
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "body<<${DELIMITER}"
-            echo "${BODY}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
+          jq -r '.body' /tmp/issue_data.json > /tmp/issue_body.txt
 
       - name: 'Run Antigravity Issue Triage'
         id: 'agy_issue_triage'
@@ -114,11 +109,11 @@ jobs:
           GOOGLE_GENAI_USE_GCA: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           ISSUE_NUMBER: '${{ github.event.issue.number || github.event.inputs.issue_number }}'
           ISSUE_TITLE: '${{ steps.get_issue.outputs.title }}'
-          ISSUE_BODY: '${{ steps.get_issue.outputs.body }}'
           REPOSITORY: '${{ github.repository }}'
         run: |-
           set -euo pipefail
-          trap 'rm -f /tmp/agy_triage_prompt.txt /tmp/agy_triage_prompt_raw.txt /tmp/agy_output.txt' EXIT
+          trap 'rm -f /tmp/agy_triage_prompt.txt /tmp/agy_triage_prompt_raw.txt /tmp/agy_output.txt /tmp/issue_data.json /tmp/issue_body.txt' EXIT
+          ISSUE_BODY="$(cat /tmp/issue_body.txt)"
           HEREDOC_DELIMITER="$(openssl rand -hex 16)"
           cat > /tmp/agy_triage_prompt_raw.txt <<"${HEREDOC_DELIMITER}"
             ## Role

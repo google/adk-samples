@@ -125,9 +125,9 @@ jobs:
             echo "user_request<<${DELIMITER}"
             echo "${USER_REQUEST}"
             echo "${DELIMITER}"
-            echo "issue_number=${ISSUE_NUMBER}"
-            echo "is_pr=${IS_PR}"
           } >> "${GITHUB_OUTPUT}"
+          echo "issue_number=${ISSUE_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "is_pr=${IS_PR}" >> "${GITHUB_OUTPUT}"
 
       - name: 'Get PR branch name'
         id: 'get_pr_branch'

@@ -78,8 +78,6 @@ jobs:
         uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
         with:
           token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
-          repository: '${{ github.repository }}'
-          fetch-depth: 0
 
       - name: 'Get PR details (pull_request & workflow_dispatch)'
         id: 'get_pr'
@@ -132,6 +130,9 @@ jobs:
 
           # Get file changes
           gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
+
+          # No additional instructions for pull_request / workflow_dispatch events
+          touch /tmp/additional_instructions.txt
 
       - name: 'Get PR details (issue_comment)'
         id: 'get_pr_comment'
@@ -254,7 +255,7 @@ jobs:
           git checkout -b "pr/${PR_NUMBER}/fork-branch" "fork/${BRANCH}"
 
       - name: 'Checkout PR branch (same repo)'
-        if: steps.get_pr.outputs.is_fork != 'true' && steps.get_pr_comment.outputs.is_fork != 'true' && steps.get_pr_review.outputs.is_fork != 'true'
+        if: (steps.get_pr.outputs.is_fork == 'false' || steps.get_pr_comment.outputs.is_fork == 'false' || steps.get_pr_review.outputs.is_fork == 'false')
         env:
           BRANCH: '${{ steps.get_pr.outputs.branch || steps.get_pr_comment.outputs.branch || steps.get_pr_review.outputs.branch }}'
         run: |-
@@ -299,7 +300,7 @@ jobs:
           trap 'rm -f /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt /tmp/pr_data.json /tmp/changed_files.txt /tmp/additional_instructions.txt /tmp/agy_output.txt' EXIT
           PR_DATA="$(cat /tmp/pr_data.json)"
           CHANGED_FILES="$(cat /tmp/changed_files.txt)"
-          ADDITIONAL_INSTRUCTIONS="$(cat /tmp/additional_instructions.txt 2>/dev/null || true)"
+          ADDITIONAL_INSTRUCTIONS="$(cat /tmp/additional_instructions.txt)"
           HEREDOC_DELIMITER="$(openssl rand -hex 16)"
           cat > /tmp/agy_prompt_raw.txt <<"${HEREDOC_DELIMITER}"
             ## Role

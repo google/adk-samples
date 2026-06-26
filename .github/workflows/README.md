@@ -16,11 +16,7 @@ This repository contains the following GitHub Actions workflows:
 
 ## Antigravity Prerequisites
 
-The Antigravity workflows (`agy-*.yml`) require at least one of the following to be configured in the repository settings:
-
-## Prerequisites
-
-All workflows require at least one of the following to be configured in the repository settings:
+The Antigravity workflows (`agy-*.yml`) require at least one of the following to be configured in the **PROD** environment in the repository settings:
 
 | Setting | Type | Description |
 |---------|------|-------------|
@@ -28,6 +24,7 @@ All workflows require at least one of the following to be configured in the repo
 | `GOOGLE_CLOUD_PROJECT` | Variable | GCP project ID for Vertex AI access |
 | `GOOGLE_CLOUD_LOCATION` | Variable | GCP region (e.g. `us-central1`) |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Variable | Set to `true` to use Vertex AI instead of direct Gemini API |
+| `GOOGLE_GENAI_USE_GCA` | Variable | Set to `true` to use Gemini Code Assist instead of direct API |
 | `GCP_WIF_PROVIDER` | Variable | Workload Identity Federation provider (required for Vertex AI auth) |
 | `SERVICE_ACCOUNT_EMAIL` | Variable | GCP service account email (required for Vertex AI auth) |
 | `APP_ID` | Variable | GitHub App ID (optional, for elevated permissions) |
