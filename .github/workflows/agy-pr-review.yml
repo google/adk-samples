@@ -104,29 +104,8 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
           # Get PR details
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName,headRepository)"
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName)"
           echo "${PR_DATA}" > /tmp/pr_data.json
-
-          # Extract head repo and branch for checkout
-          HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.nameWithOwner')"
-          BRANCH="$(echo "${PR_DATA}" | jq -r '.headRefName')"
-          IS_FORK="false"
-          if [[ "${HEAD_REPO}" != "${{ github.repository }}" ]]; then
-            IS_FORK="true"
-          fi
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "head_repo<<${DELIMITER}"
-            echo "${HEAD_REPO}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "branch<<${DELIMITER}"
-            echo "${BRANCH}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
-          echo "is_fork=${IS_FORK}" >> "${GITHUB_OUTPUT}"
 
           # Get file changes
           gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
@@ -158,29 +137,8 @@ jobs:
           echo "${ADDITIONAL_INSTRUCTIONS}" > /tmp/additional_instructions.txt
 
           # Get PR details
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName,headRepository)"
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName)"
           echo "${PR_DATA}" > /tmp/pr_data.json
-
-          # Extract head repo and branch for checkout
-          HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.nameWithOwner')"
-          BRANCH="$(echo "${PR_DATA}" | jq -r '.headRefName')"
-          IS_FORK="false"
-          if [[ "${HEAD_REPO}" != "${{ github.repository }}" ]]; then
-            IS_FORK="true"
-          fi
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "head_repo<<${DELIMITER}"
-            echo "${HEAD_REPO}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "branch<<${DELIMITER}"
-            echo "${BRANCH}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
-          echo "is_fork=${IS_FORK}" >> "${GITHUB_OUTPUT}"
 
           # Get file changes
           gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
@@ -214,53 +172,11 @@ jobs:
           echo "${ADDITIONAL_INSTRUCTIONS}" > /tmp/additional_instructions.txt
 
           # Get PR details
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName,headRepository)"
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName)"
           echo "${PR_DATA}" > /tmp/pr_data.json
-
-          # Extract head repo and branch for checkout
-          HEAD_REPO="$(echo "${PR_DATA}" | jq -r '.headRepository.nameWithOwner')"
-          BRANCH="$(echo "${PR_DATA}" | jq -r '.headRefName')"
-          IS_FORK="false"
-          if [[ "${HEAD_REPO}" != "${{ github.repository }}" ]]; then
-            IS_FORK="true"
-          fi
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "head_repo<<${DELIMITER}"
-            echo "${HEAD_REPO}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
-          DELIMITER="$(openssl rand -hex 16)"
-          {
-            echo "branch<<${DELIMITER}"
-            echo "${BRANCH}"
-            echo "${DELIMITER}"
-          } >> "${GITHUB_OUTPUT}"
-          echo "is_fork=${IS_FORK}" >> "${GITHUB_OUTPUT}"
 
           # Get file changes
           gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
-
-      - name: 'Fetch fork branch into base repo'
-        if: steps.get_pr.outputs.is_fork == 'true' || steps.get_pr_comment.outputs.is_fork == 'true' || steps.get_pr_review.outputs.is_fork == 'true'
-        env:
-          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
-          HEAD_REPO: '${{ steps.get_pr.outputs.head_repo || steps.get_pr_comment.outputs.head_repo || steps.get_pr_review.outputs.head_repo }}'
-          BRANCH: '${{ steps.get_pr.outputs.branch || steps.get_pr_comment.outputs.branch || steps.get_pr_review.outputs.branch }}'
-          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
-        run: |-
-          set -euo pipefail
-          git remote add fork "https://x-access-token:${GITHUB_TOKEN}@github.com/${HEAD_REPO}.git"
-          git fetch fork "${BRANCH}"
-          git checkout -b "pr/${PR_NUMBER}/fork-branch" "fork/${BRANCH}"
-
-      - name: 'Checkout PR branch (same repo)'
-        if: (steps.get_pr.outputs.is_fork == 'false' || steps.get_pr_comment.outputs.is_fork == 'false' || steps.get_pr_review.outputs.is_fork == 'false')
-        env:
-          BRANCH: '${{ steps.get_pr.outputs.branch || steps.get_pr_comment.outputs.branch || steps.get_pr_review.outputs.branch }}'
-        run: |-
-          set -euo pipefail
-          git checkout "${BRANCH}"
 
       - name: 'Validate required configuration'
         env:
