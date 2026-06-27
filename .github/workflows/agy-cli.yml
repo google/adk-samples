@@ -169,12 +169,14 @@ jobs:
           BRANCH: '${{ steps.get_pr_branch.outputs.branch }}'
         run: |-
           set -euo pipefail
+          git fetch origin "${BRANCH}"
           git checkout "${BRANCH}"
 
       - name: 'Checkout main branch'
         if: steps.get_context.outputs.is_pr == 'false'
         run: |-
           set -euo pipefail
+          git fetch origin '${{ github.event.repository.default_branch }}'
           git checkout '${{ github.event.repository.default_branch }}'
 
       - name: 'Set up git user for commits'
