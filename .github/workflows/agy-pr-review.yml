@@ -1,4 +1,4 @@
-name: '🧐 Gemini Pull Request Review'
+name: '🧐 Antigravity Pull Request Review'
 
 on:
   pull_request:
@@ -22,7 +22,7 @@ on:
         type: 'number'
 
 concurrency:
-  group: '${{ github.workflow }}-${{ github.head_ref || github.ref }}'
+  group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}'
   cancel-in-progress: true
 
 defaults:
@@ -34,52 +34,54 @@ permissions:
   id-token: 'write'
   issues: 'write'
   pull-requests: 'write'
-  statuses: 'write'
 
 jobs:
-  review-pr:
+  agy-review-pr:
     if: |-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'pull_request' &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
-      ) ||
-      (
+      github.event.sender.type != 'Bot' && (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'pull_request' &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+        ) ||
         (
           (
-            github.event_name == 'issue_comment' &&
-            github.event.issue.pull_request
-          ) ||
-          github.event_name == 'pull_request_review_comment'
-        ) &&
-        contains(github.event.comment.body, '@gemini-cli /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
-      ) ||
-      (
-        github.event_name == 'pull_request_review' &&
-        contains(github.event.review.body, '@gemini-cli /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+            (
+              github.event_name == 'issue_comment' &&
+              github.event.issue.pull_request
+            ) ||
+            github.event_name == 'pull_request_review_comment'
+          ) &&
+          contains(github.event.comment.body, '@agy /review') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+        ) ||
+        (
+          github.event_name == 'pull_request_review' &&
+          contains(github.event.review.body, '@agy /review') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+        )
       )
-    timeout-minutes: 5
+    timeout-minutes: 20
     runs-on: 'ubuntu-latest'
+    environment: 'PROD'
 
     steps:
-      - name: 'Checkout PR code'
-        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
-
       - name: 'Generate GitHub App Token'
         id: 'generate_token'
-        if: |-
-          ${{ vars.APP_ID }}
+        if: vars.APP_ID != ''
         uses: 'actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42' # ratchet:actions/create-github-app-token@v2
         with:
           app-id: '${{ vars.APP_ID }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
 
+      - name: 'Checkout base repository'
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+
       - name: 'Get PR details (pull_request & workflow_dispatch)'
         id: 'get_pr'
-        if: |-
-          ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
         env:
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
           EVENT_NAME: '${{ github.event_name }}'
@@ -94,114 +96,129 @@ jobs:
             PR_NUMBER="${PULL_REQUEST_NUMBER}"
           fi
 
-          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+          DELIMITER="$(openssl rand -hex 16)"
+          {
+            echo "pr_number<<${DELIMITER}"
+            echo "${PR_NUMBER}"
+            echo "${DELIMITER}"
+          } >> "${GITHUB_OUTPUT}"
 
           # Get PR details
           PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName)"
-          echo "pr_data=${PR_DATA}" >> "${GITHUB_OUTPUT}"
+          echo "${PR_DATA}" > /tmp/pr_data.json
 
           # Get file changes
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
-          {
-            echo "changed_files<<EOF"
-            echo "${CHANGED_FILES}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
+          gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
 
+          # No additional instructions for pull_request / workflow_dispatch events
+          touch /tmp/additional_instructions.txt
 
       - name: 'Get PR details (issue_comment)'
         id: 'get_pr_comment'
-        if: |-
-          ${{ github.event_name == 'issue_comment' }}
+        if: github.event_name == 'issue_comment'
         env:
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
-          COMMENT_BODY: '${{ github.event.comment.body }}'
-          PR_NUMBER: '${{ github.event.issue.number }}'
+          EVENT_PAYLOAD: '${{ toJSON(github.event) }}'
         run: |-
           set -euo pipefail
 
-          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+          PR_NUMBER="$(echo "${EVENT_PAYLOAD}" | jq -r '.issue.number')"
+          COMMENT_BODY="$(echo "${EVENT_PAYLOAD}" | jq -r '.comment.body')"
 
-          # Extract additional instructions from comment
-          ADDITIONAL_INSTRUCTIONS="$(
-            echo "${COMMENT_BODY}" | sed 's/.*@gemini-cli \/review//' | xargs
-          )"
-          echo "additional_instructions=${ADDITIONAL_INSTRUCTIONS}" >> "${GITHUB_OUTPUT}"
+          DELIMITER="$(openssl rand -hex 16)"
+          {
+            echo "pr_number<<${DELIMITER}"
+            echo "${PR_NUMBER}"
+            echo "${DELIMITER}"
+          } >> "${GITHUB_OUTPUT}"
+
+          # Extract additional instructions from comment (everything after first @agy /review, trimmed)
+          ADDITIONAL_INSTRUCTIONS="$(echo "${COMMENT_BODY}" | sed 's/@agy \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          echo "${ADDITIONAL_INSTRUCTIONS}" > /tmp/additional_instructions.txt
 
           # Get PR details
           PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName)"
-          echo "pr_data=${PR_DATA}" >> "${GITHUB_OUTPUT}"
+          echo "${PR_DATA}" > /tmp/pr_data.json
 
           # Get file changes
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
-          {
-            echo "changed_files<<EOF"
-            echo "${CHANGED_FILES}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
+          gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
 
-      - name: Set GEMINI_API_KEY
-        run: echo "gemini_api_key=${{ secrets.GEMINI_API_KEY }}" >> $GITHUB_ENV
-
-      - name: 'Run Gemini PR Review'
-        uses: 'google-github-actions/run-gemini-cli@v0'
-        id: 'gemini_pr_review'
+      - name: 'Get PR details (pull_request_review & pull_request_review_comment)'
+        id: 'get_pr_review'
+        if: github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_comment'
         env:
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
-          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
-          PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data }}'
-          CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files }}'
-          ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions }}'
-          REPOSITORY: '${{ github.repository }}'
-          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}' 
+          EVENT_PAYLOAD: '${{ toJSON(github.event) }}'
+          EVENT_NAME: '${{ github.event_name }}'
+        run: |-
+          set -euo pipefail
+
+          PR_NUMBER="$(echo "${EVENT_PAYLOAD}" | jq -r '.pull_request.number')"
+          if [[ "${EVENT_NAME}" == "pull_request_review" ]]; then
+            REVIEW_BODY="$(echo "${EVENT_PAYLOAD}" | jq -r '.review.body')"
+          else
+            REVIEW_BODY="$(echo "${EVENT_PAYLOAD}" | jq -r '.comment.body')"
+          fi
+
+          DELIMITER="$(openssl rand -hex 16)"
+          {
+            echo "pr_number<<${DELIMITER}"
+            echo "${PR_NUMBER}"
+            echo "${DELIMITER}"
+          } >> "${GITHUB_OUTPUT}"
+
+          # Extract additional instructions from review body (everything after first @agy /review, trimmed)
+          ADDITIONAL_INSTRUCTIONS="$(echo "${REVIEW_BODY}" | sed 's/@agy \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          echo "${ADDITIONAL_INSTRUCTIONS}" > /tmp/additional_instructions.txt
+
+          # Get PR details
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName)"
+          echo "${PR_DATA}" > /tmp/pr_data.json
+
+          # Get file changes
+          gh pr diff "${PR_NUMBER}" --name-only > /tmp/changed_files.txt
+
+      - name: 'Validate required configuration'
+        env:
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+        run: |-
+          set -euo pipefail
+          if [[ -z "${GEMINI_API_KEY}" && -z "${GOOGLE_CLOUD_PROJECT}" ]]; then
+            echo "::error::Neither GEMINI_API_KEY nor GOOGLE_CLOUD_PROJECT is configured. At least one must be set for the Antigravity CLI to authenticate."
+            exit 1
+          fi
+
+      - name: 'Authenticate to Google Cloud'
+        if: vars.GCP_WIF_PROVIDER != '' && vars.SERVICE_ACCOUNT_EMAIL != ''
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # ratchet:google-github-actions/auth@v2
         with:
-          gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
-          gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
-          gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
-          gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
-          gcp_service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
-          gemini_api_key: '${{ secrets.GEMINI_API_KEY }}'
-          use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
-          use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
-          settings: |-
-            {
-              "maxSessionTurns": 20,
-              "mcpServers": {
-                "github": {
-                  "command": "docker",
-                  "args": [
-                    "run",
-                    "-i",
-                    "--rm",
-                    "-e",
-                    "GITHUB_PERSONAL_ACCESS_TOKEN",
-                    "ghcr.io/github/github-mcp-server"
-                  ],
-                  "includeTools": [
-                    "create_pending_pull_request_review",
-                    "add_comment_to_pending_review",
-                    "submit_pending_pull_request_review"
-                  ],
-                  "env": {
-                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-                  }
-                }
-              },
-              "coreTools": [
-                "run_shell_command(echo)",
-                "run_shell_command(gh pr view)",
-                "run_shell_command(gh pr diff)",
-                "run_shell_command(cat)",
-                "run_shell_command(head)",
-                "run_shell_command(tail)",
-                "run_shell_command(grep)"
-              ],
-              "telemetry": {
-                "enabled": false,
-                "target": "gcp"
-              }
-            }
-          prompt: |-
+          workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
+          service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
+
+      - name: 'Install Antigravity CLI'
+        uses: './.github/actions/install-agy'
+
+      - name: 'Run Antigravity PR Review'
+        id: 'agy_pr_review'
+        env:
+          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          USE_ADC: '1'
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
+          GOOGLE_GENAI_USE_VERTEXAI: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
+          GOOGLE_GENAI_USE_GCA: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          REPOSITORY: '${{ github.repository }}'
+        run: |-
+          set -euo pipefail
+          trap 'rm -f /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt /tmp/pr_data.json /tmp/changed_files.txt /tmp/additional_instructions.txt /tmp/agy_output.txt' EXIT
+          PR_DATA="$(cat /tmp/pr_data.json)"
+          CHANGED_FILES="$(cat /tmp/changed_files.txt)"
+          ADDITIONAL_INSTRUCTIONS="$(cat /tmp/additional_instructions.txt)"
+          HEREDOC_DELIMITER="$(openssl rand -hex 16)"
+          cat > /tmp/agy_prompt_raw.txt <<"${HEREDOC_DELIMITER}"
             ## Role
 
             You are an expert code reviewer. You have access to tools to gather
@@ -443,11 +460,26 @@ jobs:
             ## Final Instructions
 
             Remember, you are running in a VM and no one reviewing your output. Your review must be posted to GitHub using the MCP tools to create a pending review, add comments to the pending review, and submit the pending review.
+          ${HEREDOC_DELIMITER}
+          sed 's/^            //' /tmp/agy_prompt_raw.txt > /tmp/agy_prompt.txt
+          rm -f /tmp/agy_prompt_raw.txt
 
+          # Run agy and capture its output, but still print it live.
+          # Note: under set -o pipefail, if agy exits with non-zero, the pipeline fails.
+          # If agy exits with 0 but prints an error, we catch and fail it.
+          agy --project "${GOOGLE_CLOUD_PROJECT}" --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)" < /dev/null 2>&1 | tee /tmp/agy_output.txt
+
+          if grep -q "^Error:" /tmp/agy_output.txt; then
+            echo "::error::Antigravity CLI failed with error: $(cat /tmp/agy_output.txt)"
+            exit 1
+          fi
+
+      - name: 'Cleanup'
+        if: always()
+        run: rm -f /tmp/pr_data.json /tmp/changed_files.txt /tmp/additional_instructions.txt /tmp/agy_prompt.txt /tmp/agy_prompt_raw.txt /tmp/agy_output.txt
 
       - name: 'Post PR review failure comment'
-        if: |-
-          ${{ failure() && steps.gemini_pr_review.outcome == 'failure' }}
+        if: failure() && steps.agy_pr_review.outcome == 'failure'
         uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
         with:
           github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
@@ -455,6 +487,6 @@ jobs:
             github.rest.issues.createComment({
               owner: '${{ github.repository }}'.split('/')[0],
               repo: '${{ github.repository }}'.split('/')[1],
-              issue_number: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}',
-              body: 'There is a problem with the Gemini CLI PR review. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
+              issue_number: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}',
+              body: 'There is a problem with the Antigravity CLI PR review. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
             })
