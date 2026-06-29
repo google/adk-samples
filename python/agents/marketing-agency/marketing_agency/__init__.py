@@ -31,7 +31,7 @@ except google.auth.exceptions.DefaultCredentialsError:
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 
-from . import agent  # noqa: E402
-from .agent import root_agent  # noqa: E402
+from . import agent
+from .agent import root_agent
 
 __all__ = ["agent", "root_agent"]

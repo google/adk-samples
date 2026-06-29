@@ -48,5 +48,23 @@
       "market_profile": "Determine trade-hub status for commodity."
     },
     "tools_expected": ["fetch_regional_trade_data"]
+  },
+  {
+    "input": "Analyze the workforce AI exposure and automation potential for Customer Service Representatives vs. Software Developers.",
+    "expected_output": {
+      "devs": "Augmentation, High exposure, software developers",
+      "csr": "Automation, High exposure, customer service representatives"
+    },
+    "tools_expected": ["analyze_workforce_exposure"]
+  },
+  {
+    "input": "Find multifamily investment properties in Columbus, OH and estimate their Cap Rates using HUD rents.",
+    "expected_output": {
+      "city": "Columbus",
+      "listing": "multifamily",
+      "metric": "Estimated Cap Rate"
+    },
+    "tools_expected": ["fetch_mls_property_listings"]
   }
 ]
+
