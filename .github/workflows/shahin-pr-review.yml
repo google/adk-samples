@@ -1,0 +1,370 @@
+name: '🔍 Shahin PR Review (Gemini API)'
+
+on:
+  pull_request:
+    types:
+      - 'opened'
+      - 'reopened'
+  issue_comment:
+    types:
+      - 'created'
+  pull_request_review_comment:
+    types:
+      - 'created'
+  pull_request_review:
+    types:
+      - 'submitted'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: 'number'
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}'
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: 'bash'
+
+permissions:
+  contents: 'read'
+  id-token: 'write'
+  issues: 'write'
+  pull-requests: 'write'
+
+jobs:
+  gemini-review-pr:
+    if: |-
+      github.event.sender.type != 'Bot' && (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'pull_request' &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+        ) ||
+        (
+          (
+            (
+              github.event_name == 'issue_comment' &&
+              github.event.issue.pull_request
+            ) ||
+            github.event_name == 'pull_request_review_comment'
+          ) &&
+          contains(github.event.comment.body, '@shahin /review') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+        ) ||
+        (
+          github.event_name == 'pull_request_review' &&
+          contains(github.event.review.body, '@shahin /review') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+        )
+      )
+    timeout-minutes: 20
+    runs-on: 'ubuntu-latest'
+    environment: 'PROD'
+
+    steps:
+      - name: 'Generate GitHub App Token'
+        id: 'generate_token'
+        if: vars.APP_ID != ''
+        uses: 'actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42' # ratchet:actions/create-github-app-token@v2
+        with:
+          app-id: '${{ vars.APP_ID }}'
+          private-key: '${{ secrets.APP_PRIVATE_KEY }}'
+
+      - name: 'Checkout base repository'
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+
+      - name: 'Get PR details (pull_request & workflow_dispatch)'
+        id: 'get_pr'
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          EVENT_NAME: '${{ github.event_name }}'
+          WORKFLOW_PR_NUMBER: '${{ github.event.inputs.pr_number }}'
+          PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number }}'
+        run: |-
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" = "workflow_dispatch" ]]; then
+            PR_NUMBER="${WORKFLOW_PR_NUMBER}"
+          else
+            PR_NUMBER="${PULL_REQUEST_NUMBER}"
+          fi
+
+          DELIMITER="$(openssl rand -hex 16)"
+          {
+            echo "pr_number<<${DELIMITER}"
+            echo "${PR_NUMBER}"
+            echo "${DELIMITER}"
+          } >> "${GITHUB_OUTPUT}"
+
+          # Get PR details
+          gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName \
+            > /tmp/pr_data.json
+
+          # Get full diff
+          gh pr diff "${PR_NUMBER}" > /tmp/pr_diff.txt
+
+          # No additional instructions for pull_request / workflow_dispatch events
+          touch /tmp/additional_instructions.txt
+
+      - name: 'Get PR details (issue_comment)'
+        id: 'get_pr_comment'
+        if: github.event_name == 'issue_comment'
+        env:
+          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          EVENT_PAYLOAD: '${{ toJSON(github.event) }}'
+        run: |-
+          set -euo pipefail
+
+          PR_NUMBER="$(echo "${EVENT_PAYLOAD}" | jq -r '.issue.number')"
+          COMMENT_BODY="$(echo "${EVENT_PAYLOAD}" | jq -r '.comment.body')"
+
+          DELIMITER="$(openssl rand -hex 16)"
+          {
+            echo "pr_number<<${DELIMITER}"
+            echo "${PR_NUMBER}"
+            echo "${DELIMITER}"
+          } >> "${GITHUB_OUTPUT}"
+
+          ADDITIONAL_INSTRUCTIONS="$(echo "${COMMENT_BODY}" | sed 's/@shahin \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          echo "${ADDITIONAL_INSTRUCTIONS}" > /tmp/additional_instructions.txt
+
+          gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName \
+            > /tmp/pr_data.json
+          gh pr diff "${PR_NUMBER}" > /tmp/pr_diff.txt
+
+      - name: 'Get PR details (pull_request_review & pull_request_review_comment)'
+        id: 'get_pr_review'
+        if: github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_comment'
+        env:
+          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          EVENT_PAYLOAD: '${{ toJSON(github.event) }}'
+          EVENT_NAME: '${{ github.event_name }}'
+        run: |-
+          set -euo pipefail
+
+          PR_NUMBER="$(echo "${EVENT_PAYLOAD}" | jq -r '.pull_request.number')"
+          if [[ "${EVENT_NAME}" == "pull_request_review" ]]; then
+            REVIEW_BODY="$(echo "${EVENT_PAYLOAD}" | jq -r '.review.body')"
+          else
+            REVIEW_BODY="$(echo "${EVENT_PAYLOAD}" | jq -r '.comment.body')"
+          fi
+
+          DELIMITER="$(openssl rand -hex 16)"
+          {
+            echo "pr_number<<${DELIMITER}"
+            echo "${PR_NUMBER}"
+            echo "${DELIMITER}"
+          } >> "${GITHUB_OUTPUT}"
+
+          ADDITIONAL_INSTRUCTIONS="$(echo "${REVIEW_BODY}" | sed 's/@shahin \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          echo "${ADDITIONAL_INSTRUCTIONS}" > /tmp/additional_instructions.txt
+
+          gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName \
+            > /tmp/pr_data.json
+          gh pr diff "${PR_NUMBER}" > /tmp/pr_diff.txt
+
+      - name: 'Validate required configuration'
+        env:
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+        run: |-
+          set -euo pipefail
+          if [[ -z "${GEMINI_API_KEY}" ]]; then
+            echo "::error::GEMINI_API_KEY secret is not configured."
+            exit 1
+          fi
+
+      - name: 'Run Gemini PR Review'
+        id: 'gemini_pr_review'
+        env:
+          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          REPOSITORY: '${{ github.repository }}'
+        run: |-
+          set -euo pipefail
+          trap 'rm -f /tmp/pr_data.json /tmp/pr_diff.txt /tmp/additional_instructions.txt /tmp/gemini_request.json /tmp/gemini_response.json' EXIT
+
+          PR_DATA="$(cat /tmp/pr_data.json)"
+          PR_DIFF="$(cat /tmp/pr_diff.txt)"
+          ADDITIONAL_INSTRUCTIONS="$(cat /tmp/additional_instructions.txt)"
+
+          # Truncate diff if too large (Gemini has context limits)
+          MAX_DIFF_CHARS=200000
+          if [[ "${#PR_DIFF}" -gt "${MAX_DIFF_CHARS}" ]]; then
+            echo "::warning::Diff is large (${#PR_DIFF} chars), truncating to ${MAX_DIFF_CHARS} chars."
+            PR_DIFF="${PR_DIFF:0:${MAX_DIFF_CHARS}}"$'\n[... diff truncated due to size ...]'
+          fi
+
+          # Build the prompt
+          PROMPT="You are an expert code reviewer for a Google ADK (Agent Development Kit) samples repository.
+
+          ## PR Details
+          $(echo "${PR_DATA}" | jq -r '"Title: " + .title + "\nBase: " + .baseRefName + " → Head: " + .headRefName + "\nFiles changed: " + (.changedFiles | tostring) + "\nAdditions: " + (.additions | tostring) + "\nDeletions: " + (.deletions | tostring) + "\nDescription: " + (.body // "(none)")')"
+
+          if [[ -n "${ADDITIONAL_INSTRUCTIONS}" ]]; then
+            PROMPT="${PROMPT}
+
+          ## Additional Review Instructions
+          ${ADDITIONAL_INSTRUCTIONS}"
+          fi
+
+          PROMPT="${PROMPT}
+
+          ## Diff
+          \`\`\`diff
+          ${PR_DIFF}
+          \`\`\`
+
+          ## Review Guidelines
+          - Only comment on lines that are part of the diff (lines starting with + or -).
+          - Only comment when there is an actual issue or bug, not to explain what the code does.
+          - Do not comment on license/copyright headers.
+          - Do not comment on hardcoded dates/times.
+          - Be concise. Keep each comment focused on one issue.
+          - Indicate severity: critical 🔴, high 🟠, medium 🟡, or low 🟢.
+          - Prioritize: Correctness > Security > Efficiency > Maintainability.
+          - For Python code, follow PEP 8.
+          - Do not approve the PR.
+
+          ## Output Format
+          Respond ONLY with a valid JSON object in this exact format (no markdown, no explanation outside the JSON):
+          {
+            \"summary\": \"2-3 sentence overview of the PR and overall assessment.\",
+            \"general_feedback\": [\"observation 1\", \"observation 2\"],
+            \"comments\": [
+              {
+                \"path\": \"path/to/file.py\",
+                \"line\": 42,
+                \"severity\": \"low\",
+                \"body\": \"🟢 Brief description of the issue.\",
+                \"suggestion\": \"optional replacement code here, or empty string\"
+              }
+            ]
+          }
+
+          The 'comments' array may be empty if there are no issues. Each comment must reference a real line number from the diff. The 'suggestion' field should contain only the replacement code (no markdown fences), or an empty string if no suggestion applies."
+
+          # Build the Gemini API request JSON safely using jq
+          jq -n --arg prompt "${PROMPT}" \
+            '{
+              "contents": [{"parts": [{"text": $prompt}]}],
+              "generationConfig": {
+                "temperature": 0.2,
+                "maxOutputTokens": 8192,
+                "responseMimeType": "application/json"
+              }
+            }' > /tmp/gemini_request.json
+
+          echo "Calling Gemini API..."
+          HTTP_STATUS="$(curl -sS -w "%{http_code}" -o /tmp/gemini_response.json \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/gemini_request.json)"
+
+          echo "HTTP status: ${HTTP_STATUS}"
+
+          if [[ "${HTTP_STATUS}" -ne 200 ]]; then
+            echo "::error::Gemini API call failed with HTTP ${HTTP_STATUS}:"
+            cat /tmp/gemini_response.json
+            exit 1
+          fi
+
+          # Extract the text content from the response
+          REVIEW_JSON="$(jq -r '.candidates[0].content.parts[0].text' /tmp/gemini_response.json)"
+
+          if [[ -z "${REVIEW_JSON}" || "${REVIEW_JSON}" == "null" ]]; then
+            echo "::error::Gemini returned empty response."
+            cat /tmp/gemini_response.json
+            exit 1
+          fi
+
+          echo "Gemini response received. Parsing review..."
+
+          # Validate the review JSON
+          if ! echo "${REVIEW_JSON}" | jq empty 2>/dev/null; then
+            echo "::error::Gemini response is not valid JSON:"
+            echo "${REVIEW_JSON}"
+            exit 1
+          fi
+
+          SUMMARY="$(echo "${REVIEW_JSON}" | jq -r '.summary // ""')"
+          GENERAL_FEEDBACK="$(echo "${REVIEW_JSON}" | jq -r '.general_feedback // [] | map("- " + .) | join("\n")')"
+          COMMENT_COUNT="$(echo "${REVIEW_JSON}" | jq '.comments | length')"
+          echo "Review parsed: ${COMMENT_COUNT} inline comment(s)."
+
+          # Build the overall review body
+          REVIEW_BODY="## 📋 Review Summary
+
+          ${SUMMARY}
+
+          ## 🔍 General Feedback
+          ${GENERAL_FEEDBACK}
+
+          ---
+          *This review was generated by [Gemini](https://deepmind.google/technologies/gemini/) via the shahin-pr-review workflow.*"
+
+          # Create the review with inline comments via gh api
+          OWNER="$(echo "${REPOSITORY}" | cut -d'/' -f1)"
+          REPO="$(echo "${REPOSITORY}" | cut -d'/' -f2)"
+
+          # Get the HEAD commit SHA of the PR
+          HEAD_SHA="$(gh pr view "${PR_NUMBER}" --json headRefOid -q '.headRefOid')"
+          echo "PR HEAD SHA: ${HEAD_SHA}"
+
+          # Build the comments array for the GitHub API
+          # GitHub review comments require: path, position (in diff) or line+side
+          # We'll use line + side=RIGHT for added lines
+          GITHUB_COMMENTS="$(echo "${REVIEW_JSON}" | jq --arg head_sha "${HEAD_SHA}" '[
+            .comments[] |
+            select(.line != null and .path != null) |
+            {
+              path: .path,
+              line: .line,
+              side: "RIGHT",
+              body: (
+                .body +
+                if (.suggestion != null and .suggestion != "") then
+                  "\n\n```suggestion\n" + .suggestion + "\n```"
+                else "" end
+              )
+            }
+          ]')"
+
+          # Post the review via GitHub REST API
+          echo "Posting review to GitHub..."
+          RESPONSE="$(gh api \
+            --method POST \
+            "repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews" \
+            --field "commit_id=${HEAD_SHA}" \
+            --field "body=${REVIEW_BODY}" \
+            --field "event=COMMENT" \
+            --field "comments=$(echo "${GITHUB_COMMENTS}")" \
+            2>&1)" || {
+              echo "::error::Failed to post review to GitHub: ${RESPONSE}"
+              # Fall back to posting just a comment without inline comments
+              gh pr comment "${PR_NUMBER}" --body "${REVIEW_BODY}" || true
+              exit 1
+            }
+
+          echo "Review posted successfully!"
+          echo "${RESPONSE}" | jq -r '"Review ID: " + (.id | tostring) + " | State: " + .state' || true
+
+      - name: 'Post PR review failure comment'
+        if: failure() && steps.gemini_pr_review.outcome == 'failure'
+        uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
+        with:
+          github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          script: |-
+            github.rest.issues.createComment({
+              owner: '${{ github.repository }}'.split('/')[0],
+              repo: '${{ github.repository }}'.split('/')[1],
+              issue_number: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}',
+              body: 'There was a problem with the Gemini PR review. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
+            })
