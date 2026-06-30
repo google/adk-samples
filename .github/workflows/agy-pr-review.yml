@@ -199,6 +199,14 @@ jobs:
       - name: 'Install Antigravity CLI'
         uses: './.github/actions/install-agy'
 
+      - name: 'Verify Antigravity CLI'
+        run: |-
+          set -euo pipefail
+          echo "=== agy version ==="
+          agy --version
+          echo "=== agy location ==="
+          which agy
+
       - name: 'Run Antigravity PR Review'
         id: 'agy_pr_review'
         env:
@@ -465,9 +473,20 @@ jobs:
           rm -f /tmp/agy_prompt_raw.txt
 
           # Run agy and capture its output, but still print it live.
-          # Note: under set -o pipefail, if agy exits with non-zero, the pipeline fails.
-          # If agy exits with 0 but prints an error, we catch and fail it.
+          # Temporarily disable errexit so we can capture the exit code from PIPESTATUS.
+          set +e
           agy --project "${GOOGLE_CLOUD_PROJECT}" --print --dangerously-skip-permissions "$(cat /tmp/agy_prompt.txt)" < /dev/null 2>&1 | tee /tmp/agy_output.txt
+          AGY_EXIT_CODE="${PIPESTATUS[0]}"
+          set -e
+
+          echo "=== agy exit code: ${AGY_EXIT_CODE} ==="
+          echo "=== agy output (last 50 lines) ==="
+          tail -50 /tmp/agy_output.txt || true
+
+          if [[ "${AGY_EXIT_CODE}" -ne 0 ]]; then
+            echo "::error::Antigravity CLI exited with code ${AGY_EXIT_CODE}"
+            exit 1
+          fi
 
           if grep -q "^Error:" /tmp/agy_output.txt; then
             echo "::error::Antigravity CLI failed with error: $(cat /tmp/agy_output.txt)"
