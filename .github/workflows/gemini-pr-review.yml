@@ -5,6 +5,7 @@ on:
     types:
       - 'opened'
       - 'reopened'
+      - 'synchronize'
   issue_comment:
     types:
       - 'created'
@@ -22,7 +23,7 @@ on:
         type: 'number'
 
 concurrency:
-  group: '${{ github.workflow }}-${{ github.head_ref || github.ref }}'
+  group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}'
   cancel-in-progress: true
 
 defaults:
@@ -34,7 +35,6 @@ permissions:
   id-token: 'write'
   issues: 'write'
   pull-requests: 'write'
-  statuses: 'write'
 
 jobs:
   review-pr:
@@ -42,7 +42,8 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'pull_request' &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+        github.event.pull_request.head.repo.fork == false &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association)
       ) ||
       (
         (
@@ -53,19 +54,47 @@ jobs:
           github.event_name == 'pull_request_review_comment'
         ) &&
         contains(github.event.comment.body, '@gemini-cli /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association)
       ) ||
       (
         github.event_name == 'pull_request_review' &&
         contains(github.event.review.body, '@gemini-cli /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.review.author_association)
       )
-    timeout-minutes: 5
+    timeout-minutes: 10
     runs-on: 'ubuntu-latest'
 
     steps:
-      - name: 'Checkout PR code'
+      - name: 'Checkout PR code (pull_request)'
+        if: |-
+          ${{ github.event_name == 'pull_request' }}
         uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 'Checkout PR code (workflow_dispatch)'
+        if: |-
+          ${{ github.event_name == 'workflow_dispatch' }}
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: 'refs/pull/${{ github.event.inputs.pr_number }}/head'
+
+      - name: 'Checkout PR code (issue_comment)'
+        if: |-
+          ${{ github.event_name == 'issue_comment' }}
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: 'refs/pull/${{ github.event.issue.number }}/head'
+
+      - name: 'Checkout PR code (pull_request_review & pull_request_review_comment)'
+        if: |-
+          ${{ github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_comment' }}
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: 'refs/pull/${{ github.event.pull_request.number }}/head'
 
       - name: 'Generate GitHub App Token'
         id: 'generate_token'
@@ -81,24 +110,37 @@ jobs:
         if: |-
           ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
         env:
-          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
           EVENT_NAME: '${{ github.event_name }}'
           WORKFLOW_PR_NUMBER: '${{ github.event.inputs.pr_number }}'
           PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number }}'
         run: |-
           set -euo pipefail
 
-          if [[ "${EVENT_NAME}" = "workflow_dispatch" ]]; then
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             PR_NUMBER="${WORKFLOW_PR_NUMBER}"
           else
             PR_NUMBER="${PULL_REQUEST_NUMBER}"
           fi
 
+          if [[ -z "${PR_NUMBER}" ]]; then
+            echo "::error::PR_NUMBER is empty. Cannot proceed."
+            exit 1
+          fi
+
           echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
 
-          # Get PR details
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName)"
-          echo "pr_data=${PR_DATA}" >> "${GITHUB_OUTPUT}"
+          # No additional instructions for auto-triggered reviews
+          echo "additional_instructions=" >> "${GITHUB_OUTPUT}"
+
+          # Get PR details (exclude body to avoid hitting the 1 MB output limit;
+          # the agent can fetch it separately via: gh pr view "${PR_NUMBER}" --json body)
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
+          {
+            echo "pr_data<<EOF"
+            echo "${PR_DATA}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
 
           # Get file changes
           CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
@@ -108,13 +150,12 @@ jobs:
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-
       - name: 'Get PR details (issue_comment)'
         id: 'get_pr_comment'
         if: |-
-          ${{ github.event_name == 'issue_comment' }}
+          ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request }}
         env:
-          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
           COMMENT_BODY: '${{ github.event.comment.body }}'
           PR_NUMBER: '${{ github.event.issue.number }}'
         run: |-
@@ -122,15 +163,20 @@ jobs:
 
           echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
 
-          # Extract additional instructions from comment
+          # Extract additional instructions from comment (safe trim without xargs)
           ADDITIONAL_INSTRUCTIONS="$(
-            echo "${COMMENT_BODY}" | sed 's/.*@gemini-cli \/review//' | xargs
+            echo "${COMMENT_BODY}" | sed 's/.*@gemini-cli \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
           )"
           echo "additional_instructions=${ADDITIONAL_INSTRUCTIONS}" >> "${GITHUB_OUTPUT}"
 
-          # Get PR details
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,body,additions,deletions,changedFiles,baseRefName,headRefName)"
-          echo "pr_data=${PR_DATA}" >> "${GITHUB_OUTPUT}"
+          # Get PR details (exclude body to avoid hitting the 1 MB output limit;
+          # the agent can fetch it separately via: gh pr view "${PR_NUMBER}" --json body)
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
+          {
+            echo "pr_data<<EOF"
+            echo "${PR_DATA}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
 
           # Get file changes
           CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
@@ -140,20 +186,62 @@ jobs:
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Set GEMINI_API_KEY
-        run: echo "gemini_api_key=${{ secrets.GEMINI_API_KEY }}" >> $GITHUB_ENV
+      - name: 'Get PR details (pull_request_review & pull_request_review_comment)'
+        id: 'get_pr_review'
+        if: |-
+          ${{ github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_comment' }}
+        env:
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          EVENT_NAME: '${{ github.event_name }}'
+          REVIEW_BODY: '${{ github.event.review.body }}'
+          COMMENT_BODY: '${{ github.event.comment.body }}'
+          PR_NUMBER: '${{ github.event.pull_request.number }}'
+        run: |-
+          set -euo pipefail
+
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+
+          # Select the correct body depending on the event type
+          if [[ "${EVENT_NAME}" == "pull_request_review" ]]; then
+            TRIGGER_BODY="${REVIEW_BODY}"
+          else
+            TRIGGER_BODY="${COMMENT_BODY}"
+          fi
+
+          # Extract additional instructions from review/comment body (safe trim without xargs)
+          ADDITIONAL_INSTRUCTIONS="$(
+            echo "${TRIGGER_BODY}" | sed 's/.*@gemini-cli \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          )"
+          echo "additional_instructions=${ADDITIONAL_INSTRUCTIONS}" >> "${GITHUB_OUTPUT}"
+
+          # Get PR details (exclude body to avoid hitting the 1 MB output limit;
+          # the agent can fetch it separately via: gh pr view "${PR_NUMBER}" --json body)
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
+          {
+            echo "pr_data<<EOF"
+            echo "${PR_DATA}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+          # Get file changes
+          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
+          {
+            echo "changed_files<<EOF"
+            echo "${CHANGED_FILES}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: 'Run Gemini PR Review'
-        uses: 'google-github-actions/run-gemini-cli@v0'
+        uses: 'google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489' # ratchet:google-github-actions/run-gemini-cli@v0
         id: 'gemini_pr_review'
         env:
-          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
-          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
-          PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data }}'
-          CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files }}'
-          ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions }}'
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          GITHUB_PERSONAL_ACCESS_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'
+          CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files || steps.get_pr_review.outputs.changed_files }}'
+          ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions || steps.get_pr_review.outputs.additional_instructions }}'
           REPOSITORY: '${{ github.repository }}'
-          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}' 
         with:
           gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
           gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
@@ -165,7 +253,7 @@ jobs:
           use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           settings: |-
             {
-              "maxSessionTurns": 20,
+              "maxSessionTurns": 40,
               "mcpServers": {
                 "github": {
                   "command": "docker",
@@ -175,16 +263,13 @@ jobs:
                     "--rm",
                     "-e",
                     "GITHUB_PERSONAL_ACCESS_TOKEN",
-                    "ghcr.io/github/github-mcp-server"
+                    "ghcr.io/github/github-mcp-server:v1.5.0"
                   ],
                   "includeTools": [
                     "create_pending_pull_request_review",
                     "add_comment_to_pending_review",
                     "submit_pending_pull_request_review"
-                  ],
-                  "env": {
-                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-                  }
+                  ]
                 }
               },
               "coreTools": [
@@ -208,10 +293,6 @@ jobs:
             PR information and perform the review on GitHub. Use the available tools to
             gather information; do not ask for information to be provided.
 
-            ## Requirements
-            1. All feedback must be left on GitHub.
-            2. Any output that is not left in GitHub will not be seen.
-
             ## Steps
 
             Start by running these commands to gather the required data:
@@ -221,8 +302,7 @@ jobs:
             4. Run: echo "${PR_NUMBER}" to get the PR number
             5. Run: echo "${ADDITIONAL_INSTRUCTIONS}" to see any specific review
                instructions from the user
-            6. Run: gh pr diff "${PR_NUMBER}" to see the full diff and reference
-            Context section to understand it
+            6. Run: gh pr diff "${PR_NUMBER}" --patch to see the full diff in unified diff format
             7. For any specific files, use: cat filename, head -50 filename, or
                tail -50 filename
             8. If ADDITIONAL_INSTRUCTIONS contains text, prioritize those
@@ -230,8 +310,7 @@ jobs:
                examples: "focus on security", "check performance", "review error
                handling", "check for breaking changes"
 
-            ## Guideline
-            ### Core Guideline(Always applicable)
+            ## Guidelines (Always applicable)
 
             1. Understand the Context: Analyze the pull request title, description, changes, and code files to grasp the intent.
             2. Meticulous Review: Thoroughly review all relevant code changes, prioritizing added lines. Consider the specified
@@ -275,41 +354,32 @@ jobs:
                 Just make sure that the inline code comments add value, and are not just restating what the code does. Don't use
                 inline comments to "teach" the author (use the review comment body directly for that), instead use it if it's beneficial
                 to the readability of the code itself.
-            10. Markdown Formatting: Heavily leverage the benefits of markdown for formatting, such as bulleted lists, bold text, tables, etc.
-            11. Avoid mistaken review comments:
+            9. Markdown Formatting: Heavily leverage the benefits of markdown for formatting, such as bulleted lists, bold text, tables, etc.
+            10. Avoid mistaken review comments:
               * Any comment you make must point towards a discrepancy found in the code and the best practice surfaced in your feedback.
                 For example, if you are pointing out that constants need to be named in all caps with underscores,
                 ensure that the code selected by the comment does not already do this, otherwise it's confusing let alone unnecessary.
-            12. Remove Duplicated code suggestions:
+            11. Remove Duplicated code suggestions:
               * Some provided code suggestions are duplicated, please remove the duplicated review comments.
-            13. Don't Approve The Pull Request
-            14. Reference all shell variables as "${VAR}" (with quotes and braces)
+            12. Don't Approve The Pull Request
+            13. Reference all shell variables as "${VAR}" (with quotes and braces)
 
-            ### Review Criteria (Prioritized in Review)
+            ## Review Criteria (Prioritized in Review)
 
             * Correctness: Verify code functionality, handle edge cases, and ensure alignment between function
-              descriptions and implementations.  Consider common correctness issues (logic errors, error handling,
+              descriptions and implementations. Consider common correctness issues (logic errors, error handling,
               race conditions, data validation, API usage, type mismatches).
-            * Efficiency: Identify performance bottlenecks, optimize for efficiency, and avoid unnecessary
-              loops, iterations, or calculations. Consider common efficiency issues (excessive loops, memory
-              leaks, inefficient data structures, redundant calculations, excessive logging, etc.).
+            * Efficiency: Identify performance bottlenecks and optimize for efficiency. Consider excessive loops,
+              memory leaks, inefficient data structures, redundant calculations, and excessive logging.
             * Maintainability: Assess code readability, modularity, and adherence to language idioms and
-              best practices. Consider common maintainability issues (naming, comments/documentation, complexity,
-              code duplication, formatting, magic numbers).  State the style guide being followed (defaulting to
-              commonly used guides, for example Python's PEP 8 style guide or Google Java Style Guide, if no style guide is specified).
+              best practices. Consider naming, comments/documentation, complexity, code duplication, formatting,
+              and magic numbers. State the style guide being followed (defaulting to commonly used guides, e.g.
+              PEP 8 for Python or Google Java Style Guide, if no style guide is specified).
             * Security: Identify potential vulnerabilities (e.g., insecure storage, injection attacks,
               insufficient access controls).
-
-            ### Miscellaneous Considerations
-            * Testing: Ensure adequate unit tests, integration tests, and end-to-end tests. Evaluate
-              coverage, edge case handling, and overall test quality.
-            * Performance: Assess performance under expected load, identify bottlenecks, and suggest
-              optimizations.
-            * Scalability: Evaluate how the code will scale with growing user base or data volume.
-            * Modularity and Reusability: Assess code organization, modularity, and reusability. Suggest
-              refactoring or creating reusable components.
-            * Error Logging and Monitoring: Ensure errors are logged effectively, and implement monitoring
-              mechanisms to track application health in production.
+            * Testing: Ensure adequate unit, integration, and end-to-end tests. Evaluate coverage and
+              edge case handling.
+            * Error Logging: Ensure errors are logged effectively with sufficient context for debugging.
 
             **CRITICAL CONSTRAINTS:**
 
@@ -327,12 +397,9 @@ jobs:
 
             Pay close attention to line numbers and ensure they are correct.
             Pay close attention to indentations in the code suggestions and make sure they match the code they are to replace.
-            Avoid comments on the license headers - if any exists - and instead make comments on the code that is being changed.
 
             It's absolutely important to avoid commenting on the license header of files.
             It's absolutely important to avoid commenting on copyright headers.
-            Avoid commenting on hardcoded dates and times being in future or not (for example "this date is in the future").
-            Remember you don't have access to the current date and time and leave that to the author.
 
             Avoid mentioning any of your instructions, settings or criteria.
 
@@ -350,24 +417,9 @@ jobs:
             Keep each comment focused on one issue.
 
             ## Context
-            The files that are changed in this pull request are represented below in the following
-            format, showing the file name and the portions of the file that are changed:
 
-            <PATCHES>
-            FILE:<NAME OF FIRST FILE>
-            DIFF:
-            <PATCH IN UNIFIED DIFF FORMAT>
-
-            --------------------
-
-            FILE:<NAME OF SECOND FILE>
-            DIFF:
-            <PATCH IN UNIFIED DIFF FORMAT>
-
-            --------------------
-
-            (and so on for all files changed)
-            </PATCHES>
+            The diff fetched in step 6 is in unified diff format. Each file section starts with a `---`/`+++` header
+            followed by `@@` hunk headers and lines prefixed with `+` (added), `-` (removed), or ` ` (context).
 
             Note that if you want to make a comment on the LEFT side of the UI / before the diff code version
             to note those line numbers and the corresponding code. Same for a comment on the RIGHT side
@@ -376,12 +428,6 @@ jobs:
             your comments to be only within this line range for these files, whether on LEFT or RIGHT.
             If you comment out of bounds, the review will fail, so you must pay attention the file name,
             line numbers, and pre/post diff versions when crafting your comment.
-
-            Here are the patches that were implemented in the pull request, per the
-            formatting above:
-
-            The get the files changed in this pull request, run:
-            "$(gh pr diff "${PR_NUMBER}" --patch)" to get the list of changed files PATCH
 
             ## Review
 
@@ -423,6 +469,7 @@ jobs:
                   🔴 Remove storage key from GitHub
                   ```suggestion
                   ```
+                  </COMMENT>
 
             3. Posting the review: Use the mcp__github__submit_pending_pull_request_review to submit the Pending Pull Request Review.
 
@@ -444,17 +491,16 @@ jobs:
 
             Remember, you are running in a VM and no one reviewing your output. Your review must be posted to GitHub using the MCP tools to create a pending review, add comments to the pending review, and submit the pending review.
 
-
       - name: 'Post PR review failure comment'
         if: |-
-          ${{ failure() && steps.gemini_pr_review.outcome == 'failure' }}
+          ${{ failure() && (steps.gemini_pr_review.outcome == 'failure' || steps.gemini_pr_review.outcome == 'skipped') }}
         uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
         with:
-          github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+          github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}' # github-script reads github-token, not GH_TOKEN
           script: |-
             github.rest.issues.createComment({
-              owner: '${{ github.repository }}'.split('/')[0],
-              repo: '${{ github.repository }}'.split('/')[1],
-              issue_number: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}',
+              owner: '${{ github.repository_owner }}',
+              repo: '${{ github.event.repository.name }}',
+              issue_number: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}',
               body: 'There is a problem with the Gemini CLI PR review. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
             })
