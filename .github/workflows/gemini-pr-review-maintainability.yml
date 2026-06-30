@@ -68,7 +68,6 @@ jobs:
       comment_body: '${{ github.event.comment.body }}'
       review_body: '${{ github.event.review.body }}'
       review_comment_body: '${{ github.event.comment.body }}'
-      repository: '${{ github.repository }}'
       app_id: '${{ vars.APP_ID }}'
       prompt: |-
         ## Role
