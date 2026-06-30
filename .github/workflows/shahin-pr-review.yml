@@ -251,16 +251,19 @@ jobs:
 
           The 'comments' array may be empty if there are no issues. Each comment must reference a real line number from the diff. The 'suggestion' field should contain only the replacement code (no markdown fences), or an empty string if no suggestion applies."
 
-          # Build the Gemini API request JSON safely using jq
-          jq -n --arg prompt "${PROMPT}" \
-            '{
-              "contents": [{"parts": [{"text": $prompt}]}],
+          # Write prompt to file to avoid "Argument list too long" with large diffs
+          printf '%s' "${PROMPT}" > /tmp/gemini_prompt.txt
+
+          # Build the Gemini API request JSON safely using jq slurp from file
+          jq -Rs '{
+              "contents": [{"parts": [{"text": .}]}],
               "generationConfig": {
                 "temperature": 0.2,
                 "maxOutputTokens": 8192,
                 "responseMimeType": "application/json"
               }
-            }' > /tmp/gemini_request.json
+            }' /tmp/gemini_prompt.txt > /tmp/gemini_request.json
+          rm -f /tmp/gemini_prompt.txt
 
           echo "Calling Gemini API..."
           HTTP_STATUS="$(curl -sS -w "%{http_code}" -o /tmp/gemini_response.json \
