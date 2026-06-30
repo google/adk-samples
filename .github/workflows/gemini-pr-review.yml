@@ -61,7 +61,7 @@ jobs:
         contains(github.event.review.body, '@gemini-cli /review') &&
         contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.review.author_association)
       )
-    timeout-minutes: 10
+    timeout-minutes: 30
     runs-on: 'ubuntu-latest'
 
     steps:
@@ -363,25 +363,20 @@ jobs:
                 ensure that the code selected by the comment does not already do this, otherwise it's confusing let alone unnecessary.
             11. Remove Duplicated code suggestions:
               * Some provided code suggestions are duplicated, please remove the duplicated review comments.
-            12. Don't Approve The Pull Request
-            13. Reference all shell variables as "${VAR}" (with quotes and braces)
+             12. Don't Approve The Pull Request
 
             ## Review Criteria (Prioritized in Review)
 
             * Correctness: Verify code functionality, handle edge cases, and ensure alignment between function
-              descriptions and implementations. Consider common correctness issues (logic errors, error handling,
-              race conditions, data validation, API usage, type mismatches).
-            * Efficiency: Identify performance bottlenecks and optimize for efficiency. Consider excessive loops,
-              memory leaks, inefficient data structures, redundant calculations, and excessive logging.
-            * Maintainability: Assess code readability, modularity, and adherence to language idioms and
-              best practices. Consider naming, comments/documentation, complexity, code duplication, formatting,
-              and magic numbers. State the style guide being followed (defaulting to commonly used guides, e.g.
-              PEP 8 for Python or Google Java Style Guide, if no style guide is specified).
-            * Security: Identify potential vulnerabilities (e.g., insecure storage, injection attacks,
-              insufficient access controls).
-            * Testing: Ensure adequate unit, integration, and end-to-end tests. Evaluate coverage and
-              edge case handling.
-            * Error Logging: Ensure errors are logged effectively with sufficient context for debugging.
+              descriptions and implementations. Consider logic errors, unhandled exceptions, off-by-one errors,
+              race conditions, data validation gaps, wrong API usage, type mismatches, and objectively harmful
+              algorithmic complexity (e.g. O(n²) in a hot path).
+            * Security: Identify concrete vulnerabilities detectable from the diff — hardcoded secrets,
+              SQL/command injection, unsafe deserialization, missing input validation, and insufficient
+              access controls.
+            * Maintainability: Flag concrete, objective issues only — poor naming, magic numbers, and
+              obvious code duplication. Do not comment on formatting (handled by the linter), documentation
+              coverage, or subjective complexity.
 
             **CRITICAL CONSTRAINTS:**
 
@@ -411,8 +406,6 @@ jobs:
             - Comments in .md files are medium or low severity. This is really important.
             - Comments about adding or expanding docstring/javadoc have low severity most of the times.
             - Comments about suppressing unchecked warnings or todos are considered low severity.
-            - Comments about typos are usually low or medium severity.
-            - Comments about testing or on tests are usually low severity.
             - Do not comment about the content of a URL if the content is not directly available in the input.
 
             Keep comments bodies concise and to the point.
