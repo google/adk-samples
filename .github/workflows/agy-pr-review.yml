@@ -209,7 +209,6 @@ jobs:
           LATEST_TAG="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             https://api.github.com/repos/github/github-mcp-server/releases/latest \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")"
-          VERSION="${LATEST_TAG#v}"
           echo "Installing github-mcp-server ${LATEST_TAG}"
 
           curl -fsSL \
@@ -224,24 +223,10 @@ jobs:
           # Configure agy to use the GitHub MCP server
           # agy reads MCP server config from ~/.gemini/config/mcp_config.json
           mkdir -p "${HOME}/.gemini/config"
-          python3 -c "
-import json, os, sys
-config = {
-    'mcpServers': {
-        'github': {
-            'command': 'github-mcp-server',
-            'args': ['stdio'],
-            'env': {
-                'GITHUB_PERSONAL_ACCESS_TOKEN': os.environ['GITHUB_TOKEN']
-            }
-        }
-    }
-}
-with open(os.path.expanduser('~/.gemini/config/mcp_config.json'), 'w') as f:
-    json.dump(config, f, indent=2)
-print('MCP config written')
-"
-          echo "MCP config written to ~/.gemini/config/mcp_config.json"
+          MCP_CONFIG_PATH="${HOME}/.gemini/config/mcp_config.json"
+          printf '{"mcpServers":{"github":{"command":"github-mcp-server","args":["stdio"],"env":{"GITHUB_PERSONAL_ACCESS_TOKEN":"%s"}}}}' \
+            "${GITHUB_TOKEN}" > "${MCP_CONFIG_PATH}"
+          echo "MCP config written to ${MCP_CONFIG_PATH}"
 
       - name: 'Verify Antigravity CLI'
         run: |-
