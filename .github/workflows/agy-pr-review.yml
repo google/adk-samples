@@ -199,6 +199,50 @@ jobs:
       - name: 'Install Antigravity CLI'
         uses: './.github/actions/install-agy'
 
+      - name: 'Install GitHub MCP Server'
+        env:
+          GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+        run: |-
+          set -euo pipefail
+
+          # Download the GitHub MCP server binary
+          LATEST_TAG="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            https://api.github.com/repos/github/github-mcp-server/releases/latest \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")"
+          VERSION="${LATEST_TAG#v}"
+          echo "Installing github-mcp-server ${LATEST_TAG}"
+
+          curl -fsSL \
+            "https://github.com/github/github-mcp-server/releases/download/${LATEST_TAG}/github-mcp-server_Linux_x86_64.tar.gz" \
+            -o /tmp/github-mcp-server.tar.gz
+          tar -xzf /tmp/github-mcp-server.tar.gz -C /tmp github-mcp-server
+          mkdir -p "${HOME}/.local/bin"
+          mv /tmp/github-mcp-server "${HOME}/.local/bin/github-mcp-server"
+          chmod +x "${HOME}/.local/bin/github-mcp-server"
+          echo "GitHub MCP server installed at: $(which github-mcp-server)"
+
+          # Configure agy to use the GitHub MCP server
+          # agy reads MCP server config from ~/.gemini/config/mcp_config.json
+          mkdir -p "${HOME}/.gemini/config"
+          python3 -c "
+import json, os, sys
+config = {
+    'mcpServers': {
+        'github': {
+            'command': 'github-mcp-server',
+            'args': ['stdio'],
+            'env': {
+                'GITHUB_PERSONAL_ACCESS_TOKEN': os.environ['GITHUB_TOKEN']
+            }
+        }
+    }
+}
+with open(os.path.expanduser('~/.gemini/config/mcp_config.json'), 'w') as f:
+    json.dump(config, f, indent=2)
+print('MCP config written')
+"
+          echo "MCP config written to ~/.gemini/config/mcp_config.json"
+
       - name: 'Verify Antigravity CLI'
         run: |-
           set -euo pipefail
@@ -206,6 +250,9 @@ jobs:
           agy --version
           echo "=== agy location ==="
           which agy
+          echo "=== github-mcp-server ==="
+          which github-mcp-server
+          github-mcp-server --version 2>/dev/null || true
 
       - name: 'Run Antigravity PR Review'
         id: 'agy_pr_review'
