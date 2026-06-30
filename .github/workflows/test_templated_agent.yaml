@@ -1,4 +1,4 @@
-name: checks
+name: 🧩⚙️ checks
 
 on:
   pull_request:
