@@ -28,31 +28,23 @@ A multi-agent system built with Google ADK that automates cookie delivery order 
 2. **Calendar Agent**: Checks availability and schedules delivery appointments via MCP server
 3. **Email Agent**: Generates personalized confirmation emails using LangChain Community Gmail toolkit and updates order status in BigQuery
 
-## Agent Starter Pack (recommended)
+## Google Agents CLI (recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to scaffold a production-ready project and choose your deployment target ([Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features. The easiest way is with [uv](https://docs.astral.sh/uv/) (one command, no venv or pip install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to scaffold a production-ready project and choose your deployment target ([Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features.
 
-```bash
-uvx agent-starter-pack create my-cookie-delivery -a adk@hierarchical-workflow-automation
-```
-
-If you don't have uv yet: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-The starter pack will prompt you to select deployment options and set up your Google Cloud project.
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-cookie-delivery -a adk@hierarchical-workflow-automation
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-cookie-delivery` with your project name):
+
+```bash
+agents-cli create my-cookie-delivery -a adk@hierarchical-workflow-automation
+```
+
+The Google Agents CLI will prompt you to select deployment options and set up your Google Cloud project.
 
 ## Setup Instructions
 

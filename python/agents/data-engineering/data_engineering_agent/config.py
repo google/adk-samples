@@ -30,7 +30,7 @@ class Config:
             "GOOGLE_CLOUD_PROJECT"
         ) or os.getenv("GCP_PROJECT_ID")
         self.location: str | None = os.getenv(
-            "GOOGLE_CLOUD_LOCATION", "us-central1"
+            "GOOGLE_CLOUD_LOCATION", "us-east1"
         ).lower()
         self.use_vertex_ai: bool = (
             os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "0") == "1"

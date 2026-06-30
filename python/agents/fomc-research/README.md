@@ -68,7 +68,7 @@ to implement this workflow.
 
     **Google Cloud SDK and GCP Project:**
 
-    For the BigQuery setup and the Agent Engine deployment steps, you will need
+    For the BigQuery setup and the Agent Runtime deployment steps, you will need
     a Google Cloud Project. Once you have created your project,
     [install the Google Cloud SDK](https://cloud.google.com/sdk/docs/install).
     Then run the following command to authenticate with your project:
@@ -194,11 +194,11 @@ user: 2025-01-29
 ```
 If the agent stops before completing the analysis, try asking it to continue.
 
-## Deployment on Vertex AI Agent Engine
+## Deployment on Agent Runtime
 
-To deploy the agent to Google Agent Engine, first follow
-[these steps](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/set-up)
-to set up your Google Cloud project for Agent Engine.
+To deploy the agent to Agent Runtime, first follow
+[these steps](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime)
+to set up your Google Cloud project for Agent Runtime.
 
 You also need to give BigQuery User and BigQuery Data Viewer permissions to the
 Reasoning Engine Service Agent. Run the following commands to grant the required
@@ -227,12 +227,12 @@ Then run the following command:
 cd deployment
 python3 deploy.py --create
 ```
-When this command returns, if it succeeds it will print an AgentEngine resource
+When this command returns, if it succeeds it will print an Agent Runtime resource
 name that looks something like this:
 ```
-projects/************/locations/us-central1/reasoningEngines/7737333693403889664
+projects/************/locations/us-east1/reasoningEngines/7737333693403889664
 ```
-The last sequence of digits is the AgentEngine resource ID.
+The last sequence of digits is the Agent Runtime resource ID.
 
 Once you have successfully deployed your agent, you can interact with it
 using the `test_deployment.py` script in the `deployment` directory. Store the
@@ -255,7 +255,7 @@ Response: I have stored the date you provided. Now I will retrieve the meeting d
 ...
 ```
 Note that this is *not* a full-featured, production-ready CLI; it is just intended to
-show how to use the Agent Engine API to interact with a deployed agent.
+show how to use the Agent Runtime API to interact with a deployed agent.
 
 The main part of the `test_deploy.py` script is approximately this code:
 
@@ -285,33 +285,23 @@ To delete the agent, run the following command (using the resource ID returned p
 python3 deployment/deploy.py --delete --resource_id=$RESOURCE_ID
 ```
 
-### Alternative: Using Agent Starter Pack
+### Alternative: Using Google Agents CLI
 
-You can also use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options:
+You can also use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
 
-```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-fomc-research -a adk@fomc-research
-```
-
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
-
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and set up your project with a single command:
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-fomc-research -a adk@fomc-research
+uvx google-agents-cli setup
 ```
 
-This command handles creating the project without needing to pre-install the package into a virtual environment.
+**Create the project from this sample** (replace `my-fomc-research` with your project name):
 
-</details>
+```bash
+agents-cli create my-fomc-research -a adk@fomc-research
+```
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ## Troubleshooting
 

@@ -20,14 +20,14 @@ dependencies = [
     "protobuf>=4.24.4",
     "typing-extensions>=4.8.0",
     "python-dotenv>=1.0.0",
-    "google-adk>=0.1.0",
+    "google-adk>=1.31.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
-    "google-adk[eval]>=1.0.0",
+    "google-adk[eval]>=1.31.0",
     "agent-starter-pack>=0.14.1",
 ]
 deployment = [

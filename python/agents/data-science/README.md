@@ -246,7 +246,7 @@ allow your ADK Agent to access the AlloyDB cluster.
     ```bash
     export CLUSTER=my-alloydb-cluster
     export INSTANCE=my-alloydb-instance
-    export REGION=us-central1
+    export REGION=us-east1
     export DB_USER=postgres
     export DB_PASS=my-alloydb-pass
     ```
@@ -548,29 +548,23 @@ the following:
 If so, what are the ID columns? (e.g., `country`, `store`, `product`)
 
 
-### Agent Starter Pack (Recommended)
+### Google Agents CLI (Recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options. The easiest way is with `uvx` (no install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
 
-```bash
-uvx agent-starter-pack create my-data-science -a adk@data-science
-```
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-data-science -a adk@data-science
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-data-science` with your project name):
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+```bash
+agents-cli create my-data-science -a adk@data-science
+```
+
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ## Testing and Evaluation
 
@@ -621,13 +615,13 @@ uv run pytest tests
 - `uv run` ensures that pytest runs within the project's virtual environment.
 
 
-## Deployment on Vertex AI Agent Engine
+## Deployment on Agent Runtime
 
 ### Initial Setup
 
-To deploy the agent to Google Agent Engine, first follow
-[these steps](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/set-up)
-to set up your Google Cloud project for Agent Engine.
+To deploy the agent to Agent Runtime, first follow
+[these steps](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime)
+to set up your Google Cloud project for Agent Runtime.
 
 You also need to give BigQuery User, BigQuery Data Viewer, and Vertex AI User
 permissions to the Reasoning Engine Service Agent. Run the following commands to
@@ -720,7 +714,7 @@ the appropriate values for your project and AlloyDB setup.
     ```
 1. Export an environment variable for the container image to use for Cloud Run:
     ```bash
-    export IMAGE=us-central1-docker.pkg.dev/database-toolbox/toolbox/toolbox:latest
+    export IMAGE=us-east1-docker.pkg.dev/database-toolbox/toolbox/toolbox:latest
     ```
 
 1. Deploy Toolbox to Cloud Run.
@@ -729,7 +723,7 @@ the appropriate values for your project and AlloyDB setup.
     gcloud run deploy toolbox \
         --image $IMAGE \
         --service-account toolbox-identity \
-        --region us-central1 \
+        --region us-east1 \
         --set-secrets "/app/tools.yaml=tools:latest,ALLOYDB_POSTGRES_PASSWORD=ALLOYDB_POSTGRES_PASSWORD:latest" \
         --env-vars-file="toolbox.env" \
         --args="--tools-file=/app/tools.yaml","--address=0.0.0.0","--port=8080" \
@@ -764,19 +758,19 @@ This will create a file named `data_science-0.1-py3-none-any.whl` in the
 `deployment` directory.
 
 Then run the below command. This will create a staging bucket in your GCP
-project and deploy the agent to Vertex AI Agent Engine:
+project and deploy the agent to Agent Runtime:
 
 ```bash
 cd deployment/
 python3 deploy.py --create
 ```
 
-When this command returns, if it succeeds it will print an AgentEngine resource
+When this command returns, if it succeeds it will print an Agent Runtime resource
 name that looks something like this:
 ```
-projects/************/locations/us-central1/reasoningEngines/7737333693403889664
+projects/************/locations/us-east1/reasoningEngines/7737333693403889664
 ```
-The last sequence of digits is the AgentEngine resource ID.
+The last sequence of digits is the Agent Runtime resource ID.
 
 Once you have successfully deployed your agent, you can interact with it
 using the `test_deployment.py` script in the `deployment` directory. Store the
@@ -800,7 +794,7 @@ forecasting_sticker_sales dataset.
 ```
 
 Note that this is *not* a full-featured, production-ready CLI; it is just
-intended to show how to use the Agent Engine API to interact with a deployed
+intended to show how to use the Agent Runtime API to interact with a deployed
 agent.
 
 The main part of the `test_deployment.py` script is approximately this code:
@@ -873,7 +867,7 @@ Clean up after completing the demo.
 
     ```bash
     export CLUSTER=my-alloydb-cluster
-    export REGION=us-central1
+    export REGION=us-east1
     ```
 
 1. Delete AlloyDB cluster that contains instances:
@@ -918,7 +912,7 @@ gcloud services enable sqladmin.googleapis.com \
 gcloud sql instances create ds-agent-session-service \
    --database-version=POSTGRES_17 \
    --tier=db-g1-small \
-   --region=us-central1 \
+   --region=us-east1 \
    --edition=ENTERPRISE \
    --root-password=ds-agent-demo
 ```
@@ -935,9 +929,9 @@ gcloud run deploy data-science-agent \
   --memory 2G \
   --project $PROJECT_ID \
   --allow-unauthenticated \
-  --add-cloudsql-instances $PROJECT_ID:us-central1:ds-agent-session-service \
-  --update-env-vars SERVE_WEB_INTERFACE=True,SESSION_SERVICE_URI="postgresql+pg8000://postgres:ds-agent-demo@postgres/?unix_sock=/cloudsql/$PROJECT_ID:us-central1:ds-agent-session-service/.s.PGSQL.5432",GOOGLE_CLOUD_PROJECT=$PROJECT_ID \
-  --region us-central1
+  --add-cloudsql-instances $PROJECT_ID:us-east1:ds-agent-session-service \
+  --update-env-vars SERVE_WEB_INTERFACE=True,SESSION_SERVICE_URI="postgresql+pg8000://postgres:ds-agent-demo@postgres/?unix_sock=/cloudsql/$PROJECT_ID:us-east1:ds-agent-session-service/.s.PGSQL.5432",GOOGLE_CLOUD_PROJECT=$PROJECT_ID \
+  --region us-east1
 ```
 
 When this runs successfully, you should see:

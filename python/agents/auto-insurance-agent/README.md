@@ -73,29 +73,23 @@ Follow the instructions in this GCP Cloud Shell tutorial.
 
 ## Agent Setup
 
-### Agent Starter Pack (Recommended)
+### Google Agents CLI (Recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options. The easiest way is with `uvx` (no install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
 
-```bash
-uvx agent-starter-pack create my-auto-insurance-agent -a adk@auto-insurance-agent
-```
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-auto-insurance-agent -a adk@auto-insurance-agent
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-auto-insurance-agent` with your project name):
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+```bash
+agents-cli create my-auto-insurance-agent -a adk@auto-insurance-agent
+```
+
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ### Manual Setup
 
@@ -144,9 +138,9 @@ You can run the agent locally using the `adk` command in your terminal:
 
 ## Deploying the Agent Remotely
 
-### To Agent Engine
+### To Agent Runtime
 
-The agent can also be deployed to [Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview) using the following
+The agent can also be deployed to [Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) using the following
 commands:
 
 ```bash
@@ -159,7 +153,7 @@ When the deployment finishes, it will output the resource ID of the remote agent
 Created remote agent: projects/<PROJECT_NUMBER>/locations/<PROJECT_LOCATION>/reasoningEngines/<AGENT_ENGINE_ID>
 ```
 
-For more information on deploying to Agent Engine, see [here](https://google.github.io/adk-docs/deploy/agent-engine/#install-vertex-ai-sdk).
+For more information on deploying to Agent Runtime, see [here](https://google.github.io/adk-docs/deploy/agent-engine/#install-vertex-ai-sdk).
 
 The deployment script adds the `AGENT_ENGINE_ID` to your `.env` file. To test the remote agent, simply run:
 ```bash

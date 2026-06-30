@@ -4,7 +4,7 @@
 
 This agent is designed to show the basic principles for tackling software engineering problems from two prominent benchmarks: SWE-bench and TerminalBench. It is not meant to be a production ready implementation.
 
-The [Agent Starter Pack](https://goo.gle/agent-starter-pack) (ASP) is the **recommended** way to create a new project from this sample: you get a production-oriented layout, deployment choices, and CI/CD scaffolding. The copy in [adk-samples](https://github.com/google/adk-samples) remains the upstream source for browsing and contributions.
+The [Google Agents CLI](https://github.com/google/agents-cli) is the **recommended** way to create a new project from this sample: you get a production-oriented layout, deployment choices, and CI/CD scaffolding. The copy in [adk-samples](https://github.com/google/adk-samples) remains the upstream source for browsing and contributions.
 
 ## Agent Details
 
@@ -34,12 +34,20 @@ The agent operates autonomously within the Docker environment, using shell comma
 - **Git**
 - **Docker** (for SWE-bench and TerminalBench evaluation via `swe_benchmark_agent.main`)
 
-### Recommended: Using Agent Starter Pack
+### Recommended: Using Google Agents CLI
 
-The Agent Starter Pack is the recommended way to create and deploy a production-ready version of this agent. Start from a new directory (replace `my-swe-agent` with your project name):
+The Google Agents CLI is the recommended way to create and deploy a production-ready version of this agent.
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-swe-agent -a adk@swe-benchmark-agent
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-swe-agent` with your project name):
+
+```bash
+agents-cli create my-swe-agent -a adk@swe-benchmark-agent
 cd my-swe-agent
 ```
 
@@ -64,28 +72,12 @@ gcloud auth application-default login
 gcloud auth application-default set-quota-project $GOOGLE_CLOUD_PROJECT
 ```
 
-During setup, the starter pack will prompt you for deployment options and adds production-oriented tooling (for example automated CI/CD deployment scripts).
-
-<details>
-<summary>Alternative: install Agent Starter Pack with pip</summary>
-
-If you prefer not to use `uvx`, create a virtual environment and install the CLI:
-
-```bash
-python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-swe-agent -a adk@swe-benchmark-agent
-cd my-swe-agent
-```
-
-Then continue with `uv sync --group dev` and the configuration steps above.
-
-</details>
+During setup, the Google Agents CLI will prompt you for deployment options and adds production-oriented tooling (for example automated CI/CD deployment scripts).
 
 <details>
 <summary>Clone this repository directly (contributors and advanced use)</summary>
 
-Use this workflow when working against the upstream repository (for example to open a pull request). **New projects should still use the Agent Starter Pack** as described above.
+Use this workflow when working against the upstream repository (for example to open a pull request). **New projects should still use the Google Agents CLI** as described above.
 
 ```bash
 git clone https://github.com/google/adk-samples.git

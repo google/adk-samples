@@ -43,31 +43,23 @@ Before you begin, ensure you have:
 
 ## Getting started
 
-### Agent Starter Pack (recommended)
+### Google Agents CLI (recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to scaffold a production-ready project and choose your deployment target ([Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features. The easiest way is with [uv](https://docs.astral.sh/uv/) (one command, no venv or pip install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to scaffold a production-ready project and choose your deployment target ([Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features.
 
-```bash
-uvx agent-starter-pack create my-short-movie-agents -a adk@short-movie-agents
-```
-
-If you don't have uv yet: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-The starter pack will prompt you to select deployment options and set up your Google Cloud project.
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-short-movie-agents -a adk@short-movie-agents
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-short-movie-agents` with your project name):
+
+```bash
+agents-cli create my-short-movie-agents -a adk@short-movie-agents
+```
+
+The Google Agents CLI will prompt you to select deployment options and set up your Google Cloud project.
 
 From your newly created project directory (e.g. `my-short-movie-agents`), run:
 
@@ -185,11 +177,11 @@ For full command options and usage, refer to the [Makefile](Makefile).
 
 ## Usage
 
-This sample follows a "bring your own agent" style: you implement behavior under `app/`, while a project scaffolded with the [Agent Starter Pack](#agent-starter-pack-recommended) can supply UI, infrastructure, deployment, and monitoring around that agent.
+This sample follows a "bring your own agent" style: you implement behavior under `app/`, while a project scaffolded with the [Google Agents CLI](#google-agents-cli-recommended) can supply UI, infrastructure, deployment, and monitoring around that agent.
 
 1. **Integrate:** Update the agent by editing files in the `app` folder.
 2. **Test:** Explore the agent in the ADK web UI (for example `make playground` from this repo). The UI supports chat history, feedback, and reloads when you change code.
-3. **Deploy:** Use the [Agent Starter Pack](#agent-starter-pack-recommended) flow under [Getting started](#getting-started) to pick a deployment target (Vertex AI Agent Engine or Cloud Run) and CI/CD. If you use a checkout of this repository, you can deploy with `make backend` (see [Commands](#commands)).
+3. **Deploy:** Use the [Google Agents CLI](#google-agents-cli-recommended) flow under [Getting started](#getting-started) to pick a deployment target (Agent Runtime or Cloud Run) and CI/CD. If you use a checkout of this repository, you can deploy with `make backend` (see [Commands](#commands)).
 4. **Monitor:** Track performance with Cloud Logging, Tracing, and the Looker Studio dashboard (see [Monitoring and Observability](#monitoring-and-observability)).
 
 The project includes a `GEMINI.md` file that provides context for AI tools like Gemini CLI when asking questions about the project.
@@ -204,4 +196,4 @@ The application uses OpenTelemetry for observability: events go to Google Cloud 
 
 This list is not an official Google product. Links on this list also are not necessarily to official Google products.
 
-Initial agent structure was generated with [`googleCloudPlatform/agent-starter-pack`](https://github.com/GoogleCloudPlatform/agent-starter-pack) version `0.15.4`.
+Initial agent structure was generated with [[`google/agents-cli`](https://github.com/google/agents-cli)](https://github.com/google/agents-cli) version `0.15.4`.

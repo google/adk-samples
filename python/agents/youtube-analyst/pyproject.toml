@@ -6,6 +6,7 @@ authors = [
     { name = "Pili Hu", email = "hupili@google.com" },
     { name = "Jasmine Tong", email = "jasminetong@google.com" },
     { name = "Kun Wang", email = "kunwk@google.com" },
+    { name = "Jeff Yang", email = "jeffyang@google.com" },
 ]
 classifiers = [
     "Programming Language :: Python",
@@ -15,7 +16,7 @@ keywords = ['agent-catalog', 'adk', 'agent', 'youtube']
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "google-adk>=1.27.4",
+    "google-adk>=1.31.0",
     "google-genai>=0.2.0",
     "google-api-python-client",
     "matplotlib",

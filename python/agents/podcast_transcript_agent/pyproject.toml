@@ -2,16 +2,14 @@
 name = "podcast-transcript-agent"
 version = "0.1.0"
 description = "AI agent for generating and analyzing podcast transcripts using Google ADK."
-authors = [
-    { name = "Google LLC" }
-]
-license = {text = "Apache License 2.0"}
+authors = [{ name = "Google LLC" }]
+license = { text = "Apache License 2.0" }
 readme = "README.md"
 requires-python = ">=3.13"
 
 dependencies = [
     "fastapi>=0.117.1",
-    "google-adk>=1.14.1",
+    "google-adk>=1.31.0",
     "google-generativeai>=0.8.5",
     "pydantic>=2.11.9",
     "python-dotenv>=1.1.1",
@@ -19,11 +17,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "pytest>=8.4.2",
-    "pytest-asyncio>=1.2.0",
-    "ruff>=0.4.6",
-]
+dev = ["pytest>=8.4.2", "pytest-asyncio>=1.2.0", "ruff>=0.4.6"]
 
 [tool.ruff]
 # Point back to the Master template in the root

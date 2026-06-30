@@ -406,9 +406,9 @@ The evaluator creates an isolated ADK session per test, runs the agent, collects
 
 ## F. Deployment
 
-### Deploy to GCP Vertex AI Agent Engine
+### Deploy to GCP Agent Runtime
 
-NexShift includes a deployment script for Google Cloud's Agent Engine.
+NexShift includes a deployment script for Google Cloud's Agent Runtime.
 
 #### Prerequisites
 
@@ -453,8 +453,8 @@ make deploy-delete
 | `GOOGLE_CLOUD_PROJECT` | (from `.env`) | GCP Project ID |
 | `GOOGLE_CLOUD_LOCATION` | `global` | GCP Region |
 | `STAGING_BUCKET` | `gs://<project>-nexshift-agent-staging` | GCS bucket for staging artifacts |
-| `AGENT_NAME` | `nexshift-agent` | Display name in Agent Engine |
+| `AGENT_NAME` | `nexshift-agent` | Display name in Agent Runtime |
 
 Deployment info is saved to `deployment_info.json` after a successful deploy.
 
-For more details, see the [GCP Agent Engine deployment guide](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/deploy).
+For more details, see the [GCP Agent Runtime deployment guide](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/deploy).

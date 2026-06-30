@@ -55,27 +55,21 @@ cd adk-samples/python/agents/multiformat-hybrid-rag
 
 **Option B: Create project from template**
 
-This command uses the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a new directory with all the necessary code, plus optional CI/CD and deployment scaffolding.
-```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+This uses the [Google Agents CLI](https://github.com/google/agents-cli) to create a new directory with all the necessary code, plus optional CI/CD and deployment scaffolding.
 
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my_rag_app -a adk@multiformat-hybrid-rag
+**Install the CLI** (one-time):
+
+```bash
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>Alternative: Using uv</summary>
+**Create the project from this sample**:
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create your project with a single command:
 ```bash
-uvx agent-starter-pack create my_rag_app -a adk@multiformat-hybrid-rag
+agents-cli create my_rag_app -a adk@multiformat-hybrid-rag
 ```
-This handles creating the project without needing to pre-install the package into a virtual environment.
-</details>
 
-You'll be prompted to select a deployment option — choose **None** if you want to use the deployment already included in the repo, or pick one to get Agent Starter Pack CI/CD scaffolding.
+You'll be prompted to select a deployment option — choose **None** if you want to use the deployment already included in the repo, or pick one to get Google Agents CLI CI/CD scaffolding.
 
 ### Step 2: Configure Environment
 

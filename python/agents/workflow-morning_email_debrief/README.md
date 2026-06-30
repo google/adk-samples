@@ -19,7 +19,7 @@ edges=[
 
 ## 2. Feature: Timed Triggers
 
-The key feature demonstrated here is the ability to deploy a workflow as an endpoint that can be triggered by an external scheduler, like Google Cloud Scheduler. This allows for automated, time-based execution of workflows. The sample is designed to be deployed to Agent Engine, and then invoked via an HTTP request, which can be automated.
+The key feature demonstrated here is the ability to deploy a workflow as an endpoint that can be triggered by an external scheduler, like Google Cloud Scheduler. This allows for automated, time-based execution of workflows. The sample is designed to be deployed to Agent Runtime, and then invoked via an HTTP request, which can be automated.
 
 This is useful for tasks such as:
 - Daily reports
@@ -28,7 +28,7 @@ This is useful for tasks such as:
 
 ## 3. Deployment Guide
 
-This guide provides step-by-step instructions to deploy your workflow agent to Agent Engine and trigger it with Cloud Scheduler.
+This guide provides step-by-step instructions to deploy your workflow agent to Agent Runtime and trigger it with Cloud Scheduler.
 
 ### Prerequisites
 
@@ -43,7 +43,7 @@ Your GCP `project` and `location` should be set in a `.env` file in the root of 
 
 1.  **Deploy the Agent using ADK CLI**
 
-    From your terminal, run the following command to deploy your agent. This command will package your agent and deploy it to Vertex AI Agent Engine.
+    From your terminal, run the following command to deploy your agent. This command will package your agent and deploy it to Agent Runtime.
 
     ```sh
     adk deploy workflow-triggers/agent.py:root_agent --display-name "Morning Email Agent"
@@ -61,8 +61,8 @@ To automate the execution of your deployed agent at a specific time (e.g., 9 AM 
 
 #### Prerequisites for Cloud Scheduler
 
-*   Your agent must already be deployed to Agent Engine.
-*   You need the HTTPS endpoint URL of your deployed agent. This URL is provided in the `adk deploy` command output or can be found in the Google Cloud Console under Vertex AI > Agent Engine.
+*   Your agent must already be deployed to Agent Runtime.
+*   You need the HTTPS endpoint URL of your deployed agent. This URL is provided in the `adk deploy` command output or can be found in the Google Cloud Console under Vertex AI > Agent Runtime.
 *   Ensure you have the necessary `gcloud` CLI components installed and authenticated.
 
 #### Cloud Scheduler Configuration Steps
@@ -76,7 +76,7 @@ To automate the execution of your deployed agent at a specific time (e.g., 9 AM 
 
 2.  **Grant Invoker Permissions to the Service Account**
 
-    Grant the service account permission to invoke your Agent Engine service. Replace `[YOUR_AGENT_DISPLAY_NAME]` with the actual display name you used during deployment (e.g., "Morning Email Agent"), and `[YOUR_GCP_LOCATION]` with the GCP location where your agent is deployed.
+    Grant the service account permission to invoke your Agent Runtime service. Replace `[YOUR_AGENT_DISPLAY_NAME]` with the actual display name you used during deployment (e.g., "Morning Email Agent"), and `[YOUR_GCP_LOCATION]` with the GCP location where your agent is deployed.
     ```sh
     gcloud run services add-iam-policy-binding [YOUR_AGENT_DISPLAY_NAME] 
         --member="serviceAccount:scheduler-invoker@$(gcloud config get-value project).iam.gserviceaccount.com" 

@@ -61,37 +61,35 @@ Install dependencies:
 uv sync --dev
 ```
 
-### Running the Agent
+### Running the Agent Locally
 Run the agent locally:
 ```bash
 uv run adk web sdlc_task_planner
 ```
 
-### Alternative: Using Agent Starter Pack
-
-You can also use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options:
-
+### Deploying to Google Cloud
+You can deploy the agent to Google Cloud (Vertex AI Reasoning Engine) using the provided deployment script:
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-task-planner -a adk@sdlc-task-planner
+uv run deployment/deploy.py --create
 ```
 
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
+### Alternative: Using Google Agents CLI
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and set up your project with a single command:
+You can also use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
+
+**Install the CLI** (one-time):
+
 ```bash
-uvx agent-starter-pack create my-task-planner -a adk@task-planner
+uvx google-agents-cli setup
 ```
-This command handles creating the project without needing to pre-install the package into a virtual environment.
 
-</details>
+**Create the project from this sample** (replace `my-task-planner` with your project name):
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+```bash
+agents-cli create my-task-planner -a adk@sdlc-task-planner
+```
+
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ## D. Customization & Extension
 

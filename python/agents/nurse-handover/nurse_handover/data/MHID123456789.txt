@@ -1,7 +1,7 @@
-Admission Doctor : Dr. ABC
-Admission Doctor : Dr. XYZ
+Admission Doctor : Dr. Robert
+Admission Doctor : Dr. Williams
 ENCOUTERENTRIES
-13/01/2025^11:38:46^Nurse PQR^Critical Care Nurses^08 ICU MSB
+13/01/2025^11:38:46^Nurse Betty^Critical Care Nurses^08 ICU MSB
 Forms
 CAUTI Maintenance Bundle Checklist
 Bundle Criteria : Morning Shift
@@ -51,9 +51,8 @@ Numeric Pain Scale (0-10 Scale)
 Numeric Pain Scale
 :
 2
-```
 
-```
+
 2/7/25, 6:56 PM
 Text
 Additional Pain Assessment Details
@@ -62,7 +61,7 @@ Duration : Not Applicable
 Continuous : Not Applicable
 Time : Not Applicable
 NURSING INITIAL ASSESSMENT NEW
-Patient Name : Satyendra kumar PATНАК
+Patient Name : John Doe
 MRN : ID123456789
 Age : 74
 Gender : MALE
@@ -70,7 +69,7 @@ Patient arrival Date : 13/01/2025
 Patient Arrival Time : 11:15
 Accompanied by Relative : Yes
 Name of Relative :
-SAURADHA PATHALA
+Jane Doe
 Relationship with Patient : SON
 Contact Number : 8884697221
 Primary Language Spoken : ENGLISH
@@ -98,9 +97,8 @@ hypothyroid on thyronorm 125 mcg
 B/L LOWER LIMB CELLULITIS S/P B/L WOUND DEBRIDEMENT ( 17/10/24-
 21/10/24)
 Vital Assessment
-```
 
-```
+
 2/7/25, 6:56 PM
 Temp(F) : 98.2
 Pulse/min : 82
@@ -146,7 +144,7 @@ TAB LIPAGLYN 4MG 0-0-1
 NOVORAPID INSULIN 12-12-10
 TUOJEO INSULIN 20UNITS AT NIGHT
 Informed the Doctor : Yes
-Name of the Doctor : Dr. Rajavardhan R
+Name of the Doctor : Dr. Brown
 Investigations Ordered
 Diet : NPO
 Collected Old records :
@@ -167,9 +165,8 @@ Bathing : Assisted
 Dressing : Assisted
 Eating : Assisted
 Walking : Assisted
-```
 
-```
+
 2/7/25, 6:56 PM
 Toilet Use : Assisted
 Text
@@ -178,7 +175,7 @@ needs)
 Actual needs :
 SEPSIS
 Potential needs : PAIN / FALL
-Assessment Done By : Nurse PQR
+Assessment Done By : Nurse Betty
 BMI : 32.89
 General Physical Examination:
 Pallor :
@@ -234,9 +231,8 @@ Peripheral IV Drainage Present
 : No
 Peripheral IV Condition : No Phlebitis
 CVC Site Assesst
-```
 
-```
+
 2/7/25, 6:56 PM
 Text
 Catheter position corrected/withdrawn
@@ -287,7 +283,7 @@ Invasive Lines : Not Applicable
 Patient ID : ID Band
 Allergies reviewed
 : Yes
-13/01/2025^11:38:53^Dr. ABC^IP Doctor Initial Assessment ^08
+13/01/2025^11:38:53^Dr. Miller^IP Doctor Initial Assessment ^08
 ICU MSB
 IP Initial Assessment
 Status
@@ -302,9 +298,8 @@ Chief Complaints : c/o pain abdomen x 2 days
 c/o fever x 2 days
 c/o reduced responsiveness x 1 days
 c/o recuced urine output x 1 day
-```
 
-```
+
 2/7/25, 6:56 PM
 Text
 History of Presenting illness
@@ -365,9 +360,8 @@ normal
 Pallor : NO
 Icterus : NO
 Edema : YES
-```
 
-```
+
 2/7/25, 6:56 PM
 Clubbing : NO
 Cyanosis : NO
@@ -402,7 +396,7 @@ Diet Plan :
 Status : Entered
 Score :
 0
-13/01/2025^12:21:42^Dr Rajavardhan R^IP Doctor Initial Assessment
+13/01/2025^12:21:42^Dr. Brown^IP Doctor Initial Assessment
 ^08 ICU MSB
 Apache II scoring sheet
 A.ACUTE PHYSIOLOGY SCORE :
@@ -415,7 +409,7 @@ C.CHRONIC HEALTH POINTS
 0
 APACHEII SCORE=&quot;A(ACUTE&quot; PHYSIOLOGY SCORE)+B(AGE
 POINTS)+C(CHRONIC HEALTH POINTS):
-DONE BY : Nurse STU
+DONE BY : Nurse Joy
 : Curative
 Care plan and Special Needs
 Status : Authorised
@@ -431,13 +425,12 @@ Status
 Score
 :
 0
-13/01/2025^13:20:07^Dr. Gagan M^Critical Care Doctors^08 ICU MSB
+13/01/2025^13:20:07^Dr. Davis^Critical Care Doctors^08 ICU MSB
 Procedure Notes
 :
 LEFT INTERNAL JUGULAR VEIN HD CATHETER
-```
 
-```
+
 2/7/25, 6:56 PM
 Text
 The left neck area was painted with Chlorhexidine
@@ -455,11 +448,7 @@ taken.
 Dressing done.
 Daily Notes
 :
-C/S/B Dr
-Triple
-Guidewire
-Sutures
-Rajavardhan/ Dr Gagan M ON 13/01/2025
+C/S/B Dr Brown/ Dr Davis ON 13/01/2025
 Diagnosis:
 pyeloneohritis
 septic shock
@@ -489,9 +478,8 @@ TAB FEBUTAZ 40 1-0-0
 TAB A TO Z GOLD 1-0-0
 TAB ALDACTONE 25MG 1-0-0
 TAB ECOSPRIN AV 75/10 0-0-1
-```
 
-```
+
 2/7/25, 6:56 PM
 TAB NEBICARD 2.5MG 0-0-1
 TAB SILODOL D8 0-0-1
@@ -556,9 +544,8 @@ Glycemic control, if GRBS &gt; 180 mg/dl- start insulin
 Incentive spirometry, Chest physiotherapy
 Forms
 Fluid balance-positive
-```
 
-```
+
 2/7/25, 6:56 PM
 CCM HandOver Note
 Shift : Morning to Evening
@@ -603,9 +590,8 @@ Issues:
 septic shock on noradrenaline
 metabolic acidosis
 altered sensorium
-```
 
-```
+
 2/7/25, 6:56 PM
 Text
 paroxysmal venticular tachycardia
@@ -632,15 +618,15 @@ Glycemic control, if GRBS &gt; 180 mg/dl- start insulin
 infusion.
 Incentive spirometry, Chest physiotherapy
 Fluid balance-positive
-: Dr.Shetty Sahanya Ramesh Suneetha
+: Dr. Garcia
 Handed over to
-: Dr. Gagan M
+: Dr. Davis
 Hand over by
 :
 0
 Score
 Treatment
-13/01/2025^14:07:19^DR. MAGESH BALAKRISHNAN^IP Doctor
+13/01/2025^14:07:19^DR. RODRIGUEZ^IP Doctor
 Sheet CARDIOLOGY MSB
 Progress Notes :
 THANKS FOR REFERENCE
@@ -656,9 +642,8 @@ PATIENT IS IN ALTERED SENSORIUM
 ECHO- NORMAL CHAMBER DIMENSIONS, CONCENTRIC LVH, MR-MILD, TR-MILD,
 PASP-46MMHG, MILD PAH, NO RWMA, ADEQUATE LV SYSTOLIC FUNCTION, LVEF-
 50%
-```
 
-```
+
 2/7/25, 6:56 PM
 Text
 CREAT- 5.97; HB-9.2
@@ -667,9 +652,9 @@ RCRI SCORE +2
 PATIENT CAN BE TAKEN UP FOR PROPOSED SURGERY UNDER MODERATE TO
 HIGH CARDIAC RISK FOR MACE EVENTS
 ADVICE
-TO CHANGE PACEMAKER MODE TO DOO MODE (TEJA- 7036572420)
+TO CHANGE PACEMAKER MODE TO DOO MODE
 COUNSELED FAMILY
-13/01/2025^15:11:38^DR. PALLAVI PATRI^IP Doctor Treatment
+13/01/2025^15:11:38^DR. MARTINEZ^IP Doctor Treatment
 Sheet NEPHROLOGY MSB
 Progress Notes
 72M
@@ -700,9 +685,7 @@ History:
 PATIENT PRESENTED WITH C/O ABDOMINAL PAIN, SUDDEN IN ONSET,
 DIFFUSE MORE IN UPPER ANDOMEN ASSOCIATED WITH ONE EPISODE OF
 VOMITING CONTAINING FOOD PARTICLES ON 10/01/2025. ATTENDER ALSO
-```
 
-```
 Text
 2/7/25, 6:56 PM
 GIVES H/O ONE EPISODE OF FEVER ON 10TH WHICH REDUCED WITH
@@ -737,16 +720,15 @@ RRT sos
 Monitor ABG
 Inform sos
 To repeat Renal panel 1 tomo morning
-13/01/2025^15:12:02^Nurse PQR^Critical Care Nurses^08 ICU
+13/01/2025^15:12:02^Nurse Betty^Critical Care Nurses^08 ICU
 MSB
 Forms
 CAUTI Maintenance Bundle Checklist
 Bundle Criteria : Evening Shift
 Day :
 D1
-```
 
-```
+
 2/7/25, 6:56 PM
 Text
 Regular documentation for assessment for need of catheter :
@@ -810,9 +792,8 @@ YES
 :
 7
 3
-```
 
-```
+
 2/7/25, 6:56 PM
 Text
 Perform hand hygiene before handling central line : YES
@@ -874,9 +855,8 @@ Dressing Type/Appearance :
 Peripheral IV Patency :
 Dry, Transparent
 No complications
-```
 
-```
+
 2/7/25, 6:56 PM
 Text
 Peripheral IV Equipment used
@@ -931,9 +911,8 @@ Arterial Line Location : Left
 Arterial Line Site : Radial artery
 Arterial Line Insertion Date : 13/01/2025
 Arterial Line Insertion Time : 12:00
-```
 
-```
+
 2/7/25, 6:56 PM
 Arterial Line Patient Identified :
 Text
@@ -943,10 +922,10 @@ observed, Handwashing verbalized, Invasive line cart used, Aseptic
 technique used,Skin dry at first puncture,Skin prepared with
 chlorhexidine/other
 Arterial Line Sterile Field : Maintained
-Arterial Line Performing Insertion : Dr Rajavardhan R
+Arterial Line Performing Insertion : Dr. Brown
 Arterial Line Assisting In Insertion
+: David Clark
 Arterial Line Status
-: karan singh
 : Accurate, optimally damped,Correlates with
 Status
 manual, Flushes easily,Good blood return
@@ -993,14 +972,12 @@ Hemodialysis or
 Central Guided Ultrasound Used : Yes
 Central IV Radiographic Confirmation
 : Yes
-```
 
-```
+
 2/7/25, 6:56 PM
 Central IV Performing Provider
-Central IV Procedure Result
 :
-Dr. Gagan M
+Dr. Davis
 Text
 :
 Successful insertion
@@ -1012,11 +989,11 @@ observed, Handwashing verbalized,Invasive line cart used, Hand
 hygiene, Maximum Barrier Protection,Skin dry at first puncture,Skin
 prepared with chlorhexidine,Skin prepared with other
 Central IV Sterile Field
-Central IV MBP Compliance
-Central IV TPA Intervention
 :
 Maintained
+Central IV MBP Compliance
 : Yes
+Central IV TPA Intervention
 Arterial Line Status
 Peripheral IV Assessment
 CVC Site Assesst
@@ -1061,9 +1038,8 @@ MOBILITY : 3
 3
 Slightly Limited :
 Y
-```
 
-```
+
 2/7/25, 6:56 PM
 NUTRITION :
 2
@@ -1100,8 +1076,8 @@ keep all the needed belongings near to the patient
 monitor hemodynamics
 teach fall prevention maesures
 Evaluation : Continue
-13/01/2025^15:59:22^Nurse PQR^Critical Care Nurses^08 ICU MSB
-13/01/2025^15:59:58^Nurse STU^Critical Care Nurses^08 ICU MSB
+13/01/2025^15:59:22^Nurse Betty^Critical Care Nurses^08 ICU MSB
+13/01/2025^15:59:58^Nurse Joy^Critical Care Nurses^08 ICU MSB
 ReAssessment No
 :
 PATIENT SHIFTED TO ОТ @ 15.50 HANDOVER GIVEN TO OT STAFF
@@ -1121,16 +1097,16 @@ INFUSION
 **MEDICATION ORDERS**
 
 Drug / Generic Item-Frequency-Instructions/Notes-Duration-OrderedBy-OrderedDate
-PANTOCID 40 MG/VIAL LYOPHILIZED POWDER FOR INJECTION-Once--2 Day(s)-Dr. ABC-13/01/2025
-ECOSPRIN-AV 75 MG CAPSULE, 10 MG - 75 MG-Once--2 Day(s)-Dr. ABC-13/01/2025
-NORMAL SALINE (0.9%) solution for infusion [100ml]-4 Hourly ( Q4H)--1 Day(s)-Dr. ABC-13/01/2025
-RL 500 ML PVC Bottle solution for infusion, Claris-Every 6 Hrs(6 Hourly (Q6H))--1 Day(s)-Dr. ABC-13/01/2025
-NORMAL SALINE 09% W/V AQUA PULSE 500 ML-Every 6 Hrs(6 Hourly (Q6H))--1 Day(s)-Dr. ABC-13/01/2025
-REFRESH TEARS 0.5% W/V EYE DROPS 10 ML-Once--1 Day(s)-Dr. ABC-13/01/2025
-CANDID 1% W/W DUSTING POWDER 120 GM-Once--1 Day(s)-Dr. ABC-13/01/2025
-LOX 2% W/V 30 ML VIAL SOLUTION FOR INJECTION-Once--1 Day(s)-Dr. ABC-13/01/2025
-LOX 2% W/V JELLY 30 GM-Once--1 Day(s)-Dr. ABC-13/01/2025
-TEGADERM IV DRESSING KIT 6.5 CM X 7 CM, # 1683-Once--1 Day(s)-Nurse PQR-13/01/2025
-6.5STERILE GLOVES (SERJUN)-Once--1 Day(s)-Nurse PQR-13/01/2025
-ICUBAC-H 1000 MG/VIAL FOR INJECTION-Every 8 Hrs(8 Hourly ( Q8H))--3 Day(s)-Dr. ABC-13/01/2025
-NOR 4MG-Once--1 Day(s)-Nurse STU-13/01/2025
+PANTOCID 40 MG/VIAL LYOPHILIZED POWDER FOR INJECTION-Once--2 Day(s)-Dr. Miller-13/01/2025
+ECOSPRIN-AV 75 MG CAPSULE, 10 MG - 75 MG-Once--2 Day(s)-Dr. Miller-13/01/2025
+NORMAL SALINE (0.9%) solution for infusion [100ml]-4 Hourly ( Q4H)--1 Day(s)-Dr. Miller-13/01/2025
+RL 500 ML PVC Bottle solution for infusion, Claris-Every 6 Hrs(6 Hourly (Q6H))--1 Day(s)-Dr. Miller-13/01/2025
+NORMAL SALINE 09% W/V AQUA PULSE 500 ML-Every 6 Hrs(6 Hourly (Q6H))--1 Day(s)-Dr. Miller-13/01/2025
+REFRESH TEARS 0.5% W/V EYE DROPS 10 ML-Once--1 Day(s)-Dr. Miller-13/01/2025
+CANDID 1% W/W DUSTING POWDER 120 GM-Once--1 Day(s)-Dr. Miller-13/01/2025
+LOX 2% W/V 30 ML VIAL SOLUTION FOR INJECTION-Once--1 Day(s)-Dr. Miller-13/01/2025
+LOX 2% W/V JELLY 30 GM-Once--1 Day(s)-Dr. Miller-13/01/2025
+TEGADERM IV DRESSING KIT 6.5 CM X 7 CM, # 1683-Once--1 Day(s)-Nurse Betty-13/01/2025
+6.5STERILE GLOVES (SERJUN)-Once--1 Day(s)-Nurse Betty-13/01/2025
+ICUBAC-H 1000 MG/VIAL FOR INJECTION-Every 8 Hrs(8 Hourly ( Q8H))--3 Day(s)-Dr. Miller-13/01/2025
+NOR 4MG-Once--1 Day(s)-Nurse Joy-13/01/2025

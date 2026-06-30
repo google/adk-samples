@@ -91,31 +91,23 @@ adk web
 ```
 This will open a new tab in your web browser with the ADK UI, allowing you to trace execution flows, tool trajectories, and test variables.
 
-### Alternative: Using Agent Starter Pack
+### Alternative: Using Google Agents CLI
 
-You can also use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options:
+You can also use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
+
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create global-kyc-agent -a adk@global_kyc_agent
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
+**Create the project from this sample** (replace `global-kyc-agent` with your project name):
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and set up your project with a single command:
 ```bash
-uvx agent-starter-pack create global-kyc-agent -a adk@global_kyc_agent
+agents-cli create global-kyc-agent -a adk@global_kyc_agent
 ```
-This command handles creating the project without needing to pre-install the package into a virtual environment.
 
-</details>
-
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ## D. Customization & Extension
 
@@ -148,7 +140,7 @@ Custom debugging scripts are included at the root to process outputs during test
 
 For the agent to be deployable, follow the instructions [here](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/deploy-agent). 
 
-To deploy the unified agent construct to Google Cloud's Vertex AI Agent Engine directly using the ADK CLI:
+To deploy the unified agent construct to Google Cloud's Agent Runtime directly using the ADK CLI:
 ```bash
 adk deploy --project YOUR_PROJECT_ID --agent global_kyc_agent.agent:root_agent --name global-kyc-agent
 ```
@@ -165,4 +157,4 @@ gcloud auth activate-service-account --key-file=/path/to/your/service-account-ke
 adk deploy --project YOUR_PROJECT_ID --agent global_kyc_agent.agent:root_agent --name global-kyc-agent
 ```
 
-Ensure the Service Account holds the required permissions for Vertex AI Agent Engine deployment (e.g., `roles/aiplatform.admin`, `roles/compute.admin`, or custom roles for Reasoning Engines).
+Ensure the Service Account holds the required permissions for Agent Runtime deployment (e.g., `roles/aiplatform.admin`, `roles/compute.admin`, or custom roles for Reasoning Engines).

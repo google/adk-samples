@@ -1,8 +1,8 @@
-# ADK Agent Engine + OAuth — Google Drive Reader
+# ADK Agent Runtime + OAuth — Google Drive Reader
 
-A production-ready ADK agent deployed on **Vertex AI Agent Engine** with **OAuth 2.0** support for reading Google Drive files on behalf of authenticated users. Works both locally via **ADK Web UI** and in production via **Gemini Enterprise**.
+A production-ready ADK agent deployed on **Agent Runtime** with **OAuth 2.0** support for reading Google Drive files on behalf of authenticated users. Works both locally via **ADK Web UI** and in production via **Gemini Enterprise**.
 
-Built with [Agent Starter Pack](https://github.com/GoogleCloudPlatform/agent-starter-pack) (`adk` template, `agent_engine` deployment target).
+Built with [Google Agents CLI](https://github.com/google/agents-cli) (`adk` template, `agent_runtime` deployment target).
 
 > **📣 Acknowledgment:** The OAuth implementation pattern in this project — including the `negotiate_creds()` three-stage credential resolution, the `auths.py` configuration, and the overall approach to making ADK + OAuth + Gemini Enterprise work together — is heavily inspired by Médéric Hurier's excellent article: **[Powering Up your Agent in Production with ADK, OAuth and Gemini Enterprise](https://fmind.medium.com/powering-up-your-agent-in-production-with-adk-oauth-and-gemini-enterprise-a52b0716fcba)**. That article was the key reference that made this implementation possible.
 
@@ -67,9 +67,9 @@ When running `make playground`, the ADK framework handles the OAuth flow:
 
 **Key point:** In local dev, `auths.py` must contain valid `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET` (set via environment variables or `app/.env`).
 
-### Production (Agent Engine + Gemini Enterprise)
+### Production (Agent Runtime + Gemini Enterprise)
 
-When deployed to Agent Engine and registered with Gemini Enterprise:
+When deployed to Agent Runtime and registered with Gemini Enterprise:
 
 1. User asks the agent to read a Drive file in the Gemini Enterprise web UI
 2. Gemini Enterprise sees the agent has an `authorizationConfig` with `toolAuthorizations` pointing to the registered OAuth resource
@@ -201,13 +201,13 @@ Open http://127.0.0.1:8501 and select the `app` folder.
 
 ## Production Deployment
 
-### Step 1: Deploy to Agent Engine
+### Step 1: Deploy to Agent Runtime
 
 ```bash
 make deploy
 ```
 
-This deploys the agent to Vertex AI Agent Engine. The Agent Engine ID is saved to `deployment_metadata.json`.
+This deploys the agent to Agent Runtime. The Agent Runtime ID is saved to `deployment_metadata.json`.
 
 ### Step 2: Register OAuth Authorization
 
@@ -290,7 +290,7 @@ The `AGENT_NAME` is the full name printed in the register output (ending with `/
 |---------|-------------|
 | `make install` | Install dependencies with `uv` |
 | `make playground` | Start ADK Web UI on port 8501 |
-| `make deploy` | Deploy agent to Vertex AI Agent Engine |
+| `make deploy` | Deploy agent to Agent Runtime |
 | `make register-oauth` | Register OAuth authorization resource |
 | `make register-gemini-enterprise` | Register agent with Gemini Enterprise |
 | `make unregister-gemini-enterprise` | Delete an agent registration |
@@ -356,31 +356,23 @@ If you get a 404 error pointing to `auth.cloud.google` when clicking the Preview
 
 ---
 
-### Alternative: Using Agent Starter Pack
+### Alternative: Using Google Agents CLI
 
-You can also use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options:
+You can also use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
+
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-adk-ae-oauth -a adk@adk-ae-oauth
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
+**Create the project from this sample** (replace `my-adk-ae-oauth` with your project name):
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and set up your project with a single command:
 ```bash
-uvx agent-starter-pack create my-adk-ae-oauth -a adk@adk-ae-oauth
+agents-cli create my-adk-ae-oauth -a adk@adk-ae-oauth
 ```
-This command handles creating the project without needing to pre-install the package into a virtual environment.
 
-</details>
-
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ---
 
@@ -389,5 +381,5 @@ The starter pack will prompt you to select deployment options and provides addit
 
 - [Powering Up your Agent with ADK, OAuth and Gemini Enterprise](https://fmind.medium.com/powering-up-your-agent-in-production-with-adk-oauth-and-gemini-enterprise-a52b0716fcba) — The pattern this implementation follows
 - [Google ADK Documentation](https://google.github.io/adk-docs/) — Official ADK docs
-- [Agent Starter Pack](https://github.com/GoogleCloudPlatform/agent-starter-pack) — Production templates for GCP agents
+- [Google Agents CLI](https://github.com/google/agents-cli) — Production templates for GCP agents
 - [ADK Authentication](https://google.github.io/adk-docs/tools/authentication/) — OAuth flow details in ADK

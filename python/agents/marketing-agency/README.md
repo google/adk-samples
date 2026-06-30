@@ -23,19 +23,27 @@ This diagram shows the detailed architecture of the agents and tools used
 to implement this workflow.
 <img src="marketing-agency.png" alt="marketing agency" width="800"/>
 
-## Quick Start with Agent Starter Pack (Recommended)
+## Quick Start with Google Agents CLI (Recommended)
 
 The fastest way to get a production-ready version of this agent is using the
-[Agent Starter Pack](https://goo.gle/agent-starter-pack). It scaffolds a full
+[Google Agents CLI](https://github.com/google/agents-cli). It scaffolds a full
 project with CI/CD, deployment scripts, and best practices built in.
 
+**Install the CLI** (one-time):
+
 ```bash
-uvx agent-starter-pack create my-marketing-agency -a adk@marketing-agency
+uvx google-agents-cli setup
 ```
 
-This single command will:
+**Create the project from this sample** (replace `my-marketing-agency` with your project name):
+
+```bash
+agents-cli create my-marketing-agency -a adk@marketing-agency
+```
+
+This will:
 - Copy the marketing-agency sample into a new project
-- Prompt you to select deployment options (Cloud Run, Agent Engine, etc.)
+- Prompt you to select deployment options (Cloud Run, Agent Runtime, etc.)
 - Generate CI/CD pipelines and infrastructure-as-code
 - Set up a ready-to-deploy project structure
 
@@ -197,25 +205,33 @@ that the agent's responses match a pre-defined response reasonably well.
 
 ## Deployment
 
-### Using Agent Starter Pack (Recommended)
+### Using Google Agents CLI (Recommended)
 
 The recommended way to deploy this agent is via the
-[Agent Starter Pack](https://goo.gle/agent-starter-pack), which provides
-production-ready deployment pipelines out of the box:
+[Google Agents CLI](https://github.com/google/agents-cli), which provides
+production-ready deployment pipelines out of the box.
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-marketing-agency -a adk@marketing-agency
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-marketing-agency` with your project name):
+
+```bash
+agents-cli create my-marketing-agency -a adk@marketing-agency
 cd my-marketing-agency
 ```
 
-The starter pack supports multiple deployment targets including Cloud Run and
-Vertex AI Agent Engine, and generates Terraform/CI/CD configuration
+The Google Agents CLI supports multiple deployment targets including Cloud Run and
+Agent Runtime, and generates Terraform/CI/CD configuration
 automatically. Follow the generated project's README for full deployment
 instructions.
 
-### Manual Deployment to Vertex AI Agent Engine
+### Manual Deployment to Agent Runtime
 
-You can also deploy directly to Vertex AI Agent Engine without the starter pack:
+You can also deploy directly to Agent Runtime without the starter pack:
 
 ```bash
 uv sync --group deployment

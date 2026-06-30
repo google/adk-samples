@@ -2,7 +2,7 @@
 
 A generative AI-powered agent designed to automate data governance on Google Cloud. It allows users to define, validate, and enforce data policies using natural language queries, translating them into executable code that runs against **Google Cloud Dataplex** and **BigQuery** metadata.
 
-The [Agent Starter Pack](https://goo.gle/agent-starter-pack) (ASP) is the **recommended** way to create a new project from this sample: you get deployment options and CI/CD scaffolding. The copy in [adk-samples](https://github.com/google/adk-samples) is the upstream source for browsing and contributions.
+The [Google Agents CLI](https://github.com/google/agents-cli) is the **recommended** way to create a new project from this sample: you get deployment options and CI/CD scaffolding. The copy in [adk-samples](https://github.com/google/adk-samples) is the upstream source for browsing and contributions.
 
 ## Prerequisites
 
@@ -11,12 +11,20 @@ The [Agent Starter Pack](https://goo.gle/agent-starter-pack) (ASP) is the **reco
 *   **Google Cloud SDK (`gcloud`)** installed and authenticated
 *   **Git**
 
-### Recommended: Using Agent Starter Pack
+### Recommended: Using Google Agents CLI
 
-The Agent Starter Pack is the recommended way to create and deploy a production-ready version of this agent. Start from a new directory (replace `my-policy-as-code` with your project name):
+The Google Agents CLI is the recommended way to create and deploy a production-ready version of this agent.
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-policy-as-code -a adk@policy-as-code
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-policy-as-code` with your project name):
+
+```bash
+agents-cli create my-policy-as-code -a adk@policy-as-code
 cd my-policy-as-code
 ```
 
@@ -44,26 +52,12 @@ uv sync --group dev
     gcloud auth application-default login
     ```
 
-During setup, the starter pack will prompt you for deployment options and adds production-oriented tooling (for example automated CI/CD deployment scripts).
-
-<details>
-<summary>Alternative: install Agent Starter Pack with pip</summary>
-
-```bash
-python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-policy-as-code -a adk@policy-as-code
-cd my-policy-as-code
-```
-
-Then continue with `uv sync --group dev` and the configuration steps above.
-
-</details>
+During setup, the Google Agents CLI will prompt you for deployment options and adds production-oriented tooling (for example automated CI/CD deployment scripts).
 
 <details>
 <summary>Clone this repository directly (contributors and advanced use)</summary>
 
-Use this workflow when working against the upstream repository (for example to open a pull request). **New projects should still use the Agent Starter Pack** as described above.
+Use this workflow when working against the upstream repository (for example to open a pull request). **New projects should still use the Google Agents CLI** as described above.
 
 ```bash
 git clone https://github.com/google/adk-samples.git
@@ -80,7 +74,7 @@ Run the agent and tests with the same commands as in the recommended path (`uv r
 
 ## Running the Agent
 
-From your project directory (ASP-scaffolded or cloned repo):
+From your project directory (Google Agents CLI-scaffolded or cloned repo):
 
 ```bash
 uv run adk run policy_as_code_agent
@@ -92,7 +86,7 @@ Or use the web UI:
 uv run adk web
 ```
 
-**Optional:** To enable short-term contextual memory (Agent Engine) for better conversation history:
+**Optional:** To enable short-term contextual memory (Agent Runtime) for better conversation history:
 
 ```bash
 uv run adk web --memory_service_uri="agentengine://AGENT_ENGINE_ID"
@@ -140,7 +134,7 @@ The agent is built using the **Google Cloud Agent Development Kit (ADK)** and le
 ### Project Structure
 
 *   `policy_as_code_agent/`
-    *   `__init__.py`: Application Default Credentials and Vertex environment defaults for ASP/local runs.
+    *   `__init__.py`: Application Default Credentials and Vertex environment defaults for Google Agents CLI/local runs.
     *   `agent.py`: Entry point and core agent definition.
     *   `memory.py`: Handles Firestore interactions (saving/retrieving policies).
     *   `utils/`: Utility modules for LLM logic, Dataplex, GCS, and common tools.

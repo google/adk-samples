@@ -80,29 +80,23 @@ The core of Plumber is powered by the Agent Development Kit (ADK), which enables
    ```
 
 
-### Agent Starter Pack (Recommended)
+### Google Agents CLI (Recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options. The easiest way is with `uvx` (no install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
 
-```bash
-uvx agent-starter-pack create my-plumber -a adk@plumber-data-engineering-assistant
-```
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-plumber -a adk@plumber-data-engineering-assistant
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-plumber` with your project name):
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+```bash
+agents-cli create my-plumber -a adk@plumber-data-engineering-assistant
+```
+
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ## Security
 

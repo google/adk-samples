@@ -94,31 +94,23 @@ The agent has access to the following tools:
   curl -LsSf https://astral.sh/uv/install.sh | sh
   ```
 
-## Agent Starter Pack (recommended)
+## Google Agents CLI (recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to scaffold a production-ready project and choose your deployment target ([Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features. The easiest way is with [uv](https://docs.astral.sh/uv/) (one command, no venv or pip install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to scaffold a production-ready project and choose your deployment target ([Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features.
 
-```bash
-uvx agent-starter-pack create my-customer-service -a adk@customer-service
-```
-
-If you don't have uv yet: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-The starter pack will prompt you to select deployment options and set up your Google Cloud project.
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-customer-service -a adk@customer-service
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-customer-service` with your project name):
+
+```bash
+agents-cli create my-customer-service -a adk@customer-service
+```
+
+The Google Agents CLI will prompt you to select deployment options and set up your Google Cloud project.
 
 From your newly created project directory (e.g. `my-customer-service`), run:
 
@@ -145,7 +137,7 @@ Then select `customer_service` from the dropdown menu.
 
 1.  **Prerequisites:**
 
-    For the Agent Engine deployment steps, you will need
+    For the Agent Runtime deployment steps, you will need
     a Google Cloud Project. Once you have created your project,
     [install the Google Cloud SDK](https://cloud.google.com/sdk/docs/install).
     Then run the following command to authenticate with your project:
@@ -222,7 +214,7 @@ uv run pytest tests/unit
 
 You can find further configuration parameters in [customer_service/config.py](./customer_service/config.py). This incudes parameters such as agent name, app name and llm model used by the agent.
 
-### Deployment on Google Agent Engine
+### Deployment on Agent Runtime
 
 In order to inherit all dependencies of your agent you can build the wheel file of the agent and run the deployment.
 

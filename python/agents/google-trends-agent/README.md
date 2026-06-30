@@ -72,7 +72,7 @@ This agent is a sequential agent composed of two sub-agents that work together t
       GOOGLE_CLOUD_STORAGE_BUCKET="<your-storage-bucket>" # Required for deployment
       ```
 
-    - Grant the Agent Engine service account permission to run BigQuery jobs. This is required for deployment.
+    - Grant the Agent Runtime service account permission to run BigQuery jobs. This is required for deployment.
 
       ```bash
       # Set your project ID
@@ -91,37 +91,36 @@ This agent is a sequential agent composed of two sub-agents that work together t
 
 You can run the agent locally using the `adk` command in your terminal.
 
-1.  **Activate the virtual environment:**
+1.  **To run the agent from the CLI:**
+
+    Make sure your working directory is `adk-samples/python/agents/google-trends-agent/google_trends_agent`, then run:
 
     ```bash
-    poetry shell
-    ```
-
-2.  **To run the agent from the CLI:**
-
-    ```bash
+    cd google_trends_agent
     adk run .
     ```
 
-3.  **To run the agent from the ADK web UI:**
+2.  **To run the agent from the ADK web UI:**
+
+    From the `google_trends_agent` directory:
+
     ```bash
-    adk web
+    adk web .
     ```
     Then select `google-trends-agent` from the dropdown menu.
 
 ## Deploying the Agent Remotely
 
-### To Agent Engine
+### To Agent Runtime
 
-The agent can also be deployed to [Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview).
+The agent can also be deployed to [Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime).
 
 1.  **Ensure Prerequisites:** Make sure your `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, and `GOOGLE_CLOUD_STORAGE_BUCKET` environment variables are set correctly in your `.env` file.
 
 2.  **Run the deployment script:**
     ```bash
-    poetry shell
-    poetry install --with deployment
-    python deployment/deploy.py
+    uv sync --group deployment
+    uv run python deployment/deploy.py
     ```
     When the deployment finishes, it will output the resource ID of the remote agent deployment and update your `.env` file with the `AGENT_ENGINE_ID`. For example:
     ```
@@ -188,26 +187,20 @@ You can customize this agent to fit your specific needs:
 - **Enhance Analysis:** Add new tools to perform more in-depth analysis on the trends, deeper research (e.g. using Google Search as an additional tool) such as sentiment analysis or forecasting.
 - **Add Notifications:** Integrate tools that send alerts via email or Slack when a new trend matching specific criteria is detected.
 
-### Agent Starter Pack (Recommended)
+### Google Agents CLI (Recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options. The easiest way is with `uvx` (no install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
 
-```bash
-uvx agent-starter-pack create my-google-trends-agent -a adk@google-trends
-```
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-google-trends-agent -a adk@google-trends
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-google-trends-agent` with your project name):
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+```bash
+agents-cli create my-google-trends-agent -a adk@google-trends
+```
+
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.

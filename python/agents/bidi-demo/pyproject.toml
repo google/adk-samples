@@ -2,39 +2,71 @@
 name = "bidi-demo"
 version = "0.1.0"
 description = "ADK Gemini Live API Toolkit demo application"
-authors = [
-    { name = "Google LLC" }
-]
-license = {text = "Apache License 2.0"}
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Google LLC" },
+    { name = "Kaz Sato" },
+]
 
 dependencies = [
-    "google-adk>=1.20.0",
+    "google-adk>=1.32.0",
     "fastapi>=0.115.0",
     "python-dotenv>=1.0.0",
     "uvicorn[standard]>=0.32.0",
 ]
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
-    "pytest>=8.3.5",
-    "pytest-asyncio>=0.26.0",
-    "google-adk[eval]>=1.0.0",
-    "agent-starter-pack>=0.32.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+agent-engine = [
+    "google-cloud-aiplatform[agent_engines,adk]>=1.112",
+    "numpy",
+    "websockets",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [tool.ruff]
-extend = "../../../pyproject.toml"
+line-length = 80
+target-version = "py310"
 
 [tool.ruff.lint]
-ignore = ["C901", "PLR0915"]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "C",   # flake8-comprehension
+    "PL",  # Pylint rules
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "RUF", # ruff specific rules
+]
+ignore = [
+    "E501",    # line length (long prompts, URLs)
+    "PLR0913", # too many arguments
+    "C901",    # too complex
+    "PLR0915", # too many statements
+]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"agent_engine/*.py" = ["PLC0415"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "bidi_demo"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.uv]
+dev-dependencies = []
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
@@ -42,18 +74,3 @@ packages = ["app"]
 [tool.hatch.build.targets.wheel.shared-data]
 "app/static" = "share/bidi-demo/static"
 "app/.env" = "share/bidi-demo/.env.template"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.pytest.ini_options]
-pythonpath = "."
-asyncio_default_fixture_loop_scope = "function"
-
-[tool.agent-starter-pack]
-example_question = "Search the web for the latest news about Google ADK."
-
-[tool.agent-starter-pack.settings]
-agent_directory = "app"
-deployment_targets = ["agent_engine", "cloud_run"]

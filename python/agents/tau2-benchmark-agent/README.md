@@ -4,7 +4,7 @@
 
 The Tau2-Bench Agent integrates with the [τ-bench](https://github.com/sierra-research/tau2-bench) framework using the Google Agent Development Kit (ADK). It is designed to evaluate agent performance across real-world customer service domains (airline, retail, telecom) by running structured benchmark simulations.
 
-This sample is compatible with the [Agent Starter Pack](https://goo.gle/agent-starter-pack) (ASP) and can be used as a base for creating production-ready agent deployments.
+This sample is compatible with the [Google Agents CLI](https://github.com/google/agents-cli) and can be used as a base for creating production-ready agent deployments.
 
 ## Agent Details
 
@@ -30,12 +30,20 @@ gcloud auth application-default login
 gcloud auth application-default set-quota-project YOUR_PROJECT_ID
 ```
 
-## Using Agent Starter Pack (Recommended)
+## Using Google Agents CLI (Recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to scaffold a production-ready version of this agent with deployment and CI/CD options:
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to scaffold a production-ready version of this agent with deployment and CI/CD options.
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-tau2-benchmark -a adk@tau2-benchmark-agent
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-tau2-benchmark` with your project name):
+
+```bash
+agents-cli create my-tau2-benchmark -a adk@tau2-benchmark-agent
 cd my-tau2-benchmark
 ```
 
@@ -143,7 +151,7 @@ uv run pytest tests -v
 The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 <details>
-<summary>Running without Agent Starter Pack</summary>
+<summary>Running without Google Agents CLI</summary>
 
 ### Installation
 

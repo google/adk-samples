@@ -13,7 +13,7 @@ The **Deep Search Agent Development Kit (ADK) Quickstart** is a production-ready
   <tbody>
     <tr>
       <td>🏗️</td>
-      <td><strong>Fullstack & Production-Ready:</strong> A complete React frontend and ADK-powered FastAPI backend, with deployment options for <a href="https://cloud.google.com/run">Google Cloud Run</a> and <a href="https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview">Vertex AI Agent Engine</a>.</td>
+      <td><strong>Fullstack & Production-Ready:</strong> A complete React frontend and ADK-powered FastAPI backend, with deployment options for <a href="https://cloud.google.com/run">Google Cloud Run</a> and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime">Agent Runtime</a>.</td>
     </tr>
     <tr>
       <td>🧠</td>
@@ -44,31 +44,23 @@ This project adapts concepts from the [Gemini FullStack LangGraph Quickstart](ht
     ```
 -   [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) and a **Google Cloud Project** with the **Vertex AI API** enabled
 
-## Agent Starter Pack (recommended)
+## Google Agents CLI (recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to scaffold a production-ready project and choose your deployment target ([Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features. The easiest way is with [uv](https://docs.astral.sh/uv/) (one command, no venv or pip install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to scaffold a production-ready project and choose your deployment target ([Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features.
 
-```bash
-uvx agent-starter-pack create my-deep-search-agent -a adk@deep-search
-```
-
-If you don't have uv yet: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-The starter pack will prompt you to select deployment options and set up your Google Cloud project.
-
-<details>
-<summary>Alternative: Using pip and a virtual environment</summary>
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-deep-search-agent -a adk@deep-search
+uvx google-agents-cli setup
 ```
 
-</details>
+**Create the project from this sample** (replace `my-deep-search-agent` with your project name):
+
+```bash
+agents-cli create my-deep-search-agent -a adk@deep-search
+```
+
+The Google Agents CLI will prompt you to select deployment options and set up your Google Cloud project.
 
 From your newly created project directory (e.g. `my-deep-search-agent`), install dependencies and start the servers:
 
@@ -131,7 +123,7 @@ Then run `make install && make dev` to start the agent.
 
 ## Cloud Deployment
 
-> **Note:** Cloud deployment applies only to projects created with **agent-starter-pack**.
+> **Note:** Cloud deployment applies only to projects created with **google-agents-cli**.
 
 **Prerequisites:**
 ```bash
@@ -151,7 +143,7 @@ make deploy IAP=true
 
 This agent includes a custom React frontend. To deploy it:
 
-1. **Configure the Dockerfile** - See the [Deploy UI Guide](https://googlecloudplatform.github.io/agent-starter-pack/guide/deploy-ui.html) for the required Dockerfile changes.
+1. **Configure the Dockerfile** - See the [Deploy UI Guide](https://github.com/google/agents-cli) for the required Dockerfile changes.
 
 2. **Deploy with the frontend port:**
 ```bash
@@ -162,7 +154,7 @@ make deploy IAP=true PORT=5173
 
 Once deployed, grant users access to your IAP-protected service by following the [Manage User Access](https://cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run#manage_user_or_group_access) documentation.
 
-For production deployments with CI/CD, see the [Agent Starter Pack Development Guide](https://googlecloudplatform.github.io/agent-starter-pack/guide/development-guide.html#b-production-ready-deployment-with-ci-cd).
+For production deployments with CI/CD, see the [Google Agents CLI Development Guide](https://github.com/google/agents-cli).
 
 ## Agent Details
 
@@ -260,7 +252,7 @@ You can modify and extend this agent's behavior by editing the backend code.
 If you encounter issues while setting up or running this agent, here are some resources to help you troubleshoot:
 - [ADK Documentation](https://google.github.io/adk-docs/): Comprehensive documentation for the Agent Development Kit
 - [Vertex AI Authentication Guide](https://cloud.google.com/vertex-ai/docs/authentication): Detailed instructions for setting up authentication
-- [Agent Starter Pack Troubleshooting](https://googlecloudplatform.github.io/agent-starter-pack/guide/troubleshooting.html): Common issues
+- [Google Agents CLI Troubleshooting](https://github.com/google/agents-cli): Common issues
 
 
 ## Technologies Used

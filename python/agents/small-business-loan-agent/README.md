@@ -32,13 +32,13 @@ A multi-agent system built with the [Google Agent Development Kit (ADK)](https:/
 
 **Complete loan application example** (using `data/sample_application_complete.pdf`):
 
-If testing from Agent Engine Playground UI ask:
+If testing from Agent Runtime Playground UI ask:
 
 ```
 Process sample_application_complete.pdf from GCS for loan SBL-2025-02142
 ```
 
-The complete loan application example interaction is as follows (if you are running locally, you can upload your file through the UI instead of using GCS). The rest of the flow applies to both local and Agent Engine Playground.
+The complete loan application example interaction is as follows (if you are running locally, you can upload your file through the UI instead of using GCS). The rest of the flow applies to both local and Agent Runtime Playground.
 
 ```
 User: Process this loan application for SBL-2025-02142
@@ -487,37 +487,34 @@ See [ADK Evaluation docs](https://google.github.io/adk-docs/evaluate/) and [Eval
 
 ## G. Deploy
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with deployment options. Run this command from the root of the `adk-samples` repository:
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with deployment options.
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-loan-agent -a local@python/agents/small-business-loan-agent --auto-approve -o target
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>Alternative: Using pip</summary>
+**Create the project from this sample** (run from the root of the `adk-samples` repository, replace `my-loan-agent` with your project name):
 
 ```bash
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-loan-agent -a local@python/agents/small-business-loan-agent --auto-approve -o target
+agents-cli create my-loan-agent -a local@python/agents/small-business-loan-agent --auto-approve -o target
 ```
 
-</details>
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts. (for more options, run the above command without `--auto-approve -o target` flags)
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts. (for more options, run the above command without `--auto-approve -o target` flags)
-
-When deploying to Agent Engine, ensure your `.env` file is configured with required variables. You can then install, test, and complete the full setup and deployment using the Makefile provided by the starter pack:
+When deploying to Agent Runtime, ensure your `.env` file is configured with required variables. You can then install, test, and complete the full setup and deployment using the Makefile provided by the starter pack:
 
 ```bash
 cd target/my-loan-agent && make install && make test && make backend
 ```
 
-Note: File upload is not supported in the Agent Engine Playground currently, so use the GCS to fetch the test files (cf example interaction above)
+Note: File upload is not supported in the Agent Runtime Playground currently, so use the GCS to fetch the test files (cf example interaction above)
 
 To register the agent to Gemini Enterprise, do this:
 
 ```bash
-uvx agent-starter-pack@latest register-gemini-enterprise
+uvx google-agents-cli publish gemini-enterprise
 ```
 
 ## License

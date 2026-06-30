@@ -46,7 +46,7 @@ def write_deployment_metadata(
 
     print(f"Agent Engine ID written to {metadata_file}")
 
-def deploy_era_to_vertex(project_id: str, location: str = "us-central1"):
+def deploy_era_to_vertex(project_id: str, location: str = "us-east1"):
     print(
         f"🚀 Initializing Modern Agent Engine Deployment for economic-research in {location}..."
     )
@@ -83,7 +83,7 @@ def deploy_era_to_vertex(project_id: str, location: str = "us-central1"):
 
     adk_app = AdkApp(
         agent=root_agent,
-        enable_tracing=False,
+        enable_tracing=True,
     )
 
     # Use the new agent_engines API

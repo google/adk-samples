@@ -61,30 +61,23 @@ to implement this workflow.
   - For installation, please follow the instruction on the official
   [Google Cloud website](https://cloud.google.com/sdk/docs/install).
 
-## Agent Starter Pack (recommended)
+## Google Agents CLI (recommended)
 
-Use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to scaffold a production-ready project and choose your deployment target ([Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features. The easiest way is with [uv](https://docs.astral.sh/uv/) (one command, no venv or pip install needed):
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to scaffold a production-ready project and choose your deployment target ([Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features.
 
-```bash
-uvx agent-starter-pack create my-mle-agent -a adk@machine-learning-engineering
-```
-
-If you don't have uv yet: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-The starter pack will prompt you to select deployment options and set up your Google Cloud project.
-
-Alternative: Using pip and a virtual environment
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-mle-agent -a adk@machine-learning-engineering
+uvx google-agents-cli setup
 ```
 
+**Create the project from this sample** (replace `my-mle-agent` with your project name):
 
+```bash
+agents-cli create my-mle-agent -a adk@machine-learning-engineering
+```
+
+The Google Agents CLI will prompt you to select deployment options and set up your Google Cloud project.
 
 From your newly created project directory (e.g. `my-mle-agent`), run:
 
@@ -164,7 +157,7 @@ You will need to have specified a GCS bucket in the environment variable `GOOGLE
 
 If the bucket does not exist, ADK will create one for you. This is the easiest option. If the bucket does exist, then you must provide permissions to the service account as described in [this](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/troubleshooting/deploy#permission_errors) Troubleshooting article.
 
-The Machine Learning Engineering Agent can be deployed to Vertex AI Agent Engine using the following
+The Machine Learning Engineering Agent can be deployed to Agent Runtime using the following
 commands:
 
 ```bash

@@ -114,7 +114,7 @@ Then select the `order-processing` from the dropdown.
 
 ## Deploying the Agent Remotely
 
-### To Agent Engine
+### To Agent Runtime
 
 Create a service account and assign it `Vertex AI User` and `Application Integration Invoker` roles
 
@@ -135,7 +135,7 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 
 Add the service account email in the `.env` file
 
-The agent can also be deployed to [Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview) using the following
+The agent can also be deployed to [Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) using the following
 commands:
 
 ```bash
@@ -148,7 +148,7 @@ When the deployment finishes, it will output the resource ID of the remote agent
 Created remote agent: projects/<PROJECT_NUMBER>/locations/<PROJECT_LOCATION>/reasoningEngines/<AGENT_ENGINE_ID>
 ```
 
-For more information on deploying to Agent Engine, see [here](https://google.github.io/adk-docs/deploy/agent-engine/#install-vertex-ai-sdk).
+For more information on deploying to Agent Runtime, see [here](https://google.github.io/adk-docs/deploy/agent-engine/#install-vertex-ai-sdk).
 
 The deployment script adds the `AGENT_ENGINE_ID` to your `.env` file. To test the remote agent, simply run:
 ```bash
