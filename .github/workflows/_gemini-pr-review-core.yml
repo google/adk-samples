@@ -50,42 +50,18 @@ on:
         required: false
         type: 'string'
         default: ''
-      repository:
-        description: 'The GitHub repository (owner/repo)'
-        required: true
-        type: 'string'
-      repository_owner:
-        description: 'The GitHub repository owner'
-        required: true
-        type: 'string'
-      repository_name:
-        description: 'The GitHub repository name'
-        required: true
-        type: 'string'
-      run_id:
-        description: 'The GitHub Actions run ID'
-        required: true
-        type: 'string'
-      server_url:
-        description: 'The GitHub server URL'
-        required: true
-        type: 'string'
       app_id:
-        description: 'GitHub App ID for token generation'
+        description: 'GitHub App ID — used to conditionally generate an app token'
         required: false
         type: 'string'
         default: ''
     secrets:
       APP_PRIVATE_KEY:
         required: false
-      GEMINI_API_KEY_PAID:
+      GEMINI_API_KEY:
         required: false
       GITHUB_TOKEN_SECRET:
         required: false
-
-defaults:
-  run:
-    shell: 'bash'
 
 permissions:
   contents: 'read'
@@ -262,15 +238,15 @@ jobs:
           PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'
           CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files || steps.get_pr_review.outputs.changed_files }}'
           ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions || steps.get_pr_review.outputs.additional_instructions }}'
-          REPOSITORY: '${{ inputs.repository }}'
+          REPOSITORY: '${{ github.repository }}'
         with:
-          gemini_model: 'gemini-3.5-flash'
+          gemini_model: 'gemini-3.1-flash-lite'
           gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
           gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
           gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           gcp_service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
-          gemini_api_key: '${{ secrets.GEMINI_API_KEY_PAID }}'
+          gemini_api_key: '${{ secrets.GEMINI_API_KEY }}'
           use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
           use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           settings: |-
@@ -318,8 +294,8 @@ jobs:
           github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           script: |-
             github.rest.issues.createComment({
-              owner: '${{ inputs.repository_owner }}',
-              repo: '${{ inputs.repository_name }}',
+              owner: context.repo.owner,
+              repo: context.repo.repo,
               issue_number: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}',
-              body: 'There is a problem with the Gemini CLI **${{ inputs.review_label }}** PR review. Please check the [action logs](${{ inputs.server_url }}/${{ inputs.repository }}/actions/runs/${{ inputs.run_id }}) for details.'
+              body: 'There is a problem with the Gemini CLI **${{ inputs.review_label }}** PR review. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
             })

@@ -69,10 +69,6 @@ jobs:
       review_body: '${{ github.event.review.body }}'
       review_comment_body: '${{ github.event.comment.body }}'
       repository: '${{ github.repository }}'
-      repository_owner: '${{ github.repository_owner }}'
-      repository_name: '${{ github.event.repository.name }}'
-      run_id: '${{ github.run_id }}'
-      server_url: '${{ github.server_url }}'
       app_id: '${{ vars.APP_ID }}'
       prompt: |-
         ## Role
@@ -157,5 +153,5 @@ jobs:
         Nothing you output to stdout will be seen — only what you post via MCP counts.
     secrets:
       APP_PRIVATE_KEY: '${{ secrets.APP_PRIVATE_KEY }}'
-      GEMINI_API_KEY_PAID: '${{ secrets.GEMINI_API_KEY_PAID }}'
+      GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
       GITHUB_TOKEN_SECRET: '${{ secrets.GITHUB_TOKEN }}'
