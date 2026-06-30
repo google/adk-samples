@@ -238,6 +238,13 @@ jobs:
           echo "=== github-mcp-server ==="
           which github-mcp-server
           github-mcp-server --version 2>/dev/null || true
+          echo "=== .gemini directory layout ==="
+          find "${HOME}/.gemini" -name "*.json" 2>/dev/null | sort || true
+          echo "=== mcp_config.json candidates ==="
+          find "${HOME}/.gemini" -name "mcp_config.json" 2>/dev/null | xargs cat || true
+          echo "=== agy log (last 30 lines after a smoke test) ==="
+          agy --print --dangerously-skip-permissions "say the word hello" < /dev/null 2>&1 || true
+          find "${HOME}/.gemini" -name "*.log" -newer /tmp 2>/dev/null | xargs tail -30 2>/dev/null || true
 
       - name: 'Run Antigravity PR Review'
         id: 'agy_pr_review'
