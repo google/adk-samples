@@ -26,6 +26,12 @@ concurrency:
   group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}'
   cancel-in-progress: true
 
+permissions:
+  contents: 'read'
+  id-token: 'write'
+  issues: 'write'
+  pull-requests: 'write'
+
 jobs:
   trigger:
     if: |-
