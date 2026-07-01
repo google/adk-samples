@@ -1,0 +1,140 @@
+name: Validate Recipe Manifests
+
+on:
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'contrib/**'
+      - '.github/schemas/manifest-schema.json'
+      - '.github/workflows/validate-manifests.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'core/**'
+      - 'contrib/**'
+      - '.github/schemas/manifest-schema.json'
+      - '.github/workflows/validate-manifests.yml'
+  workflow_dispatch:
+
+jobs:
+  validate-manifests:
+    name: Check recipe manifest.yaml presence and schema
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install validation dependencies
+        run: pip install pyyaml jsonschema
+
+      - name: Validate all recipe manifests
+        run: |
+          python - <<'EOF'
+          import os
+          import sys
+          import json
+          import yaml
+          import jsonschema
+          from pathlib import Path
+
+          SAMPLE_ROOTS = ["core", "contrib"]
+          SCHEMA_PATH = ".github/schemas/manifest-schema.json"
+          MANIFEST_FILENAME = "manifest.yaml"
+
+          # A "recipe directory" is any immediate subdirectory of core/ or contrib/
+          # that is not a README-only placeholder (i.e. it contains files beyond README.md)
+          def is_sample_dir(path: Path) -> bool:
+              if not path.is_dir():
+                  return False
+              children = [p for p in path.iterdir() if p.name != "README.md"]
+              return len(children) > 0
+
+          def load_schema(schema_path: str) -> dict:
+              with open(schema_path) as f:
+                  return json.load(f)
+
+          def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
+              """Returns a list of error strings; empty means valid."""
+              errors = []
+              try:
+                  with open(manifest_path) as f:
+                      data = yaml.safe_load(f)
+              except yaml.YAMLError as e:
+                  errors.append(f"YAML parse error: {e}")
+                  return errors
+
+              if data is None:
+                  errors.append("manifest.yaml is empty")
+                  return errors
+
+              validator = jsonschema.Draft7Validator(schema)
+              for err in sorted(validator.iter_errors(data), key=str):
+                  errors.append(f"  - {err.json_path}: {err.message}")
+              return errors
+
+          schema = load_schema(SCHEMA_PATH)
+
+          missing_manifests = []
+          invalid_manifests = {}
+
+          for root in SAMPLE_ROOTS:
+              root_path = Path(root)
+              if not root_path.exists():
+                  print(f"[SKIP] '{root}/' directory does not exist in this repo.")
+                  continue
+
+              sample_dirs = sorted(
+                  p for p in root_path.iterdir() if is_sample_dir(p)
+              )
+
+              if not sample_dirs:
+                  print(f"[INFO] No recipe directories found under '{root}/'.")
+                  continue
+
+              for sample_dir in sample_dirs:
+                  manifest_path = sample_dir / MANIFEST_FILENAME
+                  if not manifest_path.exists():
+                      missing_manifests.append(str(sample_dir))
+                  else:
+                      errors = validate_manifest(manifest_path, schema)
+                      if errors:
+                          invalid_manifests[str(manifest_path)] = errors
+
+          # Report results
+          passed = True
+
+          if missing_manifests:
+              passed = False
+              print("\n[FAIL] Missing manifest.yaml in the following recipe directories:")
+              for d in missing_manifests:
+                  print(f"  - {d}/")
+
+          if invalid_manifests:
+              passed = False
+              print("\n[FAIL] Invalid manifest.yaml files:")
+              for path, errs in invalid_manifests.items():
+                  print(f"\n  {path}:")
+                  for e in errs:
+                      print(f"    {e}")
+
+          if passed:
+              total = len(missing_manifests) + len(invalid_manifests)
+              # Recount valid ones
+              checked = sum(
+                  1
+                  for root in SAMPLE_ROOTS
+                  for p in Path(root).iterdir()
+                  if is_sample_dir(p) and (p / MANIFEST_FILENAME).exists()
+              )
+              print(f"\n[PASS] All {checked} recipe manifest(s) are present and valid.")
+              sys.exit(0)
+          else:
+              sys.exit(1)
+          EOF
