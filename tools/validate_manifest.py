@@ -5,7 +5,8 @@ Validates manifest.yaml files in recipe directories under core/ and contrib/.
 Checks:
   - Every recipe directory has a manifest.yaml file.
   - Every manifest.yaml is valid YAML.
-  - Every manifest.yaml conforms to the schema at .github/schemas/manifest-schema.json.
+  - Every manifest.yaml conforms to the schema at
+    .github/schemas/manifest-schema.json.
 
 Usage:
   # Validate all recipes:
@@ -37,7 +38,8 @@ RECIPE_ROOTS = ["core", "contrib"]
 
 
 def is_recipe_dir(path: Path) -> bool:
-    """A recipe directory is any immediate subdirectory that contains more than just a README.md."""
+    """A recipe directory is any immediate subdirectory that contains
+    more than just a README.md."""
     if not path.is_dir():
         return False
     children = [p for p in path.iterdir() if p.name != "README.md"]
@@ -116,7 +118,8 @@ def main(recipe: str | None = None) -> int:
     if missing:
         passed = False
         print(
-            "\n[FAIL] Missing manifest.yaml in the following recipe directories:"
+            "\n[FAIL] Missing manifest.yaml in the following recipe"
+            " directories:"
         )
         for d in missing:
             print(f"  - {d}/")
@@ -147,8 +150,11 @@ if __name__ == "__main__":
         "recipe",
         nargs="?",
         default=None,
-        help="Path to a single recipe directory to validate (e.g. core/rag-agent-search). "
-        "If omitted, all recipes under core/ and contrib/ are validated.",
+        help=(
+            "Path to a single recipe directory to validate"
+            " (e.g. core/rag-agent-search). "
+            "If omitted, all recipes under core/ and contrib/ are validated."
+        ),
     )
     args = parser.parse_args()
     sys.exit(main(args.recipe))

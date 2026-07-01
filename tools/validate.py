@@ -10,8 +10,8 @@ Subcommands:
   all       — run all available checks
 
 Arguments:
-  recipe    — optional path to a single recipe directory (e.g. core/rag-agent-search)
-               if omitted, all recipes under core/ and contrib/ are checked
+  recipe    — optional path to a single recipe directory
+               (e.g. core/rag-agent-search); if omitted, all recipes are checked
 
 Examples:
   uv run validate manifest
