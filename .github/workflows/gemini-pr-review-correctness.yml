@@ -152,5 +152,4 @@ jobs:
         Nothing you output to stdout will be seen — only what you post via MCP counts.
     secrets:
       APP_PRIVATE_KEY: '${{ secrets.APP_PRIVATE_KEY }}'
-      GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
       GITHUB_TOKEN_SECRET: '${{ secrets.GITHUB_TOKEN }}'
