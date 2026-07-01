@@ -39,30 +39,39 @@ jobs:
       - name: Detect affected recipe directories
         id: affected
         run: |
-          RECIPE_ROOTS="core contrib"
-
-          # Determine the base ref to diff against
+          # For pull_request events, diff against the base branch merge-base (three-dot diff).
+          # For push events, diff against the previous commit if available.
+          # For workflow_dispatch or unknown base, validate all recipes.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            git fetch origin "$BASE_REF" --depth=1
+            CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            CHANGED_FILES=$(git diff --name-only "${{ github.event.before }}" HEAD)
           else
-            BASE_SHA="${{ github.event.before }}"
+            # workflow_dispatch or new branch with no previous commit — validate all
+            echo "No base to diff against — will validate all recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
           # If the schema or workflow itself changed, validate all recipes
-          SCHEMA_CHANGED=$(git diff --name-only "$BASE_SHA" HEAD | grep -E "^\.github/(schemas/manifest-schema\.json|workflows/validate-manifests\.yml)$" || true)
+          SCHEMA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^\.github/(schemas/manifest-schema\.json|workflows/validate-manifests\.yml)$" || true)
 
           if [ -n "$SCHEMA_CHANGED" ]; then
             echo "Schema or workflow changed — will validate all recipes."
             echo "validate_all=true" >> "$GITHUB_OUTPUT"
           else
             # Collect the unique top-level recipe directories touched in this diff
-            CHANGED_RECIPES=$(git diff --name-only "$BASE_SHA" HEAD \
+            CHANGED_RECIPES=$(echo "$CHANGED_FILES" \
               | grep -E "^(core|contrib)/[^/]+" \
               | sed -E "s|^((core|contrib)/[^/]+).*|\1|" \
               | sort -u \
               || true)
             echo "Changed recipes: $CHANGED_RECIPES"
-            # Pass as a space-separated string
             echo "changed_recipes=$(echo $CHANGED_RECIPES | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
             echo "validate_all=false" >> "$GITHUB_OUTPUT"
           fi
