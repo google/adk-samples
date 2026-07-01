@@ -25,6 +25,7 @@ Exit codes:
 """
 
 import argparse
+import sys
 
 import validate_manifest
 
@@ -37,7 +38,7 @@ SUBCOMMANDS = {
 
 def run_all(recipe: str | None) -> int:
     results = []
-    for name, (label, tool_main) in SUBCOMMANDS.items():
+    for label, tool_main in SUBCOMMANDS.values():
         print(f"\n{'=' * 60}")
         print(f"  {label}")
         print(f"{'=' * 60}")
@@ -62,10 +63,10 @@ def main() -> int:
         prog="validate",
         description="Recipe validation tools.",
     )
-    subcommands_help = ", ".join(list(SUBCOMMANDS.keys()) + ["all"])
+    subcommands_help = ", ".join([*SUBCOMMANDS, "all"])
     parser.add_argument(
         "subcommand",
-        choices=list(SUBCOMMANDS.keys()) + ["all"],
+        choices=[*SUBCOMMANDS, "all"],
         metavar="subcommand",
         help=f"Validation to run: {subcommands_help}",
     )
@@ -81,7 +82,7 @@ def main() -> int:
     if args.subcommand == "all":
         return run_all(args.recipe)
 
-    label, tool_main = SUBCOMMANDS[args.subcommand]
+    _, tool_main = SUBCOMMANDS[args.subcommand]
     return tool_main(args.recipe)
 
 

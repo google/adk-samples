@@ -23,8 +23,12 @@ Exit codes:
 """
 
 import argparse
-import jsonschema
+import json
+import sys
 from pathlib import Path
+
+import jsonschema
+import yaml
 
 REPO_ROOT = Path(__file__).parent.parent
 SCHEMA_PATH = REPO_ROOT / ".github" / "schemas" / "manifest-schema.json"
