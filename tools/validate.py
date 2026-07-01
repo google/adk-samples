@@ -24,7 +24,6 @@ Exit codes:
   1 — one or more checks failed
 """
 
-import sys
 import argparse
 
 import validate_manifest
