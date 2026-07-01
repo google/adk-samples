@@ -22,9 +22,6 @@ Exit codes:
   1 — one or more manifests missing or invalid
 """
 
-import sys
-import json
-import yaml
 import argparse
 import jsonschema
 from pathlib import Path
