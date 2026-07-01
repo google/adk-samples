@@ -75,7 +75,7 @@ def main() -> int:
         nargs="?",
         default=None,
         help="Path to a single recipe directory (e.g. core/rag-agent-search). "
-             "If omitted, all recipes are checked.",
+        "If omitted, all recipes are checked.",
     )
     args = parser.parse_args()
 

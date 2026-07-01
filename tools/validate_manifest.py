@@ -115,7 +115,9 @@ def main(recipe: str | None = None) -> int:
 
     if missing:
         passed = False
-        print("\n[FAIL] Missing manifest.yaml in the following recipe directories:")
+        print(
+            "\n[FAIL] Missing manifest.yaml in the following recipe directories:"
+        )
         for d in missing:
             print(f"  - {d}/")
 
@@ -129,20 +131,24 @@ def main(recipe: str | None = None) -> int:
 
     if passed:
         checked = len(recipe_dirs)
-        print(f"\n[PASS] All {checked} recipe manifest(s) are present and valid.")
+        print(
+            f"\n[PASS] All {checked} recipe manifest(s) are present and valid."
+        )
         return 0
 
     return 1
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Validate recipe manifest.yaml files.")
+    parser = argparse.ArgumentParser(
+        description="Validate recipe manifest.yaml files."
+    )
     parser.add_argument(
         "recipe",
         nargs="?",
         default=None,
         help="Path to a single recipe directory to validate (e.g. core/rag-agent-search). "
-             "If omitted, all recipes under core/ and contrib/ are validated.",
+        "If omitted, all recipes under core/ and contrib/ are validated.",
     )
     args = parser.parse_args()
     sys.exit(main(args.recipe))
