@@ -39,10 +39,10 @@ MANIFEST_FILENAME = "manifest.yaml"
 RECIPE_ROOTS = ["core", "contrib"]
 
 PLACEHOLDER_CHECKS = [
-    ("team", "name",  "YOUR TEAM NAME",       "team.name"),
-    ("team", "email", "team@email.com",        "team.email"),
-    ("poc",  "name",  "POINT OF CONTACT NAME", "poc.name"),
-    ("poc",  "email", "poc@email.com",         "poc.email"),
+    ("team", "name", "YOUR TEAM NAME", "team.name"),
+    ("team", "email", "team@email.com", "team.email"),
+    ("poc", "name", "POINT OF CONTACT NAME", "poc.name"),
+    ("poc", "email", "poc@email.com", "poc.email"),
 ]
 
 
