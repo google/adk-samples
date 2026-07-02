@@ -1,0 +1,193 @@
+name: Validate Recipe Manifests
+
+on:
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'contrib/**'
+      - '.github/schemas/manifest-schema.json'
+      - '.github/workflows/validate-manifests.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'core/**'
+      - 'contrib/**'
+      - '.github/schemas/manifest-schema.json'
+      - '.github/workflows/validate-manifests.yml'
+  workflow_dispatch:
+
+jobs:
+  validate-manifests:
+    name: Check recipe manifest.yaml presence and schema
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install validation dependencies
+        run: pip install pyyaml jsonschema
+
+      - name: Detect affected recipe directories
+        id: affected
+        run: |
+          # For pull_request events, diff against the base branch merge-base (three-dot diff).
+          # For push events, diff against the previous commit if available.
+          # For workflow_dispatch or unknown base, validate all recipes.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            git fetch origin "$BASE_REF" --depth=1
+            CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            CHANGED_FILES=$(git diff --name-only "${{ github.event.before }}" HEAD)
+          else
+            # workflow_dispatch or new branch with no previous commit — validate all
+            echo "No base to diff against — will validate all recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # If the schema or workflow itself changed, validate all recipes
+          SCHEMA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^\.github/(schemas/manifest-schema\.json|workflows/validate-manifests\.yml)$" || true)
+
+          if [ -n "$SCHEMA_CHANGED" ]; then
+            echo "Schema or workflow changed — will validate all recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+          else
+            # Collect the unique top-level recipe directories touched in this diff
+            CHANGED_RECIPES=$(echo "$CHANGED_FILES" \
+              | grep -E "^(core|contrib)/[^/]+" \
+              | sed -E "s|^((core|contrib)/[^/]+).*|\1|" \
+              | sort -u \
+              || true)
+            echo "Changed recipes: $CHANGED_RECIPES"
+            echo "changed_recipes=$(echo $CHANGED_RECIPES | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+            echo "validate_all=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate affected recipe manifests
+        run: |
+          python - <<'EOF'
+          import os
+          import sys
+          import json
+          import yaml
+          import jsonschema
+          from pathlib import Path
+
+          RECIPE_ROOTS = ["core", "contrib"]
+          SCHEMA_PATH = ".github/schemas/manifest-schema.json"
+          MANIFEST_FILENAME = "manifest.yaml"
+
+          def is_recipe_dir(path: Path) -> bool:
+              """A recipe directory contains more than just a README.md."""
+              if not path.is_dir():
+                  return False
+              children = [p for p in path.iterdir() if p.name != "README.md"]
+              return len(children) > 0
+
+          def load_schema(schema_path: str) -> dict:
+              with open(schema_path) as f:
+                  return json.load(f)
+
+          def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
+              """Returns a list of error strings; empty means valid."""
+              errors = []
+              try:
+                  with open(manifest_path) as f:
+                      data = yaml.safe_load(f)
+              except yaml.YAMLError as e:
+                  errors.append(f"YAML parse error: {e}")
+                  return errors
+
+              if data is None:
+                  errors.append("manifest.yaml is empty")
+                  return errors
+
+              validator = jsonschema.Draft7Validator(schema)
+              for err in sorted(validator.iter_errors(data), key=str):
+                  errors.append(f"  - {err.json_path}: {err.message}")
+              return errors
+
+          def collect_recipe_dirs() -> list[Path]:
+              validate_all = os.environ.get("VALIDATE_ALL", "false").lower() == "true"
+              if validate_all:
+                  dirs = []
+                  for root in RECIPE_ROOTS:
+                      root_path = Path(root)
+                      if not root_path.exists():
+                          print(f"[SKIP] '{root}/' does not exist.")
+                          continue
+                      dirs.extend(p for p in root_path.iterdir() if is_recipe_dir(p))
+                  return sorted(dirs)
+
+              # Only validate the specific recipes that were changed
+              changed = os.environ.get("CHANGED_RECIPES", "").split()
+              dirs = []
+              for recipe in changed:
+                  path = Path(recipe)
+                  if not path.exists():
+                      print(f"[SKIP] '{recipe}' no longer exists (deleted?).")
+                      continue
+                  if not is_recipe_dir(path):
+                      print(f"[SKIP] '{recipe}' is not a recipe directory.")
+                      continue
+                  dirs.append(path)
+              return sorted(dirs)
+
+          schema = load_schema(SCHEMA_PATH)
+          recipe_dirs = collect_recipe_dirs()
+
+          if not recipe_dirs:
+              print("[INFO] No recipe directories to validate.")
+              sys.exit(0)
+
+          missing_manifests = []
+          invalid_manifests = {}
+
+          for recipe_dir in recipe_dirs:
+              manifest_path = recipe_dir / MANIFEST_FILENAME
+              if not manifest_path.exists():
+                  missing_manifests.append(str(recipe_dir))
+              else:
+                  errors = validate_manifest(manifest_path, schema)
+                  if errors:
+                      invalid_manifests[str(manifest_path)] = errors
+
+          # Report results
+          passed = True
+
+          if missing_manifests:
+              passed = False
+              print("\n[FAIL] Missing manifest.yaml in the following recipe directories:")
+              for d in missing_manifests:
+                  print(f"  - {d}/")
+
+          if invalid_manifests:
+              passed = False
+              print("\n[FAIL] Invalid manifest.yaml files:")
+              for path, errs in invalid_manifests.items():
+                  print(f"\n  {path}:")
+                  for e in errs:
+                      print(f"    {e}")
+
+          if passed:
+              print(f"\n[PASS] All {len(recipe_dirs)} recipe manifest(s) are present and valid.")
+              sys.exit(0)
+          else:
+              sys.exit(1)
+          EOF
+        env:
+          VALIDATE_ALL: ${{ steps.affected.outputs.validate_all }}
+          CHANGED_RECIPES: ${{ steps.affected.outputs.changed_recipes }}

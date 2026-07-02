@@ -1,0 +1,42 @@
+type: "standalone"
+deployable: false
+large: false
+status: "active"
+language: "python"
+description: "A conversational RAG agent grounded on documents indexed in Google Agent Platform Search (Discovery Engine). Users upload unstructured documents to a GCS bucket, which are automatically ingested and indexed via a managed GCS Data Connector. The agent answers natural-language questions by retrieving relevant passages from the data store and synthesizing grounded answers using Gemini."
+
+architecture:
+  agent: "single"
+  stateful: false
+  datasources:
+    - "local"
+    - "external"
+  rag: true
+
+dependencies:
+  libraries:
+    - "ADK"
+    - "Vertex AI SDK"
+    - "Terraform"
+  services:
+    - "GCP Project"
+    - "Vertex AI API"
+    - "Discovery Engine / Agent Platform Search"
+    - "Google Cloud Storage"
+
+team:
+  name: "ADK Samples"
+  email: "adk-samples@google.com"
+poc:
+  name: "Shahin Saadati"
+  email: "shahins@google.com"
+
+tags:
+  - "rag"
+  - "vertex-ai-search"
+  - "discovery-engine"
+  - "gcs-data-connector"
+  - "grounding"
+  - "gemini"
+  - "terraform"
+  - "single-agent"
