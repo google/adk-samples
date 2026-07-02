@@ -7,6 +7,8 @@ Checks:
   - Every manifest.yaml is valid YAML.
   - Every manifest.yaml conforms to the schema at
     .github/schemas/manifest-schema.json.
+  - team.name, team.email, poc.name, and poc.email are not left as
+    their generated placeholder values.
 
 Usage:
   # Validate all recipes:
@@ -35,6 +37,13 @@ REPO_ROOT = Path(__file__).parent.parent
 SCHEMA_PATH = REPO_ROOT / ".github" / "schemas" / "manifest-schema.json"
 MANIFEST_FILENAME = "manifest.yaml"
 RECIPE_ROOTS = ["core", "contrib"]
+
+PLACEHOLDER_CHECKS = [
+    ("team", "name",  "YOUR TEAM NAME",       "team.name"),
+    ("team", "email", "team@email.com",        "team.email"),
+    ("poc",  "name",  "POINT OF CONTACT NAME", "poc.name"),
+    ("poc",  "email", "poc@email.com",         "poc.email"),
+]
 
 
 def is_recipe_dir(path: Path) -> bool:
@@ -68,6 +77,16 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
     validator = jsonschema.Draft7Validator(schema)
     for err in sorted(validator.iter_errors(data), key=str):
         errors.append(f"  [{err.json_path}] {err.message}")
+
+    # Check that placeholder values have been replaced with real ones
+    for section, field, placeholder, label in PLACEHOLDER_CHECKS:
+        value = (data.get(section) or {}).get(field, "")
+        if value == placeholder:
+            errors.append(
+                f"  [{label}] is still set to the placeholder value "
+                f'"{placeholder}". Please replace it with a real {label}.'
+            )
+
     return errors
 
 

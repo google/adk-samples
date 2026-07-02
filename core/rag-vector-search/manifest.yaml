@@ -29,11 +29,11 @@ dependencies:
     - "Cloud Build"
 
 team:
-  name: "ADK Samples"
-  email: "adk-samples@google.com"
+  name: "Cloud AI Developer Engineering & Evangelism"
+  email: "cloud-ai-devrel@google.com"
 poc:
-  name: "Shahin Saadati"
-  email: "shahins@google.com"
+  name: "Elia Seccchi"
+  email: "eliasecchi@google.com"
 
 tags:
   - "rag"
