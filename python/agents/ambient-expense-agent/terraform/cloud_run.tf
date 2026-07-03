@@ -46,7 +46,7 @@ resource "google_cloud_run_v2_service" "frontend" {
         name  = "BACKEND_URL"
         # Agent Runtime API base URL — the frontend calls /apps/{agent}/users/.../sessions
         # and /run via this passthrough endpoint.
-        value = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${google_vertex_ai_reasoning_engine.app.name}/api"
+        value = local.agent_runtime_api_base
       }
       env {
         name  = "USE_SERVICE_AUTH"

@@ -17,20 +17,22 @@
 import logging
 import os
 
+_TELEMETRY_ENV_KEY = "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"
+
 
 def setup_telemetry() -> None:
     """Configure basic telemetry env vars for Agent Runtime."""
     os.environ.setdefault("ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS", "false")
-    os.environ.setdefault("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "true")
+    os.environ.setdefault(_TELEMETRY_ENV_KEY, "true")
 
 
 def setup_agent_engine_telemetry() -> None:
     """Install Agent Engine tracer provider when running on Agent Runtime.
 
-    No-op outside Agent Runtime (GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY
-    not set), and silently skipped if vertexai package is not installed.
+    No-op outside Agent Runtime (_TELEMETRY_ENV_KEY not set), and silently
+    skipped if vertexai package is not installed.
     """
-    if os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "").lower() not in (
+    if os.environ.get(_TELEMETRY_ENV_KEY, "").lower() not in (
         "true",
         "1",
     ):

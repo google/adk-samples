@@ -36,7 +36,6 @@ frontend uses when querying for pending approvals.
 import json
 import os
 
-import google.auth
 import uvicorn
 from dotenv import load_dotenv
 from google.adk.cli.fast_api import get_fast_api_app
@@ -54,7 +53,6 @@ load_dotenv()
 setup_telemetry()
 # Must run before get_fast_api_app to set the tracer provider resource.
 setup_agent_engine_telemetry()
-_, project_id = google.auth.default()
 logging_client = google_cloud_logging.Client()
 logger = logging_client.logger(__name__)
 allow_origins = (

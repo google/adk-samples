@@ -54,7 +54,7 @@ resource "google_pubsub_subscription" "expense_push" {
     # Agent Runtime API passthrough routes to:
     #   /api/apps/expense_agent/trigger/pubsub
     # inside the running container.
-    push_endpoint = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${google_vertex_ai_reasoning_engine.app.name}/api/apps/${var.agent_name}/trigger/pubsub"
+    push_endpoint = "${local.agent_runtime_api_base}/apps/${var.agent_name}/trigger/pubsub"
 
     oidc_token {
       service_account_email = google_service_account.pubsub_invoker.email

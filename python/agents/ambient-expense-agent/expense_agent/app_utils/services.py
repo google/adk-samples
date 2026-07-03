@@ -32,11 +32,6 @@ from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
 SESSION_SERVICE_URI = "shared://session"
 ARTIFACT_SERVICE_URI = "shared://artifact"
 
-_AGENT_DIR = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
-
-
 @functools.cache
 def get_session_service():
     """Return a session service, using Vertex AI on Agent Runtime."""

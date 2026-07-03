@@ -32,6 +32,9 @@
 # ---------------------------------------------------------------------------
 
 locals {
+  # Agent Runtime passthrough API base — reused in cloud_run.tf, pubsub.tf, outputs.tf.
+  agent_runtime_api_base = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${google_vertex_ai_reasoning_engine.app.name}/api"
+
   required_apis = [
     "aiplatform.googleapis.com",
     "artifactregistry.googleapis.com",

@@ -19,12 +19,12 @@ output "agent_runtime_resource_name" {
 
 output "agent_runtime_api_base" {
   description = "Agent Runtime API base URL (Agent Runtime passthrough). Append /apps/{agent}/... for agent endpoints."
-  value       = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${google_vertex_ai_reasoning_engine.app.name}/api"
+  value       = local.agent_runtime_api_base
 }
 
 output "trigger_endpoint" {
   description = "Pub/Sub push endpoint — the Agent Runtime trigger URL."
-  value       = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${google_vertex_ai_reasoning_engine.app.name}/api/apps/${var.agent_name}/trigger/pubsub"
+  value       = "${local.agent_runtime_api_base}/apps/${var.agent_name}/trigger/pubsub"
 }
 
 output "frontend_url" {

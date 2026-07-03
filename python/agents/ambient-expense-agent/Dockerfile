@@ -18,11 +18,11 @@ RUN pip install --no-cache-dir uv==0.8.13
 
 WORKDIR /code
 
-COPY ./pyproject.toml ./README.md ./uv.lock* ./
+COPY ./pyproject.toml ./uv.lock* ./
 
 COPY ./expense_agent ./expense_agent
 
-RUN uv sync --frozen
+RUN uv sync --frozen --no-dev
 
 ARG COMMIT_SHA=""
 ENV COMMIT_SHA=${COMMIT_SHA}
