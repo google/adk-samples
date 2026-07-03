@@ -13,11 +13,11 @@
 # limitations under the License.
 
 # ---------------------------------------------------------------------------
-# Cloud Monitoring: log-based metric + alert policy + notification channel
+# Cloud Monitoring: log-based metric + alert policy + notification channel.
 #
-# When the agent flags an expense >= $100 for review it emits a structured
-# JSON log. Cloud Logging ingests it, a log-based metric counts it, and
-# an alert policy sends an email notification to the manager.
+# When the agent flags an expense >= $100 for review, it emits a structured
+# JSON log with alert_type="expense_review". A log-based metric counts these
+# events and triggers an email to the manager with a link to the approval UI.
 # ---------------------------------------------------------------------------
 
 resource "google_logging_metric" "expense_reviews" {
@@ -26,11 +26,10 @@ resource "google_logging_metric" "expense_reviews" {
 
   description = "Counts expense review alerts from the expense agent (Agent Runtime)."
 
-  # Agent Runtime container logs appear under the aiplatform.googleapis.com
-  # resource type. The jsonPayload.alert_type field is set by the agent.
+  # Agent Runtime container logs appear under the ReasoningEngine resource type.
   filter = <<-EOT
     resource.type="aiplatform.googleapis.com/ReasoningEngine"
-    labels."aiplatform.googleapis.com/reasoning_engine_display_name"="ambient-expense-agent"
+    labels."aiplatform.googleapis.com/reasoning_engine_display_name"="${var.project_name}"
     jsonPayload.alert_type="expense_review"
   EOT
 

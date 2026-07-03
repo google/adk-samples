@@ -18,18 +18,19 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "GCP region for Agent Runtime and related resources."
+  description = "GCP region for Agent Runtime, Cloud Run, and related resources."
   type        = string
   default     = "us-east1"
 }
 
-variable "agent_runtime_resource_name" {
-  description = "Full Agent Runtime resource name (output of `agents-cli deploy`). Format: projects/{NUM}/locations/{REGION}/reasoningEngines/{ID}."
+variable "project_name" {
+  description = "Project name used as Agent Runtime display_name and base for resource naming. Must match agents-cli-manifest.yaml name."
   type        = string
+  default     = "ambient-expense-agent"
 }
 
 variable "agent_name" {
-  description = "ADK agent directory name (matches the agent package inside the project)."
+  description = "ADK agent directory name (the Python package inside the project)."
   type        = string
   default     = "expense_agent"
 }

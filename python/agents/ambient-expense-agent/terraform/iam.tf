@@ -13,33 +13,66 @@
 # limitations under the License.
 
 # ---------------------------------------------------------------------------
-# IAM: Dedicated service accounts with least-privilege permissions.
+# IAM: service accounts with least-privilege permissions.
 # ---------------------------------------------------------------------------
 
-data "google_project" "project" {
-  project_id = var.project_id
+# --- Agent Runtime service account ---
+
+resource "google_service_account" "app_sa" {
+  account_id   = "${var.project_name}-app"
+  display_name = "Ambient Expense Agent - Agent Runtime SA"
+  project      = var.project_id
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_project_iam_member" "app_sa_roles" {
+  for_each = toset([
+    "roles/aiplatform.user",
+    "roles/logging.logWriter",
+    "roles/cloudtrace.agent",
+    "roles/serviceusage.serviceUsageConsumer",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.app_sa.email}"
+}
+
+# Grant the Vertex AI service identity the same roles.
+resource "google_project_iam_member" "vertex_sa_roles" {
+  for_each = toset([
+    "roles/aiplatform.user",
+    "roles/logging.logWriter",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = google_project_service_identity.vertex_sa.member
 }
 
 # --- Pub/Sub → Agent Runtime ---
 
-# Service account that Pub/Sub uses to authenticate push deliveries to the
+# Service account Pub/Sub uses to authenticate push deliveries to the
 # Agent Runtime API passthrough endpoint.
 resource "google_service_account" "pubsub_invoker" {
   account_id   = "expense-agent-invoker"
   display_name = "Ambient Expense Agent - Pub/Sub → Agent Runtime Invoker"
   project      = var.project_id
+
+  depends_on = [google_project_service.apis]
 }
 
 # Grant the invoker permission to call the Agent Runtime API.
-# Agent Runtime's HTTP passthrough requires aiplatform.user.
+# The passthrough endpoint requires aiplatform.user.
 resource "google_project_iam_member" "pubsub_invoker_vertex" {
   project = var.project_id
   role    = "roles/aiplatform.user"
   member  = "serviceAccount:${google_service_account.pubsub_invoker.email}"
 }
 
-# Allow the GCP-managed Pub/Sub service agent to create OIDC tokens
-# for authenticated push delivery to the Agent Runtime API.
+# Allow the GCP-managed Pub/Sub service agent to create OIDC tokens for
+# authenticated push delivery to the Agent Runtime API.
 resource "google_service_account_iam_member" "pubsub_token_creator" {
   service_account_id = google_service_account.pubsub_invoker.name
   role               = "roles/iam.serviceAccountTokenCreator"
@@ -48,23 +81,22 @@ resource "google_service_account_iam_member" "pubsub_token_creator" {
 
 # --- Frontend → Agent Runtime ---
 
-# Service account for the approval UI to call the Agent Runtime API.
 resource "google_service_account" "frontend_invoker" {
   account_id   = "approval-ui-invoker"
   display_name = "Approval UI - Agent Runtime Invoker"
   project      = var.project_id
+
+  depends_on = [google_project_service.apis]
 }
 
-# Grant the frontend permission to call the Agent Runtime API.
 resource "google_project_iam_member" "frontend_invoker_vertex" {
   project = var.project_id
   role    = "roles/aiplatform.user"
   member  = "serviceAccount:${google_service_account.frontend_invoker.email}"
 }
 
-# --- IAP access ---
+# --- IAP for the approval UI ---
 
-# Grant the notification email access to the frontend via IAP.
 resource "google_iap_web_cloud_run_service_iam_member" "approval_access" {
   project                = var.project_id
   location               = var.region
@@ -75,8 +107,6 @@ resource "google_iap_web_cloud_run_service_iam_member" "approval_access" {
   depends_on = [google_project_service.apis]
 }
 
-# The IAP service agent needs run.invoker on the frontend so it can
-# proxy authenticated requests through to the Cloud Run service.
 resource "google_cloud_run_v2_service_iam_member" "iap_invoker" {
   name     = google_cloud_run_v2_service.frontend.name
   location = var.region

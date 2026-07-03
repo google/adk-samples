@@ -13,51 +13,36 @@
 # limitations under the License.
 
 # ---------------------------------------------------------------------------
-# Terraform configuration for the Ambient Expense Agent infrastructure.
+# Ambient Expense Agent — Terraform infrastructure.
 #
-# This provisions the supporting GCP infrastructure for the ambient expense
-# agent deployed on Agent Runtime: the frontend approval UI (Cloud Run),
-# Pub/Sub triggers, Cloud Monitoring alerts, and IAM bindings.
+# Provisions all GCP resources for the ambient expense agent:
 #
-# The agent backend is deployed separately via:
-#   agents-cli deploy --project <PROJECT_ID> --region <REGION>
+#   1. Agent Runtime (google_vertex_ai_reasoning_engine) — created with a
+#      placeholder source; `agents-cli deploy` uploads the real code after.
+#   2. Pub/Sub topic + authenticated push subscription → Agent Runtime API.
+#   3. IAM — service accounts for the agent, Pub/Sub invoker, and frontend.
+#   4. Cloud Run — the approval UI (frontend).
+#   5. Cloud Monitoring — log-based metric + alert for expense reviews.
 #
-# After deploying, pass the printed Agent Runtime resource name to
-# terraform apply with -var=agent_runtime_resource_name=<resource_name>.
+# Deploy flow (see Makefile):
+#   make deploy NOTIFICATION_EMAIL=finance@example.com
+#   1. terraform apply  (creates Agent Runtime skeleton + all supporting infra)
+#   2. agents-cli deploy (uploads real source code to Agent Runtime)
+#   3. gcloud builds submit frontend/ (builds + pushes frontend image)
 # ---------------------------------------------------------------------------
 
-terraform {
-  required_version = ">= 1.0.0"
-
-  required_providers {
-    google = {
-      source  = "hashicorp/google"
-      version = ">= 5.0.0"
-    }
-  }
-}
-
-provider "google" {
-  project = var.project_id
-  region  = var.region
-
-  default_labels = {
-    goog-terraform-provisioned = "true"
-    app                        = "ambient-expense-agent"
-  }
-}
-
 locals {
-  # Enable required GCP APIs.
   required_apis = [
     "aiplatform.googleapis.com",
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
     "cloudscheduler.googleapis.com",
     "iap.googleapis.com",
+    "iam.googleapis.com",
     "monitoring.googleapis.com",
     "pubsub.googleapis.com",
     "run.googleapis.com",
+    "logging.googleapis.com",
   ]
 }
 
@@ -68,4 +53,16 @@ resource "google_project_service" "apis" {
   service = each.value
 
   disable_on_destroy = false
+}
+
+resource "google_project_service_identity" "vertex_sa" {
+  provider = google-beta
+  project  = var.project_id
+  service  = "aiplatform.googleapis.com"
+
+  depends_on = [google_project_service.apis]
+}
+
+data "google_project" "project" {
+  project_id = var.project_id
 }

@@ -12,17 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Approval UI frontend — thin FastAPI proxy to the Agent Runtime backend.
+"""Approval UI frontend — thin FastAPI proxy to the ADK backend.
 
-Serves the approval HTML and queries the agent's sessions via the
-Agent Runtime API passthrough to find expenses pending human approval:
+Serves the approval HTML and queries the backend's built-in ADK session
+APIs to find expenses pending human approval:
 
-- ``GET /pending-approvals`` → queries ADK session APIs via Agent Runtime passthrough
-- ``POST /approve`` → Agent Runtime passthrough ``POST /run`` (resumes HITL workflow)
+- ``GET /pending-approvals`` → queries ADK session APIs on the backend
+- ``POST /approve`` → backend ``POST /run`` (resumes HITL workflow)
 
-On Cloud Run, uses an OAuth2 access token (not an ID token) for
-service-to-service authentication to the Agent Runtime API. The
-frontend's service account needs ``roles/aiplatform.user``.
+On Cloud Run, uses ID tokens for service-to-service authentication.
 Locally, calls the backend directly without auth.
 """
 
@@ -45,7 +43,7 @@ USE_SERVICE_AUTH = os.environ.get("USE_SERVICE_AUTH", "false").lower() == "true"
 APP_NAME = os.environ.get("APP_NAME", "expense_agent")
 
 # The Pub/Sub subscription name is used as user_id by the ADK trigger
-# handler (after normalization by the fast_api_app middleware).
+# handler. This must match the ``subscription`` field in trigger requests.
 # For local development the curl test commands use "test-sub".
 PUBSUB_SUBSCRIPTION = os.environ.get("PUBSUB_SUBSCRIPTION", "test-sub")
 
@@ -59,26 +57,21 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 async def _get_auth_headers() -> dict[str, str]:
-    """Get OAuth2 access token headers for calls to the Agent Runtime API.
+    """Get ID token headers for authenticated calls to the backend.
 
     On Cloud Run, the frontend's service account must have
-    ``roles/aiplatform.user`` on the project. The metadata server
-    provides an access token with the cloud-platform scope.
-
-    Note: Agent Runtime API requires an access token (not an ID token).
+    ``roles/run.invoker`` on the backend service. The metadata server
+    provides an ID token scoped to the backend URL.
     """
     if not USE_SERVICE_AUTH:
         return {}
 
-    import google.auth
     import google.auth.transport.requests
+    import google.oauth2.id_token
 
-    creds, _ = google.auth.default(
-        scopes=["https://www.googleapis.com/auth/cloud-platform"]
-    )
     auth_req = google.auth.transport.requests.Request()
-    creds.refresh(auth_req)
-    return {"Authorization": f"Bearer {creds.token}"}
+    token = google.oauth2.id_token.fetch_id_token(auth_req, BACKEND_URL)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _extract_pending_approval(session: dict, user_id: str) -> dict | None:
@@ -145,11 +138,10 @@ async def approval_ui() -> FileResponse:
 async def pending_approvals():
     """List expenses waiting for manager approval.
 
-    Queries the backend's ADK session APIs via the Agent Runtime
-    passthrough to find sessions with a pending ``adk_request_input``
-    function call. The ``user_id`` is the Pub/Sub subscription name,
-    set automatically by the ADK trigger handler when processing
-    incoming messages.
+    Queries the backend's built-in ADK session APIs to find sessions
+    with a pending ``adk_request_input`` function call. The ``user_id``
+    is the Pub/Sub subscription name, set automatically by the ADK
+    trigger handler when processing incoming messages.
     """
     user_id = PUBSUB_SUBSCRIPTION
     encoded_uid = quote(user_id, safe="")

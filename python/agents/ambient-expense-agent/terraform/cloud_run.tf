@@ -15,9 +15,10 @@
 # ---------------------------------------------------------------------------
 # Cloud Run — approval UI frontend only.
 #
-# The backend agent runs on Agent Runtime (deployed via agents-cli).
-# The frontend is a thin FastAPI service that proxies approval decisions
-# from managers to the agent's HITL (human-in-the-loop) session.
+# The backend agent runs on Agent Runtime (see agent_runtime.tf).
+# The frontend is a thin FastAPI proxy for manager approvals:
+#   GET  /pending-approvals → queries Agent Runtime API for pending HITL sessions
+#   POST /approve           → resumes a paused workflow via Agent Runtime API
 # ---------------------------------------------------------------------------
 
 resource "google_cloud_run_v2_service" "frontend" {
@@ -43,7 +44,9 @@ resource "google_cloud_run_v2_service" "frontend" {
 
       env {
         name  = "BACKEND_URL"
-        value = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${var.agent_runtime_resource_name}/api"
+        # Agent Runtime API base URL — the frontend calls /apps/{agent}/users/.../sessions
+        # and /run via this passthrough endpoint.
+        value = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${google_vertex_ai_reasoning_engine.app.name}/api"
       }
       env {
         name  = "USE_SERVICE_AUTH"
@@ -60,5 +63,8 @@ resource "google_cloud_run_v2_service" "frontend" {
     }
   }
 
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_vertex_ai_reasoning_engine.app,
+  ]
 }

@@ -14,43 +14,73 @@
 
 """FastAPI entry point for the ambient expense agent backend.
 
-Configures the ADK web server with Pub/Sub trigger endpoints enabled,
-allowing the agent to process expense reports autonomously when deployed
-to Agent Runtime.
+Configures the ADK web server for Agent Runtime deployment with Pub/Sub
+trigger endpoints enabled, allowing the agent to process expense reports
+autonomously.
 
-On Agent Runtime, ``SESSION_SERVICE_URI`` defaults to ``agentengine://``
-so that sessions are stored in Agent Runtime's built-in session store
-and accessible across replicas. The frontend approval UI queries these
-sessions to find expenses pending human approval.
+Trigger endpoint: POST /apps/expense_agent/trigger/pubsub
+  - Receives Pub/Sub push messages
+  - Decodes base64 payload and passes it as the agent's user input
+  - Creates a session keyed by subscription name for tracking
+
+Session storage: auto-detects ``GOOGLE_CLOUD_AGENT_ENGINE_ID`` (injected by
+Agent Runtime) to use Vertex AI session service; falls back to in-memory
+for local development.
 
 Includes middleware to normalize Pub/Sub subscription names from their
 fully-qualified resource paths (``projects/.../subscriptions/NAME``)
-to short names, keeping user IDs clean and readable in session records.
+to short names, keeping user IDs clean and consistent with what the
+frontend uses when querying for pending approvals.
 """
 
 import json
 import os
 
+import google.auth
 import uvicorn
 from dotenv import load_dotenv
 from google.adk.cli.fast_api import get_fast_api_app
+from google.cloud import logging as google_cloud_logging
 from starlette.requests import Request
 
+from expense_agent.app_utils import services
+from expense_agent.app_utils.telemetry import (
+    setup_agent_engine_telemetry,
+    setup_telemetry,
+)
+from expense_agent.app_utils.typing import Feedback
+
 load_dotenv()
+setup_telemetry()
+# Must run before get_fast_api_app to set the tracer provider resource.
+setup_agent_engine_telemetry()
+_, project_id = google.auth.default()
+logging_client = google_cloud_logging.Client()
+logger = logging_client.logger(__name__)
+allow_origins = (
+    os.getenv("ALLOW_ORIGINS", "").split(",") if os.getenv("ALLOW_ORIGINS") else None
+)
 
-# Agent Runtime's built-in session store; falls back to in-memory locally.
-SESSION_SERVICE_URI = os.environ.get("SESSION_SERVICE_URI", "agentengine://")
-
-# The ADK needs the project root as agents_dir so it discovers
-# expense_agent/ as an agent package (contains agent.py + __init__.py).
-AGENTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 app = get_fast_api_app(
-    agents_dir=AGENTS_DIR,
+    agents_dir=AGENT_DIR,
     web=False,
-    session_service_uri=SESSION_SERVICE_URI,
-    trigger_sources=["pubsub"],
+    artifact_service_uri=services.ARTIFACT_SERVICE_URI,
+    allow_origins=allow_origins,
+    session_service_uri=services.SESSION_SERVICE_URI,
+    otel_to_cloud=False,
+    trigger_sources=["pubsub"],  # exposes /apps/expense_agent/trigger/pubsub
 )
+app.title = "ambient-expense-agent"
+app.description = "Ambient expense agent — processes expense reports via Pub/Sub"
+
+
+@app.post("/feedback")
+def collect_feedback(feedback: Feedback) -> dict[str, str]:
+    """Collect and log feedback."""
+    logger.log_struct(feedback.model_dump(), severity="INFO")
+    return {"status": "success"}
 
 
 @app.middleware("http")
