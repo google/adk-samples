@@ -39,7 +39,7 @@ else:
 class ExpenseAgentConfig:
     """Agent configuration with sensible defaults."""
 
-    model: str = "gemini-3-flash-preview"
+    model: str = "gemini-flash-latest"
     review_threshold: float = 100.0
 
 
