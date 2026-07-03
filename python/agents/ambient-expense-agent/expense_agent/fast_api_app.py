@@ -43,6 +43,9 @@ from google.cloud import logging as google_cloud_logging
 from starlette.requests import Request
 
 from expense_agent.app_utils import services
+from expense_agent.app_utils.reasoning_engine_adapter import (
+    attach_reasoning_engine_routes,
+)
 from expense_agent.app_utils.telemetry import (
     setup_agent_engine_telemetry,
     setup_telemetry,
@@ -72,6 +75,11 @@ app = get_fast_api_app(
 )
 app.title = "ambient-expense-agent"
 app.description = "Ambient expense agent — processes expense reports via Pub/Sub"
+
+
+# Proxy routes so the Vertex AI Console Playground (reasoning_engine SDK) can
+# talk to this agent alongside the native adk_api and Pub/Sub trigger routes.
+attach_reasoning_engine_routes(app)
 
 
 @app.post("/feedback")
