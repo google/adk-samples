@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ADK Recipe Manifest",
+  "description": "Schema for manifest.yaml files in core/ and contrib/ directories",
+  "type": "object",
+  "required": [
+    "type",
+    "deployable",
+    "large",
+    "status",
+    "language",
+    "description",
+    "dependencies",
+    "team",
+    "poc",
+    "tags"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "standalone",
+        "module"
+      ],
+      "description": "The recipe type. 'standalone': a complete, runnable recipe with its own entry point that can be run or deployed independently (e.g. a fully functioning IT Helpdesk Agent, an OAuth 2.0 multi-agent routing guide). 'module': a packaged, importable sub-agent designed to be orchestrated by a larger workflow, but lacking a standalone entry point to run on its own (e.g. a specialized BigQuery query-generator sub-agent)."
+    },
+    "deployable": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the recipe can be deployed with one click. false (default): not possible to deploy with one click. true: possible to deploy with one click."
+    },
+    "large": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the recipe is considered large in size. false (default): under 1MB, 50 files max. true: under 10MB, 200 files max."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive"
+      ],
+      "description": "Current status of the recipe."
+    },
+    "language": {
+      "type": "string",
+      "enum": [
+        "python",
+        "java",
+        "go",
+        "kotlin",
+        "typescript"
+      ],
+      "description": "Primary programming language of the recipe."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "description": "A clear description of the recipe and the value it provides."
+    },
+    "architecture": {
+      "type": "object",
+      "description": "Optional fields describing the agent architecture of the recipe. All sub-fields are optional.",
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "string",
+          "enum": [
+            "single",
+            "multi"
+          ],
+          "description": "Whether the recipe uses a single agent or multiple agents."
+        },
+        "stateful": {
+          "type": "boolean",
+          "description": "Whether the agent maintains persistent state or memory across sessions, or performs transactional writes to external systems."
+        },
+        "datasources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "hardcoded",
+              "local",
+              "external"
+            ]
+          },
+          "uniqueItems": true,
+          "description": "The data sources used by the recipe. 'hardcoded': data is hardcoded within the recipe itself. 'local': data comes from files bundled with the recipe. 'external': data comes from a live outside system at runtime (e.g. a database, an API)."
+        },
+        "rag": {
+          "type": "boolean",
+          "description": "Whether the recipe implements or uses a RAG pipeline."
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "required": [
+        "libraries",
+        "services"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "libraries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Library dependencies (e.g. ADK, LangGraph)."
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "GCP or external service dependencies."
+        }
+      }
+    },
+    "team": {
+      "type": "object",
+      "required": [
+        "name",
+        "email"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Team name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Team contact email."
+        }
+      }
+    },
+    "poc": {
+      "type": "object",
+      "required": [
+        "name",
+        "email"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Point of contact name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Point of contact email."
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "description": "Classification tags for the recipe."
+    }
+  }
+}

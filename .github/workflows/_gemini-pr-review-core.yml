@@ -1,0 +1,298 @@
+name: 'Gemini PR Review — Core (reusable)'
+
+on:
+  workflow_call:
+    inputs:
+      review_label:
+        description: 'Label for this review type (e.g. Correctness, Security, Maintainability)'
+        required: true
+        type: 'string'
+      prompt:
+        description: 'The full prompt to send to the Gemini CLI'
+        required: true
+        type: 'string'
+      event_name:
+        description: 'The triggering event name'
+        required: true
+        type: 'string'
+      pr_number_pull_request:
+        description: 'PR number from pull_request event'
+        required: false
+        type: 'string'
+        default: ''
+      pr_number_issue:
+        description: 'PR number from issue_comment event'
+        required: false
+        type: 'string'
+        default: ''
+      pr_number_review:
+        description: 'PR number from pull_request_review/review_comment event'
+        required: false
+        type: 'string'
+        default: ''
+      pr_number_dispatch:
+        description: 'PR number from workflow_dispatch event'
+        required: false
+        type: 'string'
+        default: ''
+      comment_body:
+        description: 'Comment body (for issue_comment events)'
+        required: false
+        type: 'string'
+        default: ''
+      review_body:
+        description: 'Review body (for pull_request_review events)'
+        required: false
+        type: 'string'
+        default: ''
+      review_comment_body:
+        description: 'Review comment body (for pull_request_review_comment events)'
+        required: false
+        type: 'string'
+        default: ''
+      app_id:
+        description: 'GitHub App ID — used to conditionally generate an app token'
+        required: false
+        type: 'string'
+        default: ''
+    secrets:
+      APP_PRIVATE_KEY:
+        required: false
+      GITHUB_TOKEN_SECRET:
+        required: false
+
+permissions:
+  contents: 'read'
+  id-token: 'write'
+  issues: 'write'
+  pull-requests: 'write'
+
+jobs:
+  review-pr:
+    timeout-minutes: 15
+    runs-on: 'ubuntu-latest'
+
+    steps:
+      - name: 'Checkout PR code (pull_request)'
+        if: |-
+          ${{ inputs.event_name == 'pull_request' }}
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 'Checkout PR code (workflow_dispatch)'
+        if: |-
+          ${{ inputs.event_name == 'workflow_dispatch' }}
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: 'refs/pull/${{ inputs.pr_number_dispatch }}/head'
+
+      - name: 'Checkout PR code (issue_comment)'
+        if: |-
+          ${{ inputs.event_name == 'issue_comment' }}
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: 'refs/pull/${{ inputs.pr_number_issue }}/head'
+
+      - name: 'Checkout PR code (pull_request_review & pull_request_review_comment)'
+        if: |-
+          ${{ inputs.event_name == 'pull_request_review' || inputs.event_name == 'pull_request_review_comment' }}
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: 'refs/pull/${{ inputs.pr_number_review }}/head'
+
+      - name: 'Generate GitHub App Token'
+        id: 'generate_token'
+        if: |-
+          ${{ inputs.app_id != '' }}
+        uses: 'actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42' # ratchet:actions/create-github-app-token@v2
+        with:
+          app-id: '${{ inputs.app_id }}'
+          private-key: '${{ secrets.APP_PRIVATE_KEY }}'
+
+      - name: 'Get PR details (pull_request & workflow_dispatch)'
+        id: 'get_pr'
+        if: |-
+          ${{ inputs.event_name == 'pull_request' || inputs.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          EVENT_NAME: '${{ inputs.event_name }}'
+          WORKFLOW_PR_NUMBER: '${{ inputs.pr_number_dispatch }}'
+          PULL_REQUEST_NUMBER: '${{ inputs.pr_number_pull_request }}'
+        run: |-
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            PR_NUMBER="${WORKFLOW_PR_NUMBER}"
+          else
+            PR_NUMBER="${PULL_REQUEST_NUMBER}"
+          fi
+
+          if [[ -z "${PR_NUMBER}" ]]; then
+            echo "::error::PR_NUMBER is empty. Cannot proceed."
+            exit 1
+          fi
+
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "additional_instructions=" >> "${GITHUB_OUTPUT}"
+
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
+          {
+            echo "pr_data<<EOF"
+            echo "${PR_DATA}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
+          {
+            echo "changed_files<<EOF"
+            echo "${CHANGED_FILES}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: 'Get PR details (issue_comment)'
+        id: 'get_pr_comment'
+        if: |-
+          ${{ inputs.event_name == 'issue_comment' }}
+        env:
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          COMMENT_BODY: '${{ inputs.comment_body }}'
+          PR_NUMBER: '${{ inputs.pr_number_issue }}'
+        run: |-
+          set -euo pipefail
+
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+
+          ADDITIONAL_INSTRUCTIONS="$(
+            echo "${COMMENT_BODY}" | sed 's/.*@gemini-cli \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          )"
+          echo "additional_instructions=${ADDITIONAL_INSTRUCTIONS}" >> "${GITHUB_OUTPUT}"
+
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
+          {
+            echo "pr_data<<EOF"
+            echo "${PR_DATA}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
+          {
+            echo "changed_files<<EOF"
+            echo "${CHANGED_FILES}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: 'Get PR details (pull_request_review & pull_request_review_comment)'
+        id: 'get_pr_review'
+        if: |-
+          ${{ inputs.event_name == 'pull_request_review' || inputs.event_name == 'pull_request_review_comment' }}
+        env:
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          EVENT_NAME: '${{ inputs.event_name }}'
+          REVIEW_BODY: '${{ inputs.review_body }}'
+          COMMENT_BODY: '${{ inputs.review_comment_body }}'
+          PR_NUMBER: '${{ inputs.pr_number_review }}'
+        run: |-
+          set -euo pipefail
+
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${EVENT_NAME}" == "pull_request_review" ]]; then
+            TRIGGER_BODY="${REVIEW_BODY}"
+          else
+            TRIGGER_BODY="${COMMENT_BODY}"
+          fi
+
+          ADDITIONAL_INSTRUCTIONS="$(
+            echo "${TRIGGER_BODY}" | sed 's/.*@gemini-cli \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+          )"
+          echo "additional_instructions=${ADDITIONAL_INSTRUCTIONS}" >> "${GITHUB_OUTPUT}"
+
+          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
+          {
+            echo "pr_data<<EOF"
+            echo "${PR_DATA}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
+          {
+            echo "changed_files<<EOF"
+            echo "${CHANGED_FILES}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: 'Run Gemini PR Review'
+        uses: 'google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489' # ratchet:google-github-actions/run-gemini-cli@v0
+        id: 'gemini_pr_review'
+        env:
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          GITHUB_PERSONAL_ACCESS_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'
+          CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files || steps.get_pr_review.outputs.changed_files }}'
+          ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions || steps.get_pr_review.outputs.additional_instructions }}'
+          REPOSITORY: '${{ github.repository }}'
+        with:
+          gemini_model: 'gemini-3.5-flash'
+          gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
+          gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
+          gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
+          gcp_service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
+          use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
+          use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
+          settings: |-
+            {
+              "maxSessionTurns": 20,
+              "mcpServers": {
+                "github": {
+                  "command": "docker",
+                  "args": [
+                    "run",
+                    "-i",
+                    "--rm",
+                    "-e",
+                    "GITHUB_PERSONAL_ACCESS_TOKEN",
+                    "ghcr.io/github/github-mcp-server:v1.5.0"
+                  ],
+                  "includeTools": [
+                    "create_pending_pull_request_review",
+                    "add_comment_to_pending_review",
+                    "submit_pending_pull_request_review"
+                  ]
+                }
+              },
+              "coreTools": [
+                "run_shell_command(echo)",
+                "run_shell_command(gh pr view)",
+                "run_shell_command(gh pr diff)",
+                "run_shell_command(cat)",
+                "run_shell_command(head)",
+                "run_shell_command(tail)",
+                "run_shell_command(grep)"
+              ],
+              "telemetry": {
+                "enabled": false,
+                "target": "gcp"
+              }
+            }
+          prompt: '${{ inputs.prompt }}'
+
+      - name: 'Post PR review failure comment'
+        if: |-
+          ${{ failure() && (steps.gemini_pr_review.outcome == 'failure' || steps.gemini_pr_review.outcome == 'skipped') }}
+        uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
+        with:
+          github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          script: |-
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}',
+              body: 'There is a problem with the Gemini CLI **${{ inputs.review_label }}** PR review. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
+            })
