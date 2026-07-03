@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-output "backend_url" {
-  description = "URL of the backend Cloud Run service (ADK agent)."
-  value       = google_cloud_run_v2_service.backend.uri
+output "agent_runtime_api_base" {
+  description = "Agent Runtime API base URL (passthrough). Append /apps/{agent}/... to reach agent endpoints."
+  value       = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${var.agent_runtime_resource_name}/api"
 }
 
 output "frontend_url" {
@@ -33,8 +33,8 @@ output "dead_letter_topic" {
 }
 
 output "trigger_endpoint" {
-  description = "Full trigger endpoint URL for Pub/Sub."
-  value       = "${google_cloud_run_v2_service.backend.uri}/apps/${var.agent_name}/trigger/pubsub"
+  description = "Full trigger endpoint URL (Agent Runtime passthrough → /trigger/pubsub)."
+  value       = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${var.agent_runtime_resource_name}/api/apps/${var.agent_name}/trigger/pubsub"
 }
 
 output "alert_policy" {

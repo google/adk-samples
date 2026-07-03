@@ -17,18 +17,20 @@
 #
 # When the agent flags an expense >= $100 for review it emits a structured
 # JSON log. Cloud Logging ingests it, a log-based metric counts it, and
-# an alert policy sends an email notification.
+# an alert policy sends an email notification to the manager.
 # ---------------------------------------------------------------------------
 
 resource "google_logging_metric" "expense_reviews" {
   name    = "expense-review-alerts"
   project = var.project_id
 
-  description = "Counts expense review alerts from the expense agent."
+  description = "Counts expense review alerts from the expense agent (Agent Runtime)."
 
+  # Agent Runtime container logs appear under the aiplatform.googleapis.com
+  # resource type. The jsonPayload.alert_type field is set by the agent.
   filter = <<-EOT
-    resource.type="cloud_run_revision"
-    resource.labels.service_name="${var.backend_service_name}"
+    resource.type="aiplatform.googleapis.com/ReasoningEngine"
+    labels."aiplatform.googleapis.com/reasoning_engine_display_name"="ambient-expense-agent"
     jsonPayload.alert_type="expense_review"
   EOT
 
@@ -59,7 +61,7 @@ resource "google_monitoring_alert_policy" "expense_reviews" {
     display_name = "Expense review count > 0"
 
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.expense_reviews.name}\" AND resource.type=\"cloud_run_revision\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.expense_reviews.name}\" AND resource.type=\"aiplatform.googleapis.com/ReasoningEngine\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"

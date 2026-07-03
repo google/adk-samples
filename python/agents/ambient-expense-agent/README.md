@@ -26,7 +26,7 @@ analysis and **human-in-the-loop approval** before a decision is made.
     </tr>
     <tr>
       <td>☁️</td>
-      <td><strong>Production-Ready Deployment:</strong> One-command <a href="https://www.terraform.io/">Terraform</a> setup — two <a href="https://cloud.google.com/run">Cloud Run</a> services, Pub/Sub, Cloud Monitoring alerts, IAM, and <a href="https://cloud.google.com/iap">IAP</a>.</td>
+      <td><strong>Agent Runtime Deployment:</strong> The agent backend runs on <a href="https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview">Agent Runtime</a> (Vertex AI). A Cloud Run approval UI and Pub/Sub trigger are provisioned via Terraform.</td>
     </tr>
   </tbody>
 </table>
@@ -36,17 +36,24 @@ analysis and **human-in-the-loop approval** before a decision is made.
 | **Interaction Type** | Ambient (event-driven) with HITL approval |
 | **Complexity** | Intermediate |
 | **Agent Type** | ADK 2.0 Graph-based Workflow |
-| **Trigger Sources** | Pub/Sub push |
+| **Trigger Sources** | Pub/Sub push → Agent Runtime API passthrough |
+| **Deployment** | Agent Runtime (backend) + Cloud Run (approval UI) |
 
 ## How It Works
 
 The agent is built as an ADK 2.0 [`Workflow`](https://adk.dev/workflows/) with
 conditional routing. The $100 threshold lives in code, not in a prompt — only
-high-value expenses hit the LLM. See
-[`expense_agent/agent.py`](expense_agent/agent.py) for the full graph definition.
+high-value expenses hit the LLM.
 
 ```
-  Expense arrives (Pub/Sub)
+  Expense arrives (Cloud Scheduler or direct publish)
+            │
+       Pub/Sub topic
+            │
+   Push subscription (OIDC auth)
+            │
+  Agent Runtime API passthrough
+    /api/apps/expense_agent/trigger/pubsub
             │
      parse & extract data
             │
@@ -55,83 +62,58 @@ high-value expenses hit the LLM. See
    < $100       >= $100
        │          │
   auto-approve   LLM reviews risk
-   (done)        & emails alert
+   (done)        & emits alert log
+                  │
+            manager receives
+             email alert
                   │
             manager approves
              or rejects
              (approval UI)
                   │
             agent logs decision
-             & takes action
+             & resumes workflow
 ```
 
 ### Deployment Architecture
 
-The agent deploys as two [Cloud Run](https://cloud.google.com/run) services
-with [Cloud Monitoring](https://cloud.google.com/monitoring) for email alerts:
-
-- **Backend** — runs the ADK agent. Pub/Sub pushes expense messages to it
-  directly (authenticated via service account).
-- **Frontend** — the approval UI. Protected by
-  [Identity-Aware Proxy (IAP)](https://cloud.google.com/iap) so only
-  authorized managers can access it. Calls the backend on behalf of the user.
-- **Monitoring** — when the agent flags a high-value expense, it emits a
-  structured log. A log-based metric triggers an email alert to the manager
-  with a link to the approval UI.
-
 ```
-                       ┌─────────────────────────┐
-  Pub/Sub ───────────► │  Backend  (Cloud Run)   │
-                       │  ADK agent + triggers   │
-                       └──────┬─────────▲────────┘
-                              │         │
-                    structured log      │
-                              │         │
-                       ┌──────▼──────┐  │
-                       │  Cloud      │  │
-                       │  Monitoring │  │
-                       └──────┬──────┘  │
-                              │         │
-                        email alert     │
-                              │         │
-                       ┌──────▼──────┐  │
-                       │  Manager    │  │
-                       └──────┬──────┘  │
-                              │         │
-                       ┌──────▼─────────┴────────┐
-  Browser ── login ──► │  Frontend  (Cloud Run)  │
-                       │  Approval UI (IAP)      │
-                       └─────────────────────────┘
+Cloud Scheduler (optional cron)
+        │
+        ▼
+  Pub/Sub topic: expense-reports
+        │
+        ▼ push (OIDC, roles/aiplatform.user)
+  Agent Runtime API passthrough
+  → /api/apps/expense_agent/trigger/pubsub
+        │
+        ▼
+  ADK trigger route decodes payload,
+  creates session, runs workflow
+        │
+   (if >= $100)
+        │
+        ▼
+  Cloud Monitoring alert → manager email
+        │
+        ▼
+  Approval UI (Cloud Run, IAP-protected)
+  → manager approves/rejects via POST /run
 ```
 
-## Getting Started
+## Local Development
 
-**Prerequisites:** [Python 3.11+](https://www.python.org/downloads/), [uv](https://github.com/astral-sh/uv)
+### 1. Prerequisites
 
-### 1. Clone the repository
+- Python 3.11–3.12
+- [uv](https://docs.astral.sh/uv/)
+- A Google AI Studio key or Vertex AI project with ADC
+
+### 2. Configure
 
 ```bash
-git clone https://github.com/google/adk-samples.git
-cd adk-samples/python/agents/ambient-expense-agent
-```
-
-### 2. Configure authentication
-
-Create a `.env` file (see [`.env.example`](.env.example)).
-
-**Option A: [Google AI Studio](https://aistudio.google.com/app/apikey)**
-
-```bash
-echo "GOOGLE_API_KEY=YOUR_AI_STUDIO_API_KEY" >> .env
-```
-
-**Option B: [Google Cloud Vertex AI](https://cloud.google.com/vertex-ai)**
-
-```bash
-echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE" >> .env
-echo "GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID" >> .env
-echo "GOOGLE_CLOUD_LOCATION=global" >> .env
-gcloud auth application-default login
+cp .env.example .env
+# Edit .env with your project or API key
 ```
 
 ### 3. Install and run
@@ -174,22 +156,40 @@ at `http://localhost:8081/approval` to approve or reject it.
 
 ## Cloud Deployment
 
-Deploy both services and all supporting infrastructure with a single command.
+Deploying the agent uses a two-step process:
 
-**Prerequisites:** [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), [Terraform](https://www.terraform.io/)
+1. **`agents-cli deploy`** — packages and deploys the agent to Agent Runtime.
+2. **`terraform apply`** — creates the Pub/Sub subscription, Cloud Monitoring alerts, IAM, and the frontend Cloud Run service.
+
+The `Makefile` handles both steps in sequence.
+
+**Prerequisites:**
+- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)
+- [agents-cli](https://goo.gle/agents-cli) — `pip install google-agents-cli`
+- [Terraform](https://www.terraform.io/)
+- [uv](https://docs.astral.sh/uv/)
 
 ```bash
 gcloud config set project YOUR_PROJECT_ID
 make deploy NOTIFICATION_EMAIL=finance@example.com
 ```
 
-This builds container images (in parallel) and deploys everything via
-Terraform: two Cloud Run services, Pub/Sub (with dead-letter), Cloud
-Monitoring alerts, IAM, and IAP.
+This will:
+1. Deploy the agent to Agent Runtime via `agents-cli deploy`
+2. Build and push the frontend container image to Artifact Registry
+3. Apply Terraform: Pub/Sub topic + authenticated push subscription,
+   Cloud Monitoring alert, IAM bindings, and the Cloud Run approval UI
 
-> **Note:** IAP can take **5–10 minutes** to fully propagate after the
-> initial deployment. If you see a `403 Forbidden` when opening the
-> approval UI, wait a few minutes and refresh.
+> **Note:** IAP on the approval UI can take **5–10 minutes** to propagate after
+> initial deployment. If you see a `403 Forbidden`, wait a few minutes and refresh.
+
+### Region
+
+The Makefile defaults to `us-east1`. To use a different region:
+
+```bash
+make deploy REGION=us-central1 NOTIFICATION_EMAIL=finance@example.com
+```
 
 ### Test the deployed agent
 
@@ -197,16 +197,33 @@ Monitoring alerts, IAM, and IAP.
 make remote-test
 ```
 
-This publishes a $250 travel expense. The agent will route it to the review
-agent, analyze risk factors, email an alert to `NOTIFICATION_EMAIL`, and pause
-for human approval. Open the approval UI (URL printed by `make deploy`) to
-approve or reject.
+This publishes a $250 travel expense to the `expense-reports` topic. The agent
+will route it to the review path, analyze risk, email an alert to
+`NOTIFICATION_EMAIL`, and pause for human approval. Open the approval UI
+(URL printed by `make deploy`) to approve or reject.
 
 ### Cleanup
 
 ```bash
 make clean NOTIFICATION_EMAIL=finance@example.com
 ```
+
+This tears down the Pub/Sub, monitoring, IAM, and frontend Cloud Run resources
+via Terraform, then deletes the Agent Runtime engine.
+
+## How the Auth Works (Pub/Sub → Agent Runtime)
+
+The Pub/Sub push subscription uses OIDC authentication to call the
+Agent Runtime API passthrough:
+
+```
+Pub/Sub push → OIDC token (audience: https://{REGION}-aiplatform.googleapis.com/)
+             → invoker SA (roles/aiplatform.user)
+             → Agent Runtime API: /api/apps/expense_agent/trigger/pubsub
+```
+
+This is different from Cloud Run push subscriptions (which use `roles/run.invoker`
+and an audience matching the service URL). The `iam.tf` sets this up automatically.
 
 ## Customization
 
@@ -218,15 +235,14 @@ make clean NOTIFICATION_EMAIL=finance@example.com
 | **Review logic** | Edit the `review_agent` instruction in `expense_agent/agent.py` |
 | **Approval UI** | Edit `frontend/static/approval.html` |
 | **Downstream actions** | Add workflow nodes for Slack, databases, or notifications |
-| **Multi-level routing** | Add routes (e.g., `ESCALATE` for expenses > $1000) |
-| **Notification channel** | Replace email with Slack, PagerDuty, or SMS in `terraform/monitoring.tf` ([docs](https://cloud.google.com/monitoring/support/notification-options)) |
-| **Email content** | The alert email uses a static template. To include dynamic expense data (amount, submitter) in the email, switch from log-based metrics to [custom metrics with template variables](https://cloud.google.com/monitoring/alerts/doc-variables) |
+| **Add Cloud Scheduler** | Create a Cloud Scheduler job that publishes to `expense-reports` topic on a cron schedule |
 
 ## Troubleshooting
 
 - For general ADK issues, see the [ADK documentation](https://adk.dev).
+- For Agent Runtime logs, check Cloud Logging with resource type `aiplatform.googleapis.com/ReasoningEngine`.
 - For trigger endpoint details, see [Ambient Agents](https://adk.dev/runtime/ambient-agents/).
-- For Cloud Run deployment, see [Deploy to Cloud Run](https://adk.dev/deploy/cloud-run/).
+- For Agent Runtime deployment, see [Deploy to Agent Runtime](https://adk.dev/deploy/agent-engine/).
 
 ## Disclaimer
 

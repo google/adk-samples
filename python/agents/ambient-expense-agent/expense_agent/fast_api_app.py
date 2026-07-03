@@ -14,12 +14,14 @@
 
 """FastAPI entry point for the ambient expense agent backend.
 
-This file configures the ADK web server with Pub/Sub trigger endpoints
-enabled, allowing the agent to process expense reports autonomously
-when deployed to Cloud Run.
+Configures the ADK web server with Pub/Sub trigger endpoints enabled,
+allowing the agent to process expense reports autonomously when deployed
+to Agent Runtime.
 
-The frontend service queries the ADK's built-in session APIs
-(``GET /apps/{app}/users/{user}/sessions``) to find pending approvals.
+On Agent Runtime, ``SESSION_SERVICE_URI`` defaults to ``agentengine://``
+so that sessions are stored in Agent Runtime's built-in session store
+and accessible across replicas. The frontend approval UI queries these
+sessions to find expenses pending human approval.
 
 Includes middleware to normalize Pub/Sub subscription names from their
 fully-qualified resource paths (``projects/.../subscriptions/NAME``)
@@ -30,8 +32,14 @@ import json
 import os
 
 import uvicorn
+from dotenv import load_dotenv
 from google.adk.cli.fast_api import get_fast_api_app
 from starlette.requests import Request
+
+load_dotenv()
+
+# Agent Runtime's built-in session store; falls back to in-memory locally.
+SESSION_SERVICE_URI = os.environ.get("SESSION_SERVICE_URI", "agentengine://")
 
 # The ADK needs the project root as agents_dir so it discovers
 # expense_agent/ as an agent package (contains agent.py + __init__.py).
@@ -40,6 +48,7 @@ AGENTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 app = get_fast_api_app(
     agents_dir=AGENTS_DIR,
     web=False,
+    session_service_uri=SESSION_SERVICE_URI,
     trigger_sources=["pubsub"],
 )
 

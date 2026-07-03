@@ -13,10 +13,12 @@
 # limitations under the License.
 
 # ---------------------------------------------------------------------------
-# Pub/Sub topic + authenticated push subscription → /trigger/pubsub
+# Pub/Sub topic + authenticated push subscription → Agent Runtime passthrough
 #
 # Messages published to the "expense-reports" topic are automatically
-# pushed to the agent's trigger endpoint on Cloud Run.
+# pushed to the agent's trigger endpoint via the Agent Runtime API.
+#
+# Cloud Scheduler publishes to the topic on a cron schedule (optional).
 # ---------------------------------------------------------------------------
 
 resource "google_pubsub_topic" "expense_reports" {
@@ -34,17 +36,36 @@ resource "google_pubsub_topic" "dead_letter" {
   depends_on = [google_project_service.apis]
 }
 
+# Allow the Pub/Sub dead-letter publisher SA to publish to the dead-letter topic.
+resource "google_pubsub_topic_iam_member" "dead_letter_publisher" {
+  topic   = google_pubsub_topic.dead_letter.name
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
+# Allow the Pub/Sub SA to ack messages on the main subscription (for dead-letter).
+resource "google_pubsub_subscription_iam_member" "dead_letter_subscriber" {
+  subscription = google_pubsub_subscription.expense_push.name
+  project      = var.project_id
+  role         = "roles/pubsub.subscriber"
+  member       = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
 resource "google_pubsub_subscription" "expense_push" {
   name    = "expense-reports-push"
   project = var.project_id
   topic   = google_pubsub_topic.expense_reports.id
 
   push_config {
-    push_endpoint = "${google_cloud_run_v2_service.backend.uri}/apps/${var.agent_name}/trigger/pubsub"
+    # Agent Runtime API passthrough: routes to /api/apps/{agent}/trigger/pubsub
+    # inside the container. Requires aiplatform.user on the invoker SA.
+    push_endpoint = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${var.agent_runtime_resource_name}/api/apps/${var.agent_name}/trigger/pubsub"
 
     oidc_token {
       service_account_email = google_service_account.pubsub_invoker.email
-      audience              = google_cloud_run_v2_service.backend.uri
+      # Audience must be the Vertex AI API base URL for the region.
+      audience = "https://${var.region}-aiplatform.googleapis.com/"
     }
   }
 
@@ -66,4 +87,8 @@ resource "google_pubsub_subscription" "expense_push" {
   expiration_policy {
     ttl = ""
   }
+
+  depends_on = [
+    google_pubsub_topic_iam_member.dead_letter_publisher,
+  ]
 }

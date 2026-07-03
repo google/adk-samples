@@ -13,36 +13,12 @@
 # limitations under the License.
 
 # ---------------------------------------------------------------------------
-# Cloud Run services — managed by Terraform.
+# Cloud Run — approval UI frontend only.
 #
-# The Makefile builds container images via Cloud Build, then Terraform
-# creates both services with the correct env vars, service accounts,
-# and wires BACKEND_URL automatically.
+# The backend agent runs on Agent Runtime (deployed via agents-cli).
+# The frontend is a thin FastAPI service that proxies approval decisions
+# from managers to the agent's HITL (human-in-the-loop) session.
 # ---------------------------------------------------------------------------
-
-resource "google_cloud_run_v2_service" "backend" {
-  name                = var.backend_service_name
-  location            = var.region
-  project             = var.project_id
-  deletion_protection = false
-
-  template {
-    scaling {
-      min_instance_count = 1
-    }
-
-    containers {
-      image = var.backend_image
-
-      resources {
-        cpu_idle = false
-      }
-
-}
-  }
-
-  depends_on = [google_project_service.apis]
-}
 
 resource "google_cloud_run_v2_service" "frontend" {
   name                = var.frontend_service_name
@@ -67,7 +43,7 @@ resource "google_cloud_run_v2_service" "frontend" {
 
       env {
         name  = "BACKEND_URL"
-        value = google_cloud_run_v2_service.backend.uri
+        value = "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/${var.agent_runtime_resource_name}/api"
       }
       env {
         name  = "USE_SERVICE_AUTH"

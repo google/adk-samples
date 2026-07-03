@@ -16,71 +16,55 @@
 # IAM: Dedicated service accounts with least-privilege permissions.
 # ---------------------------------------------------------------------------
 
-# --- Backend → Vertex AI ---
-
-# The backend Cloud Run service uses the default compute SA.
-# Grant it Vertex AI User so it can call Gemini.
-resource "google_project_iam_member" "backend_vertex_ai" {
-  project = var.project_id
-  role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
-}
-
-# --- Pub/Sub → Backend ---
-
-# Service account for Pub/Sub push to invoke the backend Cloud Run service.
-resource "google_service_account" "pubsub_invoker" {
-  account_id   = "expense-agent-invoker"
-  display_name = "Ambient Expense Agent - Pub/Sub Invoker"
-  project      = var.project_id
-}
-
-# Grant the invoker permission to call the backend Cloud Run service.
-resource "google_cloud_run_v2_service_iam_member" "pubsub_invoker" {
-  name     = google_cloud_run_v2_service.backend.name
-  location = var.region
-  project  = var.project_id
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.pubsub_invoker.email}"
-}
-
-# Allow the GCP-managed Pub/Sub service agent to create OIDC tokens
-# for authenticated push delivery.
 data "google_project" "project" {
   project_id = var.project_id
 }
 
+# --- Pub/Sub → Agent Runtime ---
+
+# Service account that Pub/Sub uses to authenticate push deliveries to the
+# Agent Runtime API passthrough endpoint.
+resource "google_service_account" "pubsub_invoker" {
+  account_id   = "expense-agent-invoker"
+  display_name = "Ambient Expense Agent - Pub/Sub → Agent Runtime Invoker"
+  project      = var.project_id
+}
+
+# Grant the invoker permission to call the Agent Runtime API.
+# Agent Runtime's HTTP passthrough requires aiplatform.user.
+resource "google_project_iam_member" "pubsub_invoker_vertex" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.pubsub_invoker.email}"
+}
+
+# Allow the GCP-managed Pub/Sub service agent to create OIDC tokens
+# for authenticated push delivery to the Agent Runtime API.
 resource "google_service_account_iam_member" "pubsub_token_creator" {
   service_account_id = google_service_account.pubsub_invoker.name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
 }
 
-# --- Frontend → Backend ---
+# --- Frontend → Agent Runtime ---
 
-# Service account for the approval UI to invoke the backend.
+# Service account for the approval UI to call the Agent Runtime API.
 resource "google_service_account" "frontend_invoker" {
   account_id   = "approval-ui-invoker"
-  display_name = "Approval UI - Backend Invoker"
+  display_name = "Approval UI - Agent Runtime Invoker"
   project      = var.project_id
 }
 
-# Grant the frontend permission to call the backend Cloud Run service.
-resource "google_cloud_run_v2_service_iam_member" "frontend_invoker" {
-  name     = google_cloud_run_v2_service.backend.name
-  location = var.region
-  project  = var.project_id
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.frontend_invoker.email}"
+# Grant the frontend permission to call the Agent Runtime API.
+resource "google_project_iam_member" "frontend_invoker_vertex" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.frontend_invoker.email}"
 }
 
 # --- IAP access ---
 
 # Grant the notification email access to the frontend via IAP.
-# This ensures the manager who receives expense alerts can open the
-# approval UI without additional IAM setup.
-# Note: Cloud Run's native IAP requires a service-level binding, not
-# the project-level google_iap_web_iam_member.
 resource "google_iap_web_cloud_run_service_iam_member" "approval_access" {
   project                = var.project_id
   location               = var.region

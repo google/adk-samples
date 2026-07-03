@@ -1,7 +1,7 @@
 [project]
 name = "ambient-expense-agent"
 version = "0.1.0"
-description = "An ambient agent that processes expense reports via Pub/Sub triggers, auto-approving expenses under $100 and flagging high-value ones for review using ADK 2.0 graph-based workflows."
+description = "An ambient agent that processes expense reports via Pub/Sub triggers, auto-approving expenses under $100 and flagging high-value ones for review using ADK 2.0 graph-based workflows. Deploys to Agent Runtime."
 authors = [
     {name = "Elia Secchi", email = "eliasecchi@google.com"},
 ]
@@ -59,7 +59,7 @@ packages = ["expense_agent"]
 [tool.agent-starter-pack]
 base_template = "adk_base"
 example_question = "Process this expense: $250 flight to NYC for client meeting"
-deployment_targets = ["cloud_run"]
+deployment_targets = ["agent_runtime"]
 
 [build-system]
 requires = ["hatchling"]

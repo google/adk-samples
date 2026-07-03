@@ -15,9 +15,15 @@
 # ---------------------------------------------------------------------------
 # Terraform configuration for the Ambient Expense Agent infrastructure.
 #
-# This provisions the GCP resources needed for the ambient expense
-# agent: two Cloud Run services (backend + approval UI frontend),
-# Pub/Sub triggers, monitoring, and IAM.
+# This provisions the supporting GCP infrastructure for the ambient expense
+# agent deployed on Agent Runtime: the frontend approval UI (Cloud Run),
+# Pub/Sub triggers, Cloud Monitoring alerts, and IAM bindings.
+#
+# The agent backend is deployed separately via:
+#   agents-cli deploy --project <PROJECT_ID> --region <REGION>
+#
+# After deploying, pass the printed Agent Runtime resource name to
+# terraform apply with -var=agent_runtime_resource_name=<resource_name>.
 # ---------------------------------------------------------------------------
 
 terraform {
@@ -47,6 +53,7 @@ locals {
     "aiplatform.googleapis.com",
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
+    "cloudscheduler.googleapis.com",
     "iap.googleapis.com",
     "monitoring.googleapis.com",
     "pubsub.googleapis.com",
