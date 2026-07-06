@@ -73,14 +73,15 @@ except Exception:
 mcp_tools: MCPToolset | None = None
 try:
     token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
-    headers = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    if not token:
+        raise ValueError("GITHUB_PERSONAL_ACCESS_TOKEN is not set")
 
     mcp_tools = MCPToolset(
         connection_params=StreamableHTTPConnectionParams(
             url="https://api.githubcopilot.com/mcp/",
-            headers=headers,
+            headers={
+                "Authorization": f"Bearer {token}",
+            },
         ),
         # Read only tools
         tool_filter=[
