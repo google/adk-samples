@@ -18,7 +18,7 @@ import (
 	"github.com/felixge/httpsnoop"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"google.golang.org/adk/session"
+	"google.golang.org/adk/v2/session"
 )
 
 const (

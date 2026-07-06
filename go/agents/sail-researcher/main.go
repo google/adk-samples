@@ -14,11 +14,10 @@ import (
 	"github.com/tpryan/navalplan/services/researcher/config"
 	"github.com/tpryan/navalplan/services/researcher/logging"
 	"github.com/tpryan/navalplan/services/researcher/tools"
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/cmd/launcher"
-	"google.golang.org/adk/server/adkrest"
-	"google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/server/adkrest"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
 )
 
 type Provider interface {
@@ -96,13 +95,15 @@ func (s *Server) run(ctx context.Context) error {
 		return fmt.Errorf("creating multi loader: %w", err)
 	}
 
-	config := &launcher.Config{
-		AgentLoader:    loader,
-		SessionService: session.InMemoryService(),
-	}
-
 	// Create the ADK HTTP Handler
-	adkHandler := adkrest.NewHandler(config, 120*time.Second)
+	adkHandler, err := adkrest.NewServer(adkrest.ServerConfig{
+		AgentLoader:     loader,
+		SessionService:  session.InMemoryService(),
+		SSEWriteTimeout: 120 * time.Second,
+	})
+	if err != nil {
+		return fmt.Errorf("creating REST server: %w", err)
+	}
 
 	// Start Custom Server
 	mux := http.NewServeMux()

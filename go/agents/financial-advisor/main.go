@@ -6,13 +6,13 @@ import (
 	"log"
 	"os"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/cmd/launcher"
-	"google.golang.org/adk/cmd/launcher/full"
-	"google.golang.org/adk/model/gemini"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/agenttool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/cmd/launcher"
+	"google.golang.org/adk/v2/cmd/launcher/full"
+	"google.golang.org/adk/v2/model/gemini"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/agenttool"
 
 	"github.com/google/adk-samples/go/agents/financial-advisor/agents"
 )
@@ -23,7 +23,7 @@ var instruction string
 func main() {
 	ctx := context.Background()
 
-	model, err := gemini.NewModel(ctx, "gemini-2.5-flash", nil)
+	model, err := gemini.NewModel(ctx, "gemini-flash-latest", nil)
 	if err != nil {
 		log.Fatalf("Failed to create model: %v", err)
 	}
