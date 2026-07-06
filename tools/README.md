@@ -4,15 +4,15 @@ Local developer tools for validating recipes before submitting a PR.
 
 ## Setup
 
-Run once from the `tools/` directory to install dependencies and register the `validate` command:
+Run once from the **repo root** to install dependencies and register the `validate` command:
 
 ```bash
-cd tools && uv sync
+uv sync
 ```
 
 ## Usage
 
-All commands are run from the `tools/` directory:
+All commands are run from the **repo root**:
 
 ```bash
 uv run validate <subcommand> [recipe]
