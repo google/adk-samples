@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"strings"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 )
 
 // Tool argument and result types. functiontool.New reflects over these structs
@@ -151,7 +151,7 @@ func (c *Client) tools() ([]tool.Tool, error) {
 		Name: "list_untriaged_issues",
 		Description: "Lists open issues that still need an issue type and/or a categorization label. " +
 			"Returns each issue's number, title, body, current labels, and current type.",
-	}, func(ctx agent.ToolContext, a listArgs) (listResult, error) {
+	}, func(ctx agent.Context, a listArgs) (listResult, error) {
 		return c.doList(ctx, a.Count)
 	}))
 
@@ -159,7 +159,7 @@ func (c *Client) tools() ([]tool.Tool, error) {
 		Name: "change_issue_type",
 		Description: "Sets the GitHub issue type for an issue. Allowed values: " +
 			strings.Join(allowedTypes, ", ") + ".",
-	}, func(ctx agent.ToolContext, a typeArgs) (actionResult, error) {
+	}, func(ctx agent.Context, a typeArgs) (actionResult, error) {
 		return c.doChangeType(ctx, a.IssueNumber, a.IssueType)
 	}))
 
@@ -167,7 +167,7 @@ func (c *Client) tools() ([]tool.Tool, error) {
 		Name: "add_label_to_issue",
 		Description: "Adds one categorization label to an issue. Allowed labels: " +
 			strings.Join(c.cfg.AllowedLabels, ", ") + ".",
-	}, func(ctx agent.ToolContext, a labelArgs) (actionResult, error) {
+	}, func(ctx agent.Context, a labelArgs) (actionResult, error) {
 		return c.doAddLabel(ctx, a.IssueNumber, a.Label)
 	}))
 
