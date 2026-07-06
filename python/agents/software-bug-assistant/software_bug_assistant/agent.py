@@ -33,7 +33,7 @@ if mcp_tools is not None:  # Only add if not None
     tools.append(mcp_tools)
 
 root_agent = Agent(
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     name="software_bug_assistant",
     instruction=agent_instruction,
     tools=tools,

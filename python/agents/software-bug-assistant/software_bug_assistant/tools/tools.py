@@ -40,7 +40,7 @@ def get_current_date() -> dict:
 
 # ----- Example of a Built-in Tool -----
 search_agent = Agent(
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     name="search_agent",
     instruction="""
     You're a specialist in Google Search.
