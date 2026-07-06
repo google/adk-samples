@@ -29,13 +29,13 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genai"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/model/gemini"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/model/gemini"
+	"google.golang.org/adk/v2/runner"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
 )
 
 const (
@@ -94,7 +94,7 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 		// (nil, nil) here means "observe only": log the failure but don't replace
 		// the result, so the model still sees the error and can react.
 		OnToolErrorCallbacks: []llmagent.OnToolErrorCallback{
-			func(_ agent.ToolContext, t tool.Tool, args map[string]any, err error) (map[string]any, error) {
+			func(_ agent.Context, t tool.Tool, args map[string]any, err error) (map[string]any, error) {
 				log.Error("tool call failed", "tool", t.Name(), "args", args, "error", err)
 				return nil, nil
 			},

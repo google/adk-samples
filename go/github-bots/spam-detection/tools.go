@@ -18,9 +18,9 @@ import (
 	"context"
 	"fmt"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 )
 
 // auditedIssueKey scopes a session to a single issue number. The runner builds
@@ -38,7 +38,7 @@ func withAuditedIssue(ctx context.Context, number int) context.Context {
 // make the agent flag an issue other than the one this session is reviewing.
 //
 // This relies on ADK propagating the context passed to runner.Run (which carries
-// the withAuditedIssue value) through to the agent.ToolContext seen here. If a
+// the withAuditedIssue value) through to the agent.Context seen here. If a
 // future ADK release stops embedding context in its tool context, the lookup
 // below simply misses and every call is rejected — the bot stops flagging
 // (fail-safe) rather than acting on the wrong issue.
@@ -106,7 +106,7 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 		Description: "Flags the issue as spam: applies the spam label and posts a comment " +
 			"alerting the maintainers. Call this only when the reviewed content is clearly " +
 			"spam. Provide a brief detection_reason explaining what is spam and why.",
-	}, func(ctx agent.ToolContext, a flagArgs) (actionResult, error) {
+	}, func(ctx agent.Context, a flagArgs) (actionResult, error) {
 		return c.flagAsSpam(ctx, a.IssueNumber, a.DetectionReason)
 	})
 	if err != nil {
