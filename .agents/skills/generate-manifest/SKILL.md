@@ -37,7 +37,6 @@ Answer the following questions from what you find:
 |---|---|
 | `type` | Does the recipe have its own entry point and can run independently (`standalone`), or is it a sub-agent meant to be imported by another workflow (`module`)? |
 | `deployable` | Can it be deployed with a single command or click, with no manual steps required? |
-| `large` | Does it have more than 50 files or exceed 1MB (excluding lock files)? |
 | `status` | Is it actively maintained? Default to `active` unless there is evidence otherwise. |
 | `language` | What is the primary programming language? |
 | `description` | What does this recipe do and what value does it provide? Write 2-3 sentences. |
@@ -66,7 +65,6 @@ Write `manifest.yaml` to the root of the recipe directory. Follow this format ex
 ```yaml
 type: "..."         # Options: [standalone | module]
 deployable: false   # Options: [true | false]. Default: false
-large: false        # Options: [true | false]. Default: false
 status: "active"    # Options: [active | inactive]
 language: "..."     # Options: [python | java | go | kotlin | typescript]
 description: "..."

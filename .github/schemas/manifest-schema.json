@@ -6,7 +6,6 @@
   "required": [
     "type",
     "deployable",
-    "large",
     "status",
     "language",
     "description",

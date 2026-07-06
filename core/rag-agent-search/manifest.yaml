@@ -1,6 +1,5 @@
 type: "standalone"
 deployable: false
-large: false
 status: "active"
 language: "python"
 description: "A conversational RAG agent grounded on documents indexed in Google Agent Platform Search (Discovery Engine). Users upload unstructured documents to a GCS bucket, which are automatically ingested and indexed via a managed GCS Data Connector. The agent answers natural-language questions by retrieving relevant passages from the data store and synthesizing grounded answers using Gemini."
