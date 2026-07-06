@@ -70,13 +70,14 @@ except Exception:
 
 # ----- Example of an MCP Tool (streamable-http) -----
 # If GitHub token is not available (e.g., in CI), set to None
+mcp_tools: MCPToolset | None = None
 try:
     mcp_tools = MCPToolset(
         connection_params=StreamableHTTPConnectionParams(
             url="https://api.githubcopilot.com/mcp/",
             headers={
                 "Authorization": "Bearer "
-                + os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"),
+                + (os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN") or ""),
             },
         ),
         # Read only tools
