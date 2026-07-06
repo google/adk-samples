@@ -19,9 +19,9 @@ import (
 	"errors"
 	"fmt"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 )
 
 // auditedIssueKey scopes a session to a single issue number. The runner builds
@@ -79,7 +79,7 @@ var okResult = actionResult{Status: "success"}
 
 // tools builds the function tools the agent uses. The names match those
 // referenced by the prompt's decision tree. Each handler closes over the
-// GitHub client; agent.ToolContext embeds context.Context, so it is passed
+// GitHub client; agent.Context embeds context.Context, so it is passed
 // directly to the API calls.
 func (c *GitHubClient) tools() ([]tool.Tool, error) {
 	var (
@@ -97,14 +97,14 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 	add(functiontool.New(functiontool.Config{
 		Name:        "get_issue_state",
 		Description: "Fetches and analyzes the full state of a GitHub issue, returning its staleness, last actor role, labels, and timing.",
-	}, func(ctx agent.ToolContext, a issueArg) (IssueState, error) {
+	}, func(ctx agent.Context, a issueArg) (IssueState, error) {
 		return c.GetIssueState(ctx, a.IssueNumber)
 	}))
 
 	add(functiontool.New(functiontool.Config{
 		Name:        "add_label_to_issue",
 		Description: "Adds the specified label to the issue.",
-	}, func(ctx agent.ToolContext, a labelArg) (actionResult, error) {
+	}, func(ctx agent.Context, a labelArg) (actionResult, error) {
 		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
 			return errResult("%s", msg), nil
 		}
@@ -120,7 +120,7 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 	add(functiontool.New(functiontool.Config{
 		Name:        "remove_label_from_issue",
 		Description: "Removes the specified label from the issue.",
-	}, func(ctx agent.ToolContext, a labelArg) (actionResult, error) {
+	}, func(ctx agent.Context, a labelArg) (actionResult, error) {
 		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
 			return errResult("%s", msg), nil
 		}
@@ -136,7 +136,7 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 	add(functiontool.New(functiontool.Config{
 		Name:        "add_stale_label_and_comment",
 		Description: "Marks the issue as stale by adding the stale label and posting an explanatory comment.",
-	}, func(ctx agent.ToolContext, a issueArg) (actionResult, error) {
+	}, func(ctx agent.Context, a issueArg) (actionResult, error) {
 		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
 			return errResult("%s", msg), nil
 		}
@@ -155,7 +155,7 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 	add(functiontool.New(functiontool.Config{
 		Name:        "alert_maintainer_of_edit",
 		Description: "Posts a comment alerting maintainers that the author silently edited the issue description.",
-	}, func(ctx agent.ToolContext, a issueArg) (actionResult, error) {
+	}, func(ctx agent.Context, a issueArg) (actionResult, error) {
 		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
 			return errResult("%s", msg), nil
 		}
@@ -170,7 +170,7 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 	add(functiontool.New(functiontool.Config{
 		Name:        "close_as_stale",
 		Description: "Closes the issue as not planned after it has remained stale past the close threshold.",
-	}, func(ctx agent.ToolContext, a issueArg) (actionResult, error) {
+	}, func(ctx agent.Context, a issueArg) (actionResult, error) {
 		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
 			return errResult("%s", msg), nil
 		}
