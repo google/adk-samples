@@ -220,12 +220,9 @@ jobs:
           FAILED=0
 
           for lockfile in $LOCKFILES; do
-            python3 - "$lockfile" <<'PYEOF'
+            python3 - "$lockfile" <<'PYEOF' || FAILED=1
 import sys
-try:
-    import tomllib
-except ImportError:
-    import pip._vendor.tomli as tomllib
+import tomllib
 
 lockfile_path = sys.argv[1]
 with open(lockfile_path, "rb") as f:
@@ -250,9 +247,7 @@ if missing:
     print("\n".join(missing))
     sys.exit(1)
 PYEOF
-            if [ $? -ne 0 ]; then
-              FAILED=1
-            fi
+
           done
 
           if [ "$FAILED" -eq 1 ]; then
@@ -309,6 +304,7 @@ PYEOF
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_REF="${{ github.event.pull_request.base.ref }}"
+            git fetch origin "$BASE_REF"
             CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD)
             # Include root pyproject.toml and any under core/ or contrib/
             PYPROJECTS=$(echo "$CHANGED" | grep -E "^(pyproject\.toml|(core|contrib)/.*pyproject\.toml)$" || true)
