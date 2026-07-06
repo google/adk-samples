@@ -3,6 +3,8 @@ name: Validate Lockfiles
 on:
   pull_request:
     paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
       - 'core/**/*.lock'
       - 'core/**/pyproject.toml'
       - 'contrib/**/*.lock'
@@ -12,6 +14,8 @@ on:
     branches:
       - main
     paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
       - 'core/**/*.lock'
       - 'core/**/pyproject.toml'
       - 'contrib/**/*.lock'
@@ -40,12 +44,13 @@ jobs:
       # Resolve which uv.lock files to validate.
       #
       # On pull_request: only lockfiles that were added/modified in this PR, plus
-      #   the sibling uv.lock for any pyproject.toml that was changed.
+      #   the sibling uv.lock for any pyproject.toml that was changed. The root
+      #   uv.lock is included if the root uv.lock or pyproject.toml was touched.
       # On push to main or workflow_dispatch: all uv.lock files under core/ and
-      #   contrib/ (full scan as a safety net).
+      #   contrib/, plus the root uv.lock (full scan as a safety net).
       #
-      # Samples live exclusively under core/ and contrib/ — nothing outside those
-      # directories is considered.
+      # Samples live exclusively under core/ and contrib/. The root uv.lock is
+      # treated separately as repo-level infrastructure.
       # ---------------------------------------------------------------------------
       - name: Resolve lockfiles to validate
         id: lockfiles
@@ -60,7 +65,7 @@ jobs:
             # Collect directly changed uv.lock files under core/ or contrib/
             LOCKS=$(echo "$CHANGED" | grep -E "^(core|contrib)/.*uv\.lock$" || true)
 
-            # For any changed pyproject.toml, add its sibling uv.lock if it exists
+            # For any changed pyproject.toml under core/ or contrib/, add its sibling uv.lock
             PYPROJECTS=$(echo "$CHANGED" | grep -E "^(core|contrib)/.*pyproject\.toml$" || true)
             for pyproject in $PYPROJECTS; do
               sibling="$(dirname "$pyproject")/uv.lock"
@@ -69,11 +74,18 @@ jobs:
               fi
             done
 
+            # Include the root uv.lock if the root uv.lock or pyproject.toml was touched
+            ROOT_CHANGED=$(echo "$CHANGED" | grep -E "^(uv\.lock|pyproject\.toml)$" || true)
+            if [ -n "$ROOT_CHANGED" ] && [ -f "uv.lock" ]; then
+              LOCKS=$(printf "%s\n%s" "$LOCKS" "uv.lock")
+            fi
+
             # Also re-validate everything if the workflow itself changed
             WORKFLOW_CHANGED=$(echo "$CHANGED" | grep -E "^\.github/workflows/validate-lockfiles\.yml$" || true)
             if [ -n "$WORKFLOW_CHANGED" ]; then
               echo "Workflow file changed — falling back to full scan."
               LOCKS=$(find core contrib -name "uv.lock" 2>/dev/null || true)
+              [ -f "uv.lock" ] && LOCKS=$(printf "%s\nuv.lock" "$LOCKS")
             fi
 
             # Deduplicate and filter to only existing files
@@ -81,6 +93,7 @@ jobs:
           else
             # push to main or workflow_dispatch — scan everything
             LOCKS=$(find core contrib -name "uv.lock" 2>/dev/null || true)
+            [ -f "uv.lock" ] && LOCKS=$(printf "%s\nuv.lock" "$LOCKS")
           fi
 
           if [ -z "$LOCKS" ]; then
@@ -272,10 +285,10 @@ jobs:
           echo "[PASS] All lockfiles are up-to-date."
 
       # ---------------------------------------------------------------------------
-      # Check 6: Every pyproject.toml under core/ and contrib/ must have a sibling
+      # Check 6: Every pyproject.toml (root, core/, contrib/) must have a sibling
       # uv.lock. Only checked for pyproject.toml files touched in this PR (or all
       # of them on push/dispatch). Skips config-only pyproject.toml files that have
-      # no [project] table (e.g. the repo root ruff/codespell config).
+      # no [project] table and no [tool.uv] table.
       # ---------------------------------------------------------------------------
       - name: Check every pyproject.toml has a lockfile
         run: |
@@ -283,10 +296,16 @@ jobs:
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_REF="${{ github.event.pull_request.base.ref }}"
-            PYPROJECTS=$(git diff --name-only "origin/$BASE_REF"...HEAD \
-              | grep -E "^(core|contrib)/.*pyproject\.toml$" || true)
+            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+            # Include root pyproject.toml and any under core/ or contrib/
+            PYPROJECTS=$(echo "$CHANGED" | grep -E "^(pyproject\.toml|(core|contrib)/.*pyproject\.toml)$" || true)
           else
-            PYPROJECTS=$(find core contrib -name "pyproject.toml" 2>/dev/null || true)
+            PYPROJECTS=$(find . -name "pyproject.toml" \
+              -not -path "./.git/*" \
+              -not -path "./core/*/\.*" \
+              | grep -E "^\./?(pyproject\.toml|(core|contrib)/.+)" \
+              | sed 's|^\./||' \
+              || true)
           fi
 
           if [ -z "$PYPROJECTS" ]; then
