@@ -221,35 +221,35 @@ jobs:
 
           for lockfile in $LOCKFILES; do
             python3 - "$lockfile" <<'PYEOF'
-          import sys
-          try:
-              import tomllib
-          except ImportError:
-              import pip._vendor.tomli as tomllib
+import sys
+try:
+    import tomllib
+except ImportError:
+    import pip._vendor.tomli as tomllib
 
-          lockfile_path = sys.argv[1]
-          with open(lockfile_path, "rb") as f:
-              data = tomllib.load(f)
+lockfile_path = sys.argv[1]
+with open(lockfile_path, "rb") as f:
+    data = tomllib.load(f)
 
-          missing = []
-          for pkg in data.get("package", []):
-              name = pkg.get("name", "<unknown>")
-              version = pkg.get("version", "")
-              # Only registry-sourced packages are expected to have hashes.
-              source = pkg.get("source", {})
-              if source.get("virtual"):
-                  continue  # workspace virtual package, no hash needed
-              for dist in pkg.get("wheels", []) + (
-                  [pkg["sdist"]] if "sdist" in pkg else []
-              ):
-                  if not dist.get("hash"):
-                      missing.append(f"  {name}=={version}: {dist.get('url', dist.get('path', '?'))}")
+missing = []
+for pkg in data.get("package", []):
+    name = pkg.get("name", "<unknown>")
+    version = pkg.get("version", "")
+    # Only registry-sourced packages are expected to have hashes.
+    source = pkg.get("source", {})
+    if source.get("virtual"):
+        continue  # workspace virtual package, no hash needed
+    for dist in pkg.get("wheels", []) + (
+        [pkg["sdist"]] if "sdist" in pkg else []
+    ):
+        if not dist.get("hash"):
+            missing.append(f"  {name}=={version}: {dist.get('url', dist.get('path', '?'))}")
 
-          if missing:
-              print(f"[FAIL] {lockfile_path} — distributions missing hashes:")
-              print("\n".join(missing))
-              sys.exit(1)
-          PYEOF
+if missing:
+    print(f"[FAIL] {lockfile_path} — distributions missing hashes:")
+    print("\n".join(missing))
+    sys.exit(1)
+PYEOF
             if [ $? -ne 0 ]; then
               FAILED=1
             fi
