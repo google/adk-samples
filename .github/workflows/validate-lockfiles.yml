@@ -95,8 +95,8 @@ jobs:
 
       # ---------------------------------------------------------------------------
       # Check 1: No internal/non-PyPI registry URLs
-      # Catches pkg.dev (go/airlock) and any other non-pypi.org source hosts.
-      # Lockfiles referencing internal registries cannot be reproduced outside Google.
+      # Catches pkg.dev and any other non-pypi.org source hosts.
+      # Lockfiles referencing internal registries cannot be reproduced outside the original environment.
       # ---------------------------------------------------------------------------
       - name: Check for non-PyPI registry URLs
         if: steps.lockfiles.outputs.lockfiles != ''
@@ -109,7 +109,7 @@ jobs:
           for lockfile in ${{ steps.lockfiles.outputs.lockfiles }}; do
             MATCHES=$(grep -En "(url|registry)\s*=.*($INTERNAL_PATTERN)" "$lockfile" || true)
             if [ -n "$MATCHES" ]; then
-              echo "[FAIL] $lockfile contains non-PyPI registry URLs (go/airlock / pkg.dev):"
+              echo "[FAIL] $lockfile contains non-PyPI registry URLs (pkg.dev or similar):"
               echo "$MATCHES" | sed 's/^/  /'
               FAILED=1
             fi
@@ -118,7 +118,7 @@ jobs:
           if [ "$FAILED" -eq 1 ]; then
             echo ""
             echo "Lockfiles must only reference public PyPI (pypi.org)."
-            echo "Re-run 'uv lock' outside of Google's internal network, or unset internal"
+            echo "Re-run 'uv lock' with only public PyPI configured, or unset any internal"
             echo "registry configuration before locking."
             exit 1
           fi
