@@ -1,0 +1,179 @@
+name: 🐍 Python Tests
+
+on:
+  pull_request:
+    paths:
+      - "core/**"
+      - "contrib/**"
+  workflow_dispatch:
+    inputs:
+      run_all:
+        description: "Run tests for all Python recipes (ignore diff)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  detect-recipes:
+    name: Detect affected Python recipes
+    runs-on: ubuntu-latest
+    outputs:
+      recipes: ${{ steps.detect.outputs.recipes }}
+      count: ${{ steps.detect.outputs.count }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Detect Python recipes to test
+        id: detect
+        run: |
+          # Helper: given a recipe dir, return "true" if manifest.yaml has language: python
+          is_python_recipe() {
+            local dir="$1"
+            local manifest="$dir/manifest.yaml"
+            if [ ! -f "$manifest" ]; then
+              return 1
+            fi
+            grep -q '^language:[[:space:]]*"python"' "$manifest" || \
+            grep -q "^language:[[:space:]]*python" "$manifest"
+          }
+
+          # Helper: collect all Python recipe dirs under core/ and contrib/
+          all_python_recipes() {
+            for root in core contrib; do
+              [ -d "$root" ] || continue
+              for dir in "$root"/*/; do
+                [ -d "$dir" ] || continue
+                dir="${dir%/}"
+                if is_python_recipe "$dir"; then
+                  echo "$dir"
+                fi
+              done
+            done
+          }
+
+          # Determine whether to run all recipes or just the diff-affected ones
+          RUN_ALL="${{ github.event.inputs.run_all }}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$RUN_ALL" = "true" ]; then
+            echo "workflow_dispatch with run_all=true — testing all Python recipes."
+            RECIPES=$(all_python_recipes)
+          else
+            # PR mode: diff against the base branch
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            git fetch origin "$BASE_REF" --depth=1
+            CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
+
+            # Collect unique recipe roots (core/<name> or contrib/<name>) from the diff
+            CHANGED_ROOTS=$(echo "$CHANGED_FILES" \
+              | grep -E "^(core|contrib)/[^/]+" \
+              | sed -E "s|^((core|contrib)/[^/]+).*|\1|" \
+              | sort -u || true)
+
+            echo "Changed recipe roots: $CHANGED_ROOTS"
+
+            # Filter to only Python recipes
+            RECIPES=""
+            while IFS= read -r dir; do
+              [ -z "$dir" ] && continue
+              if is_python_recipe "$dir"; then
+                RECIPES="${RECIPES}${dir}"$'\n'
+              else
+                echo "[SKIP] $dir — not a Python recipe."
+              fi
+            done <<< "$CHANGED_ROOTS"
+          fi
+
+          # Strip trailing whitespace / blank lines
+          RECIPES=$(echo "$RECIPES" | sed '/^[[:space:]]*$/d')
+
+          if [ -z "$RECIPES" ]; then
+            echo "No Python recipes to test."
+            echo "recipes=[]" >> "$GITHUB_OUTPUT"
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Python recipes to test:"
+          echo "$RECIPES"
+
+          # Emit as a JSON array for the matrix
+          JSON=$(echo "$RECIPES" | jq -R . | jq -sc .)
+          echo "recipes=$JSON" >> "$GITHUB_OUTPUT"
+          echo "count=$(echo "$RECIPES" | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+  run-tests:
+    name: "pytest — ${{ matrix.recipe }}"
+    needs: detect-recipes
+    if: needs.detect-recipes.outputs.count != '0'
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Run all recipes; report all failures at the end
+
+    strategy:
+      fail-fast: false
+      matrix:
+        recipe: ${{ fromJson(needs.detect-recipes.outputs.recipes) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify test structure
+        working-directory: ${{ matrix.recipe }}
+        run: |
+          # Ensure tests/ directory exists
+          if [ ! -d "tests" ]; then
+            echo "::error::Missing tests/ directory in ${{ matrix.recipe }}"
+            exit 1
+          fi
+
+          # Ensure at least one test_runnability.py exists anywhere under tests/
+          RUNNABILITY=$(find tests -name "test_runnability.py" | head -1)
+          if [ -z "$RUNNABILITY" ]; then
+            echo "::error::No test_runnability.py found under ${{ matrix.recipe }}/tests/"
+            exit 1
+          fi
+
+          echo "Found: $RUNNABILITY"
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.recipe }}
+        run: uv sync --dev
+
+      - name: Run pytest
+        working-directory: ${{ matrix.recipe }}
+        run: uv run pytest
+
+  # Final gate job: fails the workflow if any recipe's tests failed
+  test-results:
+    name: Python test results
+    needs: run-tests
+    if: always() && needs.run-tests.result != 'skipped'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.run-tests.result }}" = "failure" ]; then
+            echo "::error::One or more Python recipe test suites failed."
+            exit 1
+          fi
+          echo "All Python recipe tests passed."
