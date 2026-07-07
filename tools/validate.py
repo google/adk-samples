@@ -100,7 +100,7 @@ def main() -> int:
                 f"  Run 'uv run validate --help' for usage."
             )
             return 1
-    elif len(args) == 2:  # noqa: PLR2004
+    elif len(args) == 2:
         if args[0] not in VALID_SUBCOMMANDS:
             print(
                 f"[ERROR] '{args[0]}' is not a valid subcommand.\n"
