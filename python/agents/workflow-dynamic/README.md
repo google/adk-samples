@@ -4,6 +4,10 @@ This demo shows how to use ADK agents with dynamic workflows started by a root a
 
 Agent generated with `agents-cli` version `0.3.1`. Owner: @rsamborski
 
+## Workflow diagram
+
+![Workflow Diagram](assets/workflow.png)
+
 ## Project Structure
 
 ```
@@ -11,6 +15,7 @@ workflow-dynamic/
 ├── app/         # Core agent code
 │   ├── agent.py               # Main agent logic
 │   └── app_utils/             # App utilities and helpers
+├── assets/      # Design and documentation assets
 └── pyproject.toml             # Project dependencies
 ```
 
