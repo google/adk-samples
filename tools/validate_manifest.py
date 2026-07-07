@@ -54,14 +54,14 @@ PLACEHOLDER_CHECKS = [
 def is_recipe_dir(path: Path) -> bool:
     """A recipe directory is any immediate subdirectory that contains
     more than just a README.md."""
-    if not path.is_dir():
+    if not path.is_dir() or path.name.startswith("."):
         return False
     children = [p for p in path.iterdir() if p.name != "README.md"]
     return len(children) > 0
 
 
 def load_schema() -> dict:
-    with open(SCHEMA_PATH) as f:
+    with open(SCHEMA_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -69,7 +69,7 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
     """Returns a list of error strings. Empty list means valid."""
     errors = []
     try:
-        with open(manifest_path) as f:
+        with open(manifest_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
         errors.append(f"YAML parse error: {e}")
@@ -84,13 +84,16 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
         errors.append(f"  [{err.json_path}] {err.message}")
 
     # Check that placeholder values have been replaced with real ones
-    for section, field, placeholder, label in PLACEHOLDER_CHECKS:
-        value = (data.get(section) or {}).get(field, "")
-        if value == placeholder:
-            errors.append(
-                f"  [{label}] is still set to the placeholder value "
-                f'"{placeholder}". Please replace it with a real {label}.'
-            )
+    if isinstance(data, dict):
+        for section, field, placeholder, label in PLACEHOLDER_CHECKS:
+            sec_val = data.get(section)
+            if isinstance(sec_val, dict):
+                value = sec_val.get(field, "")
+                if value == placeholder:
+                    errors.append(
+                        f"  [{label}] is still set to the placeholder value "
+                        f'"{placeholder}". Please replace it with a real {label}.'
+                    )
 
     return errors
 
