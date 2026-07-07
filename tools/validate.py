@@ -42,7 +42,7 @@ SUBCOMMANDS = {
 
 VALID_SUBCOMMANDS = [*SUBCOMMANDS, "all"]
 RECIPE_ROOTS = ["core", "contrib"]
-MAX_ARGS = 2
+RECIPE_ROOTS = validate_manifest.RECIPE_ROOTS
 
 
 def run_all(scope: str | None) -> int:
