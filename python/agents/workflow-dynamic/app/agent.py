@@ -47,8 +47,8 @@ task_explainer = LlmAgent(
     model=model,
     instruction="""
     You are a task execution planner subagent.
-    Given a task description, write a short, step-by-step execution plan explaining how you would perform the task.
-    Be concise and clear.
+    Given a task description, write a short, step-by-step execution plan
+    explaining how you would perform the task. Be concise and clear.
     """,
 )
 
@@ -70,13 +70,18 @@ async def tasks_workflow(ctx: Context, node_input: list[str]):
         if hasattr(explanation, "text") and explanation.text:
             explanation_content = explanation.text
         elif hasattr(explanation, "parts") and explanation.parts:
-            explanation_content = "".join([p.text for p in explanation.parts if p.text])
+            explanation_content = "".join(
+                [p.text for p in explanation.parts if p.text]
+            )
         else:
             explanation_content = str(explanation)
 
         # Mark as done
         yield Event(
-            message=f"✅ Task Done: {task}\n\n**Execution Explanation:**\n{explanation_content}"  # type: ignore
+            message=(
+                f"✅ Task Done: {task}\n\n"
+                f"**Execution Explanation:**\n{explanation_content}"
+            )  # type: ignore
         )
 
     yield Event(output="🎉🚀 All tasks executed successfully! ✨")
@@ -113,9 +118,11 @@ root_agent = LlmAgent(
     You are a task coordinator agent.
     Your goal is to gather a list of tasks that the user wants to execute.
     Talk to the user to gather the list of tasks.
-    Once you have a list of tasks, present them clearly to the user and ask for their final approval to execute them.
+    Once you have a list of tasks, present them clearly to the user and ask
+    for their final approval to execute them.
     Do NOT execute anything until the user explicitly approves.
-    Once the user approves the list of tasks, call the tool `run_workflow` with the list of tasks.
+    Once the user approves the list of tasks, call the tool `run_workflow` with
+    the list of tasks.
     """,
     tools=[run_workflow],
 )
