@@ -3,28 +3,33 @@
 Entry point for all recipe validation tools.
 
 Usage:
-  uv run validate <subcommand> [recipe]
+  uv run validate [subcommand] [scope]
 
-Subcommands:
-  manifest  — check that manifest.yaml exists and conforms to the schema
-  all       — run all available checks
+Both arguments are optional:
 
-Arguments:
-  recipe    — optional path to a single recipe directory
-               (e.g. core/rag-agent-search); if omitted, all recipes are checked
+  subcommand  — which check(s) to run; one of: manifest, all (default: all)
+  scope       — what to validate; one of:
+                  all            (default) validate core/ and contrib/
+                  core           validate core/ only
+                  contrib        validate contrib/ only
+                  core/<recipe>  validate a single recipe directory
+
+When only one argument is given and it looks like a path (contains '/') or
+is a known root ('core', 'contrib'), it is treated as the scope and all
+checks are run.
 
 Examples:
-  uv run validate manifest
+  uv run validate core/rag-agent-search   # run all checks on one recipe
+  uv run validate core                    # run all checks on core/ only
+  uv run validate manifest                # run manifest check on everything
+  uv run validate manifest core           # run manifest check on core/ only
   uv run validate manifest core/rag-agent-search
-  uv run validate all
-  uv run validate all core/rag-agent-search
 
 Exit codes:
   0 — all checks passed
   1 — one or more checks failed
 """
 
-import argparse
 import sys
 
 import validate_manifest
@@ -35,14 +40,17 @@ SUBCOMMANDS = {
     # "lint": ("Lint check", validate_lint.main),
 }
 
+VALID_SUBCOMMANDS = [*SUBCOMMANDS, "all"]
+RECIPE_ROOTS = ["core", "contrib"]
 
-def run_all(recipe: str | None) -> int:
+
+def run_all(scope: str | None) -> int:
     results = []
     for label, tool_main in SUBCOMMANDS.values():
         print(f"\n{'=' * 60}")
         print(f"  {label}")
         print(f"{'=' * 60}")
-        exit_code = tool_main(recipe)
+        exit_code = tool_main(scope)
         results.append((label, exit_code))
 
     print(f"\n{'=' * 60}")
@@ -58,32 +66,62 @@ def run_all(recipe: str | None) -> int:
     return 0 if all_passed else 1
 
 
+def looks_like_scope(arg: str) -> bool:
+    """Return True if arg should be interpreted as a scope rather than a subcommand."""
+    return "/" in arg or arg in RECIPE_ROOTS or arg == "all"
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        prog="validate",
-        description="Recipe validation tools.",
-    )
-    subcommands_help = ", ".join([*SUBCOMMANDS, "all"])
-    parser.add_argument(
-        "subcommand",
-        choices=[*SUBCOMMANDS, "all"],
-        metavar="subcommand",
-        help=f"Validation to run: {subcommands_help}",
-    )
-    parser.add_argument(
-        "recipe",
-        nargs="?",
-        default=None,
-        help="Path to a single recipe directory (e.g. core/rag-agent-search). "
-        "If omitted, all recipes are checked.",
-    )
-    args = parser.parse_args()
+    args = sys.argv[1:]
 
-    if args.subcommand == "all":
-        return run_all(args.recipe)
+    # Strip --help / -h and let Python handle it manually so we can keep
+    # the argument parsing simple without argparse.
+    if "-h" in args or "--help" in args:
+        print(__doc__)
+        return 0
 
-    _, tool_main = SUBCOMMANDS[args.subcommand]
-    return tool_main(args.recipe)
+    subcommand = None
+    scope = None
+
+    if len(args) == 0:
+        subcommand = "all"
+        scope = None
+    elif len(args) == 1:
+        if looks_like_scope(args[0]):
+            # e.g. "uv run validate core/rag-agent-search"
+            subcommand = "all"
+            scope = args[0]
+        elif args[0] in VALID_SUBCOMMANDS:
+            subcommand = args[0]
+            scope = None
+        else:
+            print(
+                f"[ERROR] '{args[0]}' is not a valid subcommand or scope.\n"
+                f"  Run 'uv run validate --help' for usage."
+            )
+            return 1
+    elif len(args) == 2:
+        if args[0] not in VALID_SUBCOMMANDS:
+            print(
+                f"[ERROR] '{args[0]}' is not a valid subcommand.\n"
+                f"  Valid subcommands: {', '.join(VALID_SUBCOMMANDS)}\n"
+                f"  Run 'uv run validate --help' for usage."
+            )
+            return 1
+        subcommand = args[0]
+        scope = args[1]
+    else:
+        print(
+            f"[ERROR] Too many arguments.\n"
+            f"  Run 'uv run validate --help' for usage."
+        )
+        return 1
+
+    if subcommand == "all":
+        return run_all(scope)
+
+    _, tool_main = SUBCOMMANDS[subcommand]
+    return tool_main(scope)
 
 
 if __name__ == "__main__":

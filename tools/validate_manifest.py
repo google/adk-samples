@@ -11,8 +11,13 @@ Checks:
     their generated placeholder values.
 
 Usage:
-  # Validate all recipes:
+  # Validate all recipes (both core/ and contrib/):
   python3 tools/validate_manifest.py
+  python3 tools/validate_manifest.py all
+
+  # Validate only core/ or contrib/:
+  python3 tools/validate_manifest.py core
+  python3 tools/validate_manifest.py contrib
 
   # Validate a single recipe:
   python3 tools/validate_manifest.py core/rag-agent-search
@@ -90,10 +95,22 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
     return errors
 
 
-def collect_recipe_dirs(target: Path | None) -> list[Path]:
-    """Return the list of recipe directories to validate."""
-    if target is not None:
-        target = REPO_ROOT / target
+def collect_recipe_dirs(scope: str | None) -> list[Path]:
+    """Return the list of recipe directories to validate.
+
+    scope can be:
+      None / "all"         — all roots in RECIPE_ROOTS
+      "core" / "contrib"   — a single top-level root
+      "core/some-recipe"   — a single recipe directory
+    """
+    # Resolve scope roots to scan
+    if scope is None or scope == "all":
+        roots_to_scan = RECIPE_ROOTS
+    elif scope in RECIPE_ROOTS:
+        roots_to_scan = [scope]
+    else:
+        # Treat as a path to a single recipe directory
+        target = REPO_ROOT / scope
         if not target.exists():
             print(f"[ERROR] Directory not found: {target}")
             sys.exit(1)
@@ -103,7 +120,7 @@ def collect_recipe_dirs(target: Path | None) -> list[Path]:
         return [target]
 
     dirs = []
-    for root_name in RECIPE_ROOTS:
+    for root_name in roots_to_scan:
         root_path = REPO_ROOT / root_name
         if not root_path.exists():
             print(f"[SKIP] '{root_name}/' does not exist.")
@@ -116,9 +133,9 @@ def collect_recipe_dirs(target: Path | None) -> list[Path]:
     return dirs
 
 
-def main(recipe: str | None = None) -> int:
+def main(scope: str | None = None) -> int:
     schema = load_schema()
-    recipe_dirs = collect_recipe_dirs(Path(recipe) if recipe else None)
+    recipe_dirs = collect_recipe_dirs(scope)
 
     missing = []
     invalid = {}
@@ -166,14 +183,13 @@ if __name__ == "__main__":
         description="Validate recipe manifest.yaml files."
     )
     parser.add_argument(
-        "recipe",
+        "scope",
         nargs="?",
         default=None,
         help=(
-            "Path to a single recipe directory to validate"
-            " (e.g. core/rag-agent-search). "
-            "If omitted, all recipes under core/ and contrib/ are validated."
+            "What to validate: 'all' (default), 'core', 'contrib', "
+            "or a path to a single recipe (e.g. core/rag-agent-search)."
         ),
     )
     args = parser.parse_args()
-    sys.exit(main(args.recipe))
+    sys.exit(main(args.scope))
