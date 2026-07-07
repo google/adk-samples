@@ -35,10 +35,7 @@ ignore = ["C901", "B006"]
 known-first-party = ["app"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["tests"]
-asyncio_mode = "auto"
-addopts = "-v --tb=short"
+pythonpath = "."
 
 [build-system]
 requires = ["hatchling"]
