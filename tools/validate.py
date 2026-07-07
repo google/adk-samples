@@ -42,6 +42,7 @@ SUBCOMMANDS = {
 
 VALID_SUBCOMMANDS = [*SUBCOMMANDS, "all"]
 RECIPE_ROOTS = ["core", "contrib"]
+MAX_ARGS = 2
 
 
 def run_all(scope: str | None) -> int:
@@ -67,7 +68,7 @@ def run_all(scope: str | None) -> int:
 
 
 def looks_like_scope(arg: str) -> bool:
-    """Return True if arg should be interpreted as a scope rather than a subcommand."""
+    """Return True if arg looks like a scope rather than a subcommand."""
     return "/" in arg or arg in RECIPE_ROOTS or arg == "all"
 
 
@@ -100,7 +101,7 @@ def main() -> int:
                 f"  Run 'uv run validate --help' for usage."
             )
             return 1
-    elif len(args) == 2:
+    elif len(args) == MAX_ARGS:
         if args[0] not in VALID_SUBCOMMANDS:
             print(
                 f"[ERROR] '{args[0]}' is not a valid subcommand.\n"
@@ -112,8 +113,8 @@ def main() -> int:
         scope = args[1]
     else:
         print(
-            f"[ERROR] Too many arguments.\n"
-            f"  Run 'uv run validate --help' for usage."
+            "[ERROR] Too many arguments.\n"
+            "  Run 'uv run validate --help' for usage."
         )
         return 1
 

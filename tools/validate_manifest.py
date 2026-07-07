@@ -92,7 +92,8 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
                 if value == placeholder:
                     errors.append(
                         f"  [{label}] is still set to the placeholder value "
-                        f'"{placeholder}". Please replace it with a real {label}.'
+                        f'"{placeholder}". Please replace it with a real '
+                        f"{label}."
                     )
 
     return errors
