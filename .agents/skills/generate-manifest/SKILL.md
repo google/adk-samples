@@ -37,7 +37,6 @@ Answer the following questions from what you find:
 |---|---|
 | `type` | Does the recipe have its own entry point and can run independently (`standalone`), or is it a sub-agent meant to be imported by another workflow (`module`)? |
 | `deployable` | Can it be deployed with a single command or click, with no manual steps required? |
-| `large` | Does it have more than 50 files or exceed 1MB (excluding lock files)? |
 | `status` | Is it actively maintained? Default to `active` unless there is evidence otherwise. |
 | `language` | What is the primary programming language? |
 | `description` | What does this recipe do and what value does it provide? Write 2-3 sentences. |
@@ -47,8 +46,8 @@ Answer the following questions from what you find:
 | `architecture.rag` | Does it use a RAG pipeline (retrieval + augmentation + generation)? |
 | `dependencies.libraries` | What libraries does it depend on? Always include `ADK`. |
 | `dependencies.services` | What GCP or external services does it require? Always include `GCP Project`. |
-| `team` | Use `ADK Samples` / `adk-samples@google.com` unless the recipe has its own team info. |
-| `poc` | Use the contributor info if available in the README or git history, otherwise use the team defaults. |
+| `team` | Always use the placeholder values `YOUR TEAM NAME` / `team@email.com`. |
+| `poc` | Always use the placeholder values `POINT OF CONTACT NAME` / `poc@email.com`. |
 | `tags` | What free-form labels best describe this recipe? Include technology names, patterns, and use case. |
 
 ### 4. Make judgment calls explicitly
@@ -66,7 +65,6 @@ Write `manifest.yaml` to the root of the recipe directory. Follow this format ex
 ```yaml
 type: "..."         # Options: [standalone | module]
 deployable: false   # Options: [true | false]. Default: false
-large: false        # Options: [true | false]. Default: false
 status: "active"    # Options: [active | inactive]
 language: "..."     # Options: [python | java | go | kotlin | typescript]
 description: "..."
@@ -85,11 +83,11 @@ dependencies:
     - "GCP Project"
 
 team:
-  name: "..."
-  email: "..."
+  name: "YOUR TEAM NAME"
+  email: "team@email.com"
 poc:
-  name: "..."
-  email: "..."
+  name: "POINT OF CONTACT NAME"
+  email: "poc@email.com"
 
 tags:
   - "..."
@@ -105,7 +103,7 @@ After writing the manifest, run the validation tool from the `tools/` directory:
 cd tools && uv run --active validate manifest <recipe-path>
 ```
 
-If validation fails, fix the errors and re-validate until it passes. Report the final `[PASS]` output to the user.
+If validation fails, fix the errors and re-validate until it passes. Report the final `[PASS]` output to the user. Do not change or modify any other files in the repository. Also do not commit the changes.
 
 ### 7. Report back
 
