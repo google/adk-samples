@@ -1,4 +1,4 @@
-name: ✅ Ruff PR Checks
+name: 🐍 Ruff PR Checks
 
 on:
   pull_request:
