@@ -1,6 +1,5 @@
 type: "standalone"
 deployable: false
-large: false
 status: "active"
 language: "python"
 description: "A conversational RAG agent grounded on documents indexed in Vertex AI Vector Search 2.0 (Agent Platform Vector Search). A Kubeflow Pipelines ingestion pipeline chunks documents, stages them in BigQuery, and batch-creates data objects in a VS 2.0 Collection with server-side auto-embedding. The agent answers natural-language questions by retrieving relevant chunks via semantic search and synthesizing grounded answers using Gemini."
@@ -29,11 +28,11 @@ dependencies:
     - "Cloud Build"
 
 team:
-  name: "ADK Samples"
-  email: "adk-samples@google.com"
+  name: "Cloud AI Developer Engineering & Evangelism"
+  email: "cloud-ai-devrel@google.com"
 poc:
-  name: "Shahin Saadati"
-  email: "shahins@google.com"
+  name: "Elia Seccchi"
+  email: "eliasecchi@google.com"
 
 tags:
   - "rag"

@@ -261,9 +261,7 @@ jobs:
                     "ghcr.io/github/github-mcp-server:v1.5.0"
                   ],
                   "includeTools": [
-                    "create_pending_pull_request_review",
-                    "add_comment_to_pending_review",
-                    "submit_pending_pull_request_review"
+                    "create_pull_request_review_comment"
                   ]
                 }
               },
