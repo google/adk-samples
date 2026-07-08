@@ -7,8 +7,7 @@ Checks:
   - Every manifest.yaml is valid YAML.
   - Every manifest.yaml conforms to the schema at
     .github/schemas/manifest-schema.json.
-  - team.name, team.email, poc.name, and poc.email are not left as
-    their generated placeholder values.
+  - ownership.team and ownership.poc are not left as placeholder values.
 
 Usage:
   # Validate all recipes (both core/ and contrib/):
@@ -43,12 +42,8 @@ SCHEMA_PATH = REPO_ROOT / ".github" / "schemas" / "manifest-schema.json"
 MANIFEST_FILENAME = "manifest.yaml"
 RECIPE_ROOTS = ["core", "contrib"]
 
-PLACEHOLDER_CHECKS = [
-    ("team", "name", "YOUR TEAM NAME", "team.name"),
-    ("team", "email", "team@email.com", "team.email"),
-    ("poc", "name", "POINT OF CONTACT NAME", "poc.name"),
-    ("poc", "email", "poc@email.com", "poc.email"),
-]
+OWNERSHIP_TEAM_PLACEHOLDER = "YOUR TEAM NAME"
+OWNERSHIP_POC_PLACEHOLDER = "your-github-id"
 
 
 def is_recipe_dir(path: Path) -> bool:
@@ -85,16 +80,18 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
 
     # Check that placeholder values have been replaced with real ones
     if isinstance(data, dict):
-        for section, field, placeholder, label in PLACEHOLDER_CHECKS:
-            sec_val = data.get(section)
-            if isinstance(sec_val, dict):
-                value = sec_val.get(field, "")
-                if value == placeholder:
-                    errors.append(
-                        f"  [{label}] is still set to the placeholder value "
-                        f'"{placeholder}". Please replace it with a real '
-                        f"{label}."
-                    )
+        ownership = data.get("ownership")
+        if isinstance(ownership, dict):
+            if ownership.get("team") == OWNERSHIP_TEAM_PLACEHOLDER:
+                errors.append(
+                    f'  [ownership.team] is still set to the placeholder value '
+                    f'"{OWNERSHIP_TEAM_PLACEHOLDER}". Please replace it with a real team name.'
+                )
+            if ownership.get("poc") == OWNERSHIP_POC_PLACEHOLDER:
+                errors.append(
+                    f'  [ownership.poc] is still set to the placeholder value '
+                    f'"{OWNERSHIP_POC_PLACEHOLDER}". Please replace it with a real GitHub ID.'
+                )
 
     return errors
 
