@@ -17,83 +17,98 @@ The user will provide a path to a recipe directory (e.g. `core/rag-agent-search`
 
 Read `.github/schemas/manifest-schema.json` from the repo root to understand the current required and optional fields, allowed enum values, and constraints. Do not rely on memory — always read the live schema file so changes to it are automatically picked up.
 
-### 3. Scan the recipe directory thoroughly
+### 3. Scan the recipe directory and infer only what the code proves
 
-Explore the recipe directory and gather the information needed to fill every schema field. Read the following files if they exist:
+Read the following files if they exist:
 
-- `README.md` — description, services, deployment story
-- `AGENTS.md` — agent architecture, tools, entry point
-- `pyproject.toml` / `requirements.txt` — library dependencies, Python version
-- `Makefile` — how the recipe is run and deployed
-- `infra/` or `terraform/` — GCP services provisioned, deployment automation
-- `app/agent.py` or equivalent entry point — single vs multi-agent, tools used
-- `data_ingestion/` or equivalent — ingestion pipeline, data sources
-- `.env.example` — environment variables, external services required
-- Any `cloudbuild.yaml`, `deploy/`, or CI/CD config
+- `pyproject.toml` / `requirements.txt` — primary language (for `language` field)
+- `app/agent.py` or equivalent entry point — single vs multi-agent, agent count
+- `Makefile` — deploy targets (determines `deployable`)
+- `app/` source files — stateful writes, datasource patterns
+- `AGENTS.md` — architecture notes if present
 
-Answer the following questions from what you find:
+**Field-by-field rules — read carefully before filling any field:**
 
-| Field | Question to answer |
+| Field | Rule |
 |---|---|
-| `type` | Does the recipe have its own entry point and can run independently (`standalone`), or is it a sub-agent meant to be imported by another workflow (`module`)? |
-| `deployable` | Can it be deployed with a single command or click, with no manual steps required? |
-| `status` | Is it actively maintained? Default to `active` unless there is evidence otherwise. |
-| `language` | What is the primary programming language? |
-| `description` | What does this recipe do and what value does it provide? Write 2-3 sentences. |
-| `architecture.agent` | Is there one agent or multiple agents? |
-| `architecture.stateful` | Does it write persistently to external systems (DB, vector store, etc.) or maintain memory across sessions? |
-| `architecture.datasources` | Does it use hardcoded data, local files bundled in the repo, and/or live external systems at runtime? Select all that apply. |
-| `architecture.rag` | Does it use a RAG pipeline (retrieval + augmentation + generation)? |
-| `dependencies.libraries` | What libraries does it depend on? Always include `ADK`. |
-| `dependencies.services` | What GCP or external services does it require? Always include `GCP Project`. |
-| `team` | Always use the placeholder values `YOUR TEAM NAME` / `team@email.com`. |
-| `poc` | Always use the placeholder values `POINT OF CONTACT NAME` / `poc@email.com`. |
-| `tags` | What free-form labels best describe this recipe? Include technology names, patterns, and use case. |
+| `type` | Infer from code: `standalone` if it has its own runnable entry point; `module` if it is only importable. |
+| `deployable` | `true` only if a single `make` target or script deploys everything with no manual steps. Default `false`. |
+| `status` | Always `"active"` unless there is explicit evidence of abandonment. |
+| `language` | Read from file extensions or `pyproject.toml`. Never guess. |
+| `description` | Read `README.md` and `AGENTS.md` only (author-written intent, not code). Write a draft of at most 15 words summarising what the recipe does. Append the comment `# TODO: review and expand this draft description`. If neither file exists or the intent is unclear, fall back to `"DESCRIPTION"` with the same TODO comment. |
+| `architecture.agent` | Infer from code only: count `Agent(` or equivalent constructor calls. `single` or `multi`. Omit the whole `architecture` block if uncertain. |
+| `architecture.stateful` | Infer from code: `true` only if the recipe writes persistently to an external system (DB, vector store, GCS) during normal operation — not just one-time setup. |
+| `architecture.datasources` | Infer from code: `hardcoded` = data literals in source; `local` = files bundled in repo; `external` = live systems queried at runtime. Can be multiple. |
+| `dependencies` | Include the block but comment it out entirely. Do NOT infer library or service names — GCP product names change and guesses will be wrong. Use the commented-out sample shown in the template. |
+| `ownership.team` | Always use the placeholder `"YOUR TEAM NAME"`. Never invent or infer a team name. |
+| `ownership.poc` | Always use the placeholder `"your-github-id"`. Never invent or infer a GitHub ID from email addresses, file authors, or any other source. |
+| `tags` | Include but comment out entirely, with a sample entry showing the expected style. Do NOT generate real tags — tag choices are the author's call. |
 
 ### 4. Make judgment calls explicitly
 
-Some fields require interpretation — document your reasoning briefly before writing the manifest so the user can correct you if needed:
-
-- **`deployable`**: Only `true` if there is a one-click/one-command deploy path with no manual config steps required.
-- **`stateful`**: `true` if the recipe writes to any external system (vector store, database, GCS) as part of its normal operation — not just one-time setup.
-- **`datasources`**: Can be multiple values. `hardcoded` = data embedded in source code. `local` = files bundled in the repo. `external` = live systems queried at runtime.
+Before writing the manifest, briefly state what you found for each inferred field (`type`, `deployable`, `architecture.*`) and cite the specific file/line that supports your conclusion. This lets the user catch errors before they land in the file.
 
 ### 5. Write the manifest
 
 Write `manifest.yaml` to the root of the recipe directory. Follow this format exactly — include inline comments for every field documenting the allowed values, matching the style of the reference manifest in `tools/` or `core/`:
 
 ```yaml
-type: "..."         # Options: [standalone | module]
-deployable: false   # Options: [true | false]. Default: false
-status: "active"    # Options: [active | inactive]
-language: "..."     # Options: [python | java | go | kotlin | typescript]
-description: "..."
+# REQUIRED — Recipe type.
+#   standalone : complete, runnable recipe with its own entry point
+#   module     : importable sub-agent meant to be orchestrated by another workflow
+type: "..."
 
+# REQUIRED — One-click/one-command deployable with no manual steps?
+deployable: false
+
+# REQUIRED — Maintenance status.
+#   active | inactive
+status: "active"
+
+# REQUIRED — Primary programming language.
+#   python | java | go | kotlin | typescript
+language: "..."
+
+# REQUIRED — Short description of what this recipe does and the value it provides.
+description: "..."  # TODO: review and expand this draft description
+
+# OPTIONAL — Agent architecture details. Omit the whole block if unknown.
 architecture:
-  agent: "..."          # Options: [single | multi]
-  stateful: false       # Options: [true | false]
-  datasources:          # Options: [hardcoded | local | external]
+  # single | multi
+  agent: "..."
+
+  # true  : recipe writes persistently to an external system during normal operation
+  # false : read-only at runtime
+  stateful: false
+
+  # One or more of: hardcoded | local | external
+  #   hardcoded : data literals embedded in source code
+  #   local     : files bundled in the repo
+  #   external  : live system queried at runtime (DB, API, etc.)
+  datasources:
     - "..."
-  rag: false            # Options: [true | false]
 
-dependencies:
-  libraries:
-    - "ADK"
-  services:
-    - "GCP Project"
+# OPTIONAL — Library and service dependencies.
+# dependencies:
+#   libraries:
+#     - "ADK"
+#     - "pandas"     # replace with actual libraries used
+#   services:
+#     - "GCP Project"
+#     - "Cloud Run"  # replace with actual GCP/external services used
 
-team:
-  name: "YOUR TEAM NAME"
-  email: "team@email.com"
-poc:
-  name: "POINT OF CONTACT NAME"
-  email: "poc@email.com"
+# REQUIRED — Ownership. Both sub-fields are required.
+ownership:
+  team: "YOUR TEAM NAME"  # TODO: replace with your team name
+  poc: "your-github-id"   # TODO: replace with the GitHub ID of the primary contact
 
-tags:
-  - "..."
+# OPTIONAL — Classification tags (technology names, patterns, use-case keywords).
+# tags:
+#   - "rag"
+#   - "gemini"
 ```
 
-Omit `architecture` entirely if none of its sub-fields can be determined.
+Omit `architecture` entirely if none of its sub-fields can be determined from the code.
 
 ### 6. Validate
 
@@ -107,4 +122,6 @@ If validation fails, fix the errors and re-validate until it passes. Report the 
 
 ### 7. Report back
 
-Briefly summarize the key judgment calls you made (e.g. why `stateful: true`, why certain datasources were chosen) so the user can review and correct anything that doesn't look right.
+Tell the user:
+1. What was inferred from the code and which file/line supports each inference.
+2. Which fields need human input: `description` (draft generated — must be reviewed and expanded), `ownership.team`, `ownership.poc` (placeholders), and `dependencies`/`tags` (commented out, ready to uncomment and fill in).
