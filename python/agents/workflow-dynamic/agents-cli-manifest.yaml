@@ -1,0 +1,15 @@
+name: "workflow-dynamic"
+acli_version: "0.3.1"
+agent_directory: "app"
+region: "us-east1"
+base_template: "adk"
+generated_at: "2026-07-07T13:06:36.461490+00:00"
+language: "python"
+create_params:
+  deployment_target: "none"
+  session_type: "in_memory"
+  cicd_runner: "skip"
+  include_data_ingestion: false
+  
+  datastore: "none"
+  agent_guidance_filename: "GEMINI.md"

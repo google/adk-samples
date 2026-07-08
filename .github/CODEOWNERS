@@ -56,6 +56,9 @@
 # Short movie agents
 /python/agents/short-movie-agents @rsamborski
 
+# Dynamic workflows
+/python/agents/workflow-dynamic @rsamborski
+
 # GenMedia for Commerce
 /python/agents/genmedia-for-commerce/ @lspataroG @giuliosalierno
 
