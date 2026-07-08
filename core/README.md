@@ -2,8 +2,6 @@
 
 Welcome to the `core/` directory. This folder contains **canonical, machine-readable architectural patterns (recipes)**.
 
-> ℹ️ **Migrating:** recipes are moving under language subdirectories (e.g. `core/python/`). Top-level `core/<sample>` copies remain temporarily and will be removed after the transition — prefer `core/python/<sample>`.
-
 ## 🎯 Purpose
 
 The `core/` directory is designed for **coding agents** (such as Gemini CLI, Claude Code, and Antigravity) to read and compose. 
