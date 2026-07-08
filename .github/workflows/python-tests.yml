@@ -37,28 +37,34 @@ jobs:
       - name: Detect Python recipes to test
         id: detect
         run: |
-          # Helper: given a recipe dir, return "true" if manifest.yaml has language: python
-          is_python_recipe() {
-            local dir="$1"
-            local manifest="$dir/manifest.yaml"
-            if [ ! -f "$manifest" ]; then
-              return 1
-            fi
-            grep -q '^language:[[:space:]]*"python"' "$manifest" || \
-            grep -q "^language:[[:space:]]*python" "$manifest"
-          }
-
           # Helper: collect all Python recipe dirs under core/ and contrib/
+          # A recipe dir is any directory that contains a manifest.yaml with language: python.
+          # Uses find so it works at any nesting depth (e.g. core/python/rag-agent-search).
           all_python_recipes() {
             for root in core contrib; do
               [ -d "$root" ] || continue
-              for dir in "$root"/*/; do
-                [ -d "$dir" ] || continue
-                dir="${dir%/}"
-                if is_python_recipe "$dir"; then
+              find "$root" -name "manifest.yaml" | while read -r manifest; do
+                dir="$(dirname "$manifest")"
+                if grep -q '^language:[[:space:]]*"python"' "$manifest" || \
+                   grep -q "^language:[[:space:]]*python" "$manifest"; then
                   echo "$dir"
                 fi
               done
+            done
+          }
+
+          # Helper: given a changed file path, return the recipe dir that owns it
+          # by walking up until we find a directory containing manifest.yaml.
+          find_recipe_dir() {
+            local path="$1"
+            local dir
+            dir="$(dirname "$path")"
+            while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+              if [ -f "$dir/manifest.yaml" ]; then
+                echo "$dir"
+                return
+              fi
+              dir="$(dirname "$dir")"
             done
           }
 
@@ -77,24 +83,29 @@ jobs:
             echo "Changed files:"
             echo "$CHANGED_FILES"
 
-            # Collect unique recipe roots (core/<name> or contrib/<name>) from the diff
-            CHANGED_ROOTS=$(echo "$CHANGED_FILES" \
-              | grep -E "^(core|contrib)/[^/]+" \
-              | sed -E "s|^((core|contrib)/[^/]+).*|\1|" \
-              | sort -u || true)
-
-            echo "Changed recipe roots: $CHANGED_ROOTS"
-
-            # Filter to only Python recipes
+            # Map each changed file to its recipe dir (the nearest ancestor with manifest.yaml)
+            # then keep only unique Python recipe dirs.
             RECIPES=""
-            while IFS= read -r dir; do
-              [ -z "$dir" ] && continue
-              if is_python_recipe "$dir"; then
-                RECIPES="${RECIPES}${dir}"$'\n'
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              # Only care about files under core/ or contrib/
+              case "$file" in
+                core/*|contrib/*) ;;
+                *) continue ;;
+              esac
+              recipe_dir="$(find_recipe_dir "$file")"
+              [ -z "$recipe_dir" ] && continue
+              manifest="$recipe_dir/manifest.yaml"
+              if grep -q '^language:[[:space:]]*"python"' "$manifest" || \
+                 grep -q "^language:[[:space:]]*python" "$manifest"; then
+                RECIPES="${RECIPES}${recipe_dir}"$'\n'
               else
-                echo "[SKIP] $dir — not a Python recipe."
+                echo "[SKIP] $recipe_dir — not a Python recipe."
               fi
-            done <<< "$CHANGED_ROOTS"
+            done <<< "$CHANGED_FILES"
+
+            # Deduplicate
+            RECIPES=$(echo "$RECIPES" | sort -u)
           fi
 
           # Strip trailing whitespace / blank lines
