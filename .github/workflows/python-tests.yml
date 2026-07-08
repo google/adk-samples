@@ -75,9 +75,12 @@ jobs:
             echo "workflow_dispatch with run_all=true — testing all Python recipes."
             RECIPES=$(all_python_recipes)
           else
-            # PR mode: diff against the base branch
+            # PR mode: diff against the base branch.
+            # Fall back to 'main' when github.event.pull_request is null
+            # (e.g. workflow_dispatch with run_all=false).
             BASE_REF="${{ github.event.pull_request.base.ref }}"
-            git fetch origin "$BASE_REF" --depth=1
+            BASE_REF="${BASE_REF:-main}"
+            git fetch origin "$BASE_REF"
             CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
 
             echo "Changed files:"
@@ -131,7 +134,6 @@ jobs:
     needs: detect-recipes
     if: needs.detect-recipes.outputs.count != '0'
     runs-on: ubuntu-latest
-    continue-on-error: true  # Run all recipes; report all failures at the end
 
     strategy:
       fail-fast: false
@@ -149,17 +151,19 @@ jobs:
 
       - name: Verify test structure
         working-directory: ${{ matrix.recipe }}
+        env:
+          RECIPE: ${{ matrix.recipe }}
         run: |
           # Ensure tests/ directory exists
           if [ ! -d "tests" ]; then
-            echo "::error::Missing tests/ directory in ${{ matrix.recipe }}"
+            echo "::error::Missing tests/ directory in ${RECIPE}"
             exit 1
           fi
 
           # Ensure at least one test_runnability.py exists anywhere under tests/
           RUNNABILITY=$(find tests -name "test_runnability.py" | head -1)
           if [ -z "$RUNNABILITY" ]; then
-            echo "::error::No test_runnability.py found under ${{ matrix.recipe }}/tests/"
+            echo "::error::No test_runnability.py found under ${RECIPE}/tests/"
             exit 1
           fi
 
