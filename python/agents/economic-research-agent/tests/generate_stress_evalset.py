@@ -15,12 +15,12 @@ def generate_evalset():
     ]
     
     # Target entities for template variation
-    cities = ["Austin", "Raleigh", "Charlotte", "Seattle", "Orlando", "Salt Lake City", "Richmond", "Tampa", "Houston", "Denver"]
-    states = ["TX", "NC", "NC", "WA", "FL", "UT", "VA", "FL", "TX", "CO"]
-    state_names = ["Texas", "North Carolina", "North Carolina", "Washington", "Florida", "Utah", "Virginia", "Florida", "Texas", "Colorado"]
-    zips = ["78702", "27601", "28202", "98101", "32801", "84101", "23219", "33602", "77002", "80202"]
-    fips = ["48453", "37183", "37119", "53033", "12095", "49035", "51760", "12057", "48201", "08031"]
-    occupations = ["Software Developers", "Customer Service Representatives", "Financial Clerks", "Data Analysts", "Marketing Managers"]
+    cities = ["Austin", "Raleigh", "Charlotte", "Seattle", "Orlando", "Salt Lake City", "Richmond", "Tampa", "Houston", "Denver", "Dallas", "Columbus", "Nashville", "Phoenix", "Boston", "Atlanta", "Miami", "Las Vegas", "Portland", "Detroit"]
+    states = ["TX", "NC", "NC", "WA", "FL", "UT", "VA", "FL", "TX", "CO", "TX", "OH", "TN", "AZ", "MA", "GA", "FL", "NV", "OR", "MI"]
+    state_names = ["Texas", "North Carolina", "North Carolina", "Washington", "Florida", "Utah", "Virginia", "Florida", "Texas", "Colorado", "Texas", "Ohio", "Tennessee", "Arizona", "Massachusetts", "Georgia", "Florida", "Nevada", "Oregon", "Michigan"]
+    zips = ["78702", "27601", "28202", "98101", "32801", "84101", "23219", "33602", "77002", "80202", "75201", "43201", "37201", "85001", "02101", "30301", "33101", "89101", "97201", "48201"]
+    fips = ["48453", "37183", "37119", "53033", "12095", "49035", "51760", "12057", "48201", "08031", "48113", "39049", "47037", "04013", "25025", "13121", "12086", "32003", "41051", "26163"]
+    occupations = ["Software Developers", "Customer Service Representatives", "Financial Clerks", "Data Analysts", "Marketing Managers", "Sales Representatives", "Human Resources Specialists", "Civil Engineers", "Mechanical Engineers", "Accountants"]
     
     # Template dictionaries for generating 50 queries per source
     templates = {
@@ -138,10 +138,10 @@ def generate_evalset():
         ]
     }
 
-    # Generate 50 queries per source (10 permutations of 5 templates)
+    # Generate 100 queries per source (20 permutations of 5 templates)
     for src in sources:
         src_templates = templates.get(src, [])
-        for i in range(10):
+        for i in range(20):
             # Pick distinct variables per iteration
             c_val = cities[i % len(cities)]
             c_val2 = cities[(i+1) % len(cities)]
@@ -165,7 +165,7 @@ def generate_evalset():
                     "session_input": {"app_name": "Economic_Research_Agent", "user_id": "eval_user", "state": {}}
                 })
 
-    # Generate 50 Cross-Source questions
+    # Generate 100 Cross-Source questions
     cross_source_templates = [
         "Compare corporate tax rates in {state_name} vs. electricity rates in {state} for a manufacturing plant.",
         "Correlate the 10-year unemployment rate in {city} (FRED) with local housing affordability (HUD).",
@@ -173,7 +173,7 @@ def generate_evalset():
         "Does {city} have higher technical talent (Census) and lower industrial utility rates (EIA) than {city2}?",
         "Compare the labor force quality in {state} (BLS) vs environmental regulations in the Federal Register (Register)."
     ]
-    for i in range(10):
+    for i in range(20):
         c_val = cities[i % len(cities)]
         c_val2 = cities[(i+1) % len(cities)]
         s_val = states[i % len(states)]
@@ -186,7 +186,7 @@ def generate_evalset():
                 "session_input": {"app_name": "Economic_Research_Agent", "user_id": "eval_user", "state": {}}
             })
 
-    # Generate 50 Anthropic-Type Analyst questions
+    # Generate 100 Anthropic-Type Analyst questions
     anthropic_analyst_templates = [
         "Analyze how high concentration of {occ} in {city} correlates with Opus selection rates.",
         "What is the AI exposure risk of the local talent pool in {city} compared to Gini index trends?",
@@ -194,7 +194,7 @@ def generate_evalset():
         "What are the projected productivity gains in {city} vs developer task concentration levels?",
         "Estimate the workforce displacement risk in {city} for {occ} using HUD CHAS housing burden data."
     ]
-    for i in range(10):
+    for i in range(20):
         c_val = cities[i % len(cities)]
         o_val = occupations[i % len(occupations)]
         for temp in anthropic_analyst_templates:

@@ -6,16 +6,13 @@ import os
 
 import requests
 
-# BLS API Key (Optional but recommended for high volume)
-BLS_API_KEY = os.getenv("BLS_API_KEY", "").strip()
-
-
 def fetch_bls_series_data(
     series_ids: list[str], start_year: str = "2023", end_year: str = "2024"
 ) -> str:
     """
     Fetches live labor statistics from the BLS (Bureau of Labor Statistics) API v2.
     """
+    bls_key = os.getenv("BLS_API_KEY", "").strip()
     url = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 
     headers = {"Content-type": "application/json"}
@@ -25,8 +22,8 @@ def fetch_bls_series_data(
         "endyear": end_year,
     }
 
-    if BLS_API_KEY:
-        payload["registrationkey"] = BLS_API_KEY
+    if bls_key:
+        payload["registrationkey"] = bls_key
 
     try:
         response = requests.post(

@@ -148,6 +148,8 @@ The ERA uses a modular grounding strategy. Set these in your `.env` file (see `.
 | **NewsAPI** | Sentiment | **Optional** | [Sign up for NewsAPI](https://newsapi.org/register) |
 | **Serper** | Live Judge Search | **Optional** | [Sign up for Serper.dev](https://serper.dev/) |
 | **CDC** | Healthcare Stats | **Optional** | [Sign up for CDC Data](https://data.cdc.gov/) |
+| **RentCast** | Real Estate Listings | **Optional** | [Sign up for RentCast API](https://www.rentcast.io/api) |
+| **O*NET** | AI Task Exposure | **Optional** | [Sign up for O*NET Web Services](https://services.onetcenter.org/) |
 
 ### 🛠️ Installation
 

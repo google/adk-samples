@@ -39,7 +39,7 @@ streamlit: ## Launch the Economic Research Agent Dashboard (Streamlit)
 
 test-integration: ## Run integration tests (Requires API keys)
 	@echo "🛰️ Running ERA integration tests..."
-	uv run pytest tests/integration/
+	ERA_BYPASS_SUPERVISOR=true uv run pytest tests/integration/
 
 deploy: ## Deploy the agent to Vertex AI Reasoning Engine (Direct Vertex SDK)
 	@echo "🚀 Deploying ERA to Vertex (Direct SDK)..."

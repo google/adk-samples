@@ -8,10 +8,6 @@ import os
 
 from pydantic import BaseModel, Field
 
-BEA_API_KEY = os.getenv("BEA_API_KEY")
-CENSUS_API_KEY = os.getenv("CENSUS_API_KEY")
-
-
 class MacroRequest(BaseModel):
     state_names: list[str] = Field(
         ...,
@@ -24,7 +20,8 @@ def get_state_macro_health(state_names: list[str]) -> str:
     Fetches GDP and Personal Income (BEA) along with Demographic shifts (Census) for states.
     This provides the 'Top-Line' economic context for site selection.
     """
-    if not BEA_API_KEY:
+    bea_key = os.getenv("BEA_API_KEY")
+    if not bea_key:
         return "ERROR: BEA_API_KEY is missing."
 
     results = []

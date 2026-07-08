@@ -10,11 +10,6 @@ import requests
 # Configure basic logging
 logger = logging.getLogger(__name__)
 
-# EIA API v2 handles key via query parameter
-h_eia_key = os.getenv("EIA_API_KEY", "").strip()
-EIA_API_KEY = h_eia_key.replace('"', "").replace("'", "")
-
-
 def fetch_state_electricity_rates(
     state_codes: list[str], sector: str = "industrial"
 ) -> str:
@@ -22,7 +17,9 @@ def fetch_state_electricity_rates(
     Fetches real-time average electricity prices per kWh from the EIA Open Data API.
     Crucial for calculating the operational ROI of data centers or manufacturing plants.
     """
-    if not EIA_API_KEY:
+    h_eia_key = os.getenv("EIA_API_KEY", "").strip()
+    eia_key = h_eia_key.replace('"', "").replace("'", "")
+    if not eia_key:
         return json.dumps(
             {"ERROR": "EIA_API_KEY not found in environment."}, indent=2
         )
@@ -30,17 +27,16 @@ def fetch_state_electricity_rates(
     results = []
     # Map sector name to EIA v2 sectorid
     sector_map = {
-        "industrial": "industrial",
-        "commercial": "commercial",
-        "residential": "residential",
+        "industrial": "IND",
+        "commercial": "COM",
+        "residential": "RES",
     }
     s_id = sector_map.get(sector.lower(), "industrial")
 
     for state in state_codes:
         state = state.upper().strip()
-        # EIA V2 API URL structure (Monthly frequency)
         url = (
-            f"https://api.eia.gov/v2/electricity/retail-sales/data/?api_key={EIA_API_KEY}"
+            f"https://api.eia.gov/v2/electricity/retail-sales/data/?api_key={eia_key}"
             f"&frequency=monthly&data[0]=price"
             f"&facets[stateid][]={state}"
             f"&facets[sectorid][]={s_id}"

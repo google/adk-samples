@@ -69,6 +69,7 @@ def fetch_state_tax_rates(state_names: list[str]) -> str:
             "Ohio": "None (Gross Receipts Tax)",
             "Washington": "None (Gross Receipts Tax)",
             "North Carolina": "2.5%",
+            "Arizona": "4.9%",
         }
 
         results = []

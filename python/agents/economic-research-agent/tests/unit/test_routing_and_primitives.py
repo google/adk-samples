@@ -21,8 +21,8 @@ def mock_keys(monkeypatch):
         monkeypatch.setenv(key, f"mock_{key.lower()}")
 
 
-@patch('google.adk.runners.InMemoryRunner.run')
-def test_query_routing_and_primitives_low_complexity(mock_run):
+@patch('google.adk.runners.InMemoryRunner.run_async')
+def test_query_routing_and_primitives_low_complexity(mock_run_async):
     from economic_research.agent import export_agent
     
     log_dir = "/Users/enriq/.gemini/jetski/scratch/observability"
@@ -34,18 +34,22 @@ def test_query_routing_and_primitives_low_complexity(mock_run):
         mock_part.text = text
         mock_res = MagicMock()
         mock_res.content.parts = [mock_part]
-        return [mock_res]
+        return mock_res
 
-    # Set side_effect of mock_run to simulate the sequence of calls:
-    # 1. classifier_runner.run: {"complexity": "LOW"}
-    # 2. main_runner.run: "This is a simple report on Ohio electricity rates."
-    # 3. judge_runner.run: "Audit: No hallucinations found. PASSED."
-    # 4. evaluator_runner.run: '{"interaction_type": "directive", "autonomy_level": 2, "human_only_time_minutes": 10, "human_education_years_required": 12, "task_success": true}'
-    mock_run.side_effect = [
-        make_mock_response('{"complexity": "LOW"}'),
-        make_mock_response("This is a simple report on Ohio electricity rates."),
-        make_mock_response("Audit: No hallucinations found. PASSED."),
-        make_mock_response('{"interaction_type": "directive", "autonomy_level": 2, "human_only_time_minutes": 10, "human_education_years_required": 12, "task_success": true}')
+    async def async_generator(items):
+        for item in items:
+            yield item
+
+    # Set side_effect of mock_run_async to simulate the sequence of calls:
+    # 1. classifier_runner.run_async: {"complexity": "LOW"}
+    # 2. main_runner.run_async: "This is a simple report on Ohio electricity rates."
+    # 3. judge_runner.run_async: "Audit: No hallucinations found. PASSED."
+    # 4. evaluator_runner.run_async: '{"interaction_type": "directive", "autonomy_level": 2, "human_only_time_minutes": 10, "human_education_years_required": 12, "task_success": true}'
+    mock_run_async.side_effect = [
+        async_generator([make_mock_response('{"complexity": "LOW"}')]),
+        async_generator([make_mock_response("This is a simple report on Ohio electricity rates.")]),
+        async_generator([make_mock_response("Audit: No hallucinations found. PASSED.")]),
+        async_generator([make_mock_response('{"interaction_type": "directive", "autonomy_level": 2, "human_only_time_minutes": 10, "human_education_years_required": 12, "task_success": true}')])
     ]
     
     result = export_agent.query("What is the electricity rate in Ohio?")
@@ -67,8 +71,8 @@ def test_query_routing_and_primitives_low_complexity(mock_run):
         assert log_data["primitives"]["task_success"] is True
 
 
-@patch('google.adk.runners.InMemoryRunner.run')
-def test_query_routing_and_primitives_high_complexity_with_rejection(mock_run):
+@patch('google.adk.runners.InMemoryRunner.run_async')
+def test_query_routing_and_primitives_high_complexity_with_rejection(mock_run_async):
     from economic_research.agent import export_agent
     
     log_dir = "/Users/enriq/.gemini/jetski/scratch/observability"
@@ -80,20 +84,24 @@ def test_query_routing_and_primitives_high_complexity_with_rejection(mock_run):
         mock_part.text = text
         mock_res = MagicMock()
         mock_res.content.parts = [mock_part]
-        return [mock_res]
+        return mock_res
+
+    async def async_generator(items):
+        for item in items:
+            yield item
 
     # Sequence of calls:
-    # 1. classifier_runner.run: {"complexity": "HIGH"}
-    # 2. main_runner.run: "Austin is better."
-    # 3. judge_runner.run: "[REJECT] Missing Raleigh comparison data."
-    # 4. main_runner.run: "Austin vs Raleigh: Austin is better."
-    # 5. evaluator_runner.run: '{"interaction_type": "task_iteration", "autonomy_level": 4, "human_only_time_minutes": 120, "human_education_years_required": 16, "task_success": true}'
-    mock_run.side_effect = [
-        make_mock_response('{"complexity": "HIGH"}'),
-        make_mock_response("Austin is better."),
-        make_mock_response("[REJECT] Missing Raleigh comparison data."),
-        make_mock_response("Austin vs Raleigh: Austin is better."),
-        make_mock_response('{"interaction_type": "task_iteration", "autonomy_level": 4, "human_only_time_minutes": 120, "human_education_years_required": 16, "task_success": true}')
+    # 1. classifier_runner.run_async: {"complexity": "HIGH"}
+    # 2. main_runner.run_async: "Austin is better."
+    # 3. judge_runner.run_async: "[REJECT] Missing Raleigh comparison data."
+    # 4. main_runner.run_async: "Austin vs Raleigh: Austin is better."
+    # 5. evaluator_runner.run_async: '{"interaction_type": "task_iteration", "autonomy_level": 4, "human_only_time_minutes": 120, "human_education_years_required": 16, "task_success": true}'
+    mock_run_async.side_effect = [
+        async_generator([make_mock_response('{"complexity": "HIGH"}')]),
+        async_generator([make_mock_response("Austin is better.")]),
+        async_generator([make_mock_response("[REJECT] Missing Raleigh comparison data.")]),
+        async_generator([make_mock_response("Austin vs Raleigh: Austin is better.")]),
+        async_generator([make_mock_response('{"interaction_type": "task_iteration", "autonomy_level": 4, "human_only_time_minutes": 120, "human_education_years_required": 16, "task_success": true}')])
     ]
     
     result = export_agent.query("Compare Austin and Raleigh for a new tech hub.")
@@ -114,7 +122,8 @@ def test_query_routing_and_primitives_high_complexity_with_rejection(mock_run):
         assert log_data["primitives"]["task_success"] is True
 
 
-def test_analyze_workforce_exposure():
+def test_analyze_workforce_exposure(monkeypatch):
+    monkeypatch.setenv("ONET_API_KEY", "")
     from economic_research.tools.workforce_exposure_skill import analyze_workforce_exposure
     
     result = analyze_workforce_exposure(["Software Developers", "Customer Service Representatives"])
@@ -162,7 +171,7 @@ def test_fetch_mls_property_listings():
     assert "Estimated Cap Rate" in data[0]
     assert "Price-to-Rent Ratio" in data[0]
     
-    result_invalid = fetch_mls_property_listings("London")
+    result_invalid = fetch_mls_property_listings("NonexistentCity")
     data_invalid = json.loads(result_invalid)
     assert "status" in data_invalid
     assert data_invalid["status"] == "No listings found"
@@ -220,7 +229,8 @@ def test_fetch_hud_chas_data(mock_get):
 
 
 
-def test_model_labor_shifts():
+def test_model_labor_shifts(monkeypatch):
+    monkeypatch.setenv("FRED_API_KEY", "")
     from economic_research.tools.labor_shift_skill import model_labor_shifts
     
     result = model_labor_shifts(["Austin", "Columbus"])
@@ -357,6 +367,21 @@ def test_analyze_political_stability(mock_get):
     data = json.loads(result)
     assert data["State"] == "TX"
     assert "Total Contributions" in data
+
+
+def test_fetch_regional_trade_data(monkeypatch):
+    monkeypatch.setenv("CENSUS_API_KEY", "")
+    from economic_research.tools.trade_skill import fetch_regional_trade_data
+    
+    result = fetch_regional_trade_data(["Texas", "California"], "Electronic Products")
+    data = json.loads(result)
+    
+    assert len(data) == 2
+    assert data[0]["State"] == "Texas"
+    assert data[0]["Commodity"] == "Electronic Products"
+    assert "Top Import (Mexico)" in data[0]["Market Profile"]
+    assert "Source" in data[0]
+
 
 
 

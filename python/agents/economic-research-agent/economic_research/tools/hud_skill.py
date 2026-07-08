@@ -165,7 +165,12 @@ def fetch_hud_income_limits(county_fips: str) -> str:
 
 
 def analyze_housing_affordability(county_fips: str) -> str:
-    """Consolidated site-selection affordability report."""
+    """
+    Consolidated site-selection affordability report.
+    
+    Args:
+        county_fips: 5-digit County FIPS code or common city name (e.g. "Austin", "Raleigh") as fallback.
+    """
     fmr = json.loads(fetch_hud_fmr_data(county_fips))
     il = json.loads(fetch_hud_income_limits(county_fips))
 
@@ -209,7 +214,19 @@ def analyze_housing_affordability(county_fips: str) -> str:
 
 
 def fetch_hud_usps_crosswalk(zip_code: str) -> str:
-    """Queries HUD USPS crosswalk API to map ZIP code to County FIPS code (type=2)."""
+    """
+    Queries HUD USPS crosswalk API to map ZIP code to County FIPS code (type=2).
+    
+    Args:
+        zip_code: A 5-digit numeric ZIP code string (e.g. "78702").
+    """
+    zip_code = zip_code.strip()
+    if not zip_code.isdigit() or len(zip_code) != 5:
+        return json.dumps(
+            {"ERROR": f"Invalid 5-digit numeric ZIP code: {zip_code}. City names are not supported by this tool."},
+            indent=2
+        )
+
     api_key = get_hud_api_key()
     if not api_key:
         return json.dumps(

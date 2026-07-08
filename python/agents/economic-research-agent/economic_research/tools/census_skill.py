@@ -6,17 +6,14 @@ import os
 
 import requests
 
-# Census API key from environment
-c_key = os.getenv("CENSUS_API_KEY", "").strip()
-CENSUS_API_KEY = c_key.replace('"', "").replace("'", "")
-
-
 def fetch_census_education_stats(city_names: list[str]) -> str:
     """
     Fetches real educational attainment statistics from the Census ACS API.
     Essential for talent-pipeline assessments in site selection.
     """
-    if not CENSUS_API_KEY:
+    c_key = os.getenv("CENSUS_API_KEY", "").strip()
+    census_key = c_key.replace('"', "").replace("'", "")
+    if not census_key:
         return json.dumps(
             {"ERROR": "CENSUS_API_KEY not found in environment."}, indent=2
         )
@@ -53,7 +50,7 @@ def fetch_census_education_stats(city_names: list[str]) -> str:
             # Dataset: ACS 1-Year Data Profiles (2022/2023)
             url = (
                 f"https://api.census.gov/data/2023/acs/acs1/profile?get=NAME,DP02_0068PE"
-                f"&for=county:{county_fips}&in=state:{state_fips}&key={CENSUS_API_KEY}"
+                f"&for=county:{county_fips}&in=state:{state_fips}&key={census_key}"
             )
 
             response = requests.get(url, timeout=12)

@@ -161,7 +161,10 @@ class ERAAgent:
 
     def query(self, input: str) -> str:
         """Standard Reasoning Engine entry point."""
-        
+        import asyncio
+        return asyncio.run(self._query_async(input))
+
+    async def _query_async(self, input: str) -> str:
         # Security Fix: Extract and mask API keys in input to prevent logging
         import re
         allowed_keys = [
@@ -227,162 +230,189 @@ class ERAAgent:
 
         # Classify complexity of input query
         model_name = "gemini-2.5-flash"
-        try:
-            from google.adk.agents import Agent
-            from google.adk.runners import InMemoryRunner
-            
-            classifier_agent = Agent(
-                name="router_supervisor",
-                model=Gemini(model_name="gemini-2.5-flash"),
-                instruction=prompts.complexity_classifier_instructions()
-            )
-            classifier_app = App(root_agent=classifier_agent, name="Router_Supervisor")
-            classifier_runner = InMemoryRunner(app=classifier_app)
-            classifier_runner.auto_create_session = True
-            
-            classifier_responses = classifier_runner.run(new_message=modified_input)
-            classifier_text = ""
-            for res in classifier_responses:
-                if hasattr(res, "content") and res.content.parts:
-                    for part in res.content.parts:
-                        if part.text:
-                            classifier_text += part.text
-            
-            import json
-            cleaned_text = classifier_text.replace("```json", "").replace("```", "").strip()
-            data = json.loads(cleaned_text)
-            complexity = data.get("complexity", "LOW")
-            if complexity == "HIGH":
-                model_name = "gemini-2.5-pro"
-                print("🧠 [Router] Detected high complexity task. Routing to gemini-2.5-pro.")
-            else:
-                print("⚡ [Router] Detected low complexity task. Routing to gemini-2.5-flash.")
-        except Exception as e:
-            print(f"⚠️ [Router] Routing failed: {e}. Falling back to gemini-2.5-flash.")
+        # Check if we should bypass supervisor & judge loops (e.g. to save API quota/rate limits)
+        bypass_loops = os.getenv("ERA_BYPASS_SUPERVISOR") == "true"
+
+        if not bypass_loops:
+            try:
+                from google.adk.agents import Agent
+                from google.adk.runners import InMemoryRunner
+                from google.genai import types
+                
+                classifier_agent = Agent(
+                    name="router_supervisor",
+                    model=Gemini(model_name="gemini-2.5-flash"),
+                    instruction=prompts.complexity_classifier_instructions()
+                )
+                classifier_app = App(root_agent=classifier_agent, name="Router_Supervisor")
+                classifier_runner = InMemoryRunner(app=classifier_app)
+                classifier_runner.auto_create_session = True
+                
+                classifier_responses = classifier_runner.run_async(
+                    new_message=types.Content(parts=[types.Part.from_text(text=modified_input)]),
+                    user_id="classifier_user",
+                    session_id="classifier_session"
+                )
+                classifier_text = ""
+                async for res in classifier_responses:
+                    if hasattr(res, "content") and res.content.parts:
+                        for part in res.content.parts:
+                            if part.text:
+                                classifier_text += part.text
+                
+                import json
+                cleaned_text = classifier_text.replace("```json", "").replace("```", "").strip()
+                data = json.loads(cleaned_text)
+                complexity = data.get("complexity", "LOW")
+                if complexity == "HIGH":
+                    model_name = "gemini-2.5-pro"
+                    print("🧠 [Router] Detected high complexity task. Routing to gemini-2.5-pro.")
+                else:
+                    print("⚡ [Router] Detected low complexity task. Routing to gemini-2.5-flash.")
+            except Exception as e:
+                print(f"⚠️ [Router] Routing failed: {e}. Falling back to gemini-2.5-flash.")
 
         # Instantiate App & Runner at runtime rather than deploy-time
         app = self.get_app(model_name=model_name)
 
-
         from google.adk.runners import InMemoryRunner
+        from google.genai import types
 
         runner = InMemoryRunner(app=app)
         runner.auto_create_session = True
 
-        responses = runner.run(new_message=modified_input)
+        responses = runner.run_async(
+            new_message=types.Content(parts=[types.Part.from_text(text=modified_input)]),
+            user_id="default_user",
+            session_id="default_session"
+        )
         full_text = ""
-        for res in responses:
+        async for res in responses:
             if hasattr(res, "content") and res.content.parts:
                 for part in res.content.parts:
                     if part.text:
                         full_text += part.text
 
         # ⚖️ Active Actor-Critic Loop (Self-Correction)
-        try:
-            from .sub_agents.agent import JudgeAgent
+        if not bypass_loops:
+            try:
+                from .sub_agents.agent import JudgeAgent
 
-            judge = JudgeAgent().get_agent()
-            judge_app = App(root_agent=judge, name="Judge_Review")
-            judge_runner = InMemoryRunner(app=judge_app)
-            judge_runner.auto_create_session = True
+                judge = JudgeAgent().get_agent()
+                judge_app = App(root_agent=judge, name="Judge_Review")
+                judge_runner = InMemoryRunner(app=judge_app)
+                judge_runner.auto_create_session = True
 
-
-            # Iteration 1: Judge the initial draft
-            judge_prompt = (
-                "Please audit this draft report. Use Google Search to verify quantitative claims if needed. "
-                "If you find contradictions or hallucinations, start your response with '[REJECT]' and explain exactly what to fix."
-                f"\n\nDraft:\n{full_text}"
-            )
-            judge_responses = judge_runner.run(new_message=judge_prompt)
-
-            judge_text = ""
-            for res in judge_responses:
-                if hasattr(res, "content") and res.content.parts:
-                    for part in res.content.parts:
-                        if part.text:
-                            judge_text += part.text
-
-            # If rejected, run Researcher again with the correction context!
-            if "[REJECT]" in judge_text:
-                print(
-                    "⚠️ [Actor-Critic] Judge rejected the draft! Self-correcting..."
+                # Iteration 1: Judge the initial draft
+                judge_prompt = (
+                    "Please audit this draft report. Use Google Search to verify quantitative claims if needed. "
+                    "If you find contradictions or hallucinations, start your response with '[REJECT]' and explain exactly what to fix."
+                    f"\n\nDraft:\n{full_text}"
                 )
-                correction_prompt = (
-                    f"Your previous draft was REJECTED by the Auditor Judge. Please use your tools to FIX the following discrepancies and generate a final report:\n\n"
-                    f"### Auditor Feedback:\n{judge_text}\n\n"
-                    f"### Previous Draft:\n{full_text}"
+                judge_responses = judge_runner.run_async(
+                    new_message=types.Content(parts=[types.Part.from_text(text=judge_prompt)]),
+                    user_id="judge_user",
+                    session_id="judge_session"
                 )
 
-                # Reset runner or run again
-                retry_responses = runner.run(new_message=correction_prompt)
-                corrected_text = ""
-                for res in retry_responses:
+                judge_text = ""
+                async for res in judge_responses:
                     if hasattr(res, "content") and res.content.parts:
                         for part in res.content.parts:
                             if part.text:
-                                corrected_text += part.text
+                                judge_text += part.text
 
-                final_report = f"{corrected_text}\n\n---\n### ⚖️ Auditor Judge Verification (Self-Corrected v2)\n{judge_text}"
-            else:
-                final_report = f"{full_text}\n\n---\n### ⚖️ Auditor Judge Verification (Passed v1)\n{judge_text}"
+                # If rejected, run Researcher again with the correction context!
+                if "[REJECT]" in judge_text:
+                    print(
+                        "⚠️ [Actor-Critic] Judge rejected the draft! Self-correcting..."
+                    )
+                    correction_prompt = (
+                        f"Your previous draft was REJECTED by the Auditor Judge. Please use your tools to FIX the following discrepancies and generate a final report:\n\n"
+                        f"### Auditor Feedback:\n{judge_text}\n\n"
+                        f"### Previous Draft:\n{full_text}"
+                    )
 
-        except Exception as e:
-            final_report = f"{full_text}\n\n---\n⚠️ *Judge verification failed: {e}*"
+                    retry_responses = runner.run_async(
+                        new_message=types.Content(parts=[types.Part.from_text(text=correction_prompt)]),
+                        user_id="default_user",
+                        session_id="default_session"
+                    )
+                    corrected_text = ""
+                    async for res in retry_responses:
+                        if hasattr(res, "content") and res.content.parts:
+                            for part in res.content.parts:
+                                if part.text:
+                                    corrected_text += part.text
+
+                    final_report = f"{corrected_text}\n\n---\n### ⚖️ Auditor Judge Verification (Self-Corrected v2)\n{judge_text}"
+                else:
+                    final_report = f"{full_text}\n\n---\n### ⚖️ Auditor Judge Verification (Passed v1)\n{judge_text}"
+
+            except Exception as e:
+                final_report = f"{full_text}\n\n---\n⚠️ *Judge verification failed: {e}*"
+        else:
+            final_report = full_text
 
         # Calculate Economic Primitives of the completed session
-        try:
-            from google.adk.agents import Agent
-            
-            evaluator_agent = Agent(
-                name="primitives_evaluator",
-                model=Gemini(model_name="gemini-2.5-flash"),
-                instruction="""
-                You are an economic operations analyst. Evaluate the completed interaction between the user and the economic research agent.
+        if not bypass_loops:
+            try:
+                from google.adk.agents import Agent
                 
-                Compute the following primitives:
-                1. "interaction_type": Classify into: directive, feedback_loop, task_iteration, validation, or learning.
-                2. "autonomy_level": Integer from 1 (active collaboration / human-in-the-loop) to 5 (fully autonomous delegation).
-                3. "human_only_time_minutes": Estimated time (in minutes) an experienced economic analyst would spend to complete this task manually (e.g., searching FRED/BLS, scraping tax rates, drafting tables, and writing reports).
-                4. "human_education_years_required": Estimated years of education/training needed to understand this request (e.g., 12 for high school, 16 for college, 18+ for grad school/PhD).
-                5. "task_success": Boolean (true/false) indicating if the agent successfully fulfilled the user request with accurate data.
+                evaluator_agent = Agent(
+                    name="primitives_evaluator",
+                    model=Gemini(model_name="gemini-2.5-flash"),
+                    instruction="""
+                    You are an economic operations analyst. Evaluate the completed interaction between the user and the economic research agent.
+                    
+                    Compute the following primitives:
+                    1. "interaction_type": Classify into: directive, feedback_loop, task_iteration, validation, or learning.
+                    2. "autonomy_level": Integer from 1 (active collaboration / human-in-the-loop) to 5 (fully autonomous delegation).
+                    3. "human_only_time_minutes": Estimated time (in minutes) an experienced economic analyst would spend to complete this task manually (e.g., searching FRED/BLS, scraping tax rates, drafting tables, and writing reports).
+                    4. "human_education_years_required": Estimated years of education/training needed to understand this request (e.g., 12 for high school, 16 for college, 18+ for grad school/PhD).
+                    5. "task_success": Boolean (true/false) indicating if the agent successfully fulfilled the user request with accurate data.
+                    
+                    Output your evaluation as a valid JSON object. Do not include markdown formatting or additional explanation.
+                    """
+                )
+                evaluator_app = App(root_agent=evaluator_agent, name="Primitives_Evaluator")
+                evaluator_runner = InMemoryRunner(app=evaluator_app)
+                evaluator_runner.auto_create_session = True
                 
-                Output your evaluation as a valid JSON object. Do not include markdown formatting or additional explanation.
-                """
-            )
-            evaluator_app = App(root_agent=evaluator_agent, name="Primitives_Evaluator")
-            evaluator_runner = InMemoryRunner(app=evaluator_app)
-            evaluator_runner.auto_create_session = True
-            
-            evaluation_prompt = f"### User Query:\n{modified_input}\n\n### Agent Final Response:\n{final_report}"
-            eval_responses = evaluator_runner.run(new_message=evaluation_prompt)
-            eval_text = ""
-            for res in eval_responses:
-                if hasattr(res, "content") and res.content.parts:
-                    for part in res.content.parts:
-                        if part.text:
-                            eval_text += part.text
-            
-            # Save or log the metrics
-            import json
-            cleaned_eval = eval_text.replace("```json", "").replace("```", "").strip()
-            primitives = json.loads(cleaned_eval)
-            
-            # Write to a session metadata log file
-            log_dir = "/Users/enriq/.gemini/jetski/scratch/observability"
-            os.makedirs(log_dir, exist_ok=True)
-            import uuid
-            session_id = str(uuid.uuid4())
-            log_path = os.path.join(log_dir, f"{session_id}.json")
-            with open(log_path, "w") as f:
-                json.dump({
-                    "session_id": session_id,
-                    "query": modified_input,
-                    "primitives": primitives
-                }, f, indent=2)
+                evaluation_prompt = f"### User Query:\n{modified_input}\n\n### Agent Final Response:\n{final_report}"
+                eval_responses = evaluator_runner.run_async(
+                    new_message=types.Content(parts=[types.Part.from_text(text=evaluation_prompt)]),
+                    user_id="evaluator_user",
+                    session_id="evaluator_session"
+                )
+                eval_text = ""
+                async for res in eval_responses:
+                    if hasattr(res, "content") and res.content.parts:
+                        for part in res.content.parts:
+                            if part.text:
+                                eval_text += part.text
                 
-            print(f"📊 [Observability] Logged Economic Primitives to {log_path}: {primitives}")
-        except Exception as e:
-            print(f"⚠️ [Observability] Failed to evaluate economic primitives: {e}")
+                # Save or log the metrics
+                import json
+                cleaned_eval = eval_text.replace("```json", "").replace("```", "").strip()
+                primitives = json.loads(cleaned_eval)
+                
+                # Write to a session metadata log file
+                log_dir = "/Users/enriq/.gemini/jetski/scratch/observability"
+                os.makedirs(log_dir, exist_ok=True)
+                import uuid
+                session_id = str(uuid.uuid4())
+                log_path = os.path.join(log_dir, f"{session_id}.json")
+                with open(log_path, "w") as f:
+                    json.dump({
+                        "session_id": session_id,
+                        "query": modified_input,
+                        "primitives": primitives
+                    }, f, indent=2)
+                    
+                print(f"📊 [Observability] Logged Economic Primitives to {log_path}: {primitives}")
+            except Exception as e:
+                print(f"⚠️ [Observability] Failed to evaluate economic primitives: {e}")
 
         return final_report
 

@@ -1,7 +1,60 @@
 # Copyright 2025 Google LLC. This software is provided as-is, without warranty or representation.
 """Workforce & AI Task Exposure Analysis Skill."""
 
+import os
 import json
+import requests
+from google import genai
+from google.genai import types
+
+def classify_onet_tasks_with_gemini(title: str, tasks: list[str]) -> dict:
+    """Classifies O*NET occupational tasks using Vertex AI / Gemini."""
+    try:
+        # Load GCP project metadata from environment or fall back to default
+        project = os.getenv("GCP_PROJECT", "project-maui")
+        location = os.getenv("GCP_LOCATION", "us-central1")
+        
+        client = genai.Client(vertexai=True, project=project, location=location)
+        prompt = f"""
+        Analyze the AI exposure and automation potential for the occupation: "{title}".
+        Below is the official task list for this role:
+        
+        {json.dumps(tasks, indent=2)}
+        
+        Compute the following analysis:
+        1. "exposure_level": Rate as High, Medium-High, Medium, Medium-Low, or Low.
+        2. "impact_mode": Classify the primary mode, e.g. "Automation (Directive Workflows)", "Augmentation (Task Iteration & Validation)", "Minimal Impact", etc.
+        3. "complexity_score": E.g. "High (16+ years education required)", "Medium (12-14 years education required)".
+        4. "key_exposed_tasks": Select the top 3 most exposed/impacted tasks from the list above.
+        5. "recommendation": Provide a strategic consulting recommendation for organizations employing this role.
+        
+        Format your response as a valid JSON object with the keys:
+        - exposure_level
+        - impact_mode
+        - complexity_score
+        - key_exposed_tasks (list of strings)
+        - recommendation (string)
+        
+        Do not include markdown code block formatting or explanations. Return only the raw JSON.
+        """
+        
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"⚠️ Gemini task analysis failed: {e}")
+        return {
+            "exposure_level": "High",
+            "impact_mode": "Augmentation",
+            "complexity_score": "Requires manual review",
+            "key_exposed_tasks": tasks[:3] if tasks else ["N/A"],
+            "recommendation": f"Default fallback. Error during dynamic classification: {e}"
+        }
 
 
 def analyze_workforce_exposure(occupations: list[str]) -> str:
@@ -85,13 +138,61 @@ def analyze_workforce_exposure(occupations: list[str]) -> str:
     }
 
     results = []
+    api_key = os.getenv("ONET_API_KEY", "").strip()
+
+    if api_key:
+        headers = {
+            "accept": "application/json",
+            "X-API-Key": api_key
+        }
+        
+        for occ in occupations:
+            occ_clean = occ.strip()
+            # Step A: Search for the SOC code
+            search_url = "https://api-v2.onetcenter.org/online/search"
+            try:
+                search_resp = requests.get(search_url, params={"keyword": occ_clean, "limit": 1}, headers=headers, timeout=12)
+                if search_resp.status_code == 200:
+                    search_data = search_resp.json()
+                    occupation_list = search_data.get("occupation", [])
+                    if occupation_list:
+                        code = occupation_list[0].get("code")
+                        official_title = occupation_list[0].get("title")
+                        
+                        # Step B: Fetch tasks
+                        tasks_url = f"https://api-v2.onetcenter.org/online/occupations/{code}/details/tasks"
+                        tasks_resp = requests.get(tasks_url, headers=headers, timeout=12)
+                        if tasks_resp.status_code == 200:
+                            tasks_data = tasks_resp.json()
+                            task_items = tasks_data.get("task", [])
+                            task_titles = [t.get("title") for t in task_items if t.get("title")][:10]
+                            
+                            if task_titles:
+                                # Step C: Query Gemini to analyze tasks
+                                analysis = classify_onet_tasks_with_gemini(official_title, task_titles)
+                                results.append({
+                                    "soc": code,
+                                    "exposure_level": analysis.get("exposure_level", "Medium"),
+                                    "impact_mode": analysis.get("impact_mode", "Augmentation"),
+                                    "complexity_score": analysis.get("complexity_score", "Requires review"),
+                                    "key_exposed_tasks": analysis.get("key_exposed_tasks", task_titles[:3]),
+                                    "recommendation": analysis.get("recommendation", "Shift tasks to high-value areas."),
+                                    "queried_occupation": occ
+                                })
+                                continue
+            except Exception as e:
+                print(f"⚠️ O*NET live fetch/analysis failed for '{occ}': {e}. Falling back to sandbox database.")
+                
+    # Fallback/Offline logic
     for occ in occupations:
+        if any(res.get("queried_occupation") == occ for res in results):
+            continue
+            
         occ_lower = occ.lower().strip()
-        # Fallback to fuzzy match
         matched_data = None
         for key in exposure_db:
             if key in occ_lower or occ_lower in key:
-                matched_data = exposure_db[key]
+                matched_data = exposure_db[key].copy()
                 matched_data["queried_occupation"] = occ
                 break
         
@@ -109,3 +210,4 @@ def analyze_workforce_exposure(occupations: list[str]) -> str:
             })
             
     return json.dumps(results, indent=2)
+
