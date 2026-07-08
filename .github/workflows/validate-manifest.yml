@@ -6,7 +6,7 @@ on:
       - 'core/**'
       - 'contrib/**'
       - '.github/schemas/manifest-schema.json'
-      - '.github/workflows/validate-manifests.yml'
+      - '.github/workflows/validate-manifest.yml'
   push:
     branches:
       - main
@@ -14,7 +14,7 @@ on:
       - 'core/**'
       - 'contrib/**'
       - '.github/schemas/manifest-schema.json'
-      - '.github/workflows/validate-manifests.yml'
+      - '.github/workflows/validate-manifest.yml'
   workflow_dispatch:
 
 permissions:
@@ -60,7 +60,7 @@ jobs:
           echo "$CHANGED_FILES"
 
           # If the schema or workflow itself changed, validate all recipes
-          SCHEMA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^\.github/(schemas/manifest-schema\.json|workflows/validate-manifests\.yml)$" || true)
+          SCHEMA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^\.github/(schemas/manifest-schema\.json|workflows/validate-manifest\.yml)$" || true)
 
           if [ -n "$SCHEMA_CHANGED" ]; then
             echo "Schema or workflow changed — will validate all recipes."

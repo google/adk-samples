@@ -9,10 +9,7 @@
     "status",
     "language",
     "description",
-    "dependencies",
-    "team",
-    "poc",
-    "tags"
+    "ownership"
   ],
   "additionalProperties": false,
   "properties": {
@@ -87,19 +84,11 @@
           },
           "uniqueItems": true,
           "description": "The data sources used by the recipe. 'hardcoded': data is hardcoded within the recipe itself. 'local': data comes from files bundled with the recipe. 'external': data comes from a live outside system at runtime (e.g. a database, an API)."
-        },
-        "rag": {
-          "type": "boolean",
-          "description": "Whether the recipe implements or uses a RAG pipeline."
         }
       }
     },
     "dependencies": {
       "type": "object",
-      "required": [
-        "libraries",
-        "services"
-      ],
       "additionalProperties": false,
       "properties": {
         "libraries": {
@@ -107,7 +96,6 @@
           "items": {
             "type": "string"
           },
-          "minItems": 1,
           "description": "Library dependencies (e.g. ADK, LangGraph)."
         },
         "services": {
@@ -115,48 +103,28 @@
           "items": {
             "type": "string"
           },
-          "minItems": 1,
           "description": "GCP or external service dependencies."
         }
       }
     },
-    "team": {
+    "ownership": {
       "type": "object",
       "required": [
-        "name",
-        "email"
+        "team",
+        "poc"
       ],
       "additionalProperties": false,
+      "description": "Ownership information for the recipe.",
       "properties": {
-        "name": {
+        "team": {
           "type": "string",
           "minLength": 1,
           "description": "Team name."
         },
-        "email": {
-          "type": "string",
-          "format": "email",
-          "description": "Team contact email."
-        }
-      }
-    },
-    "poc": {
-      "type": "object",
-      "required": [
-        "name",
-        "email"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "name": {
+        "poc": {
           "type": "string",
           "minLength": 1,
-          "description": "Point of contact name."
-        },
-        "email": {
-          "type": "string",
-          "format": "email",
-          "description": "Point of contact email."
+          "description": "GitHub user ID of the primary point of contact accountable for this recipe."
         }
       }
     },
@@ -165,7 +133,6 @@
       "items": {
         "type": "string"
       },
-      "minItems": 1,
       "description": "Classification tags for the recipe."
     }
   }

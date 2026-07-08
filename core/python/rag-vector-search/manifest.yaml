@@ -1,47 +1,27 @@
-type: "standalone"
-deployable: false
-status: "active"
-language: "python"
-description: "A conversational RAG agent grounded on documents indexed in Vertex AI Vector Search 2.0 (Agent Platform Vector Search). A Kubeflow Pipelines ingestion pipeline chunks documents, stages them in BigQuery, and batch-creates data objects in a VS 2.0 Collection with server-side auto-embedding. The agent answers natural-language questions by retrieving relevant chunks via semantic search and synthesizing grounded answers using Gemini."
+type: "standalone"   # Options: [standalone | module]
+deployable: false    # Options: [true | false]. Default: false
+status: "active"     # Options: [active | inactive]
+language: "python"   # Options: [python | java | go | kotlin | typescript]
+description: "RAG agent answering questions over documents indexed in Agent Platform Vector Search with KFP ingestion."  # TODO: review and expand this draft description
 
 architecture:
-  agent: "single"
-  stateful: true
-  datasources:
-    - "hardcoded"
+  agent: "single"       # Options: [single | multi]
+  stateful: true        # Options: [true | false]
+  datasources:          # Options: [hardcoded | local | external]
     - "external"
-  rag: true
 
-dependencies:
-  libraries:
-    - "ADK"
-    - "Vertex AI SDK"
-    - "Kubeflow Pipelines (KFP)"
-    - "LangChain Text Splitters"
-    - "Terraform"
-  services:
-    - "GCP Project"
-    - "Vertex AI API"
-    - "Vertex AI Vector Search 2.0"
-    - "BigQuery"
-    - "Google Cloud Storage"
-    - "Cloud Build"
+# dependencies: (optional) uncomment and fill in with canonical names
+#   libraries:
+#     - "ADK"
+#     - "pandas"            # example — replace with actual libraries used
+#   services:
+#     - "GCP Project"
+#     - "Cloud Run"         # example — replace with actual GCP/external services used
 
-team:
-  name: "Cloud AI Developer Engineering & Evangelism"
-  email: "cloud-ai-devrel@google.com"
-poc:
-  name: "Elia Seccchi"
-  email: "eliasecchi@google.com"
+ownership:
+  team: "Cloud AI Developer Engineering & Evangelism"
+  poc: "eliasecchi"
 
-tags:
-  - "rag"
-  - "vector-search"
-  - "vertex-ai-vector-search"
-  - "kubeflow-pipelines"
-  - "bigquery"
-  - "data-ingestion"
-  - "gemini"
-  - "auto-embedding"
-  - "terraform"
-  - "single-agent"
+# tags: (optional) uncomment and replace with meaningful labels
+#   - "rag"               # example — use technology names, patterns, and use-case keywords
+#   - "gemini"
