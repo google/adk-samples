@@ -53,32 +53,58 @@ Before writing the manifest, briefly state what you found for each inferred fiel
 Write `manifest.yaml` to the root of the recipe directory. Follow this format exactly — include inline comments for every field documenting the allowed values, matching the style of the reference manifest in `tools/` or `core/`:
 
 ```yaml
-type: "..."           # Options: [standalone | module] — inferred from code
-deployable: false     # Options: [true | false]. Default: false — inferred from Makefile/scripts
-status: "active"      # Options: [active | inactive]
-language: "..."       # Options: [python | java | go | kotlin | typescript] — read from pyproject.toml
-description: "..."  # TODO: review and expand this draft description (max 15 words, generated from README/AGENTS.md)
+# REQUIRED — Recipe type.
+#   standalone : complete, runnable recipe with its own entry point
+#   module     : importable sub-agent meant to be orchestrated by another workflow
+type: "..."
 
+# REQUIRED — One-click/one-command deployable with no manual steps?
+deployable: false
+
+# REQUIRED — Maintenance status.
+#   active | inactive
+status: "active"
+
+# REQUIRED — Primary programming language.
+#   python | java | go | kotlin | typescript
+language: "..."
+
+# REQUIRED — Short description of what this recipe does and the value it provides.
+description: "..."  # TODO: review and expand this draft description
+
+# OPTIONAL — Agent architecture details. Omit the whole block if unknown.
 architecture:
-  agent: "..."          # Options: [single | multi] — inferred from code
-  stateful: false       # Options: [true | false] — inferred from code
-  datasources:          # Options: [hardcoded | local | external] — inferred from code
+  # single | multi
+  agent: "..."
+
+  # true  : recipe writes persistently to an external system during normal operation
+  # false : read-only at runtime
+  stateful: false
+
+  # One or more of: hardcoded | local | external
+  #   hardcoded : data literals embedded in source code
+  #   local     : files bundled in the repo
+  #   external  : live system queried at runtime (DB, API, etc.)
+  datasources:
     - "..."
 
-# dependencies: (optional) uncomment and fill in with canonical names
+# OPTIONAL — Library and service dependencies.
+# dependencies:
 #   libraries:
 #     - "ADK"
-#     - "pandas"            # example — replace with actual libraries used
+#     - "pandas"     # replace with actual libraries used
 #   services:
 #     - "GCP Project"
-#     - "Cloud Run"         # example — replace with actual GCP/external services used
+#     - "Cloud Run"  # replace with actual GCP/external services used
 
+# REQUIRED — Ownership. Both sub-fields are required.
 ownership:
   team: "YOUR TEAM NAME"  # TODO: replace with your team name
   poc: "your-github-id"   # TODO: replace with the GitHub ID of the primary contact
 
-# tags: (optional) uncomment and replace with meaningful labels
-#   - "rag"               # example — use technology names, patterns, and use-case keywords
+# OPTIONAL — Classification tags (technology names, patterns, use-case keywords).
+# tags:
+#   - "rag"
 #   - "gemini"
 ```
 
