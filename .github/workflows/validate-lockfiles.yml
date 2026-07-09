@@ -249,6 +249,7 @@ jobs:
           set -euo pipefail
 
           FAILED=0
+          FAILED_DIRS=""
 
           for lockfile in $LOCKFILES; do
             lockdir=$(dirname "$lockfile")
@@ -256,15 +257,27 @@ jobs:
               continue
             fi
 
-            # uv lock --check exits non-zero if the lockfile is out of date
-            if ! uv lock --check --project "$lockdir" 2>&1; then
+            # Suppress uv's own error output; we emit a cleaner message below.
+            if ! uv lock --check --project "$lockdir" 2>/dev/null; then
+              echo "::error file=$lockfile::$lockfile is out of date — run: uv lock --project $lockdir"
               echo "[FAIL] $lockfile is out of date with $lockdir/pyproject.toml"
-              echo "  Run 'uv lock' in $lockdir to regenerate it."
+              FAILED_DIRS="${FAILED_DIRS}  uv lock --project ${lockdir}"$'\n'
               FAILED=1
             fi
           done
 
           if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  ACTION REQUIRED: stale lockfile(s)"
+            echo "========================================"
+            echo ""
+            echo "Run the following command(s) locally, then commit the updated uv.lock file(s):"
+            echo ""
+            echo "$FAILED_DIRS"
+            echo "If you recently edited a pyproject.toml, make sure to run 'uv lock' in the"
+            echo "same directory before pushing."
+            echo ""
             exit 1
           fi
 

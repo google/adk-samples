@@ -170,6 +170,10 @@ def main(scope: str | None = None) -> int:
         )
         for d in missing:
             print(f"  - {d}/")
+            # GitHub Actions annotation — surfaces in the PR Files tab
+            print(f"::error file={d}/manifest.yaml::manifest.yaml is missing. "
+                  "Create one using the schema at "
+                  ".github/schemas/manifest-schema.json")
 
     if invalid:
         passed = False
@@ -178,15 +182,36 @@ def main(scope: str | None = None) -> int:
             print(f"\n  {path}:")
             for e in errors:
                 print(f"    {e}")
+            # Emit one annotation per file pointing at the manifest
+            first_error = errors[0].strip()
+            print(f"::error file={path}::{first_error} "
+                  f"(+{len(errors) - 1} more)" if len(errors) > 1
+                  else f"::error file={path}::{first_error}")
 
-    if passed:
-        checked = len(recipe_dirs)
+    if not passed:
         print(
-            f"\n[PASS] All {checked} recipe manifest(s) are present and valid."
+            "\n========================================"
+            "\n  ACTION REQUIRED: invalid manifest(s)"
+            "\n========================================"
+            "\n"
+            "\nFix the manifest.yaml file(s) listed above, then push again."
+            "\n"
+            "\nReference:"
+            "\n  Schema:  .github/schemas/manifest-schema.json"
+            "\n  Example: core/rag-agent-search/manifest.yaml"
+            "\n"
+            "\nCommon mistakes:"
+            "\n  - Missing required fields (type, status, language, description, ownership)"
+            "\n  - ownership.team or ownership.poc left as placeholder values"
+            "\n  - Invalid enum value for 'type', 'status', or 'language'"
         )
-        return 0
+        return 1
 
-    return 1
+    checked = len(recipe_dirs)
+    print(
+        f"\n[PASS] All {checked} recipe manifest(s) are present and valid."
+    )
+    return 0
 
 
 if __name__ == "__main__":
