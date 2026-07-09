@@ -117,7 +117,7 @@ Every recipe must contain a `manifest.yaml` at its root. This metadata file is a
 *   **`architecture.agent`**: `single` or `multi` agent layout.
 *   **`architecture.stateful`**: `true` if it maintains persistent state/memory or does write operations.
 *   **`architecture.datasources`**: List of data sources (`hardcoded`, `local`, `external`).
-*   **`dependencies`**: Lists of imported `libraries` and runtime cloud `services` (e.g., `Vertex AI`, `BigQuery`).
+*   **`dependencies`**: Lists of imported `libraries` and runtime cloud `services` (e.g. `BigQuery`).
 *   **`tags`**: Category tags (e.g., `rag`, `gemini`).
 
 #### Example `manifest.yaml`
@@ -227,7 +227,7 @@ model_name = os.getenv("MODEL_NAME")
 Recipes must contain a `tests/` folder with a `test_runnability.py` test (using `pytest`) to verify that the agent instantiates successfully without requiring active external API calls or real credentials.
 
 #### Template for `test_runnability.py`
-For Python recipes, you can adapt this boilerplate test. It mocks Vertex AI initialization and sets dummy credentials to ensure the test can run successfully in isolated CI environments:
+For Python recipes, you can adapt this boilerplate test. It sets dummy credentials to ensure the test can run successfully in isolated CI environments:
 
 ```python
 """Runnability tests for the recipe."""
