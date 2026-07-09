@@ -1,0 +1,7 @@
+graph TD
+    User([User]) <--> RootAgent[root_agent: LlmAgent]
+    RootAgent -- "run_workflow(tasks)" --> Tool[run_workflow tool]
+    Tool -- "NodeRunner" --> WorkflowNode[tasks_workflow: FunctionNode]
+    WorkflowNode -- "ctx.run_node" --> Subagent[task_explainer: LlmAgent]
+    Subagent -- "Return explanation" --> WorkflowNode
+    WorkflowNode -- "Event(message=...)" --> User
