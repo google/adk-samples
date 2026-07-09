@@ -32,7 +32,7 @@ Read the following files if they exist:
 | Field | Rule |
 |---|---|
 | `type` | Infer from code: `standalone` if it has its own runnable entry point; `module` if it is only importable. |
-| `deployable` | `true` only if a single `make` target or script deploys everything with no manual steps. Default `false`. |
+| `deployable` | OPTIONAL. `true` only if a single `make` target or script deploys everything with no manual steps. Omit the field entirely if false (schema default is `false`). |
 | `status` | Always `"active"` unless there is explicit evidence of abandonment. |
 | `language` | Read from file extensions or `pyproject.toml`. Never guess. |
 | `description` | Read `README.md` and `AGENTS.md` only (author-written intent, not code). Write a draft of at most 15 words summarising what the recipe does. Append the comment `# TODO: review and expand this draft description`. If neither file exists or the intent is unclear, fall back to `"DESCRIPTION"` with the same TODO comment. |
@@ -42,6 +42,7 @@ Read the following files if they exist:
 | `dependencies` | Include the block but comment it out entirely. Do NOT infer library or service names — GCP product names change and guesses will be wrong. Use the commented-out sample shown in the template. |
 | `ownership.team` | Always use the placeholder `"YOUR TEAM NAME"`. Never invent or infer a team name. |
 | `ownership.poc` | Always use the placeholder `"your-github-id"`. Never invent or infer a GitHub ID from email addresses, file authors, or any other source. |
+| `ownership.contributors` | OPTIONAL. Omit the field entirely. Leave a commented-out sample line so the author knows it exists. Never infer contributor IDs. |
 | `tags` | Include but comment out entirely, with a sample entry showing the expected style. Do NOT generate real tags — tag choices are the author's call. |
 
 ### 4. Make judgment calls explicitly
@@ -58,8 +59,8 @@ Write `manifest.yaml` to the root of the recipe directory. Follow this format ex
 #   module     : importable sub-agent meant to be orchestrated by another workflow
 type: "..."
 
-# REQUIRED — One-click/one-command deployable with no manual steps?
-deployable: false
+# OPTIONAL — One-click/one-command deployable with no manual steps? Omit if false (default).
+# deployable: true
 
 # REQUIRED — Maintenance status.
 #   active | inactive
@@ -97,10 +98,12 @@ architecture:
 #     - "GCP Project"
 #     - "Cloud Run"  # replace with actual GCP/external services used
 
-# REQUIRED — Ownership. Both sub-fields are required.
+# REQUIRED — Ownership. team and poc are required; contributors is optional.
 ownership:
   team: "YOUR TEAM NAME"  # TODO: replace with your team name
   poc: "your-github-id"   # TODO: replace with the GitHub ID of the primary contact
+  # contributors:          # TODO: optional — add GitHub IDs of additional contributors
+  #   - "github-id-1"
 
 # OPTIONAL — Classification tags (technology names, patterns, use-case keywords).
 # tags:

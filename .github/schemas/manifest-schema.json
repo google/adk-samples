@@ -5,7 +5,6 @@
   "type": "object",
   "required": [
     "type",
-    "deployable",
     "status",
     "language",
     "description",
@@ -125,6 +124,14 @@
           "type": "string",
           "minLength": 1,
           "description": "GitHub user ID of the primary point of contact accountable for this recipe."
+        },
+        "contributors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Optional list of GitHub user IDs of additional contributors to this recipe."
         }
       }
     },

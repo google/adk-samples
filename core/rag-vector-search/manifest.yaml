@@ -1,5 +1,4 @@
 type: "standalone"   # Options: [standalone | module]
-deployable: false    # Options: [true | false]. Default: false
 status: "active"     # Options: [active | inactive]
 language: "python"   # Options: [python | java | go | kotlin | typescript]
 description: "RAG agent answering questions over documents indexed in Agent Platform Vector Search with KFP ingestion."  # TODO: review and expand this draft description

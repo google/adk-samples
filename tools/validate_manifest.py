@@ -45,11 +45,17 @@ RECIPE_ROOTS = ["core", "contrib"]
 OWNERSHIP_TEAM_PLACEHOLDER = "YOUR TEAM NAME"
 OWNERSHIP_POC_PLACEHOLDER = "your-github-id"
 
+LANGUAGE_NAMESPACE_DIRS = {"python", "java", "go", "typescript", "kotlin"}
+
 
 def is_recipe_dir(path: Path) -> bool:
     """A recipe directory is any immediate subdirectory that contains
-    more than just a README.md."""
+    more than just a README.md, and is not a language namespace directory."""
     if not path.is_dir() or path.name.startswith("."):
+        return False
+    # Language namespace dirs (e.g. core/python/) are not recipes themselves;
+    # they are containers whose children are the actual recipes.
+    if path.name in LANGUAGE_NAMESPACE_DIRS:
         return False
     children = [p for p in path.iterdir() if p.name != "README.md"]
     return len(children) > 0
@@ -100,9 +106,11 @@ def collect_recipe_dirs(scope: str | None) -> list[Path]:
     """Return the list of recipe directories to validate.
 
     scope can be:
-      None / "all"         — all roots in RECIPE_ROOTS
-      "core" / "contrib"   — a single top-level root
-      "core/some-recipe"   — a single recipe directory
+      None / "all"              — all roots in RECIPE_ROOTS
+      "core" / "contrib"        — a single top-level root
+      "core/python"             — a language namespace dir (recurse one level)
+      "core/some-recipe"        — a single flat recipe directory
+      "core/python/some-recipe" — a single namespaced recipe directory
     """
     # Resolve scope roots to scan
     if scope is None or scope == "all":
@@ -110,11 +118,18 @@ def collect_recipe_dirs(scope: str | None) -> list[Path]:
     elif scope in RECIPE_ROOTS:
         roots_to_scan = [scope]
     else:
-        # Treat as a path to a single recipe directory
         target = REPO_ROOT / scope
         if not target.exists():
             print(f"[ERROR] Directory not found: {target}")
             sys.exit(1)
+        # Language namespace directory (e.g. core/python) — recurse one level.
+        # is_recipe_dir() already returns False for these, so we handle them
+        # explicitly here before the generic validity check below.
+        if target.name in LANGUAGE_NAMESPACE_DIRS:
+            recipe_dirs = sorted(c for c in target.iterdir() if is_recipe_dir(c))
+            if not recipe_dirs:
+                print(f"[INFO] No recipe directories found under '{scope}/'.")
+            return recipe_dirs
         if not is_recipe_dir(target):
             print(f"[ERROR] Not a valid recipe directory: {target}")
             sys.exit(1)
@@ -126,7 +141,15 @@ def collect_recipe_dirs(scope: str | None) -> list[Path]:
         if not root_path.exists():
             print(f"[SKIP] '{root_name}/' does not exist.")
             continue
-        recipe_dirs = sorted(p for p in root_path.iterdir() if is_recipe_dir(p))
+        recipe_dirs = []
+        for p in sorted(root_path.iterdir()):
+            if p.is_dir() and p.name in LANGUAGE_NAMESPACE_DIRS:
+                # Language namespace folder (e.g. core/python/) — recurse one level.
+                recipe_dirs.extend(
+                    sorted(c for c in p.iterdir() if is_recipe_dir(c))
+                )
+            elif is_recipe_dir(p):
+                recipe_dirs.append(p)
         if not recipe_dirs:
             print(f"[INFO] No recipe directories found under '{root_name}/'.")
             continue
@@ -160,6 +183,10 @@ def main(scope: str | None = None) -> int:
         )
         for d in missing:
             print(f"  - {d}/")
+            # GitHub Actions annotation — surfaces in the PR Files tab
+            print(f"::error file={d}/manifest.yaml::manifest.yaml is missing. "
+                  "Create one using the schema at "
+                  ".github/schemas/manifest-schema.json")
 
     if invalid:
         passed = False
@@ -168,15 +195,36 @@ def main(scope: str | None = None) -> int:
             print(f"\n  {path}:")
             for e in errors:
                 print(f"    {e}")
+            # Emit one annotation per file pointing at the manifest
+            first_error = errors[0].strip()
+            print(f"::error file={path}::{first_error} "
+                  f"(+{len(errors) - 1} more)" if len(errors) > 1
+                  else f"::error file={path}::{first_error}")
 
-    if passed:
-        checked = len(recipe_dirs)
+    if not passed:
         print(
-            f"\n[PASS] All {checked} recipe manifest(s) are present and valid."
+            "\n========================================"
+            "\n  ACTION REQUIRED: invalid manifest(s)"
+            "\n========================================"
+            "\n"
+            "\nFix the manifest.yaml file(s) listed above, then push again."
+            "\n"
+            "\nReference:"
+            "\n  Schema:  .github/schemas/manifest-schema.json"
+            "\n  Example: core/rag-agent-search/manifest.yaml"
+            "\n"
+            "\nCommon mistakes:"
+            "\n  - Missing required fields (type, status, language, description, ownership)"
+            "\n  - ownership.team or ownership.poc left as placeholder values"
+            "\n  - Invalid enum value for 'type', 'status', or 'language'"
         )
-        return 0
+        return 1
 
-    return 1
+    checked = len(recipe_dirs)
+    print(
+        f"\n[PASS] All {checked} recipe manifest(s) are present and valid."
+    )
+    return 0
 
 
 if __name__ == "__main__":
