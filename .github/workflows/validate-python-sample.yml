@@ -1,0 +1,240 @@
+name: Validate Python Sample
+
+on:
+  pull_request:
+    paths:
+      - 'core/python/**'
+      - 'contrib/**'
+      - '.github/workflows/validate-python-sample.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-python-samples:
+    name: Check Python recipe structure and constraints
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect affected Python recipe directories
+        id: affected
+        run: |
+          set -euo pipefail
+
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          git fetch origin "$BASE_REF"
+          CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # If the workflow itself changed, validate all Python recipes.
+          WORKFLOW_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^\.github/workflows/validate-python-sample\.yml$" || true)
+          if [ -n "$WORKFLOW_CHANGED" ]; then
+            echo "Workflow file changed — validating all Python recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # ---------------------------------------------------------------------------
+          # Determine which recipe directories are Python recipes.
+          #
+          # A recipe is Python if:
+          #   (a) It lives under core/python/<recipe>/, OR
+          #   (b) Its manifest.yaml contains:  language: "python"
+          #
+          # Layout:
+          #   core/python/<recipe>/...  — always Python (namespace dir)
+          #   contrib/<recipe>/...      — Python only if manifest says so
+          # ---------------------------------------------------------------------------
+
+          CHANGED_RECIPES=""
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+
+            recipe_dir=""
+
+            case "$file" in
+              core/python/*/*)
+                # core/python/<recipe>/anything → recipe is core/python/<recipe>
+                without_root="${file#core/python/}"            # <recipe>/rest
+                recipe_name="${without_root%%/*}"              # <recipe>
+                recipe_dir="core/python/${recipe_name}"
+                ;;
+              contrib/*/*)
+                # contrib/<recipe>/anything → candidate, check manifest later
+                without_root="${file#contrib/}"
+                recipe_name="${without_root%%/*}"
+                recipe_dir="contrib/${recipe_name}"
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            [ -z "$recipe_dir" ] && continue
+            [ -d "$recipe_dir" ] || continue   # skip deleted dirs
+
+            # For contrib recipes, only include if manifest.yaml declares language: python
+            if [[ "$recipe_dir" == contrib/* ]]; then
+              manifest="$recipe_dir/manifest.yaml"
+              if [ ! -f "$manifest" ]; then
+                continue
+              fi
+              # Match:  language: "python"  or  language: python  (with optional spaces)
+              if ! grep -qE '^\s*language\s*:\s*"?python"?\s*$' "$manifest"; then
+                continue
+              fi
+            fi
+
+            CHANGED_RECIPES="${CHANGED_RECIPES}${recipe_dir}"$'\n'
+          done <<< "$CHANGED_FILES"
+
+          # Deduplicate
+          CHANGED_RECIPES=$(echo "$CHANGED_RECIPES" | sort -u | grep -v '^$' || true)
+
+          echo "Python recipe directories to validate:"
+          echo "$CHANGED_RECIPES"
+
+          # Store as space-separated for iteration in next step
+          echo "changed_recipes=$(echo "$CHANGED_RECIPES" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+          echo "validate_all=false" >> "$GITHUB_OUTPUT"
+
+      - name: Collect all Python recipe directories (workflow changed)
+        id: all_recipes
+        if: steps.affected.outputs.validate_all == 'true'
+        run: |
+          set -euo pipefail
+
+          ALL=""
+
+          # core/python/* — always Python
+          for d in core/python/*/; do
+            [ -d "$d" ] && ALL="${ALL}${d%/}"$'\n'
+          done
+
+          # contrib/* — only if manifest declares python
+          for d in contrib/*/; do
+            [ -d "$d" ] || continue
+            manifest="${d}manifest.yaml"
+            [ -f "$manifest" ] || continue
+            if grep -qE '^\s*language\s*:\s*"?python"?\s*$' "$manifest"; then
+              ALL="${ALL}${d%/}"$'\n'
+            fi
+          done
+
+          ALL=$(echo "$ALL" | sort -u | grep -v '^$' || true)
+          echo "all_recipes=$(echo "$ALL" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Python recipe structure
+        run: |
+          set -euo pipefail
+
+          if [ "${{ steps.affected.outputs.validate_all }}" = "true" ]; then
+            RECIPES="${{ steps.all_recipes.outputs.all_recipes }}"
+          else
+            RECIPES="${{ steps.affected.outputs.changed_recipes }}"
+          fi
+
+          if [ -z "$RECIPES" ]; then
+            echo "[INFO] No Python recipe directories to validate."
+            exit 0
+          fi
+
+          FAILED=0
+
+          for recipe in $RECIPES; do
+            echo ""
+            echo "========================================"
+            echo "Validating: $recipe"
+            echo "========================================"
+            RECIPE_FAILED=0
+
+            # ------------------------------------------------------------------
+            # Check 1: Folder name — only lowercase letters and hyphens allowed
+            # ------------------------------------------------------------------
+            folder_name="$(basename "$recipe")"
+            if ! echo "$folder_name" | grep -qE '^[a-z][a-z-]*$'; then
+              echo "::error file=$recipe::Folder name '$folder_name' is invalid. Only lowercase letters and hyphens are allowed (must start with a letter, no underscores, digits, or uppercase)."
+              echo "[FAIL] Folder name: '$folder_name' — only lowercase letters and hyphens allowed."
+              RECIPE_FAILED=1
+            else
+              echo "[PASS] Folder name: '$folder_name'"
+            fi
+
+            # ------------------------------------------------------------------
+            # Check 2: Folder size — at most 1 MB
+            # ------------------------------------------------------------------
+            folder_size_bytes=$(du -sb "$recipe" | awk '{print $1}')
+            folder_size_kb=$(( folder_size_bytes / 1024 ))
+            MAX_SIZE_BYTES=$(( 1024 * 1024 ))  # 1 MB
+
+            if [ "$folder_size_bytes" -gt "$MAX_SIZE_BYTES" ]; then
+              echo "::error file=$recipe::Recipe folder exceeds 1 MB (${folder_size_kb} KB). Remove large files or binaries."
+              echo "[FAIL] Folder size: ${folder_size_kb} KB — exceeds 1 MB limit."
+              RECIPE_FAILED=1
+            else
+              echo "[PASS] Folder size: ${folder_size_kb} KB"
+            fi
+
+            # ------------------------------------------------------------------
+            # Check 3: File count — at most 50 files
+            # ------------------------------------------------------------------
+            file_count=$(find "$recipe" -type f | wc -l | tr -d ' ')
+            MAX_FILES=50
+
+            if [ "$file_count" -gt "$MAX_FILES" ]; then
+              echo "::error file=$recipe::Recipe folder contains $file_count files, exceeding the limit of $MAX_FILES."
+              echo "[FAIL] File count: $file_count — exceeds $MAX_FILES file limit."
+              RECIPE_FAILED=1
+            else
+              echo "[PASS] File count: $file_count"
+            fi
+
+            # ------------------------------------------------------------------
+            # Check 4: Required files presence
+            # ------------------------------------------------------------------
+            REQUIRED_FILES=(
+              "README.md"
+              "pyproject.toml"
+              "uv.lock"
+              "manifest.yaml"
+              ".env.example"
+              "tests/test_runnability.py"
+            )
+
+            for required in "${REQUIRED_FILES[@]}"; do
+              if [ ! -f "$recipe/$required" ]; then
+                echo "::error file=$recipe/$required::Required file '$required' is missing from recipe '$recipe'."
+                echo "[FAIL] Missing required file: $required"
+                RECIPE_FAILED=1
+              else
+                echo "[PASS] Found required file: $required"
+              fi
+            done
+
+            if [ "$RECIPE_FAILED" -eq 1 ]; then
+              FAILED=1
+            else
+              echo ""
+              echo "[PASS] All checks passed for: $recipe"
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  One or more Python recipes failed validation."
+            echo "  See errors above for details."
+            echo "========================================"
+            exit 1
+          fi
+
+          echo ""
+          echo "[PASS] All Python recipes passed validation."
