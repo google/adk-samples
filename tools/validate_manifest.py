@@ -45,6 +45,8 @@ RECIPE_ROOTS = ["core", "contrib"]
 OWNERSHIP_TEAM_PLACEHOLDER = "YOUR TEAM NAME"
 OWNERSHIP_POC_PLACEHOLDER = "your-github-id"
 
+LANGUAGE_NAMESPACE_DIRS = {"python", "java", "go", "typescript", "kotlin"}
+
 
 def is_recipe_dir(path: Path) -> bool:
     """A recipe directory is any immediate subdirectory that contains
@@ -126,7 +128,15 @@ def collect_recipe_dirs(scope: str | None) -> list[Path]:
         if not root_path.exists():
             print(f"[SKIP] '{root_name}/' does not exist.")
             continue
-        recipe_dirs = sorted(p for p in root_path.iterdir() if is_recipe_dir(p))
+        recipe_dirs = []
+        for p in sorted(root_path.iterdir()):
+            if p.is_dir() and p.name in LANGUAGE_NAMESPACE_DIRS:
+                # Language namespace folder (e.g. core/python/) — recurse one level.
+                recipe_dirs.extend(
+                    sorted(c for c in p.iterdir() if is_recipe_dir(c))
+                )
+            elif is_recipe_dir(p):
+                recipe_dirs.append(p)
         if not recipe_dirs:
             print(f"[INFO] No recipe directories found under '{root_name}/'.")
             continue
