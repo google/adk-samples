@@ -1,0 +1,194 @@
+name: 🐍 Python Tests
+
+on:
+  pull_request:
+    paths:
+      - "core/**"
+      - "contrib/**"
+  workflow_dispatch:
+    inputs:
+      run_all:
+        description: "Run tests for all Python recipes (ignore diff)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  detect-recipes:
+    name: Detect affected Python recipes
+    runs-on: ubuntu-latest
+    outputs:
+      recipes: ${{ steps.detect.outputs.recipes }}
+      count: ${{ steps.detect.outputs.count }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Detect Python recipes to test
+        id: detect
+        run: |
+          # Helper: collect all Python recipe dirs under core/ and contrib/
+          # A recipe dir is any directory that contains a manifest.yaml with language: python.
+          # Uses find so it works at any nesting depth (e.g. core/python/rag-agent-search).
+          all_python_recipes() {
+            for root in core contrib; do
+              [ -d "$root" ] || continue
+              find "$root" -name "manifest.yaml" | while read -r manifest; do
+                dir="$(dirname "$manifest")"
+                if grep -q '^language:[[:space:]]*"python"' "$manifest" || \
+                   grep -q "^language:[[:space:]]*python" "$manifest"; then
+                  echo "$dir"
+                fi
+              done
+            done
+          }
+
+          # Helper: given a changed file path, return the recipe dir that owns it
+          # by walking up until we find a directory containing manifest.yaml.
+          find_recipe_dir() {
+            local path="$1"
+            local dir
+            dir="$(dirname "$path")"
+            while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+              if [ -f "$dir/manifest.yaml" ]; then
+                echo "$dir"
+                return
+              fi
+              dir="$(dirname "$dir")"
+            done
+          }
+
+          # Determine whether to run all recipes or just the diff-affected ones
+          RUN_ALL="${{ github.event.inputs.run_all }}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$RUN_ALL" = "true" ]; then
+            echo "workflow_dispatch with run_all=true — testing all Python recipes."
+            RECIPES=$(all_python_recipes)
+          else
+            # PR mode: diff against the base branch.
+            # Fall back to 'main' when github.event.pull_request is null
+            # (e.g. workflow_dispatch with run_all=false).
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            BASE_REF="${BASE_REF:-main}"
+            git fetch origin "$BASE_REF"
+            CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
+
+            # Map each changed file to its recipe dir (the nearest ancestor with manifest.yaml)
+            # then keep only unique Python recipe dirs.
+            RECIPES=""
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              # Only care about files under core/ or contrib/
+              case "$file" in
+                core/*|contrib/*) ;;
+                *) continue ;;
+              esac
+              recipe_dir="$(find_recipe_dir "$file")"
+              [ -z "$recipe_dir" ] && continue
+              manifest="$recipe_dir/manifest.yaml"
+              if grep -q '^language:[[:space:]]*"python"' "$manifest" || \
+                 grep -q "^language:[[:space:]]*python" "$manifest"; then
+                RECIPES="${RECIPES}${recipe_dir}"$'\n'
+              else
+                echo "[SKIP] $recipe_dir — not a Python recipe."
+              fi
+            done <<< "$CHANGED_FILES"
+
+            # Deduplicate
+            RECIPES=$(echo "$RECIPES" | sort -u)
+          fi
+
+          # Strip trailing whitespace / blank lines
+          RECIPES=$(echo "$RECIPES" | sed '/^[[:space:]]*$/d')
+
+          if [ -z "$RECIPES" ]; then
+            echo "No Python recipes to test."
+            echo "recipes=[]" >> "$GITHUB_OUTPUT"
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Python recipes to test:"
+          echo "$RECIPES"
+
+          # Emit as a JSON array for the matrix
+          JSON=$(echo "$RECIPES" | jq -R . | jq -sc .)
+          echo "recipes=$JSON" >> "$GITHUB_OUTPUT"
+          echo "count=$(echo "$RECIPES" | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+  run-tests:
+    name: "pytest — ${{ matrix.recipe }}"
+    needs: detect-recipes
+    if: needs.detect-recipes.outputs.count != '0'
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        recipe: ${{ fromJson(needs.detect-recipes.outputs.recipes) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify test structure
+        working-directory: ${{ matrix.recipe }}
+        env:
+          RECIPE: ${{ matrix.recipe }}
+        run: |
+          # Ensure tests/ directory exists
+          if [ ! -d "tests" ]; then
+            echo "::error::Missing tests/ directory in ${RECIPE}"
+            exit 1
+          fi
+
+          # Ensure at least one test_runnability.py exists anywhere under tests/
+          RUNNABILITY=$(find tests -name "test_runnability.py" | head -1)
+          if [ -z "$RUNNABILITY" ]; then
+            echo "::error::No test_runnability.py found under ${RECIPE}/tests/"
+            exit 1
+          fi
+
+          echo "Found: $RUNNABILITY"
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.recipe }}
+        run: uv sync --dev
+
+      - name: Run pytest
+        working-directory: ${{ matrix.recipe }}
+        run: uv run pytest
+
+  # Final gate job: fails the workflow if any recipe's tests failed
+  test-results:
+    name: Python test results
+    needs: run-tests
+    if: always() && needs.run-tests.result != 'skipped'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.run-tests.result }}" = "failure" ]; then
+            echo "::error::One or more Python recipe test suites failed."
+            exit 1
+          fi
+          echo "All Python recipe tests passed."

@@ -1,4 +1,4 @@
-name: Dependabot Auto-Merge
+name: 📦⚡ Dependabot Auto-Merge
 
 on:
   pull_request:

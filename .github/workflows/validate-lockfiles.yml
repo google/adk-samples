@@ -1,0 +1,320 @@
+name: Validate Lockfiles
+
+on:
+  pull_request:
+    paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - 'core/**/*.lock'
+      - 'core/**/pyproject.toml'
+      - 'contrib/**/*.lock'
+      - 'contrib/**/pyproject.toml'
+      - '.github/workflows/validate-lockfiles.yml'
+      - '.github/scripts/check_lockfile_hashes.py'
+  push:
+    branches:
+      - main
+    paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - 'core/**/*.lock'
+      - 'core/**/pyproject.toml'
+      - 'contrib/**/*.lock'
+      - 'contrib/**/pyproject.toml'
+      - '.github/workflows/validate-lockfiles.yml'
+      - '.github/scripts/check_lockfile_hashes.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-lockfiles:
+    name: Check uv.lock files for policy violations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      # ---------------------------------------------------------------------------
+      # Resolve which uv.lock files to validate.
+      #
+      # On pull_request: only lockfiles that were added/modified in this PR, plus
+      #   the sibling uv.lock for any pyproject.toml that was changed. The root
+      #   uv.lock is included if the root uv.lock or pyproject.toml was touched.
+      # On push to main or workflow_dispatch: all uv.lock files under core/ and
+      #   contrib/, plus the root uv.lock (full scan as a safety net).
+      #
+      # Samples live exclusively under core/ and contrib/. The root uv.lock is
+      # treated separately as repo-level infrastructure.
+      # ---------------------------------------------------------------------------
+      - name: Resolve lockfiles to validate
+        id: lockfiles
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            git fetch origin "$BASE_REF"
+            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+
+            # Collect directly changed uv.lock files under core/ or contrib/
+            LOCKS=$(echo "$CHANGED" | grep -E "^(core|contrib)/.*uv\.lock$" || true)
+
+            # For any changed pyproject.toml under core/ or contrib/, add its sibling uv.lock
+            PYPROJECTS=$(echo "$CHANGED" | grep -E "^(core|contrib)/.*pyproject\.toml$" || true)
+            for pyproject in $PYPROJECTS; do
+              sibling="$(dirname "$pyproject")/uv.lock"
+              if [ -f "$sibling" ]; then
+                LOCKS=$(printf "%s\n%s" "$LOCKS" "$sibling")
+              fi
+            done
+
+            # Include the root uv.lock if the root uv.lock or pyproject.toml was touched
+            ROOT_CHANGED=$(echo "$CHANGED" | grep -E "^(uv\.lock|pyproject\.toml)$" || true)
+            if [ -n "$ROOT_CHANGED" ] && [ -f "uv.lock" ]; then
+              LOCKS=$(printf "%s\n%s" "$LOCKS" "uv.lock")
+            fi
+
+            # Also re-validate everything if the workflow itself changed
+            WORKFLOW_CHANGED=$(echo "$CHANGED" | grep -E "^\.github/workflows/validate-lockfiles\.yml$" || true)
+            if [ -n "$WORKFLOW_CHANGED" ]; then
+              echo "Workflow file changed — falling back to full scan."
+              LOCKS=$(find uv.lock core contrib -name "uv.lock" 2>/dev/null || true)
+            fi
+
+            # Deduplicate and filter to only existing files
+            LOCKS=$(echo "$LOCKS" | sort -u | grep -v '^$' | while read -r f; do [ -f "$f" ] && echo "$f"; done || true)
+          else
+            # push to main or workflow_dispatch — scan everything
+            LOCKS=$(find uv.lock core contrib -name "uv.lock" 2>/dev/null || true)
+          fi
+
+          if [ -z "$LOCKS" ]; then
+            echo "No uv.lock files to validate."
+            echo "lockfiles=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Lockfiles to validate:"
+            echo "$LOCKS" | sed 's/^/  /'
+            # Store as space-separated for use in subsequent steps
+            echo "lockfiles=$(echo "$LOCKS" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ---------------------------------------------------------------------------
+      # Check 1: No internal/non-PyPI registry URLs
+      # Catches pkg.dev and any other non-pypi.org source hosts.
+      # Lockfiles referencing internal registries cannot be reproduced outside the original environment.
+      # ---------------------------------------------------------------------------
+      - name: Check for non-PyPI registry URLs
+        if: steps.lockfiles.outputs.lockfiles != ''
+        env:
+          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+          INTERNAL_PATTERN='pkg\.dev|artifactregistry\.googleapis\.com'
+
+          for lockfile in $LOCKFILES; do
+            MATCHES=$(grep -En "(url|registry)\s*=.*($INTERNAL_PATTERN)" "$lockfile" || true)
+            if [ -n "$MATCHES" ]; then
+              echo "[FAIL] $lockfile contains non-PyPI registry URLs (pkg.dev or similar):"
+              echo "$MATCHES" | sed 's/^/  /'
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "Lockfiles must only reference public PyPI (pypi.org)."
+            echo "Re-run 'uv lock' with only public PyPI configured, or unset any internal"
+            echo "registry configuration before locking."
+            exit 1
+          fi
+
+          echo "[PASS] No internal registry URLs found."
+
+      # ---------------------------------------------------------------------------
+      # Check 2: No git/VCS dependencies
+      # In uv.lock, git dependencies are represented as source = { git = "..." }.
+      # These are non-reproducible when the ref is a branch name, and bypass
+      # registry trust entirely.
+      # ---------------------------------------------------------------------------
+      - name: Check for VCS (git) dependencies
+        if: steps.lockfiles.outputs.lockfiles != ''
+        env:
+          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+
+          for lockfile in $LOCKFILES; do
+            MATCHES=$(grep -En "source\s*=.*[{,\s](git)\s*=" "$lockfile" || true)
+            if [ -n "$MATCHES" ]; then
+              echo "[FAIL] $lockfile contains git/VCS dependencies:"
+              echo "$MATCHES" | sed 's/^/  /'
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "VCS dependencies are not allowed in lockfiles — they are non-reproducible"
+            echo "and bypass registry-level trust. Pin to a released version on PyPI instead."
+            exit 1
+          fi
+
+          echo "[PASS] No VCS dependencies found."
+
+      # ---------------------------------------------------------------------------
+      # Check 3: No local path or editable dependencies
+      # In uv.lock, path/editable/directory sources use unquoted keys in inline
+      # tables: source = { path = "..." } or source = { editable = "..." }.
+      # These only exist on the committer's machine and break all other environments.
+      # ---------------------------------------------------------------------------
+      - name: Check for local path dependencies
+        if: steps.lockfiles.outputs.lockfiles != ''
+        env:
+          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+
+          for lockfile in $LOCKFILES; do
+            MATCHES=$(grep -En 'source\s*=.*[{,\s](path|editable|directory)\s*=' "$lockfile" || true)
+            if [ -n "$MATCHES" ]; then
+              echo "[FAIL] $lockfile contains local path dependencies:"
+              echo "$MATCHES" | sed 's/^/  /'
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "Local path dependencies cannot be reproduced outside the committer's machine."
+            echo "Publish the package to PyPI or use a workspace dependency instead."
+            exit 1
+          fi
+
+          echo "[PASS] No local path dependencies found."
+
+      # ---------------------------------------------------------------------------
+      # Check 4: All packages must have hashes
+      # Missing hashes mean the lockfile cannot verify supply chain integrity.
+      # uv generates sha256 hashes for all registry packages by default; their
+      # absence indicates the lockfile was tampered with or generated incorrectly.
+      # The check logic lives in .github/scripts/check_lockfile_hashes.py to
+      # avoid embedding Python at column 0 inside this YAML file, which breaks
+      # the zizmor security scanner's YAML parser.
+      # ---------------------------------------------------------------------------
+      - name: Check that all packages have hashes
+        if: steps.lockfiles.outputs.lockfiles != ''
+        env:
+          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+
+          for lockfile in $LOCKFILES; do
+            python3 .github/scripts/check_lockfile_hashes.py "$lockfile" || FAILED=1
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "All distributions must have sha256 hashes for supply chain integrity."
+            echo "Re-generate the lockfile with 'uv lock'."
+            exit 1
+          fi
+
+          echo "[PASS] All distributions have hashes."
+
+      # ---------------------------------------------------------------------------
+      # Check 5: Lockfiles are up-to-date with their pyproject.toml
+      # Catches the "forgot to re-run uv lock after editing pyproject.toml" mistake.
+      # ---------------------------------------------------------------------------
+      - name: Check lockfiles are up-to-date
+        if: steps.lockfiles.outputs.lockfiles != ''
+        env:
+          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+
+          for lockfile in $LOCKFILES; do
+            lockdir=$(dirname "$lockfile")
+            if [ ! -f "$lockdir/pyproject.toml" ]; then
+              continue
+            fi
+
+            # uv lock --check exits non-zero if the lockfile is out of date
+            if ! uv lock --check --project "$lockdir" 2>&1; then
+              echo "[FAIL] $lockfile is out of date with $lockdir/pyproject.toml"
+              echo "  Run 'uv lock' in $lockdir to regenerate it."
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            exit 1
+          fi
+
+          echo "[PASS] All lockfiles are up-to-date."
+
+      # ---------------------------------------------------------------------------
+      # Check 6: Every pyproject.toml (root, core/, contrib/) must have a sibling
+      # uv.lock. Only checked for pyproject.toml files touched in this PR (or all
+      # of them on push/dispatch). Skips config-only pyproject.toml files that have
+      # no [project] table and no [tool.uv] section.
+      # ---------------------------------------------------------------------------
+      - name: Check every pyproject.toml has a lockfile
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            git fetch origin "$BASE_REF"
+            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+            # Include root pyproject.toml and any under core/ or contrib/
+            PYPROJECTS=$(echo "$CHANGED" | grep -E "^(pyproject\.toml|(core|contrib)/.*pyproject\.toml)$" || true)
+          else
+            PYPROJECTS=$(find pyproject.toml core contrib -name "pyproject.toml" 2>/dev/null || true)
+          fi
+
+          if [ -z "$PYPROJECTS" ]; then
+            echo "[SKIP] No pyproject.toml files in scope."
+            exit 0
+          fi
+
+          FAILED=0
+
+          for pyproject in $PYPROJECTS; do
+            [ -f "$pyproject" ] || continue  # may have been deleted in the PR
+
+            HAS_PROJECT=$(grep -c '^\[project\]' "$pyproject" || true)
+            HAS_UV=$(grep -c '^\[tool\.uv' "$pyproject" || true)
+            if [ "$HAS_PROJECT" -eq 0 ] && [ "$HAS_UV" -eq 0 ]; then
+              continue  # config-only, no lockfile expected
+            fi
+
+            dir=$(dirname "$pyproject")
+            if [ ! -f "$dir/uv.lock" ]; then
+              echo "[FAIL] $pyproject has no sibling uv.lock — run 'uv lock' in $dir"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            exit 1
+          fi
+
+          echo "[PASS] All in-scope pyproject.toml files have a sibling uv.lock."
