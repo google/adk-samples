@@ -13,11 +13,11 @@ Before opening a pull request, ensure your recipe meets these requirements:
 *   [ ] **Design Constraints**: Total directory size **under 1MB**, at most **50 main files** (excluding docs & tests), and demonstrates a clear intent and value for the ADK community.
 *   [ ] **Directory Name**: Lowercase letters and hyphens only; **26 characters or less** (no underscores).
 *   [ ] **Required Files**:
-    *   `pyproject.toml` (no `requirements.txt` or `pip`).
-    *   `manifest.yaml` (Valid schema, with actual values replacing team and POC placeholders).
-    *   `README.md` (Explaining recipe details, setup, authentication, and execution commands).
-    *   `.env.example` (Listing environment variables with dummy values).
-    *   `test_runnability.py` (Compiles app/agent using `pytest`).
+    *   `pyproject.toml`: to define the recipe as a Python project and its dependencies.
+    *   `manifest.yaml`: metadata to be validated by the CI/CD system.
+    *   `README.md`: Human-readable instructions for the recipe.
+    *   `.env.example`: Lsit of environment variables with dummy values.
+    *   `test_runnability.py`: To test the runnability of the recipe.
 *   [ ] **Code Quality**: Python code formatted and linted with **Ruff** using repository-root rules.
 *   [ ] **Validation**: Local validation checks (`uv run validate`) pass with a `[PASS]` output.
 
