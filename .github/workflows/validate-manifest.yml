@@ -7,6 +7,9 @@ on:
       - 'contrib/**'
       - '.github/schemas/manifest-schema.json'
       - '.github/workflows/validate-manifest.yml'
+      - 'tools/validate.py'
+      - 'tools/validate_manifest.py'
+      - 'pyproject.toml'
   push:
     branches:
       - main
@@ -15,6 +18,9 @@ on:
       - 'contrib/**'
       - '.github/schemas/manifest-schema.json'
       - '.github/workflows/validate-manifest.yml'
+      - 'tools/validate.py'
+      - 'tools/validate_manifest.py'
+      - 'pyproject.toml'
   workflow_dispatch:
 
 permissions:
@@ -59,24 +65,67 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # If the schema or workflow itself changed, validate all recipes
-          SCHEMA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^\.github/(schemas/manifest-schema\.json|workflows/validate-manifest\.yml)$" || true)
+          # If the schema, workflow, or validation tools changed, validate all recipes
+          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/(schemas/manifest-schema\.json|workflows/validate-manifest\.yml)|tools/validate(_manifest)?\.py|pyproject\.toml)$" || true)
 
-          if [ -n "$SCHEMA_CHANGED" ]; then
-            echo "Schema or workflow changed — will validate all recipes."
+          if [ -n "$INFRA_CHANGED" ]; then
+            echo "Schema, workflow, or validation tools changed — will validate all recipes."
             echo "validate_all=true" >> "$GITHUB_OUTPUT"
           else
-            # Collect the unique top-level recipe directories touched in this diff
-            # Filter to only existing directories (skips deleted recipes and
-            # top-level files like core/README.md).
-            CHANGED_RECIPES=$(echo "$CHANGED_FILES" \
-              | grep -E "^(core|contrib)/[^/]+" \
-              | sed -E "s|^((core|contrib)/[^/]+).*|\1|" \
-              | sort -u \
-              | while read -r path; do [ -d "$path" ] && echo "$path"; done \
-              || true)
+            # Derive the recipe directory from the path structure alone — no
+            # filesystem lookups — so new recipes without a manifest.yaml are
+            # still caught rather than silently skipped.
+            #
+            # Layout rules (mirrors validate_manifest.py):
+            #   core/<namespace>/<recipe>/...  when <namespace> is a language dir
+            #   core/<recipe>/...              otherwise
+            #
+            # Language namespace directories (must stay in sync with
+            # LANGUAGE_NAMESPACE_DIRS in tools/validate_manifest.py).
+            LANG_NAMESPACES="python java go typescript kotlin"
+
+            recipe_dir_for() {
+              local file="$1"
+              # Strip to: <root>/<part1>/<part2>/...
+              local root part1 part2
+              root="${file%%/*}"          # core or contrib
+              rest="${file#*/}"           # everything after root/
+              part1="${rest%%/*}"         # first component under root
+              rest2="${rest#*/}"          # everything after part1/
+              part2="${rest2%%/*}"        # second component (may equal rest2 if no slash)
+
+              # Check if part1 is a language namespace and part2 is a real component
+              for ns in $LANG_NAMESPACES; do
+                if [ "$part1" = "$ns" ] && [ -n "$part2" ] && [ "$part2" != "$rest2" -o "$rest2" != "$part1" ]; then
+                  # Namespaced: root/namespace/recipe
+                  echo "${root}/${part1}/${part2}"
+                  return
+                fi
+              done
+              # Flat: root/recipe
+              echo "${root}/${part1}"
+            }
+
+            CHANGED_RECIPES=""
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              case "$file" in
+                core/*|contrib/*) ;;
+                *) continue ;;
+              esac
+              recipe_dir="$(recipe_dir_for "$file")"
+              [ -z "$recipe_dir" ] && continue
+              CHANGED_RECIPES="${CHANGED_RECIPES}${recipe_dir}"$'\n'
+            done <<< "$CHANGED_FILES"
+
+            # Deduplicate and filter to only directories. Files like
+            # core/README.md must be excluded; new recipe dirs are safe to
+            # filter this way because the branch is already checked out by
+            # the time this step runs, so new dirs exist on disk.
+            CHANGED_RECIPES=$(echo "$CHANGED_RECIPES" | sort -u | grep -v '^$' | while read -r path; do [ -d "$path" ] && echo "$path"; done || true)
+
             echo "Changed recipes: $CHANGED_RECIPES"
-            echo "changed_recipes=$(echo $CHANGED_RECIPES | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+            echo "changed_recipes=$(echo "$CHANGED_RECIPES" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
             echo "validate_all=false" >> "$GITHUB_OUTPUT"
           fi
 

@@ -50,8 +50,12 @@ LANGUAGE_NAMESPACE_DIRS = {"python", "java", "go", "typescript", "kotlin"}
 
 def is_recipe_dir(path: Path) -> bool:
     """A recipe directory is any immediate subdirectory that contains
-    more than just a README.md."""
+    more than just a README.md, and is not a language namespace directory."""
     if not path.is_dir() or path.name.startswith("."):
+        return False
+    # Language namespace dirs (e.g. core/python/) are not recipes themselves;
+    # they are containers whose children are the actual recipes.
+    if path.name in LANGUAGE_NAMESPACE_DIRS:
         return False
     children = [p for p in path.iterdir() if p.name != "README.md"]
     return len(children) > 0
@@ -102,9 +106,11 @@ def collect_recipe_dirs(scope: str | None) -> list[Path]:
     """Return the list of recipe directories to validate.
 
     scope can be:
-      None / "all"         — all roots in RECIPE_ROOTS
-      "core" / "contrib"   — a single top-level root
-      "core/some-recipe"   — a single recipe directory
+      None / "all"              — all roots in RECIPE_ROOTS
+      "core" / "contrib"        — a single top-level root
+      "core/python"             — a language namespace dir (recurse one level)
+      "core/some-recipe"        — a single flat recipe directory
+      "core/python/some-recipe" — a single namespaced recipe directory
     """
     # Resolve scope roots to scan
     if scope is None or scope == "all":
@@ -112,11 +118,18 @@ def collect_recipe_dirs(scope: str | None) -> list[Path]:
     elif scope in RECIPE_ROOTS:
         roots_to_scan = [scope]
     else:
-        # Treat as a path to a single recipe directory
         target = REPO_ROOT / scope
         if not target.exists():
             print(f"[ERROR] Directory not found: {target}")
             sys.exit(1)
+        # Language namespace directory (e.g. core/python) — recurse one level.
+        # is_recipe_dir() already returns False for these, so we handle them
+        # explicitly here before the generic validity check below.
+        if target.name in LANGUAGE_NAMESPACE_DIRS:
+            recipe_dirs = sorted(c for c in target.iterdir() if is_recipe_dir(c))
+            if not recipe_dirs:
+                print(f"[INFO] No recipe directories found under '{scope}/'.")
+            return recipe_dirs
         if not is_recipe_dir(target):
             print(f"[ERROR] Not a valid recipe directory: {target}")
             sys.exit(1)
