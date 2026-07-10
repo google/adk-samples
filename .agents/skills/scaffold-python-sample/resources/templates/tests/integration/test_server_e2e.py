@@ -117,7 +117,9 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
     logger.info("Starting chat stream test")
     # Create session first
     user_id = "test_user_123"
-    session_data = {"state": {"preferred_language": "English", "visit_count": 1}}
+    session_data = {
+        "state": {"preferred_language": "English", "visit_count": 1}
+    }
 
     session_url = f"{BASE_URL}/apps/app/users/{user_id}/sessions"
     session_response = requests.post(
@@ -173,11 +175,15 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
     assert has_text_content, "Expected at least one event with text content"
 
 
-def test_chat_stream_error_handling(server_fixture: subprocess.Popen[str]) -> None:
+def test_chat_stream_error_handling(
+    server_fixture: subprocess.Popen[str],
+) -> None:
     """Test the chat stream error handling."""
     logger.info("Starting chat stream error handling test")
     data = {
-        "input": {"messages": [{"type": "invalid_type", "content": "Cause an error"}]}
+        "input": {
+            "messages": [{"type": "invalid_type", "content": "Cause an error"}]
+        }
     }
     response = requests.post(
         STREAM_URL, headers=HEADERS, json=data, stream=True, timeout=10

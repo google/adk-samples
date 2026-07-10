@@ -21,6 +21,8 @@ These tests are intentionally agnostic to business logic (tools, instructions,
 etc.). Tool-level correctness belongs in test_tools.py.
 """
 
+import app
+import app.agent
 from fastapi import FastAPI
 from google.adk.agents import Agent
 from google.adk.apps import App
@@ -33,9 +35,6 @@ def test_adk_run_runnability() -> None:
     `adk run app` imports the `app` package and expects `root_agent` to be
     an Agent instance exposed at the package level via app/__init__.py.
     """
-    import app
-    import app.agent
-
     # app/__init__.py must re-export root_agent or app for `adk run app` to work
     assert hasattr(app, "root_agent") or hasattr(app, "app"), (
         "app/__init__.py must export either `root_agent` or `app` "
@@ -58,7 +57,7 @@ def test_adk_run_runnability() -> None:
 
 
 def test_web_server_runnability() -> None:
-    """Verifies the entry point required by `uvicorn app.fast_api_app:app` starts cleanly."""
+    """Verifies entry point for `uvicorn app.fast_api_app:app`."""
     import app.fast_api_app
 
     assert app.fast_api_app.app is not None

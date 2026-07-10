@@ -44,9 +44,10 @@ jobs:
           fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
+          enable-cache: false
     
       - name: Install Reviewdog
         uses: reviewdog/action-setup@v1
@@ -90,9 +91,10 @@ jobs:
           fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
+          enable-cache: false
     
       - name: Install Reviewdog
         uses: reviewdog/action-setup@v1

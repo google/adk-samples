@@ -40,7 +40,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
 
       # ---------------------------------------------------------------------------
       # Resolve which uv.lock files to validate.
@@ -53,11 +53,17 @@ jobs:
       #
       # Samples live exclusively under core/ and contrib/. The root uv.lock is
       # treated separately as repo-level infrastructure.
+      #
+      # The resolved list is written to $LOCKFILES_FILE (one path per line) so
+      # that subsequent steps can iterate with `while IFS= read -r` and avoid
+      # shell word-splitting on paths that contain spaces.
       # ---------------------------------------------------------------------------
       - name: Resolve lockfiles to validate
         id: lockfiles
         run: |
           set -euo pipefail
+
+          LOCKFILES_FILE="${RUNNER_TEMP}/lockfiles.txt"
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_REF="${{ github.event.pull_request.base.ref }}"
@@ -68,13 +74,13 @@ jobs:
             LOCKS=$(echo "$CHANGED" | grep -E "^(core|contrib)/.*uv\.lock$" || true)
 
             # For any changed pyproject.toml under core/ or contrib/, add its sibling uv.lock
-            PYPROJECTS=$(echo "$CHANGED" | grep -E "^(core|contrib)/.*pyproject\.toml$" || true)
-            for pyproject in $PYPROJECTS; do
+            while IFS= read -r pyproject; do
+              [ -z "$pyproject" ] && continue
               sibling="$(dirname "$pyproject")/uv.lock"
               if [ -f "$sibling" ]; then
                 LOCKS=$(printf "%s\n%s" "$LOCKS" "$sibling")
               fi
-            done
+            done <<< "$(echo "$CHANGED" | grep -E "^(core|contrib)/.*pyproject\.toml$" || true)"
 
             # Include the root uv.lock if the root uv.lock or pyproject.toml was touched
             ROOT_CHANGED=$(echo "$CHANGED" | grep -E "^(uv\.lock|pyproject\.toml)$" || true)
@@ -90,20 +96,21 @@ jobs:
             fi
 
             # Deduplicate and filter to only existing files
-            LOCKS=$(echo "$LOCKS" | sort -u | grep -v '^$' | while read -r f; do [ -f "$f" ] && echo "$f"; done || true)
+            echo "$LOCKS" | sort -u | grep -v '^$' | while IFS= read -r f; do
+              [ -f "$f" ] && echo "$f"
+            done > "$LOCKFILES_FILE" || true
           else
             # push to main or workflow_dispatch — scan everything
-            LOCKS=$(find uv.lock core contrib -name "uv.lock" 2>/dev/null || true)
+            find uv.lock core contrib -name "uv.lock" 2>/dev/null > "$LOCKFILES_FILE" || true
           fi
 
-          if [ -z "$LOCKS" ]; then
+          if [ ! -s "$LOCKFILES_FILE" ]; then
             echo "No uv.lock files to validate."
-            echo "lockfiles=" >> "$GITHUB_OUTPUT"
+            echo "lockfiles_file=" >> "$GITHUB_OUTPUT"
           else
             echo "Lockfiles to validate:"
-            echo "$LOCKS" | sed 's/^/  /'
-            # Store as space-separated for use in subsequent steps
-            echo "lockfiles=$(echo "$LOCKS" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+            sed 's/^/  /' "$LOCKFILES_FILE"
+            echo "lockfiles_file=$LOCKFILES_FILE" >> "$GITHUB_OUTPUT"
           fi
 
       # ---------------------------------------------------------------------------
@@ -112,23 +119,21 @@ jobs:
       # Lockfiles referencing internal registries cannot be reproduced outside the original environment.
       # ---------------------------------------------------------------------------
       - name: Check for non-PyPI registry URLs
-        if: steps.lockfiles.outputs.lockfiles != ''
-        env:
-          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        if: steps.lockfiles.outputs.lockfiles_file != ''
         run: |
           set -euo pipefail
 
           FAILED=0
           INTERNAL_PATTERN='pkg\.dev|artifactregistry\.googleapis\.com'
 
-          for lockfile in $LOCKFILES; do
+          while IFS= read -r lockfile; do
             MATCHES=$(grep -En "(url|registry)\s*=.*($INTERNAL_PATTERN)" "$lockfile" || true)
             if [ -n "$MATCHES" ]; then
               echo "[FAIL] $lockfile contains non-PyPI registry URLs (pkg.dev or similar):"
               echo "$MATCHES" | sed 's/^/  /'
               FAILED=1
             fi
-          done
+          done < "${{ steps.lockfiles.outputs.lockfiles_file }}"
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
@@ -147,22 +152,20 @@ jobs:
       # registry trust entirely.
       # ---------------------------------------------------------------------------
       - name: Check for VCS (git) dependencies
-        if: steps.lockfiles.outputs.lockfiles != ''
-        env:
-          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        if: steps.lockfiles.outputs.lockfiles_file != ''
         run: |
           set -euo pipefail
 
           FAILED=0
 
-          for lockfile in $LOCKFILES; do
+          while IFS= read -r lockfile; do
             MATCHES=$(grep -En "source\s*=.*[{,\s](git)\s*=" "$lockfile" || true)
             if [ -n "$MATCHES" ]; then
               echo "[FAIL] $lockfile contains git/VCS dependencies:"
               echo "$MATCHES" | sed 's/^/  /'
               FAILED=1
             fi
-          done
+          done < "${{ steps.lockfiles.outputs.lockfiles_file }}"
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
@@ -180,22 +183,20 @@ jobs:
       # These only exist on the committer's machine and break all other environments.
       # ---------------------------------------------------------------------------
       - name: Check for local path dependencies
-        if: steps.lockfiles.outputs.lockfiles != ''
-        env:
-          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        if: steps.lockfiles.outputs.lockfiles_file != ''
         run: |
           set -euo pipefail
 
           FAILED=0
 
-          for lockfile in $LOCKFILES; do
+          while IFS= read -r lockfile; do
             MATCHES=$(grep -En 'source\s*=.*[{,\s](path|editable|directory)\s*=' "$lockfile" || true)
             if [ -n "$MATCHES" ]; then
               echo "[FAIL] $lockfile contains local path dependencies:"
               echo "$MATCHES" | sed 's/^/  /'
               FAILED=1
             fi
-          done
+          done < "${{ steps.lockfiles.outputs.lockfiles_file }}"
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
@@ -216,17 +217,15 @@ jobs:
       # the zizmor security scanner's YAML parser.
       # ---------------------------------------------------------------------------
       - name: Check that all packages have hashes
-        if: steps.lockfiles.outputs.lockfiles != ''
-        env:
-          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        if: steps.lockfiles.outputs.lockfiles_file != ''
         run: |
           set -euo pipefail
 
           FAILED=0
 
-          for lockfile in $LOCKFILES; do
-            python3 .github/scripts/check_lockfile_hashes.py "$lockfile" || FAILED=1
-          done
+          while IFS= read -r lockfile; do
+            uv run python3 .github/scripts/check_lockfile_hashes.py "$lockfile" || FAILED=1
+          done < "${{ steps.lockfiles.outputs.lockfiles_file }}"
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
@@ -242,29 +241,40 @@ jobs:
       # Catches the "forgot to re-run uv lock after editing pyproject.toml" mistake.
       # ---------------------------------------------------------------------------
       - name: Check lockfiles are up-to-date
-        if: steps.lockfiles.outputs.lockfiles != ''
-        env:
-          LOCKFILES: ${{ steps.lockfiles.outputs.lockfiles }}
+        if: steps.lockfiles.outputs.lockfiles_file != ''
         run: |
           set -euo pipefail
 
           FAILED=0
+          FAILED_DIRS=""
 
-          for lockfile in $LOCKFILES; do
+          while IFS= read -r lockfile; do
             lockdir=$(dirname "$lockfile")
             if [ ! -f "$lockdir/pyproject.toml" ]; then
               continue
             fi
 
-            # uv lock --check exits non-zero if the lockfile is out of date
-            if ! uv lock --check --project "$lockdir" 2>&1; then
+            # Suppress uv's own error output; we emit a cleaner message below.
+            if ! uv lock --check --project "$lockdir" 2>/dev/null; then
+              echo "::error file=$lockfile::$lockfile is out of date — run: uv lock --project $lockdir"
               echo "[FAIL] $lockfile is out of date with $lockdir/pyproject.toml"
-              echo "  Run 'uv lock' in $lockdir to regenerate it."
+              FAILED_DIRS="${FAILED_DIRS}  uv lock --project ${lockdir}"$'\n'
               FAILED=1
             fi
-          done
+          done < "${{ steps.lockfiles.outputs.lockfiles_file }}"
 
           if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  ACTION REQUIRED: stale lockfile(s)"
+            echo "========================================"
+            echo ""
+            echo "Run the following command(s) locally, then commit the updated uv.lock file(s):"
+            echo ""
+            echo "$FAILED_DIRS"
+            echo "If you recently edited a pyproject.toml, make sure to run 'uv lock' in the"
+            echo "same directory before pushing."
+            echo ""
             exit 1
           fi
 
@@ -280,9 +290,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          # On pull_request the base ref was already fetched in the Resolve step;
+          # no second git fetch needed.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_REF="${{ github.event.pull_request.base.ref }}"
-            git fetch origin "$BASE_REF"
             CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD)
             # Include root pyproject.toml and any under core/ or contrib/
             PYPROJECTS=$(echo "$CHANGED" | grep -E "^(pyproject\.toml|(core|contrib)/.*pyproject\.toml)$" || true)
@@ -297,7 +308,8 @@ jobs:
 
           FAILED=0
 
-          for pyproject in $PYPROJECTS; do
+          while IFS= read -r pyproject; do
+            [ -z "$pyproject" ] && continue
             [ -f "$pyproject" ] || continue  # may have been deleted in the PR
 
             HAS_PROJECT=$(grep -c '^\[project\]' "$pyproject" || true)
@@ -311,7 +323,7 @@ jobs:
               echo "[FAIL] $pyproject has no sibling uv.lock — run 'uv lock' in $dir"
               FAILED=1
             fi
-          done
+          done <<< "$PYPROJECTS"
 
           if [ "$FAILED" -eq 1 ]; then
             exit 1
