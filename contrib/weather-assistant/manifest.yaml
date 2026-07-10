@@ -1,0 +1,12 @@
+type: "standalone"
+status: "active"
+language: "python"
+description: "TODO: Replace with a clear description of what this recipe demonstrates."
+# architecture:
+#   agent: "single"
+#   stateful: false
+#   datasources:
+#     - "hardcoded"
+ownership:
+  team: "YOUR TEAM NAME"
+  poc: "your-github-id"
