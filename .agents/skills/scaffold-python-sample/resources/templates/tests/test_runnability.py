@@ -58,6 +58,6 @@ def test_adk_run_runnability() -> None:
 
 
 def test_web_server_runnability() -> None:
-    """Verifies entry point for `uvicorn app.fast_api_app:app` starts cleanly."""
+    """Verifies entry point for `uvicorn app.fast_api_app:app`."""
     assert app.fast_api_app.app is not None
     assert isinstance(app.fast_api_app.app, FastAPI)

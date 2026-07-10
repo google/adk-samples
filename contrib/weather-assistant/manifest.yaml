@@ -8,5 +8,5 @@ description: "TODO: Replace with a clear description of what this recipe demonst
 #   datasources:
 #     - "hardcoded"
 ownership:
-  team: "YOUR TEAM NAME"
-  poc: "your-github-id"
+  team: "YOUR TEAM "
+  poc: "your-github"
