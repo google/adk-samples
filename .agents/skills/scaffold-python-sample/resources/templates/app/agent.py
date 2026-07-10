@@ -21,7 +21,11 @@ from google.adk.models import Gemini
 from google.genai import types
 
 # Load the .env file
-load_dotenv()
+if not load_dotenv():
+    raise FileNotFoundError(
+        "Critical Error: No .env file found. "
+        "Make sure to copy .env.example to .env and update the values."
+    )
 
 
 def get_weather(query: str) -> str:
@@ -44,7 +48,7 @@ def create_agent() -> Agent:
     return Agent(
         name="root_agent",
         model=Gemini(
-            model=os.getenv("MODEL_NAME", "gemini-3.5-flash"),
+            model=os.getenv("MODEL_NAME"),
             retry_options=types.HttpRetryOptions(attempts=3),
         ),
         instruction=(
