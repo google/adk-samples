@@ -136,6 +136,18 @@ jobs:
         run: |
           set -euo pipefail
 
+          # ==================================================================
+          # Configurable limits
+          # ==================================================================
+          MAX_FOLDER_NAME_LENGTH=26
+
+          MAX_SIZE_MB=1
+          MAX_FILES=50
+
+          MAX_SIZE_MB_LARGE=10
+          MAX_FILES_LARGE=200
+          # ==================================================================
+
           if [ "${{ steps.affected.outputs.validate_all }}" = "true" ]; then
             RECIPES="${{ steps.all_recipes.outputs.all_recipes }}"
           else
@@ -164,34 +176,45 @@ jobs:
               echo "::error file=$recipe::Folder name '$folder_name' is invalid. Only lowercase letters and hyphens are allowed (must start with a letter, no underscores, digits, or uppercase)."
               echo "[FAIL] Folder name: '$folder_name' — only lowercase letters and hyphens allowed."
               RECIPE_FAILED=1
+            elif [ "${#folder_name}" -gt "$MAX_FOLDER_NAME_LENGTH" ]; then
+              echo "::error file=$recipe::Folder name '$folder_name' is ${#folder_name} characters long. Maximum allowed is ${MAX_FOLDER_NAME_LENGTH} characters."
+              echo "[FAIL] Folder name: '$folder_name' — exceeds 26 character limit."
+              RECIPE_FAILED=1
             else
               echo "[PASS] Folder name: '$folder_name'"
             fi
 
             # ------------------------------------------------------------------
-            # Check 2: Folder size — at most 1 MB
+            # Check 2: Folder size  /  Check 3: File count
+            # Limits depend on whether manifest.yaml sets:  large: true
             # ------------------------------------------------------------------
+            manifest="$recipe/manifest.yaml"
+            if [ -f "$manifest" ] && grep -qE '^\s*large\s*:\s*true\s*$' "$manifest"; then
+              EFFECTIVE_MAX_SIZE_MB="$MAX_SIZE_MB_LARGE"
+              EFFECTIVE_MAX_FILES="$MAX_FILES_LARGE"
+              echo "[INFO] Large recipe detected — using relaxed limits (${EFFECTIVE_MAX_SIZE_MB} MB / ${EFFECTIVE_MAX_FILES} files)."
+            else
+              EFFECTIVE_MAX_SIZE_MB="$MAX_SIZE_MB"
+              EFFECTIVE_MAX_FILES="$MAX_FILES"
+            fi
+            EFFECTIVE_MAX_SIZE_BYTES=$(( EFFECTIVE_MAX_SIZE_MB * 1024 * 1024 ))
+
             folder_size_bytes=$(du -sb "$recipe" | awk '{print $1}')
             folder_size_kb=$(( folder_size_bytes / 1024 ))
-            MAX_SIZE_BYTES=$(( 1024 * 1024 ))  # 1 MB
 
-            if [ "$folder_size_bytes" -gt "$MAX_SIZE_BYTES" ]; then
-              echo "::error file=$recipe::Recipe folder exceeds 1 MB (${folder_size_kb} KB). Remove large files or binaries."
-              echo "[FAIL] Folder size: ${folder_size_kb} KB — exceeds 1 MB limit."
+            if [ "$folder_size_bytes" -gt "$EFFECTIVE_MAX_SIZE_BYTES" ]; then
+              echo "::error file=$recipe::Recipe folder exceeds ${EFFECTIVE_MAX_SIZE_MB} MB (${folder_size_kb} KB). Remove large files or binaries."
+              echo "[FAIL] Folder size: ${folder_size_kb} KB — exceeds ${EFFECTIVE_MAX_SIZE_MB} MB limit."
               RECIPE_FAILED=1
             else
               echo "[PASS] Folder size: ${folder_size_kb} KB"
             fi
 
-            # ------------------------------------------------------------------
-            # Check 3: File count — at most 50 files
-            # ------------------------------------------------------------------
             file_count=$(find "$recipe" -type f | wc -l | tr -d ' ')
-            MAX_FILES=50
 
-            if [ "$file_count" -gt "$MAX_FILES" ]; then
-              echo "::error file=$recipe::Recipe folder contains $file_count files, exceeding the limit of $MAX_FILES."
-              echo "[FAIL] File count: $file_count — exceeds $MAX_FILES file limit."
+            if [ "$file_count" -gt "$EFFECTIVE_MAX_FILES" ]; then
+              echo "::error file=$recipe::Recipe folder contains $file_count files, exceeding the limit of ${EFFECTIVE_MAX_FILES}."
+              echo "[FAIL] File count: $file_count — exceeds ${EFFECTIVE_MAX_FILES} file limit."
               RECIPE_FAILED=1
             else
               echo "[PASS] File count: $file_count"
@@ -218,6 +241,62 @@ jobs:
                 echo "[PASS] Found required file: $required"
               fi
             done
+
+            # ------------------------------------------------------------------
+            # Check 5: Required keys in .env.example
+            # ------------------------------------------------------------------
+            REQUIRED_ENV_KEYS=(
+              "GOOGLE_CLOUD_PROJECT"
+              "GOOGLE_CLOUD_LOCATION"
+              "MODEL_NAME"
+            )
+
+            if [ -f "$recipe/.env.example" ]; then
+              for key in "${REQUIRED_ENV_KEYS[@]}"; do
+                if ! grep -qE "^${key}(_[A-Z0-9_]*)?\s*=" "$recipe/.env.example"; then
+                  echo "::warning file=$recipe/.env.example::No environment variable starting with '${key}' found in .env.example. All recipes must declare at least one variable prefixed with GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, and MODEL_NAME in their .env.example file."
+                  echo "[WARN] No env key with prefix '$key' found in .env.example."
+                else
+                  echo "[PASS] Found required env key in .env.example: $key"
+                fi
+              done
+            fi
+
+            # ------------------------------------------------------------------
+            # Check 6: Environment variables used in Python files but missing
+            #           from .env.example
+            # ------------------------------------------------------------------
+            env_example="$recipe/.env.example"
+            if [ -f "$env_example" ]; then
+              # Collect variable names defined in .env.example (KEY=... lines)
+              defined_vars=$(grep -oE '^[A-Z_][A-Z0-9_]*' "$env_example" | sort -u || true)
+
+              # Collect variable names referenced in Python files via:
+              #   os.environ["VAR"], os.environ.get("VAR"), os.getenv("VAR")
+              used_vars=$(grep -rhoE 'os\.(environ\.get|environ|getenv)\(\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]' \
+                "$recipe" --include="*.py" \
+                | grep -oE '['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]' \
+                | tr -d '"'"'"' \
+                | sort -u || true)
+
+              missing_vars=""
+              for var in $used_vars; do
+                if ! echo "$defined_vars" | grep -qx "$var"; then
+                  missing_vars="${missing_vars}${var}"$'\n'
+                fi
+              done
+
+              if [ -n "$missing_vars" ]; then
+                while IFS= read -r var; do
+                  [ -z "$var" ] && continue
+                  echo "::error file=$env_example::Environment variable '$var' is used in Python code but not defined in .env.example. Define all required environment variables in .env.example and load them in your code with load_dotenv()."
+                  echo "[FAIL] Env var '$var' used in code but missing from .env.example."
+                done <<< "$missing_vars"
+                RECIPE_FAILED=1
+              else
+                echo "[PASS] All environment variables used in Python files are defined in .env.example."
+              fi
+            fi
 
             if [ "$RECIPE_FAILED" -eq 1 ]; then
               FAILED=1
