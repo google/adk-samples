@@ -1,0 +1,20 @@
+[project]
+name = "weather-assistant"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "google-adk[gcp]>=2.0.0,<3.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+pythonpath = "."
