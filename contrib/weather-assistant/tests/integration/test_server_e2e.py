@@ -36,9 +36,6 @@ FEEDBACK_URL = BASE_URL + "/feedback"
 
 HEADERS = {"Content-Type": "application/json"}
 
-HTTP_OK = 200
-HTTP_UNPROCESSABLE_ENTITY = 422
-
 
 def log_output(pipe: Any, log_func: Any) -> None:
     """Log the output from the given pipe."""
@@ -86,7 +83,7 @@ def wait_for_server(timeout: int = 90, interval: int = 1) -> bool:
     while time.time() - start_time < timeout:
         try:
             response = requests.get("http://127.0.0.1:8000/docs", timeout=10)
-            if response.status_code == HTTP_OK:
+            if response.status_code == 200:
                 logger.info("Server is ready")
                 return True
         except RequestException:
@@ -131,7 +128,7 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
         json=session_data,
         timeout=60,
     )
-    assert session_response.status_code == HTTP_OK
+    assert session_response.status_code == 200
     logger.info(f"Session creation response: {session_response.json()}")
     session_id = session_response.json()["id"]
 
@@ -149,7 +146,7 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
     response = requests.post(
         STREAM_URL, headers=HEADERS, json=data, stream=True, timeout=60
     )
-    assert response.status_code == HTTP_OK
+    assert response.status_code == 200
 
     # Parse SSE events from response
     events = []
@@ -192,7 +189,7 @@ def test_chat_stream_error_handling(
         STREAM_URL, headers=HEADERS, json=data, stream=True, timeout=10
     )
 
-    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY, (
+    assert response.status_code == 422, (
         f"Expected status code 422, got {response.status_code}"
     )
     logger.info("Error handling test completed successfully")
@@ -214,4 +211,4 @@ def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
     response = requests.post(
         FEEDBACK_URL, json=feedback_data, headers=HEADERS, timeout=10
     )
-    assert response.status_code == HTTP_OK
+    assert response.status_code == 200
