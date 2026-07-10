@@ -20,6 +20,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 """Creates a Vector Search 2.0 Collection with auto-embeddings.
 
 Idempotent: checks if the collection already exists before creating.
@@ -80,7 +81,7 @@ def main(project_id: str, location: str, collection_id: str) -> None:
                     "dense_vector": {
                         "dimensions": 3072,
                         "vertex_embedding_config": {
-                            "model_id": "gemini-embedding-001",
+                            "model_id": os.getenv("MODEL_NAME_EMBEDDING"),
                             "text_template": "{text_chunk}",
                             "task_type": "RETRIEVAL_DOCUMENT",
                         },

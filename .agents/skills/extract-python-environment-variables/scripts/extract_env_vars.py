@@ -20,6 +20,8 @@ Scans a Python recipe directory and:
   2. Creates or updates .env.example with any missing variables.
   3. Injects the load_dotenv() bootstrap snippet into the package __init__.py.
   4. Ensures python-dotenv>=1.0.0 is listed in pyproject.toml dependencies.
+  5. Detects hardcoded model name strings, replaces them with
+     os.getenv("MODEL_NAME"), and adds MODEL_NAME to .env.example.
 """
 
 import argparse
@@ -34,6 +36,23 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 PLACEHOLDER = "<TODO: update-this-value>"
+
+# Model name prefixes that indicate a hardcoded model identifier.
+# Kept in sync with validate-python-sample.yml.
+MODEL_PREFIXES: tuple[str, ...] = (
+    "gemini-",
+    "gemini-exp-",
+    "imagen-",
+    "claude-",
+    "llama-",
+    "meta/llama-",
+    "mistral-",
+    "codestral-",
+    "phi-",
+    "grok-",
+    "command-",
+    "jamba-",
+)
 
 LOAD_DOTENV_IMPORT = "from dotenv import load_dotenv"
 
@@ -326,6 +345,122 @@ def ensure_python_dotenv_dependency(pyproject: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Step 6: Detect and extract hardcoded model names
+# ---------------------------------------------------------------------------
+
+
+def extract_hardcoded_models(
+    py_files: list[Path],
+) -> dict[Path, list[tuple[int, str]]]:
+    """
+    Find string literals that look like hardcoded model names in Python files.
+
+    Uses AST to walk string constants and checks whether the value starts with
+    any known model prefix (same list as validate-python-sample.yml).
+
+    Returns:
+      {file_path: [(line_number, model_string), ...]}
+    """
+    hits: dict[Path, list[tuple[int, str]]] = {}
+
+    for py_file in py_files:
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(py_file))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant):
+                continue
+            if not isinstance(node.value, str):
+                continue
+            value = node.value
+            if any(value.startswith(prefix) for prefix in MODEL_PREFIXES):
+                hits.setdefault(py_file, []).append((node.lineno, value))
+
+    return hits
+
+
+def assign_model_var_names(model_strings: set[str]) -> dict[str, str]:
+    """
+    Assign a standardised MODEL_NAME_* env var name to each unique model string.
+
+    Rules (applied to the sorted list for determinism):
+      - A model string containing "embed" → MODEL_NAME_EMBEDDING
+      - The first non-embedding model     → MODEL_NAME
+      - Additional non-embedding models   → MODEL_NAME_2, MODEL_NAME_3, …
+
+    Returns:
+      {model_string: env_var_name}
+    """
+    mapping: dict[str, str] = {}
+    non_embedding_idx = 0
+
+    for model_str in sorted(model_strings):
+        if "embed" in model_str.lower():
+            mapping[model_str] = "MODEL_NAME_EMBEDDING"
+        else:
+            if non_embedding_idx == 0:
+                mapping[model_str] = "MODEL_NAME"
+            else:
+                mapping[model_str] = f"MODEL_NAME_{non_embedding_idx + 1}"
+            non_embedding_idx += 1
+
+    return mapping
+
+
+def replace_hardcoded_models(
+    py_files: list[Path],
+    hits: dict[Path, list[tuple[int, str]]],
+    name_map: dict[str, str],
+) -> dict[str, str]:
+    """
+    Replace each hardcoded model string with the correct os.getenv("MODEL_NAME_*")
+    call in-place, using the mapping produced by assign_model_var_names().
+
+    Also ensures `import os` is present in every modified file.
+
+    Returns a dict of {model_string: env_var_name} for the substitutions made.
+    """
+    substituted: dict[str, str] = {}
+
+    for py_file, file_hits in hits.items():
+        source = py_file.read_text(encoding="utf-8")
+        modified = source
+
+        for _lineno, model_str in file_hits:
+            var_name = name_map.get(model_str)
+            if not var_name:
+                continue
+            for quote in ('"', "'"):
+                old = f"{quote}{model_str}{quote}"
+                new = f'os.getenv("{var_name}")'
+                if old in modified:
+                    modified = modified.replace(old, new)
+                    substituted[model_str] = var_name
+
+        if modified == source:
+            continue
+
+        # Ensure `import os` is present
+        if "import os" not in modified:
+            lines = modified.splitlines(keepends=True)
+            insert_at = 0
+            for i, line in enumerate(lines):
+                if line.strip().startswith("#") or not line.strip():
+                    insert_at = i + 1
+                else:
+                    break
+            lines.insert(insert_at, "import os\n")
+            modified = "".join(lines)
+
+        py_file.write_text(modified, encoding="utf-8")
+
+    return substituted
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -420,6 +555,57 @@ def main() -> None:
         print("[PASS] pyproject.toml already includes python-dotenv — skipped.")
     else:
         print("[WARN] pyproject.toml not found — skipped.")
+
+    # ------------------------------------------------------------------
+    # Step 6 — Detect and extract hardcoded model names
+    # ------------------------------------------------------------------
+    model_hits = extract_hardcoded_models(py_files)
+    if model_hits:
+        # Collect all unique model strings across all files
+        all_model_strings: set[str] = {
+            model_str
+            for file_hits in model_hits.values()
+            for _lineno, model_str in file_hits
+        }
+
+        name_map = assign_model_var_names(all_model_strings)
+
+        print(f"\n[INFO] Detected hardcoded model name(s):")
+        for py_file, file_hits in model_hits.items():
+            for lineno, model_str in file_hits:
+                var_name = name_map[model_str]
+                print(
+                    f"       {py_file.relative_to(recipe_dir)}:{lineno}"
+                    f' — "{model_str}" → {var_name}'
+                )
+
+        substituted = replace_hardcoded_models(py_files, model_hits, name_map)
+
+        if substituted:
+            # Add each MODEL_NAME_* var to .env.example using the detected
+            # model string as the value so the user knows what was there before.
+            vars_to_add = {
+                var_name: model_str
+                for model_str, var_name in substituted.items()
+            }
+            added_models = update_env_example(env_example, vars_to_add)
+
+            for model_str, var_name in substituted.items():
+                print(
+                    f'[PASS] Replaced hardcoded "{model_str}" with'
+                    f' os.getenv("{var_name}") in source.'
+                )
+            if added_models:
+                for var in added_models:
+                    print(
+                        f"[PASS] Added {var}={vars_to_add[var]} to .env.example."
+                    )
+            else:
+                print(
+                    "[PASS] All MODEL_NAME_* vars already in .env.example — skipped."
+                )
+    else:
+        print("\n[PASS] No hardcoded model names detected.")
 
     print(f"\n{'='*50}")
     print(f"  Done.")
