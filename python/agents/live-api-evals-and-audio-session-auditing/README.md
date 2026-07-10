@@ -43,15 +43,15 @@ GCS_BUCKET_NAME=your-gcs-bucket-name
 ## Running the Application
 
 ### 1. Launch the FastAPI Server
-Execute the FastAPI application to bind to `127.0.0.1:8080`:
+Execute the FastAPI application to bind to `127.0.0.1:8000`:
 ```bash
-uvicorn main:app --port 8080
+uvicorn main:app --port 8000
 ```
 
 ### 2. Connect via Web Browser
 Open your favorite modern web browser and navigate to:
 ```url
-http://127.0.0.1:8080/
+http://127.0.0.1:8000/
 ```
 Click the **Microphone** button to resume your `AudioContext` and start speaking with Alex!
 
