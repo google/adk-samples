@@ -57,7 +57,7 @@ app: FastAPI = get_fast_api_app(
     artifact_service_uri=artifact_service_uri,
     allow_origins=allow_origins,
     session_service_uri=session_service_uri,
-    otel_to_cloud=True,
+    otel_to_cloud=project_id is not None,
 )
 app.title = "<PROJECT_NAME>"
 app.description = "API for interacting with the Agent <PROJECT_NAME>"
