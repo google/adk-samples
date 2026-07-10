@@ -43,8 +43,10 @@ select = [
     "RUF" # ruff specific rules
 ]
 ignore = [
-    "E501", # Ignore line length for long LLM prompts
-    "PLR0913" # Allow agents to have many arguments if needed
+    "E501",    # Long LLM prompts and log messages need long strings
+    "PLR0913", # Agents and tools legitimately have many parameters
+    "PLR2004", # HTTP status codes (200, 422) are universally understood
+    "PLC0415", # Deferred imports in tests are valid for ADK recipe side effects
 ]
 
 [tool.ruff.lint.per-file-ignores]

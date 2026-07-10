@@ -31,7 +31,8 @@ def get_weather(query: str) -> str:
         query: A string containing the location to get weather information for.
 
     Returns:
-        A string with the simulated weather information for the queried location.
+        A string with the simulated weather information for the queried
+        location.
     """
     if "sf" in query.lower() or "san francisco" in query.lower():
         return "It's 60 degrees and foggy."
@@ -43,12 +44,16 @@ def create_agent() -> Agent:
     return Agent(
         name="root_agent",
         model=Gemini(
-            model=os.getenv("MODEL_NAME"),
+            model=os.getenv("MODEL_NAME", "gemini-3.5-flash"),
             retry_options=types.HttpRetryOptions(attempts=3),
         ),
-        instruction="You are a helpful AI assistant designed to provide accurate and useful information.",
+        instruction=(
+            "You are a helpful AI assistant designed to provide"
+            " accurate and useful information."
+        ),
         tools=[get_weather],
     )
+
 
 root_agent = create_agent()
 

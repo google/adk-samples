@@ -14,6 +14,7 @@
 
 import logging
 import os
+import sys
 
 import google.auth
 from dotenv import load_dotenv
@@ -24,18 +25,22 @@ from google.cloud import logging as google_cloud_logging
 from app.app_utils.telemetry import setup_telemetry
 from app.app_utils.typing import Feedback
 
-# Load the .env file
 load_dotenv()
-
 setup_telemetry()
-_, project_id = google.auth.default()
+try:
+    _, project_id = google.auth.default()
+except google.auth.exceptions.DefaultCredentialsError as e:
+    print(f"Warning: Google auth credentials not found: {e}", file=sys.stderr)
+    project_id = None
 try:
     _cloud_logging_client = google_cloud_logging.Client()
     _cloud_logger = _cloud_logging_client.logger(__name__)
 except Exception:
     _cloud_logger = None
 allow_origins = (
-    os.getenv("ALLOW_ORIGINS", "").split(",") if os.getenv("ALLOW_ORIGINS") else None
+    os.getenv("ALLOW_ORIGINS", "").split(",")
+    if os.getenv("ALLOW_ORIGINS")
+    else None
 )
 
 # Artifact bucket for ADK (created by Terraform, passed via env var)
@@ -53,10 +58,10 @@ app: FastAPI = get_fast_api_app(
     artifact_service_uri=artifact_service_uri,
     allow_origins=allow_origins,
     session_service_uri=session_service_uri,
-    otel_to_cloud=True,
+    otel_to_cloud=project_id is not None,
 )
-app.title = "<PROJECT_NAME>"
-app.description = "API for interacting with the Agent <PROJECT_NAME>"
+app.title = "<RECIPE_NAME>"
+app.description = "API for interacting with the Agent <RECIPE_NAME>"
 
 
 @app.post("/feedback")
@@ -73,7 +78,9 @@ def collect_feedback(feedback: Feedback) -> dict[str, str]:
         try:
             _cloud_logger.log_struct(feedback.model_dump(), severity="INFO")
         except Exception:
-            logging.warning("Cloud Logging unavailable; falling back to local logger.")
+            logging.warning(
+                "Cloud Logging unavailable; falling back to local logger."
+            )
             logging.info(feedback.model_dump())
     else:
         logging.info(feedback.model_dump())

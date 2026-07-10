@@ -42,8 +42,8 @@ SCHEMA_PATH = REPO_ROOT / ".github" / "schemas" / "manifest-schema.json"
 MANIFEST_FILENAME = "manifest.yaml"
 RECIPE_ROOTS = ["core", "contrib"]
 
-OWNERSHIP_TEAM_PLACEHOLDER = "YOUR TEAM NAME"
-OWNERSHIP_POC_PLACEHOLDER = "your-github-id"
+OWNERSHIP_TEAM_PLACEHOLDER = "TODO: Replace with your team name"
+OWNERSHIP_POC_PLACEHOLDER = "TODO: Replace with your GitHub user ID"
 
 LANGUAGE_NAMESPACE_DIRS = {"python", "java", "go", "typescript", "kotlin"}
 

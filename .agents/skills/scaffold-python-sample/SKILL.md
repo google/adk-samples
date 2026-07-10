@@ -27,9 +27,24 @@ Use this skill to scaffold a new Python ADK sample recipe inside this repository
 
 ## Inputs
 
-Gather the following from the user before running the script:
-- **Recipe Name** (Required): e.g., `weather-assistant`. Must be 26 characters or less, lowercase letters, numbers, and hyphens only.
-- **Output Directory** (Optional): Defaults to `contrib/`.
+You **must** have both pieces of information below before running the script. If either is missing or was not explicitly provided by the user, **ask for it** — do not assume or use a default.
+
+### 1. Output Directory (Required — must ask if not provided)
+
+The user must choose one of these two valid locations:
+- `contrib/`
+- `core/python/`
+
+If the user has not specified which directory, ask them to choose. Do not proceed until a valid choice is confirmed.
+
+### 2. Recipe Name (Required — must ask if not provided)
+
+The recipe name must satisfy **all** of the following rules:
+- Contains only lowercase letters and hyphens (`a-z`, `-`)
+- Is 26 characters or less
+- Does not start or end with a hyphen
+
+If the user provided a name, validate it against these rules before proceeding. If it is invalid, explain which rule it violates and ask for a corrected name. Do not proceed until a valid name is confirmed.
 
 ---
 
@@ -39,12 +54,17 @@ Execute the scaffold script:
 ```bash
 python3 .agents/skills/scaffold-python-sample/scripts/scaffold.py --name <RECIPE_NAME> --output-dir <OUTPUT_DIRECTORY>
 ```
-*The script accepts exactly two flags: `--name` (required) and `--output-dir` (optional, defaults to `contrib/`). Do not pass any other flags.*
+*The script accepts exactly two flags: `--name` (required) and `--output-dir` (required). Do not pass any other flags.*
 
 ---
 ## Respond
 
-Once the script succeeds, inform the user the recipe is ready. Remind them to update `RECIPE.md` (specifically the Title, Description, Owner, and Point of Contact, which are used to track ownership and support). Then, provide these quick-start commands:
+Once the script succeeds, inform the user the recipe is ready and highlight the following required next steps:
+
+1. **Update `manifest.yaml`**: Fill in the `description`, `ownership.team`, and `ownership.poc` fields (placeholders are marked with `TODO:`). This file is validated by CI and must not contain placeholder values. Use the `generate-manifest` skill if you want it populated automatically from the source code.
+2. **Update `RECIPE.md`**: Fill in the Title, Description, Owner, and Point of Contact fields (used for tracking ownership and support).
+
+Then, provide these quick-start commands:
 ```bash
 cd <OUTPUT_DIRECTORY>/<RECIPE_NAME>
 uv sync                  # install dependencies
