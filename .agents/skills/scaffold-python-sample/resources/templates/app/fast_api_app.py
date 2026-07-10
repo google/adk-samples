@@ -17,6 +17,7 @@ import os
 import sys
 
 import google.auth
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from google.adk.cli.fast_api import get_fast_api_app
 from google.cloud import logging as google_cloud_logging
@@ -24,7 +25,7 @@ from google.cloud import logging as google_cloud_logging
 from app.app_utils.telemetry import setup_telemetry
 from app.app_utils.typing import Feedback
 
-# app.agent loads .env via load_dotenv(); no need to repeat it here.
+load_dotenv()
 setup_telemetry()
 try:
     _, project_id = google.auth.default()
