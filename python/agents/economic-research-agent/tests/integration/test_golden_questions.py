@@ -59,7 +59,7 @@ GOLDEN_QUESTIONS = [
 ]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def engine():
     # Loophole to run project tests from inside scratch workspace
     os.chdir(PROJECT_ROOT)

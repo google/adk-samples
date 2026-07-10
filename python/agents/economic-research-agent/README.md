@@ -13,6 +13,9 @@ An enterprise-grade, **Multi-Agent intelligence** for high-fidelity regional eco
 
 The **Economic Research Agent (ERA)** is a production-grade site-selection and market intelligence consultant. Designed for corporate research, ERA automates comparative metropolitan cost-modeling by orchestrating live public APIs (FRED, BLS, CENSUS, HUD, EIA) into McKinsey-style strategic briefs—now upgraded with an automated **Auditor Judge Agent** (via Serper Live Search) for zero-hallucination verification.
 
+> [!NOTE]
+> While organizations like Anthropic maintain dedicated, proprietary economic research teams and blogs focused on modeling AI usage and its macroeconomic impact, the **Economic Research Agent (ERA)** on Agent Garden serves a different purpose. Rather than striving to publish proprietary articles or centralized think-tank insights, our goal is to provide a fully transparent, open-source framework. This enables diverse industries and independent research analysts covering real estate, regional development, labor structures, and utility planning to dynamically spin up customized, live-grounded market intelligence pipelines tailored to their own analytical needs.
+
 ### 📊 Agent Details
 
 | Feature | Specifics |
@@ -47,7 +50,15 @@ The **Economic Research Agent (ERA)** is a production-grade site-selection and m
 | **EIA** | "Compare industrial electricity rates in Texas vs. Ohio for a data center." | Operational Utility Benchmarking |
 | **Register** | "Are there any recent regulatory notices regarding semiconductors in Texas?" | Live Regulatory Drift & Compliance |
 | **Tax F.** | "What are the corporate income tax brackets for North Carolina in 2024?" | Fiscal Competitiveness |
+| **Workforce** | "Analyze the workforce AI exposure and automation potential for Customer Service Representatives vs. Software Developers." | AI Workforce Adaptation Strategy |
+| **MLS Sourcing** | "Find multifamily investment properties in Columbus, OH and estimate their Cap Rates using HUD rents." | Real Estate Sourcing & Yield Yields |
+| **USPS Cross.** | "Find the county FIPS code for ZIP code 78702 using USPS crosswalk." | Dynamic ZIP-to-FIPS Lookup |
+| **CHAS** | "What is the percentage of cost-burdened households in Travis County, TX (FIPS 48453) using CHAS data?" | Regional Housing Problems & Supply Burden |
+| **Labor Shifts** | "Compare Austin and Columbus for AI-driven labor market disruption and forecast their 3-year displacement outlook." | Labor Market Disruption Forecasting |
 | **Combined** | "Create a Metro Matrix comparing Denver and Seattle for a new Tech Hub." | 360-Degree Site Selection (Level 3) |
+
+
+
 
 ### 📡 Consultative Capabilities
 
@@ -69,6 +80,17 @@ The **Economic Research Agent (ERA)** is a production-grade site-selection and m
 - **Workforce Burden Analysis**: Correlation of Fair Market Rents (FMR) against Area Median Income (AMI).
 - **Relocation COLA**: Precise cost-of-living benchmarking for talent retention strategy.
 - **Demographic Depth**: Hyper-localized education and age-bucket analysis (Census ACS).
+
+#### 🤖 AI Labor Exposure & MLS Investment Sourcing (New!)
+- **AI Task Exposure & Automation Risk**: Maps job categories against O*NET tasks to determine displacement risk (automation) vs. augmentation support potential.
+- **MLS Sourcing & Cap Rate Calculation**: Fetches active property listings from MLS data and correlates them with local HUD FMR rents to calculate Estimated Cap Rates and price-to-rent yield ratios.
+
+#### 🧮 Quantitative Decision-Support & Econometrics (New!)
+- **Isolated Econometrics Sandbox (`run_econometric_regression`)**: Executes formal OLS regressions, Pearson/Spearman correlations, and ADF stationarity tests on live vectors in a secure Python environment.
+- **Acquisitions Deal Underwriting (`underwrite_deal_leverage`)**: Models compound real estate amortization, Net Operating Income (NOI), Debt Service Coverage Ratio (DSCR), and Debt Yield tables from HUD/MLS inputs.
+- **Location Scorecard Generator (`generate_location_scorecard`)**: Normalizes and scores candidate states based on weighted criteria (corporate tax, electricity cost, wages).
+- **Employee Relocation Estimator (`estimate_employee_relocation`)**: Compares state income tax brackets and HUD FMR rents between counties to project net disposable income changes for relocating talent.
+- **FRED Series Search (`search_macro_series`)**: Maps semantic keywords directly to valid FRED Series IDs to prevent lookup errors.
 
 ---
 
@@ -129,6 +151,8 @@ The ERA uses a modular grounding strategy. Set these in your `.env` file (see `.
 | **NewsAPI** | Sentiment | **Optional** | [Sign up for NewsAPI](https://newsapi.org/register) |
 | **Serper** | Live Judge Search | **Optional** | [Sign up for Serper.dev](https://serper.dev/) |
 | **CDC** | Healthcare Stats | **Optional** | [Sign up for CDC Data](https://data.cdc.gov/) |
+| **RentCast** | Real Estate Listings | **Optional** | [Sign up for RentCast API](https://www.rentcast.io/api) |
+| **O*NET** | AI Task Exposure | **Optional** | [Sign up for O*NET Web Services](https://services.onetcenter.org/) |
 
 ### 🛠️ Installation
 

@@ -9,9 +9,6 @@ import os
 from fredapi import Fred
 from pydantic import BaseModel, Field
 
-# FRED API handles key as an environment variable or via constructor.
-FRED_API_KEY = os.getenv("FRED_API_KEY")
-
 
 class FredRegionalRequest(BaseModel):
     city_names: list[str] = Field(

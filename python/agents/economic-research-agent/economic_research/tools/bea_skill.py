@@ -6,11 +6,6 @@ import os
 
 import requests
 
-# BEA API key from environment
-h_key = os.getenv("BEA_API_KEY", "").strip()
-BEA_API_KEY = h_key.replace('"', "").replace("'", "")
-
-
 def fetch_bea_regional_data(
     metro_names: list[str], report_type: str = "GDP"
 ) -> str:
@@ -18,7 +13,9 @@ def fetch_bea_regional_data(
     Fetches regional economic data (GDP or Personal Income) directly from the BEA API.
     Essential for high-fidelity regional economic health assessments.
     """
-    if not BEA_API_KEY:
+    h_key = os.getenv("BEA_API_KEY", "").strip()
+    bea_key = h_key.replace('"', "").replace("'", "")
+    if not bea_key:
         return json.dumps(
             {"ERROR": "BEA_API_KEY not found in environment."}, indent=2
         )
@@ -47,7 +44,7 @@ def fetch_bea_regional_data(
                 # Live BEA API Call
                 # Dataset: Regional (CAGDP9 = Real GDP by MSA)
                 url = (
-                    f"https://apps.bea.gov/api/data?UserID={BEA_API_KEY}"
+                    f"https://apps.bea.gov/api/data?UserID={bea_key}"
                     f"&method=GetData&DataSetName=Regional"
                     f"&TableName=CAGDP9"
                     f"&GeoFIPS={fips}"
@@ -82,6 +79,25 @@ def fetch_bea_regional_data(
                                 }
                             )
                         else:
+                            # Fallback to FRED for MSA FIPS
+                            from economic_research.tools.fred_skill import fetch_regional_macro_stats
+                            try:
+                                fred_res = fetch_regional_macro_stats([city], series_type="gdp")
+                                if "ERROR" not in fred_res and "No FRED data" not in fred_res:
+                                    fred_data = json.loads(fred_res)
+                                    if fred_data:
+                                        item = fred_data[0]
+                                        results.append({
+                                            "City": city,
+                                            "Metric": f"Real {report_type} (Millions $)",
+                                            "Value": f"${item['Latest Value']}",
+                                            "Year": item['Latest Date'].split("-")[0],
+                                            "Source": item['Source'] + " (BEA MSA Fallback)"
+                                        })
+                                        continue
+                            except Exception:
+                                pass
+
                             results.append(
                                 {
                                     "City": city,
