@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from dotenv import load_dotenv
+
+# Load the .env file
+if not load_dotenv():
+    raise FileNotFoundError(
+        "Critical Error: No .env file found. "
+        "Make sure to copy .env.example to .env and update the values."
+    )
+
 from .agent import app
 
 __all__ = ["app"]

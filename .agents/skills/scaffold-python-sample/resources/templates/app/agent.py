@@ -14,18 +14,10 @@
 
 import os
 
-from dotenv import load_dotenv
 from google.adk.agents import Agent
 from google.adk.apps import App
 from google.adk.models import Gemini
 from google.genai import types
-
-# Load the .env file
-if not load_dotenv():
-    raise FileNotFoundError(
-        "Critical Error: No .env file found. "
-        "Make sure to copy .env.example to .env and update the values."
-    )
 
 
 def get_weather(query: str) -> str:
