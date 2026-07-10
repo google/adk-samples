@@ -58,12 +58,7 @@ def test_adk_run_runnability() -> None:
 
 def test_web_server_runnability() -> None:
     """Verifies entry point for `uvicorn app.fast_api_app:app`."""
-    from unittest.mock import patch
-
-    # fast_api_app calls google.auth.default() at import time.
-    # Mock it so this test works without GCP credentials.
-    with patch("google.auth.default", return_value=(None, "test-project")):
-        import app.fast_api_app
+    import app.fast_api_app
 
     assert app.fast_api_app.app is not None
     assert isinstance(app.fast_api_app.app, FastAPI)

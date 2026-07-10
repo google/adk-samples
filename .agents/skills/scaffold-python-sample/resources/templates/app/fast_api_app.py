@@ -14,6 +14,7 @@
 
 import logging
 import os
+import sys
 
 import google.auth
 from fastapi import FastAPI
@@ -25,7 +26,11 @@ from app.app_utils.typing import Feedback
 
 # app.agent loads .env via load_dotenv(); no need to repeat it here.
 setup_telemetry()
-_, project_id = google.auth.default()
+try:
+    _, project_id = google.auth.default()
+except google.auth.exceptions.DefaultCredentialsError as e:
+    print(f"Warning: Google auth credentials not found: {e}", file=sys.stderr)
+    project_id = None
 try:
     _cloud_logging_client = google_cloud_logging.Client()
     _cloud_logger = _cloud_logging_client.logger(__name__)

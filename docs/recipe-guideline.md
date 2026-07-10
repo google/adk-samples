@@ -192,6 +192,8 @@ To run the local unit and runnability checks:
 ```bash
 uv run pytest
 ```
+
+> **Note:** Tests under `tests/integration/` require live credentials and are excluded from CI automatically. To run them locally: `uv run pytest tests/integration`
 ````
 
 ---
@@ -331,6 +333,8 @@ Run unit tests or runnability checks using `pytest`:
 cd core/<recipe-name>
 uv run pytest
 ```
+
+> **Note:** Tests under `tests/integration/` require live credentials and are excluded from CI automatically. To run them locally: `uv run pytest tests/integration`
 
 ---
 
