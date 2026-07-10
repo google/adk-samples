@@ -21,3 +21,6 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 pythonpath = "."
+# Integration tests require live credentials and are excluded from CI.
+# Run them locally with: uv run pytest tests/integration
+addopts = "--ignore=tests/integration"
