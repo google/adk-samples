@@ -1,8 +1,22 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
-import wave
 import re
-import json
+import wave
 from pathlib import Path
+
 import numpy as np
 
 
@@ -31,17 +45,19 @@ def extract_timestamp(filename):
     return 0
 
 
-def concatenate_and_resample_audio(audio_files, output_wav_path, orig_sr=24000, target_sr=16000):
+def concatenate_and_resample_audio(
+    audio_files, output_wav_path, orig_sr=24000, target_sr=16000
+):
     """Concatenates a list of raw PCM audio files, resamples them, and saves as a WAV file."""
     all_resampled = []
 
     for path in audio_files:
         with open(path, "rb") as f:
             data = np.frombuffer(f.read(), dtype=np.int16)
-        
+
         if len(data) == 0:
             continue
-            
+
         resampled = resample_audio(data, orig_sr, target_sr)
         all_resampled.append(resampled)
 
@@ -60,7 +76,6 @@ def concatenate_and_resample_audio(audio_files, output_wav_path, orig_sr=24000, 
 
     print(f"Pruned, merged and downsampled audio saved to: {output_path}")
     return True
-
 
 
 def _find_session_dir(pcm_file: Path, artifacts_root: Path) -> Path:
@@ -98,10 +113,10 @@ def find_sorted_output_audio_files(artifacts_dir: str) -> list:
     return audio_files
 
 
-def convert_artifacts_to_wav(
+def convert_artifacts_to_wav(  # noqa: C901, PLR0912, PLR0915
     artifacts_dir: str = "./artifacts",
-    output_filename: str = None,
-    session_id: str = None
+    output_filename: str | None = None,
+    session_id: str | None = None,
 ):
     """Scans artifacts_dir for PCM audio files, merges, resamples, and saves them to output_filename."""
     if output_filename is None:
@@ -111,22 +126,26 @@ def convert_artifacts_to_wav(
             output_filename = "./session.wav"
 
     artifacts_root = Path(artifacts_dir)
-    
+
     # Smart Fallbacks for ADK Web Framework directories
     if not artifacts_root.exists() or not any(artifacts_root.rglob("*.pcm")):
         fallbacks = [
             Path("./.adk/artifacts"),
             Path("./info_gather_agent/.adk/artifacts"),
-            Path("../.adk/artifacts")
+            Path("../.adk/artifacts"),
         ]
         for fallback in fallbacks:
             if fallback.exists() and any(fallback.rglob("*")):
                 artifacts_root = fallback
-                print(f"Found active artifacts directory at: {artifacts_root.resolve()}")
+                print(
+                    f"Found active artifacts directory at: {artifacts_root.resolve()}"
+                )
                 break
 
     if not artifacts_root.exists():
-        print(f"Artifacts directory not found. Please speak to the agent via the Web UI first to generate audio blobs!")
+        print(
+            "Artifacts directory not found. Please speak to the agent via the Web UI first to generate audio blobs!"
+        )
         return False
 
     sessions = {}
@@ -142,7 +161,6 @@ def convert_artifacts_to_wav(
             continue
 
         session_dir = _find_session_dir(pcm_file, artifacts_root)
-
 
         if not session_dir:
             continue
@@ -173,7 +191,7 @@ def convert_artifacts_to_wav(
         # Sort by timestamp to preserve conversation order
         artifacts.sort(key=lambda x: x[0])
 
-        for ts, path, sr in artifacts:
+        for _ts, path, sr in artifacts:
             with open(path, "rb") as f:
                 data = np.frombuffer(f.read(), dtype=np.int16)
 
@@ -197,4 +215,24 @@ def convert_artifacts_to_wav(
         wav_file.writeframes(merged_data.tobytes())
 
     print(f"Success! Converted conversation saved to: {output_path}")
+
+    # Upload to GCS if configured
+    gcs_bucket_name = os.environ.get("GCS_BUCKET_NAME")
+    if gcs_bucket_name:
+        try:
+            from google.cloud import storage  # noqa: PLC0415
+
+            client = storage.Client()
+            bucket = client.bucket(gcs_bucket_name)
+            blob = bucket.blob(output_path.name)
+            print(
+                f"Uploading {output_path.name} to GCS bucket {gcs_bucket_name}..."
+            )
+            blob.upload_from_filename(str(output_path))
+            print(
+                f"Successfully uploaded to gs://{gcs_bucket_name}/{output_path.name}"
+            )
+        except Exception as e:
+            print(f"Failed to upload to GCS: {e}")
+
     return True

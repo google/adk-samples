@@ -24,26 +24,20 @@ A Real-Time Speech-to-Text (STT) and Text-to-Speech (TTS) Evaluations and Record
 
 ## Setup Guide
 
-### 1. Initialize Virtual Environment (Python 3.12)
-Create and activate a isolated virtual environment using Python 3.12:
+### 1. Initialize Virtual Environment and Install Dependencies
+This project uses `uv` for dependency management. Create the virtual environment and install dependencies with a single command:
 ```bash
-python3.12 -m venv .venv
+uv sync
 source .venv/bin/activate
 ```
 
-### 2. Install Project Dependencies
-Ensure your environment is up to date and install all necessary dependencies listed in `requirements.txt`:
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
 ### 3. Environment Variables
-Copy the provided `.env.example` file to `.env` in the parent directory (`../.env`) containing your Google Cloud project configuration:
+Copy the provided `.env.example` file to `.env` in the agent directory (`./info_gather_agent/.env`) containing your Google Cloud project configuration:
 ```env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_CLOUD_LOCATION=global
+GCS_BUCKET_NAME=your-gcs-bucket-name
 ```
 
 ## Running the Application
@@ -119,7 +113,7 @@ When you run the TTS evaluation, the pipeline executes as follows:
 1. **Directory Traversal**: It scans the `artifacts/` directory, automatically locating all subdirectories containing the keyword `output` in their name.
 2. **Chronological Concatenation**: It reads all raw, turn-by-turn agent PCM audio chunks in sequence (sorted by timestamp) to reconstruct the exact chronological conversation.
 3. **Downsampling & File Writing**: It downsamples the 24 kHz PCM chunks to a standard 16 kHz sampling rate and outputs a consolidated, single WAV recording to `eval/tts_combined_output.wav`.
-4. **Centralized LLM-as-a-Judge Assessment**: It dispatches the combined audio file to the `gemini-3.5-flash` model, leveraging the centralized `TTS_EVAL_GENERATE_CONFIG` to enforce a highly detailed, structured JSON schema response.
+4. **Centralized LLM-as-a-Judge Assessment**: It dispatches the combined audio file to the `gemini-2.5-pro` model, leveraging the centralized `TTS_EVAL_GENERATE_CONFIG` to enforce a highly detailed, structured JSON schema response.
 
 #### 📋 What to Expect in the Output
 You will see a comprehensive, structured **TTS Quality Evaluation Report**:
