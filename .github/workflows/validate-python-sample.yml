@@ -87,8 +87,8 @@ jobs:
               if [ ! -f "$manifest" ]; then
                 continue
               fi
-              # Match:  language: "python"  or  language: python  (with optional spaces)
-              if ! grep -qE '^\s*language\s*:\s*"?python"?\s*$' "$manifest"; then
+              # Match:  language: python  or  language: "python"  or  language: 'python'
+              if ! grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*$' "$manifest"; then
                 continue
               fi
             fi
@@ -124,7 +124,7 @@ jobs:
             [ -d "$d" ] || continue
             manifest="${d}manifest.yaml"
             [ -f "$manifest" ] || continue
-            if grep -qE '^\s*language\s*:\s*"?python"?\s*$' "$manifest"; then
+            if grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*$' "$manifest"; then
               ALL="${ALL}${d%/}"$'\n'
             fi
           done
@@ -189,7 +189,7 @@ jobs:
             # Limits depend on whether manifest.yaml sets:  large: true
             # ------------------------------------------------------------------
             manifest="$recipe/manifest.yaml"
-            if [ -f "$manifest" ] && grep -qE '^\s*large\s*:\s*true\s*$' "$manifest"; then
+            if [ -f "$manifest" ] && grep -qiE '^\s*large\s*:\s*true\s*$' "$manifest"; then
               EFFECTIVE_MAX_SIZE_MB="$MAX_SIZE_MB_LARGE"
               EFFECTIVE_MAX_FILES="$MAX_FILES_LARGE"
               echo "[INFO] Large recipe detected — using relaxed limits (${EFFECTIVE_MAX_SIZE_MB} MB / ${EFFECTIVE_MAX_FILES} files)."
@@ -253,7 +253,7 @@ jobs:
 
             if [ -f "$recipe/.env.example" ]; then
               for key in "${REQUIRED_ENV_KEYS[@]}"; do
-                if ! grep -qE "^${key}(_[A-Z0-9_]*)?\s*=" "$recipe/.env.example"; then
+                if ! grep -qE "^(export\s+)?${key}(_[A-Z0-9_]*)?\s*=" "$recipe/.env.example"; then
                   echo "::warning file=$recipe/.env.example::No environment variable starting with '${key}' found in .env.example. All recipes must declare at least one variable prefixed with GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, and MODEL_NAME in their .env.example file."
                   echo "[WARN] No env key with prefix '$key' found in .env.example."
                 else
@@ -268,15 +268,21 @@ jobs:
             # ------------------------------------------------------------------
             env_example="$recipe/.env.example"
             if [ -f "$env_example" ]; then
-              # Collect variable names defined in .env.example (KEY=... lines)
-              defined_vars=$(grep -oE '^[A-Z_][A-Z0-9_]*' "$env_example" | sort -u || true)
+              # Collect variable names defined in .env.example (KEY=... lines, with optional export prefix)
+              defined_vars=$(grep -oE '^(export\s+)?[A-Z_][A-Z0-9_]*' "$env_example" \
+                | sed 's/^export[[:space:]]*//' \
+                | sort -u || true)
 
               # Collect variable names referenced in Python files via:
               #   os.environ["VAR"], os.environ.get("VAR"), os.getenv("VAR")
-              used_vars=$(grep -rhoE 'os\.(environ\.get|environ|getenv)\(\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]' \
-                "$recipe" --include="*.py" \
+              # Excludes: tests/ directory, commented-out lines.
+              # Note: direct imports (from os import getenv) are not detected — known limitation.
+              used_vars=$(find "$recipe" -type f -name "*.py" ! -path "*/tests/*" -print0 \
+                | xargs -0 grep -hE 'os\.(environ\.get|getenv)\(\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]|os\.environ\[\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]\s*\]' \
+                | grep -v '^\s*#' \
+                | grep -oE 'os\.(environ\.get|getenv)\(\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]|os\.environ\[\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]\s*\]' \
                 | grep -oE '['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]' \
-                | tr -d '"'"'"' \
+                | tr -d '"' | tr -d "'" \
                 | sort -u || true)
 
               missing_vars=""
@@ -297,6 +303,22 @@ jobs:
                 echo "[PASS] All environment variables used in Python files are defined in .env.example."
               fi
             fi
+
+            # ------------------------------------------------------------------
+            # Notice: Possible hardcoded model names in Python files
+            # ------------------------------------------------------------------
+            MODEL_PREFIXES="gemini-|gemini-exp-|imagen-|claude-|llama-|meta/llama-|mistral-|codestral-|phi-|grok-|command-|jamba-"
+
+            find "$recipe" -type f -name "*.py" \
+              ! -path "*/tests/*" \
+              | while read -r pyfile; do
+                grep -onE "['\"]($MODEL_PREFIXES)[^ '\"]{1,35}['\"]" "$pyfile" \
+                  | grep -v '^\s*#' \
+                  | while IFS=: read -r lineno match; do
+                    echo "::notice file=$pyfile,line=$lineno::Possible hardcoded model name $match detected. If this is a model identifier, consider using an environment variable instead."
+                    echo "[NOTICE] $pyfile:$lineno — possible hardcoded model name: $match"
+                  done
+              done
 
             if [ "$RECIPE_FAILED" -eq 1 ]; then
               FAILED=1
