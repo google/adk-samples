@@ -59,8 +59,8 @@ app: FastAPI = get_fast_api_app(
     session_service_uri=session_service_uri,
     otel_to_cloud=project_id is not None,
 )
-app.title = "<PROJECT_NAME>"
-app.description = "API for interacting with the Agent <PROJECT_NAME>"
+app.title = "<RECIPE_NAME>"
+app.description = "API for interacting with the Agent <RECIPE_NAME>"
 
 
 @app.post("/feedback")
