@@ -35,7 +35,9 @@ try:
 except Exception:
     _cloud_logger = None
 allow_origins = (
-    os.getenv("ALLOW_ORIGINS", "").split(",") if os.getenv("ALLOW_ORIGINS") else None
+    os.getenv("ALLOW_ORIGINS", "").split(",")
+    if os.getenv("ALLOW_ORIGINS")
+    else None
 )
 
 # Artifact bucket for ADK (created by Terraform, passed via env var)
@@ -73,7 +75,9 @@ def collect_feedback(feedback: Feedback) -> dict[str, str]:
         try:
             _cloud_logger.log_struct(feedback.model_dump(), severity="INFO")
         except Exception:
-            logging.warning("Cloud Logging unavailable; falling back to local logger.")
+            logging.warning(
+                "Cloud Logging unavailable; falling back to local logger."
+            )
             logging.info(feedback.model_dump())
     else:
         logging.info(feedback.model_dump())
