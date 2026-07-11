@@ -133,6 +133,10 @@ jobs:
           echo "all_recipes=$(echo "$ALL" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
 
       - name: Validate Python recipe structure
+        env:
+          VALIDATE_ALL: ${{ steps.affected.outputs.validate_all }}
+          ALL_RECIPES: ${{ steps.all_recipes.outputs.all_recipes }}
+          CHANGED_RECIPES: ${{ steps.affected.outputs.changed_recipes }}
         run: |
           set -euo pipefail
 
@@ -148,10 +152,10 @@ jobs:
           MAX_FILES_LARGE=200
           # ==================================================================
 
-          if [ "${{ steps.affected.outputs.validate_all }}" = "true" ]; then
-            RECIPES="${{ steps.all_recipes.outputs.all_recipes }}"
+          if [ "$VALIDATE_ALL" = "true" ]; then
+            RECIPES="$ALL_RECIPES"
           else
-            RECIPES="${{ steps.affected.outputs.changed_recipes }}"
+            RECIPES="$CHANGED_RECIPES"
           fi
 
           if [ -z "$RECIPES" ]; then

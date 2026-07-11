@@ -366,7 +366,17 @@ def ensure_python_dotenv_dependency(pyproject: Path) -> bool:
         return False
 
     content = pyproject.read_text(encoding="utf-8")
-    if "python-dotenv" in content:
+
+    # Check only within the [project] dependencies block, not globally.
+    # python-dotenv may exist in dev/optional groups but still be absent from
+    # the main [project] dependencies, which would cause ModuleNotFoundError
+    # in production where dev extras are not installed.
+    project_deps_match = re.search(
+        r"\[project\].*?dependencies\s*=\s*\[.*?\]",
+        content,
+        flags=re.DOTALL,
+    )
+    if project_deps_match and "python-dotenv" in project_deps_match.group(0):
         return False
 
     # Regex: match the dependencies = [ ... ] block (multiline, non-greedy)
