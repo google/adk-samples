@@ -41,16 +41,14 @@ test-integration: ## Run integration tests (Requires API keys)
 	@echo "🛰️ Running ERA integration tests..."
 	ERA_BYPASS_SUPERVISOR=true uv run pytest tests/integration/
 
-deploy: ## Deploy the agent to Vertex AI Reasoning Engine (Direct Vertex SDK)
-	@echo "🚀 Deploying ERA to Vertex (Direct SDK)..."
-	PYTHONPATH=. uv run python3 economic_research/deployment/deploy.py
+deploy: ## Deploy the agent to Vertex AI Agent Runtime and register to Gemini Enterprise
+	@echo "🚀 Executing Production Deployment & Registration..."
+	./deploy.sh
 
-
-
-
-register-gemini-enterprise: ## Register the agent with Gemini Enterprise (Reasoning Engine Spec)
+register-gemini-enterprise: ## Register the agent with Gemini Enterprise via agents-cli
 	@echo "🛰️ Registering ERA with Gemini Enterprise..."
-	@uvx agent-starter-pack register-gemini-enterprise
+	agents-cli publish gemini-enterprise
+
 lint: ## Run ruff check without fixing
 	@echo "🔍 Running ruff checks..."
 	uvx ruff check .
