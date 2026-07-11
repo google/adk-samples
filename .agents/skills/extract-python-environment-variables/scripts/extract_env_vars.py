@@ -559,7 +559,9 @@ def replace_hardcoded_models(
             mod_lines = modified.splitlines(keepends=True)
             idx = _post_header_index(mod_lines)
             # Avoid double blank lines if the line at idx is already blank
-            suffix = "\n" if idx < len(mod_lines) and mod_lines[idx].strip() else ""
+            suffix = (
+                "\n" if idx < len(mod_lines) and mod_lines[idx].strip() else ""
+            )
             mod_lines.insert(idx, f"import os\n{suffix}")
             modified = "".join(mod_lines)
 

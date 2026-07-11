@@ -64,7 +64,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--name", required=True, help="Name of the recipe")
     parser.add_argument(
-        "--output-dir", default="contrib", help="Output directory inside repository"
+        "--output-dir",
+        default="contrib",
+        help="Output directory inside repository",
     )
 
     args = parser.parse_args()
