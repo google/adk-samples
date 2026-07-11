@@ -20,7 +20,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 """Creates a Vector Search 2.0 Collection with auto-embeddings.
 
 Idempotent: checks if the collection already exists before creating.
@@ -31,6 +30,7 @@ The collection is configured with:
     (gemini-embedding-001, 3072 dims, task_type=RETRIEVAL_DOCUMENT)
 """
 
+import os
 import sys
 
 import click

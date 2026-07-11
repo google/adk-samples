@@ -199,15 +199,19 @@ jobs:
             fi
             EFFECTIVE_MAX_SIZE_BYTES=$(( EFFECTIVE_MAX_SIZE_MB * 1024 * 1024 ))
 
-            folder_size_bytes=$(du -sb "$recipe" | awk '{print $1}')
+            # Exclude uv.lock files from the size calculation — they are
+            # auto-generated and can be large without reflecting recipe content.
+            lockfile_size_bytes=$(find "$recipe" -name "uv.lock" -type f \
+              -exec du -sb {} + 2>/dev/null | awk '{s+=$1} END {print s+0}')
+            folder_size_bytes=$(( $(du -sb "$recipe" | awk '{print $1}') - lockfile_size_bytes ))
             folder_size_kb=$(( folder_size_bytes / 1024 ))
 
             if [ "$folder_size_bytes" -gt "$EFFECTIVE_MAX_SIZE_BYTES" ]; then
-              echo "::error file=$recipe::Recipe folder exceeds ${EFFECTIVE_MAX_SIZE_MB} MB (${folder_size_kb} KB). Remove large files or binaries."
-              echo "[FAIL] Folder size: ${folder_size_kb} KB — exceeds ${EFFECTIVE_MAX_SIZE_MB} MB limit."
+              echo "::error file=$recipe::Recipe folder exceeds ${EFFECTIVE_MAX_SIZE_MB} MB (${folder_size_kb} KB, excluding uv.lock). Remove large files or binaries."
+              echo "[FAIL] Folder size: ${folder_size_kb} KB (excluding uv.lock) — exceeds ${EFFECTIVE_MAX_SIZE_MB} MB limit."
               RECIPE_FAILED=1
             else
-              echo "[PASS] Folder size: ${folder_size_kb} KB"
+              echo "[PASS] Folder size: ${folder_size_kb} KB (excluding uv.lock)"
             fi
 
             file_count=$(find "$recipe" -type f | wc -l | tr -d ' ')

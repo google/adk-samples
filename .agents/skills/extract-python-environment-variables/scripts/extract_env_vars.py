@@ -212,7 +212,10 @@ def update_env_example(
     else:
         current = ""
 
-    block = "\n# Environment variables extracted by extract-python-environment-variables\n"
+    block = (
+        "\n# Environment variables extracted by"
+        " extract-python-environment-variables\n"
+    )
     for var in sorted(to_add):
         value = to_add[var] if to_add[var] is not None else PLACEHOLDER
         block += f"{var}={value}\n"
@@ -502,14 +505,15 @@ def replace_hardcoded_models(
     name_map: dict[str, str],
 ) -> dict[str, str]:
     """
-    Replace each hardcoded model string with the correct os.getenv("MODEL_NAME_*")
-    call in-place, using the mapping produced by assign_model_var_names().
+    Replace each hardcoded model string with the correct
+    os.getenv("MODEL_NAME_*") call in-place, using the mapping produced by
+    assign_model_var_names().
 
     Replacement is AST-position-based, which means:
       - All quote styles (single, double, triple, raw) are handled correctly
         because the AST abstracts away quoting entirely.
-      - Only actual string-literal AST nodes are replaced — comments, docstrings,
-        and f-string fragments are never touched.
+      - Only actual string-literal AST nodes are replaced — comments,
+        docstrings, and f-string fragments are never touched.
 
     Also ensures `import os` is present in every modified file.
 
@@ -549,10 +553,14 @@ def replace_hardcoded_models(
             chars[start:end] = list(new_text)
         modified = "".join(chars)
 
-        # Ensure `import os` is present, placed after license + docstring
+        # Ensure `import os` is present, placed after license + docstring.
+        # Include a trailing blank line so the import block is well-formatted.
         if "import os" not in modified:
             mod_lines = modified.splitlines(keepends=True)
-            mod_lines.insert(_post_header_index(mod_lines), "import os\n")
+            idx = _post_header_index(mod_lines)
+            # Avoid double blank lines if the line at idx is already blank
+            suffix = "\n" if idx < len(mod_lines) and mod_lines[idx].strip() else ""
+            mod_lines.insert(idx, f"import os\n{suffix}")
             modified = "".join(mod_lines)
 
         py_file.write_text(modified, encoding="utf-8")
@@ -626,7 +634,7 @@ def run_step_pyproject(recipe_dir: Path) -> None:
 def run_step_model_names(
     recipe_dir: Path, py_files: list[Path], env_example: Path
 ) -> None:
-    """Step 6: detect hardcoded model strings, replace with os.getenv(), update .env.example."""
+    """Step 6: detect hardcoded model strings, replace with os.getenv()."""
     model_hits = extract_hardcoded_models(py_files)
     if not model_hits:
         print("\n[PASS] No hardcoded model names detected.")
@@ -658,7 +666,8 @@ def run_step_model_names(
 
     for model_str, var_name in substituted.items():
         print(
-            f'[PASS] Replaced hardcoded "{model_str}" with os.getenv("{var_name}") in source.'
+            f'[PASS] Replaced hardcoded "{model_str}" with'
+            f' os.getenv("{var_name}") in source.'
         )
     if added_models:
         for var in added_models:
