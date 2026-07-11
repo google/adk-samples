@@ -87,6 +87,17 @@ The **Economic Research Agent (ERA)** is a production-grade site-selection and m
 - **Location Scorecard Generator (`generate_location_scorecard`)**: Normalizes and scores candidate states based on weighted criteria (corporate tax, electricity cost, wages).
 - **Universal Whitepaper Engine (`generate_whitepaper`)**: Leverages our graduated `UniversalWhitepaperOrchestrator` to generate end-to-end Corporate Whitepapers on any "Wow Factor" scenario.
 
+#### 🤖 AI Labor Exposure & MLS Investment Sourcing (New!)
+- **AI Task Exposure & Automation Risk**: Maps job categories against O*NET tasks to determine displacement risk (automation) vs. augmentation support potential.
+- **MLS Sourcing & Cap Rate Calculation**: Fetches active property listings from MLS data and correlates them with local HUD FMR rents to calculate Estimated Cap Rates and price-to-rent yield ratios.
+
+#### 🧮 Quantitative Decision-Support & Econometrics (New!)
+- **Isolated Econometrics Sandbox (`run_econometric_regression`)**: Executes formal OLS regressions, Pearson/Spearman correlations, and ADF stationarity tests on live vectors in a secure Python environment.
+- **Acquisitions Deal Underwriting (`underwrite_deal_leverage`)**: Models compound real estate amortization, Net Operating Income (NOI), Debt Service Coverage Ratio (DSCR), and Debt Yield tables from HUD/MLS inputs.
+- **Location Scorecard Generator (`generate_location_scorecard`)**: Normalizes and scores candidate states based on weighted criteria (corporate tax, electricity cost, wages).
+- **Employee Relocation Estimator (`estimate_employee_relocation`)**: Compares state income tax brackets and HUD FMR rents between counties to project net disposable income changes for relocating talent.
+- **FRED Series Search (`search_macro_series`)**: Maps semantic keywords directly to valid FRED Series IDs to prevent lookup errors.
+
 ---
 
 ## B. Architecture Visuals
