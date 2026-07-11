@@ -222,6 +222,81 @@ def update_env_example(
 
 
 # ---------------------------------------------------------------------------
+# Shared helpers: file structure analysis
+# ---------------------------------------------------------------------------
+
+
+def _post_header_index(lines: list[str]) -> int:
+    """
+    Return the line index after which new top-level code should be inserted.
+
+    Skips (in order):
+      1. Leading license / comment block and blank lines.
+      2. An optional module-level docstring (single- or triple-quoted).
+
+    This prevents imports from being injected before the module docstring,
+    which would cause documentation tools to miss it.
+    """
+    i = 0
+    n = len(lines)
+
+    # Skip license header (comment lines and blank lines)
+    while i < n and (lines[i].strip().startswith("#") or not lines[i].strip()):
+        i += 1
+
+    # Skip module docstring if present
+    if i < n:
+        stripped = lines[i].strip()
+        for quote in ('"""', "'''"):
+            if not stripped.startswith(quote):
+                continue
+            rest = stripped[len(quote) :]
+            if rest.endswith(quote) and len(rest) >= len(quote):
+                i += 1  # single-line docstring
+            else:
+                i += 1  # multi-line: scan for closing quotes
+                while i < n and quote not in lines[i]:
+                    i += 1
+                i += 1  # include the line that contains the closing quotes
+            break
+
+    return i
+
+
+def _docstring_node_ids(tree: ast.AST) -> set[int]:
+    """
+    Return the id() of every ast.Constant that is a docstring.
+
+    A docstring is the first statement of a module, class, or function body
+    when that statement is a bare string expression.  Excluding these prevents
+    the model-name replacement from corrupting documentation text.
+    """
+    ids: set[int] = set()
+
+    def _mark(stmts: list[ast.stmt]) -> None:
+        if (
+            stmts
+            and isinstance(stmts[0], ast.Expr)
+            and isinstance(stmts[0].value, ast.Constant)
+            and isinstance(stmts[0].value.value, str)
+        ):
+            ids.add(id(stmts[0].value))
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef)):
+            _mark(node.body)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            _mark(node.body)
+
+    return ids
+
+
+def _flat_offset(lines: list[str], lineno: int, col: int) -> int:
+    """Convert a 1-based lineno + 0-based col_offset to a flat char offset."""
+    return sum(len(ln) for ln in lines[: lineno - 1]) + col
+
+
+# ---------------------------------------------------------------------------
 # Step 4: Inject load_dotenv() into package __init__.py
 # ---------------------------------------------------------------------------
 
@@ -267,14 +342,8 @@ def inject_load_dotenv(init_py: Path) -> bool:
     if last_import_idx >= 0:
         lines.insert(last_import_idx + 1, inject_block)
     else:
-        # No imports found — insert after the license/comment header block
-        license_end = 0
-        for i, line in enumerate(lines):
-            if line.strip().startswith("#") or not line.strip():
-                license_end = i + 1
-            else:
-                break
-        lines.insert(license_end, inject_block)
+        # No imports — insert after license header and any module docstring
+        lines.insert(_post_header_index(lines), inject_block)
 
     init_py.write_text("".join(lines), encoding="utf-8")
     return True
@@ -299,15 +368,22 @@ def ensure_python_dotenv_dependency(pyproject: Path) -> bool:
 
     # Regex: match the dependencies = [ ... ] block (multiline, non-greedy)
     def inserter(m: re.Match) -> str:
-        # Insert new dep before the closing bracket, preserving indentation
         inner = m.group(2)
-        # Detect the indentation used by existing entries
         indent_match = re.search(r"\n(\s+)", inner)
         indent = indent_match.group(1) if indent_match else "    "
+        inner_stripped = inner.rstrip()
+        # Ensure the last existing entry ends with a comma (handles single-line
+        # arrays like  dependencies = ["pkg"]  where no trailing comma exists).
+        if inner_stripped and not inner_stripped.endswith(","):
+            inner_stripped += ","
+        is_multiline = "\n" in inner
+        sep = f"\n{indent}" if is_multiline else " "
+        tail = "\n" if is_multiline else ""
         return (
             m.group(1)
-            + inner
-            + f'{indent}"python-dotenv>=1.0.0",\n'
+            + inner_stripped
+            + f'{sep}"python-dotenv>=1.0.0",'
+            + tail
             + m.group(3)
         )
 
@@ -339,6 +415,7 @@ def extract_hardcoded_models(
 
     Uses AST to walk string constants and checks whether the value starts with
     any known model prefix (same list as validate-python-sample.yml).
+    Docstring nodes are excluded to avoid false positives from documentation.
 
     Returns:
       {file_path: [(line_number, model_string), ...]}
@@ -352,14 +429,17 @@ def extract_hardcoded_models(
         except (SyntaxError, UnicodeDecodeError):
             continue
 
+        docstring_ids = _docstring_node_ids(tree)
+
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant):
                 continue
+            if id(node) in docstring_ids:
+                continue
             if not isinstance(node.value, str):
                 continue
-            value = node.value
-            if any(value.startswith(prefix) for prefix in MODEL_PREFIXES):
-                hits.setdefault(py_file, []).append((node.lineno, value))
+            if any(node.value.startswith(prefix) for prefix in MODEL_PREFIXES):
+                hits.setdefault(py_file, []).append((node.lineno, node.value))
 
     return hits
 
@@ -392,6 +472,30 @@ def assign_model_var_names(model_strings: set[str]) -> dict[str, str]:
     return mapping
 
 
+def _model_replacement(
+    node: ast.AST,
+    docstring_ids: set[int],
+    name_map: dict[str, str],
+    lines: list[str],
+) -> tuple[int, int, str, str, str] | None:
+    """
+    Return (start, end, new_text, model_str, var_name) if node is a
+    replaceable hardcoded model string, else None.
+    """
+    if not isinstance(node, ast.Constant):
+        return None
+    if id(node) in docstring_ids:
+        return None
+    if not isinstance(node.value, str):
+        return None
+    var_name = name_map.get(node.value)
+    if not var_name:
+        return None
+    start = _flat_offset(lines, node.lineno, node.col_offset)
+    end = _flat_offset(lines, node.end_lineno, node.end_col_offset)
+    return start, end, f'os.getenv("{var_name}")', node.value, var_name
+
+
 def replace_hardcoded_models(
     py_files: list[Path],
     hits: dict[Path, list[tuple[int, str]]],
@@ -401,41 +505,55 @@ def replace_hardcoded_models(
     Replace each hardcoded model string with the correct os.getenv("MODEL_NAME_*")
     call in-place, using the mapping produced by assign_model_var_names().
 
+    Replacement is AST-position-based, which means:
+      - All quote styles (single, double, triple, raw) are handled correctly
+        because the AST abstracts away quoting entirely.
+      - Only actual string-literal AST nodes are replaced — comments, docstrings,
+        and f-string fragments are never touched.
+
     Also ensures `import os` is present in every modified file.
 
     Returns a dict of {model_string: env_var_name} for the substitutions made.
     """
     substituted: dict[str, str] = {}
 
-    for py_file, file_hits in hits.items():
-        source = py_file.read_text(encoding="utf-8")
-        modified = source
-
-        for _lineno, model_str in file_hits:
-            var_name = name_map.get(model_str)
-            if not var_name:
-                continue
-            for quote in ('"', "'"):
-                old = f"{quote}{model_str}{quote}"
-                new = f'os.getenv("{var_name}")'
-                if old in modified:
-                    modified = modified.replace(old, new)
-                    substituted[model_str] = var_name
-
-        if modified == source:
+    for py_file in hits:
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(py_file))
+        except (SyntaxError, UnicodeDecodeError):
             continue
 
-        # Ensure `import os` is present
+        docstring_ids = _docstring_node_ids(tree)
+        lines = source.splitlines(keepends=True)
+
+        # Collect (start_offset, end_offset, replacement_text) for each hit
+        replacements: list[tuple[int, int, str]] = []
+        for node in ast.walk(tree):
+            replacement = _model_replacement(
+                node, docstring_ids, name_map, lines
+            )
+            if replacement is None:
+                continue
+            start, end, new_text, model_str, var_name = replacement
+            replacements.append((start, end, new_text))
+            substituted[model_str] = var_name
+
+        if not replacements:
+            continue
+
+        # Apply in reverse order so earlier offsets stay valid
+        replacements.sort(key=lambda x: x[0], reverse=True)
+        chars = list(source)
+        for start, end, new_text in replacements:
+            chars[start:end] = list(new_text)
+        modified = "".join(chars)
+
+        # Ensure `import os` is present, placed after license + docstring
         if "import os" not in modified:
-            lines = modified.splitlines(keepends=True)
-            insert_at = 0
-            for i, line in enumerate(lines):
-                if line.strip().startswith("#") or not line.strip():
-                    insert_at = i + 1
-                else:
-                    break
-            lines.insert(insert_at, "import os\n")
-            modified = "".join(lines)
+            mod_lines = modified.splitlines(keepends=True)
+            mod_lines.insert(_post_header_index(mod_lines), "import os\n")
+            modified = "".join(mod_lines)
 
         py_file.write_text(modified, encoding="utf-8")
 
