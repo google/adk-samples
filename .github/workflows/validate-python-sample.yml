@@ -309,16 +309,20 @@ jobs:
             # ------------------------------------------------------------------
             MODEL_PREFIXES="gemini-|gemini-exp-|imagen-|claude-|llama-|meta/llama-|mistral-|codestral-|phi-|grok-|command-|jamba-"
 
-            find "$recipe" -type f -name "*.py" \
-              ! -path "*/tests/*" \
-              | while read -r pyfile; do
-                grep -onE "['\"]($MODEL_PREFIXES)[^ '\"]{1,35}['\"]" "$pyfile" \
-                  | grep -v '^\s*#' \
-                  | while IFS=: read -r lineno match; do
-                    echo "::notice file=$pyfile,line=$lineno::Possible hardcoded model name $match detected. If this is a model identifier, consider using an environment variable instead."
-                    echo "[NOTICE] $pyfile:$lineno — possible hardcoded model name: $match"
-                  done
-              done
+            # Use process substitution to avoid pipefail propagating through
+            # find|while. Capture each grep result to a variable so non-zero
+            # exit codes from grep (no matches) are handled safely with || true.
+            while IFS= read -r pyfile; do
+              matches=$(grep -onE "['\"]($MODEL_PREFIXES)[^ '\"]{1,35}['\"]" "$pyfile" || true)
+              [ -z "$matches" ] && continue
+              filtered=$(echo "$matches" | grep -v '^\s*#' || true)
+              [ -z "$filtered" ] && continue
+              while IFS=: read -r lineno match; do
+                [ -z "$lineno" ] && continue
+                echo "::notice file=$pyfile,line=$lineno::Possible hardcoded model name $match detected. If this is a model identifier, consider using an environment variable instead."
+                echo "[NOTICE] $pyfile:$lineno — possible hardcoded model name: $match"
+              done <<< "$filtered"
+            done < <(find "$recipe" -type f -name "*.py" ! -path "*/tests/*")
 
             if [ "$RECIPE_FAILED" -eq 1 ]; then
               FAILED=1

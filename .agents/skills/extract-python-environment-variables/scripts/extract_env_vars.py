@@ -30,7 +30,6 @@ import re
 import sys
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -84,16 +83,66 @@ def find_python_files(recipe_dir: Path) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 
+def _extract_var_from_node(
+    node: ast.AST,
+) -> tuple[str | None, str | None]:
+    """
+    Return (var_name, default) if node is an env-var read, else (None, None).
+
+    Handles: os.getenv(), os.environ.get(), os.environ[].
+    """
+
+    def _str_const(n: ast.expr) -> str | None:
+        return (
+            n.value
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            else None
+        )
+
+    # os.getenv("VAR") / os.getenv("VAR", "default")
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "getenv"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "os"
+        and node.args
+    ):
+        var_name = _str_const(node.args[0])
+        default = _str_const(node.args[1]) if len(node.args) > 1 else None
+        return var_name, default
+
+    # os.environ.get("VAR") / os.environ.get("VAR", "default")
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == "environ"
+        and isinstance(node.func.value.value, ast.Name)
+        and node.func.value.value.id == "os"
+        and node.args
+    ):
+        var_name = _str_const(node.args[0])
+        default = _str_const(node.args[1]) if len(node.args) > 1 else None
+        return var_name, default
+
+    # os.environ["VAR"]
+    if (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "environ"
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id == "os"
+    ):
+        return _str_const(node.slice), None
+
+    return None, None
+
+
 def extract_env_vars(py_files: list[Path]) -> dict[str, str | None]:
     """
     Walk each file's AST and collect env var names + optional inline defaults.
-
-    Detects:
-      os.environ["VAR"]
-      os.environ.get("VAR")
-      os.environ.get("VAR", "default")
-      os.getenv("VAR")
-      os.getenv("VAR", "default")
 
     Returns:
       {VAR_NAME: default_value_or_None}
@@ -107,76 +156,13 @@ def extract_env_vars(py_files: list[Path]) -> dict[str, str | None]:
             tree = ast.parse(source, filename=str(py_file))
         except (SyntaxError, UnicodeDecodeError):
             print(
-                f"[WARN] Could not parse {py_file} — skipping.",
-                file=sys.stderr,
+                f"[WARN] Could not parse {py_file} — skipping.", file=sys.stderr
             )
             continue
 
         for node in ast.walk(tree):
-            var_name: str | None = None
-            default: str | None = None
-
-            # ------------------------------------------------------------------
-            # os.getenv("VAR") / os.getenv("VAR", "default")
-            # ------------------------------------------------------------------
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "getenv"
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "os"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                var_name = node.args[0].value
-                if (
-                    len(node.args) > 1
-                    and isinstance(node.args[1], ast.Constant)
-                    and isinstance(node.args[1].value, str)
-                ):
-                    default = node.args[1].value
-
-            # ------------------------------------------------------------------
-            # os.environ.get("VAR") / os.environ.get("VAR", "default")
-            # ------------------------------------------------------------------
-            elif (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "get"
-                and isinstance(node.func.value, ast.Attribute)
-                and node.func.value.attr == "environ"
-                and isinstance(node.func.value.value, ast.Name)
-                and node.func.value.value.id == "os"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                var_name = node.args[0].value
-                if (
-                    len(node.args) > 1
-                    and isinstance(node.args[1], ast.Constant)
-                    and isinstance(node.args[1].value, str)
-                ):
-                    default = node.args[1].value
-
-            # ------------------------------------------------------------------
-            # os.environ["VAR"]  (subscript)
-            # ------------------------------------------------------------------
-            elif (
-                isinstance(node, ast.Subscript)
-                and isinstance(node.value, ast.Attribute)
-                and node.value.attr == "environ"
-                and isinstance(node.value.value, ast.Name)
-                and node.value.value.id == "os"
-                and isinstance(node.slice, ast.Constant)
-                and isinstance(node.slice.value, str)
-            ):
-                var_name = node.slice.value
-
-            # Only keep SCREAMING_SNAKE_CASE names (conventional env var style)
+            var_name, default = _extract_var_from_node(node)
             if var_name and re.match(r"^[A-Z_][A-Z0-9_]*$", var_name):
-                # Prefer non-None default if we've seen the var before
                 if var_name not in found or found[var_name] is None:
                     found[var_name] = default
 
@@ -264,10 +250,7 @@ def inject_load_dotenv(init_py: Path) -> bool:
     lines = content.splitlines(keepends=True)
 
     # Build the block to inject (import + blank line + snippet + blank line)
-    inject_block = (
-        f"\n{LOAD_DOTENV_IMPORT}\n"
-        f"\n{LOAD_DOTENV_SNIPPET}\n"
-    )
+    inject_block = f"\n{LOAD_DOTENV_IMPORT}\n\n{LOAD_DOTENV_SNIPPET}\n"
 
     # Find the index of the last absolute import line so we can insert after it.
     # Relative imports (from .something) must come AFTER load_dotenv() so that
@@ -275,9 +258,8 @@ def inject_load_dotenv(init_py: Path) -> bool:
     last_import_idx: int = -1
     for i, line in enumerate(lines):
         stripped = line.strip()
-        is_absolute_import = (
-            stripped.startswith("import ")
-            or (stripped.startswith("from ") and not stripped.startswith("from ."))
+        is_absolute_import = stripped.startswith("import ") or (
+            stripped.startswith("from ") and not stripped.startswith("from .")
         )
         if is_absolute_import:
             last_import_idx = i
@@ -461,6 +443,113 @@ def replace_hardcoded_models(
 
 
 # ---------------------------------------------------------------------------
+# Main — step runners
+# ---------------------------------------------------------------------------
+
+
+def run_step_env_vars(
+    recipe_dir: Path, py_files: list[Path]
+) -> tuple[Path, dict[str, str | None]]:
+    """Steps 2 + 3: extract env var reads and update .env.example."""
+    env_vars = extract_env_vars(py_files)
+    if env_vars:
+        print(f"\n[INFO] Detected {len(env_vars)} environment variable(s):")
+        for var in sorted(env_vars):
+            default = env_vars[var]
+            suffix = f"  (default: {default!r})" if default is not None else ""
+            print(f"       {var}{suffix}")
+    else:
+        print("\n[INFO] No environment variable reads detected.")
+
+    env_example = recipe_dir / ".env.example"
+    added = update_env_example(env_example, env_vars)
+    if added:
+        print(
+            f"\n[PASS] Added {len(added)} variable(s) to .env.example: "
+            + ", ".join(added)
+        )
+    else:
+        print(
+            "\n[PASS] .env.example is already up to date — no variables added."
+        )
+
+    return env_example, env_vars
+
+
+def run_step_load_dotenv(recipe_dir: Path) -> None:
+    """Step 4: inject load_dotenv() bootstrap into the package __init__.py."""
+    init_py = find_package_init(recipe_dir)
+    if not init_py:
+        print(
+            "[WARN] No Python package (subdirectory with __init__.py) found. "
+            "load_dotenv() injection skipped."
+        )
+        return
+    rel = init_py.relative_to(recipe_dir)
+    if inject_load_dotenv(init_py):
+        print(f"[PASS] Injected load_dotenv() bootstrap into {rel}")
+    else:
+        print(f"[PASS] load_dotenv() already present in {rel} — skipped.")
+
+
+def run_step_pyproject(recipe_dir: Path) -> None:
+    """Step 5: ensure python-dotenv>=1.0.0 is in pyproject.toml."""
+    pyproject = recipe_dir / "pyproject.toml"
+    if ensure_python_dotenv_dependency(pyproject):
+        print(
+            "[PASS] Added python-dotenv>=1.0.0 to pyproject.toml dependencies."
+        )
+    elif pyproject.exists():
+        print("[PASS] pyproject.toml already includes python-dotenv — skipped.")
+    else:
+        print("[WARN] pyproject.toml not found — skipped.")
+
+
+def run_step_model_names(
+    recipe_dir: Path, py_files: list[Path], env_example: Path
+) -> None:
+    """Step 6: detect hardcoded model strings, replace with os.getenv(), update .env.example."""
+    model_hits = extract_hardcoded_models(py_files)
+    if not model_hits:
+        print("\n[PASS] No hardcoded model names detected.")
+        return
+
+    all_model_strings: set[str] = {
+        model_str
+        for file_hits in model_hits.values()
+        for _lineno, model_str in file_hits
+    }
+    name_map = assign_model_var_names(all_model_strings)
+
+    print("\n[INFO] Detected hardcoded model name(s):")
+    for py_file, file_hits in model_hits.items():
+        for lineno, model_str in file_hits:
+            print(
+                f"       {py_file.relative_to(recipe_dir)}:{lineno}"
+                f' — "{model_str}" → {name_map[model_str]}'
+            )
+
+    substituted = replace_hardcoded_models(py_files, model_hits, name_map)
+    if not substituted:
+        return
+
+    vars_to_add = {
+        var_name: model_str for model_str, var_name in substituted.items()
+    }
+    added_models = update_env_example(env_example, vars_to_add)
+
+    for model_str, var_name in substituted.items():
+        print(
+            f'[PASS] Replaced hardcoded "{model_str}" with os.getenv("{var_name}") in source.'
+        )
+    if added_models:
+        for var in added_models:
+            print(f"[PASS] Added {var}={vars_to_add[var]} to .env.example.")
+    else:
+        print("[PASS] All MODEL_NAME_* vars already in .env.example — skipped.")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -483,133 +572,28 @@ def main() -> None:
     recipe_dir = Path(args.recipe_dir).resolve()
     if not recipe_dir.is_dir():
         print(
-            f"[ERROR] Recipe directory not found: {recipe_dir}",
-            file=sys.stderr,
+            f"[ERROR] Recipe directory not found: {recipe_dir}", file=sys.stderr
         )
         sys.exit(1)
 
-    print(f"\n{'='*50}")
-    print(f"  extract-python-environment-variables")
+    print(f"\n{'=' * 50}")
+    print("  extract-python-environment-variables")
     print(f"  Recipe: {recipe_dir}")
-    print(f"{'='*50}\n")
+    print(f"{'=' * 50}\n")
 
-    # ------------------------------------------------------------------
-    # Step 1 — Find Python files
-    # ------------------------------------------------------------------
     py_files = find_python_files(recipe_dir)
     print(f"[INFO] Scanning {len(py_files)} Python file(s) (tests/ excluded):")
     for f in py_files:
         print(f"       {f.relative_to(recipe_dir)}")
 
-    # ------------------------------------------------------------------
-    # Step 2 — Extract env vars
-    # ------------------------------------------------------------------
-    env_vars = extract_env_vars(py_files)
-    if env_vars:
-        print(f"\n[INFO] Detected {len(env_vars)} environment variable(s):")
-        for var in sorted(env_vars):
-            default = env_vars[var]
-            suffix = f"  (default: {default!r})" if default is not None else ""
-            print(f"       {var}{suffix}")
-    else:
-        print("\n[INFO] No environment variable reads detected.")
+    env_example, _ = run_step_env_vars(recipe_dir, py_files)
+    run_step_load_dotenv(recipe_dir)
+    run_step_pyproject(recipe_dir)
+    run_step_model_names(recipe_dir, py_files, env_example)
 
-    # ------------------------------------------------------------------
-    # Step 3 — Update .env.example
-    # ------------------------------------------------------------------
-    env_example = recipe_dir / ".env.example"
-    added = update_env_example(env_example, env_vars)
-    if added:
-        print(
-            f"\n[PASS] Added {len(added)} variable(s) to .env.example: "
-            + ", ".join(added)
-        )
-    else:
-        print("\n[PASS] .env.example is already up to date — no variables added.")
-
-    # ------------------------------------------------------------------
-    # Step 4 — Inject load_dotenv() into package __init__.py
-    # ------------------------------------------------------------------
-    init_py = find_package_init(recipe_dir)
-    if init_py:
-        modified = inject_load_dotenv(init_py)
-        rel = init_py.relative_to(recipe_dir)
-        if modified:
-            print(f"[PASS] Injected load_dotenv() bootstrap into {rel}")
-        else:
-            print(f"[PASS] load_dotenv() already present in {rel} — skipped.")
-    else:
-        print(
-            "[WARN] No Python package (subdirectory with __init__.py) found. "
-            "load_dotenv() injection skipped."
-        )
-
-    # ------------------------------------------------------------------
-    # Step 5 — Update pyproject.toml
-    # ------------------------------------------------------------------
-    pyproject = recipe_dir / "pyproject.toml"
-    modified = ensure_python_dotenv_dependency(pyproject)
-    if modified:
-        print("[PASS] Added python-dotenv>=1.0.0 to pyproject.toml dependencies.")
-    elif pyproject.exists():
-        print("[PASS] pyproject.toml already includes python-dotenv — skipped.")
-    else:
-        print("[WARN] pyproject.toml not found — skipped.")
-
-    # ------------------------------------------------------------------
-    # Step 6 — Detect and extract hardcoded model names
-    # ------------------------------------------------------------------
-    model_hits = extract_hardcoded_models(py_files)
-    if model_hits:
-        # Collect all unique model strings across all files
-        all_model_strings: set[str] = {
-            model_str
-            for file_hits in model_hits.values()
-            for _lineno, model_str in file_hits
-        }
-
-        name_map = assign_model_var_names(all_model_strings)
-
-        print(f"\n[INFO] Detected hardcoded model name(s):")
-        for py_file, file_hits in model_hits.items():
-            for lineno, model_str in file_hits:
-                var_name = name_map[model_str]
-                print(
-                    f"       {py_file.relative_to(recipe_dir)}:{lineno}"
-                    f' — "{model_str}" → {var_name}'
-                )
-
-        substituted = replace_hardcoded_models(py_files, model_hits, name_map)
-
-        if substituted:
-            # Add each MODEL_NAME_* var to .env.example using the detected
-            # model string as the value so the user knows what was there before.
-            vars_to_add = {
-                var_name: model_str
-                for model_str, var_name in substituted.items()
-            }
-            added_models = update_env_example(env_example, vars_to_add)
-
-            for model_str, var_name in substituted.items():
-                print(
-                    f'[PASS] Replaced hardcoded "{model_str}" with'
-                    f' os.getenv("{var_name}") in source.'
-                )
-            if added_models:
-                for var in added_models:
-                    print(
-                        f"[PASS] Added {var}={vars_to_add[var]} to .env.example."
-                    )
-            else:
-                print(
-                    "[PASS] All MODEL_NAME_* vars already in .env.example — skipped."
-                )
-    else:
-        print("\n[PASS] No hardcoded model names detected.")
-
-    print(f"\n{'='*50}")
-    print(f"  Done.")
-    print(f"{'='*50}\n")
+    print(f"\n{'=' * 50}")
+    print("  Done.")
+    print(f"{'=' * 50}\n")
 
 
 if __name__ == "__main__":
