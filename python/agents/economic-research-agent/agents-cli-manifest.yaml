@@ -1,4 +1,4 @@
-name: "economic-research-agent"
+name: "alphaevolved_econ_research"
 acli_version: "0.2.0"
 agent_directory: "economic_research"
 region: "us-east1"

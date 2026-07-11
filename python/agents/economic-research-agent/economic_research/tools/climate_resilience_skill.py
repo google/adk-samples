@@ -22,44 +22,8 @@ def get_climate_risk_index(city_names: list[str]) -> str:
     for city in city_names:
         city_clean = city.split(",")[0].strip()
 
-        # Grounded FEMA NRI Benchmarks (Sample data mapping)
-        # These reflect the high-fidelity risk scoring found in FEMA NRI datasets.
-        risk_data = {
-            "Austin": {
-                "risk_score": "Relatively High",
-                "heat_index": "Very High",
-                "flood_risk": "Moderate",
-            },
-            "Raleigh": {
-                "risk_score": "Relatively Low",
-                "heat_index": "Moderate",
-                "flood_risk": "Low",
-            },
-            "San Francisco": {
-                "risk_score": "Very High",
-                "heat_index": "Low",
-                "earthquake_risk": "Very High",
-            },
-            "Miami": {
-                "risk_score": "Very High",
-                "hurricane_risk": "Very High",
-                "flood_risk": "Very High",
-            },
-        }
-
-        data = risk_data.get(
-            city_clean,
-            {"risk_score": "N/A", "heat_index": "N/A", "flood_risk": "N/A"},
-        )
-
-        results.append(
-            {
-                "City": city_clean,
-                "Overall Risk Rating": data.get("risk_score"),
-                "Primary Hazard (Heat)": data.get("heat_index"),
-                "Primary Hazard (Flood)": data.get("flood_risk"),
-                "Source": "FEMA National Risk Index (NRI) Unified Grounding",
-            }
-        )
+        from economic_research.tools.dynamic_search_harvester import harvest_climate_risk
+        harvested = harvest_climate_risk(city)
+        results.append(harvested)
 
     return json.dumps(results, indent=2)

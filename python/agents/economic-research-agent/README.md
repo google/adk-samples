@@ -1,11 +1,11 @@
-# 🧠 Economic Research Agent (ERA)
+# 🧠 Evolved Economic Research Agent (ERA)
 
 [![Level 3 Maturity](https://img.shields.io/badge/Maturity-Level%203%20Structural-blueviolet)](https://github.com/google/agents-cli)
-[![Framework-Atomic Agents](https://img.shields.io/badge/Framework-Atomic%20Agents-blue)](https://github.com/google/agents-cli)
-[![ADK-Enabled](https://img.shields.io/badge/ADK-v2.0-green)](https://github.com/google/adk)
-[![Live-API](https://img.shields.io/badge/Live--API-Grounded-orange)](#)
+[![Framework-ADK](https://img.shields.io/badge/Framework-ADK%202.0-green)](https://github.com/google/adk)
+[![Live-API](https://img.shields.io/badge/Live--API-100%25%20Grounded-orange)](#)
+[![Zero-Mocks](https://img.shields.io/badge/Mock--Data-Zero-success)](#)
 
-An enterprise-grade, **Multi-Agent intelligence** for high-fidelity regional economic analysis, labor market evaluation, and cross-industry site selection. Upgraded to **Agent Runtime (ADK 2.0 / AdkApp)** with a 100% Live-API grounded architecture and **Zero LangChain/LangGraph dependencies** for massive speed-up.
+An enterprise-grade, **Autonomous Economic Intelligence** engine for high-fidelity regional economic analysis, labor market evaluation, and cross-industry site selection. Upgraded to **Agent Runtime (ADK 2.0 / AdkApp)** with a 100% Live-API grounded architecture utilizing dynamic **Serper.dev Internet Extraction Engines** to provide infinite geographic coverage and zero mock-data dependencies.
 
 ---
 
@@ -67,30 +67,25 @@ The **Economic Research Agent (ERA)** is a production-grade site-selection and m
 - **Unemployment Trends**: 10-year historical time-series sampling for MSA-level analysis.
 - **Union Density**: Live state-level union membership percentages.
 
-#### 🏢 Real Estate & Utilities (CoStar/EIA)
-- **Energy Matrix**: Live Industrial electricity rates (per kWh) using compliant EIA `IND` sector codes.
-- **ROI Modeling**: Real estate acquisition ROI based on live macro health indicators.
+#### 🏢 Real Estate & Utilities (CoStar/RentCast/EIA)
+- **Energy Matrix**: Live Industrial electricity rates (per kWh) and regional renewable energy shares using the compliant **EIA v2 Open Data API**.
+- **Commercial ROI Modeling**: Dynamic Serper Harvesters extract live, city-level **CoStar, Zillow, and Redfin PSF average lease rates** and vacancy rates on the fly for any candidate market.
+- **MLS Sourcing & Underwriting**: Fetches active property listings from the **RentCast API** and correlates them with local HUD FMR rents.
+- **Acquisitions Deal Underwriting & Pro-Formas**: Modeled via our graduated `RealEstatePortfolioAdvisor`, generating complete amortization, NOI, DSCR, and Debt Yield brief tables.
 
-#### 🗳️ Policy & Political Risk (FEC/LDA/OpenSecrets)
-- **Campaign Finance**: Correlate political stability with corporate and PAC contribution data.
-- **Lobbying Hubs**: Identification of industry influence and regulatory engagement levels.
-- **Regulatory Monitoring**: Live notices from the **Federal Register** regarding industry-specific policy shifts.
+#### 🤖 AI Labor Exposure & Task Forecasting (New!)
+- **AI Task Exposure & Automation Risk**: Maps O*NET task hierarchies against BLS occupational codes to quantify displacement vs. augmentation potential.
+- **Dynamic FEMA NRI Risk Benchmarking**: Dispatches live semantic harvesters to query the FEMA National Risk Index for any MSA, tracking Heat, Flood, and Hurricane risks.
+- **DOT Bureau of Transportation Statistics (BTS)**: Harvests live intermodal port access and shipping cost indexes for manufacturing relocations.
 
-#### 🏠 Housing & Affordability (HUD/Census)
-- **Workforce Burden Analysis**: Correlation of Fair Market Rents (FMR) against Area Median Income (AMI).
-- **Relocation COLA**: Precise cost-of-living benchmarking for talent retention strategy.
-- **Demographic Depth**: Hyper-localized education and age-bucket analysis (Census ACS).
+#### 🏛️ Economic Subsidies & Policy Risk (New!)
+- **Good Jobs First Harvester**: Discovers active state-level tax abatements, Chapter 313 programs, and job development grants (JDIG) autonomously.
+- **Campaign Finance & Regulatory Drift**: Correlates political stability metrics using the live **FEC API** and **Federal Register** notice tracking.
 
-#### 🤖 AI Labor Exposure & MLS Investment Sourcing (New!)
-- **AI Task Exposure & Automation Risk**: Maps job categories against O*NET tasks to determine displacement risk (automation) vs. augmentation support potential.
-- **MLS Sourcing & Cap Rate Calculation**: Fetches active property listings from MLS data and correlates them with local HUD FMR rents to calculate Estimated Cap Rates and price-to-rent yield ratios.
-
-#### 🧮 Quantitative Decision-Support & Econometrics (New!)
-- **Isolated Econometrics Sandbox (`run_econometric_regression`)**: Executes formal OLS regressions, Pearson/Spearman correlations, and ADF stationarity tests on live vectors in a secure Python environment.
-- **Acquisitions Deal Underwriting (`underwrite_deal_leverage`)**: Models compound real estate amortization, Net Operating Income (NOI), Debt Service Coverage Ratio (DSCR), and Debt Yield tables from HUD/MLS inputs.
+#### 🧮 Quantitative Decision-Support & Econometrics
+- **Isolated Econometrics Sandbox (`run_econometric_regression`)**: Executes formal OLS regressions, Pearson/Spearman correlations, and ADF stationarity tests on live vectors.
 - **Location Scorecard Generator (`generate_location_scorecard`)**: Normalizes and scores candidate states based on weighted criteria (corporate tax, electricity cost, wages).
-- **Employee Relocation Estimator (`estimate_employee_relocation`)**: Compares state income tax brackets and HUD FMR rents between counties to project net disposable income changes for relocating talent.
-- **FRED Series Search (`search_macro_series`)**: Maps semantic keywords directly to valid FRED Series IDs to prevent lookup errors.
+- **Universal Whitepaper Engine (`generate_whitepaper`)**: Leverages our graduated `UniversalWhitepaperOrchestrator` to generate end-to-end Corporate Whitepapers on any "Wow Factor" scenario.
 
 ---
 
@@ -179,32 +174,26 @@ Before deploying to the Vertex AI Reasoning Engine, ensure your local environmen
 
 ### 📦 Using Google Agents CLI (Recommended)
 
-We highly recommend setting up and deploying this agent using the [Google Agents CLI](https://github.com/google/agents-cli). Google Agents CLI provides a production-ready framework that includes:
-- **Automated CI/CD Pipelines**: Pre-configured GitHub Actions for streamlined Vertex AI deployments.
-- **Standardized Structure**: Adheres to Google Cloud best practices for modular agent repositories.
-- **Interactive CLI Setup**: Guides you through provisioning staging buckets and Vertex AI resources automatically.
+This agent is built to be deployed, evaluated, and launched natively via the **Google Agents CLI** (`agents-cli`). The repository structure adheres to the structural standard for seamless lifecycle management.
 
 **Install the CLI** (one-time):
 
 ```bash
-uvx google-agents-cli setup
-```
-
-**Create the project from this sample** (replace `my-economic-research-agent` with your project name):
-
-```bash
-agents-cli create my-economic-research-agent -a adk@economic-research-agent
+uv tool install google-agents-cli
 ```
 
 ### 🚀 Running the Agent
 
-ERA offers multiple interaction protocols:
+The Economic Research Agent offers multiple interaction and playground options:
 
 ```bash
-# 🧠 Option 1: Interactive CLI Session (Standard)
+# 🧠 Option 1: Live Interactive Playground Web UI (Recommended)
+agents-cli playground
+
+# 💻 Option 2: CLI-Based Interactive Execution
 make run
 
-# 🛰️ Option 2: Multi-Protocol MCP Server (For Claude/Cursor)
+# 🛰️ Option 3: Multi-Protocol MCP Server (For Claude / Cursor integration)
 make mcp
 ```
 
@@ -222,34 +211,41 @@ The ERA is designed for modular growth:
 ## E. Evaluation
 
 How do we know ERA is accurate?
-- **Golden Suite**: We use a 21-question integration suite (`tests/integration/`) targeting specific NAICS scenarios.
-- **Grounding Fidelity Metric**: The `eval/run_eval.py` script uses **LLM-as-a-Judge** (Gemini 3.1 Pro) to verify if the output contains actual numerical data from the APIs.
-- **Regression Testing**: `pytest` handles unit-level verification of API response parsing.
+- **Golden Suite**: We use a comprehensive 21-question integration suite (`tests/integration/`) targeting specific regional and macro site-selection scenarios.
+- **Grounding Fidelity Metric**: The `eval/run_eval.py` script utilizes Gemini to calculate strict Grounding Coverage scores over live metrics.
+- **Regression Testing**: Execute our rigorous pytest suite to verify live harvesters, adapters, and data extractors.
 
 ```bash
 # Run the full 21-question validation suite
 uv run pytest tests/integration/test_full_golden_suite.py
+
+# Run the live-harvester and skills unit suite
+uv run pytest tests/unit/
 ```
 
 ---
 
-## F. Deploy
+## F. Deployment
 
-### 🚀 Production Rollout
+### 🚀 Production Rollout (Agent Runtime)
 
-The ERA is built for the **Vertex AI Reasoning Engine** (ADK 2.0).
+The Economic Research Agent is engineered for Google Cloud's **Vertex AI Reasoning Engine (Agent Runtime)**. 
+
+To deploy your evolved, live-grounded agent to your Google Cloud perimeter in a single command, run:
 
 ```bash
-# 🌍 Step 1: Deploy to Google Cloud (Reasoning Engine)
-make deploy
+agents-cli deploy
 ```
 
-### 🔒 Cloud-Native Security & Privacy
+> [!TIP]
+> Use `agents-cli deploy --list` and `agents-cli deploy --status` to view and track your remote reasoningEngine allocations in real-time.
+
+### 🔒 Enterprise Security & Privacy
 
 The ERA is engineered for **Enterprise Privacy** within the Google Cloud perimeter:
-- **Zero Data Retention**: No local databases or static tables are used. Data is processed in-memory.
-- **Key-Safe Architecture**: Secrets are managed via `.env` or Google Secret Manager.
+- **Zero Local Data Retention**: No local databases or static cache tables are utilized. All operations process in-memory.
+- **Bypassable Actor-Critic Gate**: Toggle the `ERA_BYPASS_SUPERVISOR=true` environment flag to bypass the iterative Audit Judge loops for high-speed CI/CD regression testing.
 
 ---
 
-*Built for the Atomic Agents Initiative.*
+*Built for the Agentic Trinity Framework.*

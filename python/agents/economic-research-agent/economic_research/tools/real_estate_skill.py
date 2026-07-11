@@ -32,46 +32,8 @@ def get_real_estate_roi(
     for city in city_names:
         city_clean = city.split(",")[0].strip()
 
-        # Grounded benchmarks (Source: CoStar RARE 2024 Q1)
-        # These would be dynamically fetched from BQ or API in production.
-        benchmarks = {
-            "Austin": {
-                "office_psf": "$48.50",
-                "industrial_psf": "$12.90",
-                "vacancy": "18.5%",
-            },
-            "Raleigh": {
-                "office_psf": "$32.40",
-                "industrial_psf": "$9.80",
-                "vacancy": "12.2%",
-            },
-            "San Francisco": {
-                "office_psf": "$72.10",
-                "industrial_psf": "$24.50",
-                "vacancy": "30.1%",
-            },
-            "Dallas": {
-                "office_psf": "$29.30",
-                "industrial_psf": "$8.40",
-                "vacancy": "15.4%",
-            },
-        }
-
-        data = benchmarks.get(
-            city_clean,
-            {"office_psf": "N/A", "industrial_psf": "N/A", "vacancy": "N/A"},
-        )
-
-        results.append(
-            {
-                "City": city_clean,
-                "Property Type": property_type,
-                "Avg Lease (PSF)": data["office_psf"]
-                if property_type.lower() == "office"
-                else data["industrial_psf"],
-                "Vacancy Rate": data["vacancy"],
-                "Source": "CoStar Benchmark Index (Grounded)",
-            }
-        )
+        from economic_research.tools.dynamic_search_harvester import harvest_real_estate_roi
+        harvested = harvest_real_estate_roi(city, property_type)
+        results.append(harvested)
 
     return json.dumps(results, indent=2)
