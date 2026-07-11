@@ -28,6 +28,7 @@ show_help() {
 # Parse Arguments
 APP_ID="${GEMINI_ENTERPRISE_APP_ID:-}"
 NO_REGISTER=false
+DRY_RUN=false
 REGION=""
 
 while [[ $# -gt 0 ]]; do
@@ -39,6 +40,10 @@ while [[ $# -gt 0 ]]; do
         --region)
             REGION="$2"
             shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
             ;;
         --no-register)
             NO_REGISTER=true
@@ -53,6 +58,7 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
 
 # Step 1: Verify agents-cli installation
 if ! command -v agents-cli &> /dev/null; then
@@ -82,6 +88,9 @@ done
 
 # Step 3: Execute deployment to Vertex AI Agent Runtime
 DEPLOY_CMD="agents-cli deploy --no-confirm-project"
+if [ "$DRY_RUN" = true ]; then
+    DEPLOY_CMD="${DEPLOY_CMD} --dry-run"
+fi
 if [ ! -z "$REGION" ]; then
     DEPLOY_CMD="${DEPLOY_CMD} --region ${REGION}"
 fi
@@ -89,12 +98,13 @@ if [ ! -z "$UPDATE_VARS" ]; then
     DEPLOY_CMD="${DEPLOY_CMD} --update-env-vars=\"${UPDATE_VARS}\""
 fi
 
+
 echo "🚀 Executing Agent Runtime deployment..."
 echo "Command: $DEPLOY_CMD"
 eval "$DEPLOY_CMD"
 
-# Step 4: Execute registration to Gemini Enterprise (Unless skipped)
-if [ "$NO_REGISTER" = false ]; then
+# Step 4: Execute registration to Gemini Enterprise (Unless skipped or dry-run)
+if [ "$NO_REGISTER" = false ] && [ "$DRY_RUN" = false ]; then
     echo ""
     echo "🤖 Registering Agent to Gemini Enterprise..."
     
@@ -107,8 +117,13 @@ if [ "$NO_REGISTER" = false ]; then
     eval "$REG_CMD"
 else
     echo ""
-    echo "ℹ️ Skipping Gemini Enterprise registration (--no-register flag provided)."
+    if [ "$DRY_RUN" = true ]; then
+        echo "ℹ️ Skipping Gemini Enterprise registration (Dry-run mode enabled)."
+    else
+        echo "ℹ️ Skipping Gemini Enterprise registration (--no-register flag provided)."
+    fi
 fi
+
 
 echo ""
 echo "🥂 Deployed & Registered Successfully!"
