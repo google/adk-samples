@@ -257,7 +257,7 @@ def get_dataproc_normal_job_logs_with_id(
     try:
         # Execute the command and capture the output.
         result = subprocess.run(
-            command_str, capture_output=True, text=True, check=False, shell=True
+            command_str, capture_output=True, text=True, check=False, shell=False
         )
         logger.info(
             "Result for '%s' command: returncode=%s",
