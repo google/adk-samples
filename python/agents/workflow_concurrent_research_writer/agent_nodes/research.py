@@ -12,6 +12,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai.types import Content, Part
 
+APP_NAME = "parallel_research"
 
 # The LlmAgent that will be run in parallel for each platform.
 _research_worker_llm_agent = LlmAgent(
@@ -41,36 +42,17 @@ distill_agent = LlmAgent(
     output_schema=str
 )
 
-
-
-research_worker_agent = LlmAgent(
-    name="research_worker_agent",
-    model="gemini-2.5-flash",
-    instruction="""
-Research topic '{topic}' on the given platform.
-
-The platform is provided as input.
-
-Use execute_search to search that platform.
-
-Summarize the results.
-""",
-    tools=[execute_search],
-)
-
-APP_NAME = "parallel_research"
-
 session_service = InMemorySessionService()
 
 research_runner = Runner(
     app_name=APP_NAME,
-    agent=research_worker_agent,
+    agent=_research_worker_llm_agent,
     session_service=session_service,
 )
 
 async def run_research_agent(topic, platform) -> str:
     """
-    Executes research_worker_agent for a single platform.
+    Executes _research_worker_llm_agent for a single platform.
 
     Returns the final generated text.
     """
@@ -122,9 +104,8 @@ async def parallel_research(
     node_input: list[str],
     topic:str
 ) -> DistillInput:
-    # print(f"Kushagra -- topic : {topic} ")
     platforms_to_research = node_input
-    print(f"Kushagra -- topic : {topic} ")
+    print(f"topic : {topic} ")
     reports = await asyncio.gather(
         *[
             run_research_agent(topic, platform)

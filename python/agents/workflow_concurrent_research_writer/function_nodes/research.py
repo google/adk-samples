@@ -40,7 +40,6 @@ async def save_report_node(
     print(f"STATE_UPDATE: Saving generated report to session state. \n\n {node_input}")
     yield Event(state={"research_report": node_input})
     yield Content(parts=[Part.from_text(text=node_input)])
-    print("Finisheed")
 
 
 # Node Wrappers
