@@ -1,9 +1,10 @@
 from collections.abc import AsyncGenerator
 
-from google.adk.agents.workflow.events.event import Event
-from google.adk.agents.workflow.function_node import FunctionNode
+from google.adk import Event
+from google.adk.agents import InvocationContext
+from google.adk.workflow import FunctionNode
 from google.genai.types import Content
-from src.tools import post_to_platform
+from ..tools import post_to_platform
 
 # --- Workflow 2 Nodes: Blog and Publish ---
 
@@ -12,10 +13,12 @@ LINKEDIN_MAX_WORDS = 300
 
 
 async def start_blog_node(
-    node_input: Content,
+    ctx: InvocationContext,
 ) -> AsyncGenerator[Event | str, None]:
     """Entry node for the blog workflow, takes user thesis from Content object."""
-    thesis = str(node_input.parts[0].text if node_input.parts else "")
+    print("START_WORKFLOW 2  K: Blog post with thesis: ")
+    thesis = ctx.state["research_report"]
+    # thesis = str(node_input.parts[0].text if node_input.parts else "")
     print(f"START_WORKFLOW 2: Blog post with thesis: '{thesis}'")
     # The thesis is passed as the node_input to the next agent in the chain.
     yield thesis
@@ -65,11 +68,12 @@ async def post_node(
 
 async def shoutout_node(platform: str, node_input: str) -> None:
     """Posts a shoutout to a given platform."""
+    print(f"Shoutout to the following platform {platform} ")
     blog_post_preview = node_input[:40].strip()
     shoutout_msg = f"Check out my new article! '{blog_post_preview}...'"
     await post_to_platform(platform, shoutout_msg, shoutout=True)
 
 
 # Function node Wrappers
-start_blog = FunctionNode(start_blog_node, name="Start Blog Writing")
-route_changer = FunctionNode(length_router_node, name="PathFinder")
+start_blog = FunctionNode(func=start_blog_node, name="Start_Blog_Writing")
+route_changer = FunctionNode(func=length_router_node, name="PathFinder")

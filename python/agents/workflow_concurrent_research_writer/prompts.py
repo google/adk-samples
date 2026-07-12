@@ -1,7 +1,7 @@
 """Prompts for the ADK Workflow Demo."""
 
 JOIN_AND_DISTILL_PROMPT = """
-You are a research analyst. Your task is to synthesize a list of research summaries, provided as input, into a single, coherent report.
+You are a research analyst. Your task is to synthesize a list of research summaries {DistillInput.research}, provided as input, into a single, coherent report.
 The user's original topic was: {topic}.
 
 The research summaries are provided as your input. Please begin synthesizing them now.

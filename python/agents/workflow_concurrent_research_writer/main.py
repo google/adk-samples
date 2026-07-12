@@ -8,7 +8,7 @@ from google.adk.agents.run_config import RunConfig
 
 # from google.adk.agents.workflow.join_node import JoinNode
 # from google.adk.agents.workflow.function_node import FunctionNode
-from google.adk.agents.workflow.workflow_agent import WorkflowAgent
+from google.adk.workflow import Workflow
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.adk.sessions.session import Session
 from google.genai.types import Content, ModelContent, Part
@@ -22,7 +22,7 @@ class WorkflowDriver:
         self.session_service = InMemorySessionService()
 
     async def run_workflow(
-        self, agent: WorkflowAgent, user_input: str, session: Session
+        self, agent: Workflow, user_input: str, session: Session
     ) -> None:
         """Helper to run a workflow and print its streaming output."""
         print(f"\n--- Running workflow: {agent.name} ---")

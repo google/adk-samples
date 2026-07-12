@@ -21,6 +21,11 @@ build-backend = "hatchling.build"
 url = "https://pypi.org/simple/"
 default = true
 
+[tool.uv.workspace]
+members = [
+    "python/agents/workflow-concurrent_research_writer",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["tools"]
 

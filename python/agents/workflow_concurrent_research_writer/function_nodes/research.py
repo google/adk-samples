@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
 
-from google.adk.agents.workflow.events.event import Event
-from google.adk.agents.workflow.function_node import FunctionNode
+from google.adk import Event
+from google.adk.workflow import FunctionNode
 from google.genai.types import Content, ModelContent, Part
 
 
@@ -35,20 +35,21 @@ async def combine_reports_node(
 
 async def save_report_node(
     node_input: str,
-) -> AsyncGenerator[Event | ModelContent, None]:
+) -> AsyncGenerator[Event|Content , None]:
     """Saves the generated report to state and yields it for the user."""
-    print("STATE_UPDATE: Saving generated report to session state.")
+    print(f"STATE_UPDATE: Saving generated report to session state. \n\n {node_input}")
     yield Event(state={"research_report": node_input})
-    yield ModelContent(parts=[Part.from_text(text=node_input)])
+    yield Content(parts=[Part.from_text(text=node_input)])
+    print("Finisheed")
 
 
 # Node Wrappers
 start_node = FunctionNode(
-    start_research_node, name="Start Research Node", rerun_on_resume=True
+   func=start_research_node, name="Start_Research_Node", rerun_on_resume=True
 )
 
-combine_reports = FunctionNode(combine_reports_node, name="Combine Reports")
+combine_reports = FunctionNode(func=combine_reports_node, name="Combine_Reports")
 
 save_node = FunctionNode(
-    save_report_node, name="Save Report Node", rerun_on_resume=False
+    func=save_report_node, name="Save_Report_Node", rerun_on_resume=False
 )
