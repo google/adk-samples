@@ -253,7 +253,6 @@ def get_dataproc_normal_job_logs_with_id(
         "--region",
         region,
     ]
-    command_str = " ".join(command)
 
     try:
         # Execute the command and capture the output.
