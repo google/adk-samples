@@ -200,17 +200,25 @@ def _mount_frontend():
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
+        # 1. Resolve absolute paths to prevent directory traversal
+        resolved_frontend_dir = frontend_dir.resolve()
+        safe_path = (resolved_frontend_dir / full_path).resolve()
+        
+        # 2. Security Check: Ensure the resolved path remains strictly inside frontend_dir
+        if not safe_path.is_relative_to(resolved_frontend_dir):
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "Access Denied"}, status_code=403)
+
         # If the path matches an actual file in dist/, serve it
-        file_path = frontend_dir / full_path
-        if full_path and file_path.is_file():
-            return FileResponse(str(file_path))
+        if full_path and safe_path.is_file():
+            return FileResponse(str(safe_path))
+        
         # Only serve index.html for SPA routes (paths without file extensions)
         # Asset requests (.json, .js, .css, etc.) that don't exist should 404
         if "." in full_path.split("/")[-1]:
             from fastapi.responses import JSONResponse
-
             return JSONResponse({"detail": "Not Found"}, status_code=404)
-        return FileResponse(index_html)
+        return FileResponse(str(index_html))
 
 
 @app.get("/health")
