@@ -281,17 +281,38 @@ class ERAAgent:
         runner = InMemoryRunner(app=app)
         runner.auto_create_session = True
 
-        responses = runner.run_async(
-            new_message=types.Content(parts=[types.Part.from_text(text=modified_input)]),
-            user_id="default_user",
-            session_id="default_session"
-        )
-        full_text = ""
-        async for res in responses:
-            if hasattr(res, "content") and res.content.parts:
-                for part in res.content.parts:
-                    if part.text:
-                        full_text += part.text
+        try:
+            responses = runner.run_async(
+                new_message=types.Content(parts=[types.Part.from_text(text=modified_input)]),
+                user_id="default_user",
+                session_id="default_session"
+            )
+            full_text = ""
+            async for res in responses:
+                if hasattr(res, "content") and res.content.parts:
+                    for part in res.content.parts:
+                        if part.text:
+                            full_text += part.text
+        except Exception as e:
+            if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
+                print("⚠️ [Quota] gemini-2.5-pro exhausted. Falling back to gemini-2.5-flash for synthesis...")
+                app = self.get_app(model_name="gemini-2.5-flash")
+                runner = InMemoryRunner(app=app)
+                runner.auto_create_session = True
+                responses = runner.run_async(
+                    new_message=types.Content(parts=[types.Part.from_text(text=modified_input)]),
+                    user_id="default_user",
+                    session_id="default_session"
+                )
+                full_text = ""
+                async for res in responses:
+                    if hasattr(res, "content") and res.content.parts:
+                        for part in res.content.parts:
+                            if part.text:
+                                full_text += part.text
+            else:
+                raise e
+
 
         # ⚖️ Active Actor-Critic Loop (Self-Correction)
         if not bypass_loops:
@@ -333,17 +354,38 @@ class ERAAgent:
                         f"### Previous Draft:\n{full_text}"
                     )
 
-                    retry_responses = runner.run_async(
-                        new_message=types.Content(parts=[types.Part.from_text(text=correction_prompt)]),
-                        user_id="default_user",
-                        session_id="default_session"
-                    )
-                    corrected_text = ""
-                    async for res in retry_responses:
-                        if hasattr(res, "content") and res.content.parts:
-                            for part in res.content.parts:
-                                if part.text:
-                                    corrected_text += part.text
+                    try:
+                        retry_responses = runner.run_async(
+                            new_message=types.Content(parts=[types.Part.from_text(text=correction_prompt)]),
+                            user_id="default_user",
+                            session_id="default_session"
+                        )
+                        corrected_text = ""
+                        async for res in retry_responses:
+                            if hasattr(res, "content") and res.content.parts:
+                                for part in res.content.parts:
+                                    if part.text:
+                                        corrected_text += part.text
+                    except Exception as e:
+                        if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
+                            print("⚠️ [Quota] gemini-2.5-pro exhausted on correction. Falling back to gemini-2.5-flash...")
+                            app = self.get_app(model_name="gemini-2.5-flash")
+                            runner = InMemoryRunner(app=app)
+                            runner.auto_create_session = True
+                            retry_responses = runner.run_async(
+                                new_message=types.Content(parts=[types.Part.from_text(text=correction_prompt)]),
+                                user_id="default_user",
+                                session_id="default_session"
+                            )
+                            corrected_text = ""
+                            async for res in retry_responses:
+                                if hasattr(res, "content") and res.content.parts:
+                                    for part in res.content.parts:
+                                        if part.text:
+                                            corrected_text += part.text
+                        else:
+                            raise e
+
 
                     final_report = f"{corrected_text}\n\n---\n### ⚖️ Auditor Judge Verification (Self-Corrected v2)\n{judge_text}"
                 else:
