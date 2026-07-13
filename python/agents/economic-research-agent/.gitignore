@@ -196,7 +196,9 @@ my_env.tfvars
 .env
 .requirements.txt
 
-# Local tokens and test logs
+# Local tokens, caches, and test logs
 .gcloud_token
+.firebase/
+scratch/
 tests/*_results.json
 tests/*_failures.json
