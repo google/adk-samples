@@ -5,7 +5,7 @@ All agents must follow the guidelines below without being reminded.
 - Use the term **recipe** instead of **sample**.
 
 ## Models
-- Do NOT use `gemini-2.0-flash` — it is deprecated. Use `gemini-2.5-flash` instead.
+- Do NOT use `gemini-2.0-flash` or `gemini-2.5-flash` — both are deprecated. Use `gemini-3.5-flash` instead.
 
 ## Python
 - Python recipes go under `contrib/` or `core/python`

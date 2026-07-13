@@ -30,6 +30,8 @@ import re
 import sys
 from pathlib import Path
 
+import tomllib
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -63,16 +65,51 @@ load_dotenv()"""
 
 
 # ---------------------------------------------------------------------------
-# Step 1: Find Python files (excluding tests/)
+# Step 1: Find Python files
 # ---------------------------------------------------------------------------
+
+# Directories that never contain first-party recipe source and MUST be skipped
+# during scanning. Virtualenvs are the biggest hazard: a local `.venv/`
+# containing installed third-party packages would otherwise pollute
+# `.env.example` with unrelated env vars and match hundreds of hardcoded model
+# strings inside third-party code.
+SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        # Test directories (not part of the recipe's runtime code path).
+        "tests",
+        # Python virtualenvs (all common names).
+        ".venv",
+        "venv",
+        "env",
+        # Bytecode + tool caches.
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".tox",
+        ".eggs",
+        # Build artifacts.
+        "build",
+        "dist",
+        # VCS metadata.
+        ".git",
+        ".hg",
+        ".svn",
+        # JS toolchains (uncommon here but cheap to skip).
+        "node_modules",
+    }
+)
 
 
 def find_python_files(recipe_dir: Path) -> list[Path]:
-    """Return all .py files under recipe_dir, skipping tests/ directories."""
+    """
+    Return all .py files under recipe_dir, skipping directories that are not
+    part of the recipe's own source (see SKIP_DIRS).
+    """
     return [
         p
         for p in sorted(recipe_dir.rglob("*.py"))
-        if "tests" not in p.relative_to(recipe_dir).parts
+        if not SKIP_DIRS.intersection(p.relative_to(recipe_dir).parts)
     ]
 
 
@@ -444,76 +481,182 @@ def inject_load_dotenv(init_py: Path, dry_run: bool = False) -> bool:
 # ---------------------------------------------------------------------------
 
 
+_PYPROJECT_HEADER_RE = re.compile(r"(?m)^\[project\][ \t]*(#.*)?$")
+_NEXT_SECTION_RE = re.compile(r"(?m)^\[[^\]]+\]")
+_DEPS_START_RE = re.compile(r"(?m)^\s*dependencies\s*=\s*\[")
+_DEP_NAME_RE = re.compile(r"^\s*([A-Za-z0-9_.\-]+)")
+
+
+def _dependencies_has_python_dotenv(content: str) -> bool | None:
+    """
+    Report whether [project].dependencies already lists python-dotenv.
+
+    Uses tomllib (stdlib since Python 3.11) so it correctly handles extras
+    (`google-adk[gcp]>=2.0.0`), single-line vs. multi-line arrays, and any
+    other TOML surface syntax — avoiding the false negatives the previous
+    regex-based check produced when an earlier dep contained a `]`.
+
+    Returns:
+      True  — python-dotenv is present in [project].dependencies.
+      False — [project].dependencies exists and does NOT include it.
+      None  — [project] or [project].dependencies is missing, or the file
+              is not valid TOML.
+    """
+    try:
+        data = tomllib.loads(content)
+    except tomllib.TOMLDecodeError:
+        return None
+    project = data.get("project") if isinstance(data, dict) else None
+    if not isinstance(project, dict):
+        return None
+    deps = project.get("dependencies")
+    if not isinstance(deps, list):
+        return None
+    for dep in deps:
+        if not isinstance(dep, str):
+            continue
+        name = _DEP_NAME_RE.match(dep)
+        if name and name.group(1).lower() == "python-dotenv":
+            return True
+    return False
+
+
+def _scan_matching_close_bracket(content: str, open_idx: int) -> int | None:
+    """
+    Given the offset of a '[' in `content`, return the offset of its
+    matching ']'. Depth-aware (skips nested brackets) and quote-aware
+    (skips brackets inside string literals). Returns None if not matched.
+    """
+    depth = 0
+    in_str: str | None = None  # None, or the currently-open quote char.
+    i = open_idx
+    while i < len(content):
+        c = content[i]
+        if in_str is not None:
+            if c == "\\":
+                i += 2  # Skip the escaped character.
+                continue
+            if c == in_str:
+                in_str = None
+        elif c in ('"', "'"):
+            in_str = c
+        elif c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
+
+
+def _find_dependencies_close_bracket(content: str) -> int | None:
+    """
+    Return the character offset of the closing ']' of the top-level
+    [project].dependencies array, or None if the array is not present.
+
+    Extras brackets (`google-adk[gcp]`) and any `]` inside a dep string
+    are correctly ignored — see `_scan_matching_close_bracket`.
+    """
+    proj = _PYPROJECT_HEADER_RE.search(content)
+    if not proj:
+        return None
+    # Bound the [project] table: up to the next top-level section header.
+    remainder = content[proj.end() :]
+    next_sec = _NEXT_SECTION_RE.search(remainder)
+    proj_end = proj.end() + (next_sec.start() if next_sec else len(remainder))
+    deps_start = _DEPS_START_RE.search(content, proj.end(), proj_end)
+    if not deps_start:
+        return None
+    # Position of '[' is deps_start.end() - 1 (regex ends just past it).
+    return _scan_matching_close_bracket(content, deps_start.end() - 1)
+
+
+def _insert_before_close(content: str, close_idx: int) -> str:
+    """
+    Insert a `"python-dotenv>=1.0.0",` line into the dependencies array
+    immediately before the closing ']' at `close_idx`.
+
+    Ensures the preceding entry ends with a comma. The insertion is always
+    placed on its own line with a 4-space indent — valid TOML in every case,
+    and it stays readable whether the source array was multi-line or
+    single-line.
+    """
+    prefix = content[:close_idx]
+    suffix = content[close_idx:]
+
+    # Trim trailing whitespace between the last entry and ']' so we control
+    # the layout of the insertion.
+    trimmed = prefix.rstrip()
+
+    # If the array has any content, make sure the last entry has a trailing
+    # comma before we append our own.
+    array_open = trimmed.rfind("[")
+    array_body = trimmed[array_open + 1 :] if array_open >= 0 else ""
+    if array_body.strip() and not trimmed.endswith(","):
+        trimmed += ","
+
+    return trimmed + '\n    "python-dotenv>=1.0.0",\n' + suffix
+
+
+def _compute_pyproject_with_dotenv(content: str) -> str | None:
+    """
+    Return `content` with `python-dotenv>=1.0.0` added to
+    `[project].dependencies`, or None if nothing should be written
+    (already present, no `[project]` table, or no safe place to insert).
+    """
+    status = _dependencies_has_python_dotenv(content)
+    if status is True:
+        return None  # Already present — nothing to do.
+    if status is False:
+        # [project].dependencies exists but is missing python-dotenv.
+        close_idx = _find_dependencies_close_bracket(content)
+        if close_idx is None:
+            return None  # Defensive: shouldn't happen given status.
+        return _insert_before_close(content, close_idx)
+    # status is None. Create the array if [project] exists, otherwise bail.
+    project_header = _PYPROJECT_HEADER_RE.search(content)
+    if not project_header:
+        return None
+    insert_at = project_header.end()
+    block = '\ndependencies = [\n    "python-dotenv>=1.0.0",\n]'
+    return content[:insert_at] + block + content[insert_at:]
+
+
 def ensure_python_dotenv_dependency(
     pyproject: Path, dry_run: bool = False
 ) -> bool:
     """
-    Add python-dotenv>=1.0.0 to [project] dependencies if absent.
-    Returns True if the file was (or would be) modified.
+    Add `python-dotenv>=1.0.0` to `[project].dependencies` if it is not
+    already present there. Returns True if the file was (or would be)
+    modified, False otherwise.
 
-    When dry_run is True, no file is written; the return value still reports
-    whether the dependency would be added.
+    Detection uses `tomllib` (parse the file, walk `[project].dependencies`)
+    so extras like `google-adk[gcp]` and non-standard formatting don't
+    produce false negatives — the root cause of the earlier bug that
+    corrupted pyproject.toml files.
+
+    Insertion is bracket-depth-aware and quote-aware. After building the new
+    content, we round-trip it through `_dependencies_has_python_dotenv` and
+    refuse to write anything that isn't valid TOML with python-dotenv now
+    present under `[project].dependencies`.
+
+    When `dry_run` is True, no file is written; the return value still
+    reflects whether the dependency would be added.
     """
     if not pyproject.exists():
         return False
-
     content = pyproject.read_text(encoding="utf-8")
-
-    # Check only within the [project] dependencies block, not globally.
-    # python-dotenv may exist in dev/optional groups but still be absent from
-    # the main [project] dependencies, which would cause ModuleNotFoundError
-    # in production where dev extras are not installed.
-    project_deps_match = re.search(
-        r"\[project\].*?dependencies\s*=\s*\[.*?\]",
-        content,
-        flags=re.DOTALL,
-    )
-    if project_deps_match and "python-dotenv" in project_deps_match.group(0):
+    new_content = _compute_pyproject_with_dotenv(content)
+    if new_content is None:
         return False
-
-    # Regex: match the dependencies = [ ... ] block (multiline, non-greedy)
-    def inserter(m: re.Match) -> str:
-        inner = m.group(2)
-        indent_match = re.search(r"\n(\s+)", inner)
-        indent = indent_match.group(1) if indent_match else "    "
-        inner_stripped = inner.rstrip()
-        # Ensure the last existing entry ends with a comma (handles single-line
-        # arrays like  dependencies = ["pkg"]  where no trailing comma exists).
-        if inner_stripped and not inner_stripped.endswith(","):
-            inner_stripped += ","
-        is_multiline = "\n" in inner
-        sep = f"\n{indent}" if is_multiline else " "
-        tail = "\n" if is_multiline else ""
-        return (
-            m.group(1)
-            + inner_stripped
-            + f'{sep}"python-dotenv>=1.0.0",'
-            + tail
-            + m.group(3)
-        )
-
-    new_content = re.sub(
-        r"(dependencies\s*=\s*\[)(.*?)(\])",
-        inserter,
-        content,
-        count=1,
-        flags=re.DOTALL,
-    )
-
-    if new_content == content:
-        # No dependencies array exists yet. Create one under the [project]
-        # table if present; otherwise there is nothing sensible to modify.
-        project_header = re.search(r"(?m)^\[project\][ \t]*(#.*)?$", content)
-        if not project_header:
-            return False
-        insert_at = project_header.end()
-        block = '\ndependencies = [\n    "python-dotenv>=1.0.0",\n]'
-        new_content = content[:insert_at] + block + content[insert_at:]
-
-    if dry_run:
-        return True  # Would add python-dotenv to dependencies.
-
-    pyproject.write_text(new_content, encoding="utf-8")
+    # Round-trip check: refuse to write output that is not valid TOML with
+    # python-dotenv now under [project].dependencies. Hard backstop against
+    # any future insertion bug producing invalid TOML.
+    if _dependencies_has_python_dotenv(new_content) is not True:
+        return False
+    if not dry_run:
+        pyproject.write_text(new_content, encoding="utf-8")
     return True
 
 
@@ -570,7 +713,7 @@ def _model_str_to_suffix(model_str: str) -> str:
       4. Strip leading/trailing underscores.
 
     Examples:
-      "gemini-2.5-flash"      → "GEMINI_2_5_FLASH"
+      "gemini-3.5-flash"      → "GEMINI_3_5_FLASH"
       "gemini-embedding-001"  → "GEMINI_EMBEDDING_001"
       "claude-3-sonnet"       → "CLAUDE_3_SONNET"
       "llama-3.1-70b"         → "LLAMA_3_1_70B"

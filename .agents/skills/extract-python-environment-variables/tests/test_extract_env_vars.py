@@ -45,6 +45,45 @@ def test_find_python_files_excludes_tests_dir(tmp_path):
     assert found == sorted(found)
 
 
+def test_find_python_files_skips_venv_and_cache_dirs(tmp_path):
+    # Regression: previously find_python_files only skipped tests/, so a
+    # local `.venv/`, `__pycache__/`, and various tool caches would be
+    # scanned — polluting .env.example with vars from third-party packages
+    # and matching hundreds of hardcoded model strings inside installed libs.
+    _write(tmp_path / "app" / "agent.py")
+    # Every directory that should now be skipped.
+    for skipped in (
+        ".venv",
+        "venv",
+        "env",
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".tox",
+        ".eggs",
+        "build",
+        "dist",
+        ".git",
+        "node_modules",
+    ):
+        _write(tmp_path / skipped / "junk.py", "MODEL = 'gemini-2.5-flash'\n")
+        _write(
+            tmp_path / skipped / "sub" / "more.py",
+            "X = os.getenv('SHOULD_NOT_APPEAR')\n",
+        )
+
+    found = m.find_python_files(tmp_path)
+    names = {p.name for p in found}
+
+    # Only the recipe's own source file is returned.
+    assert names == {"agent.py"}
+    # Cross-check: no returned path contains any skipped dir in its parts.
+    for p in found:
+        assert "junk.py" != p.name
+        assert "more.py" != p.name
+
+
 # ---------------------------------------------------------------------------
 # extract_env_vars / _extract_var_from_node
 # ---------------------------------------------------------------------------
@@ -420,6 +459,75 @@ def test_ensure_dotenv_creates_dependencies_block_if_missing(tmp_path):
     assert "python-dotenv>=1.0.0" in data["project"]["dependencies"]
 
 
+def test_ensure_dotenv_noop_when_present_alongside_extras(tmp_path):
+    # Regression: the previous regex-based detector used non-greedy `.*?\]`,
+    # so the FIRST `]` (inside `google-adk[gcp]`) closed the match early.
+    # Result: the detector missed later entries including `python-dotenv` and
+    # tried to add it again, mangling the file. The parser-based detector
+    # must correctly see `python-dotenv` and no-op.
+    pyproject = _write(
+        tmp_path / "pyproject.toml",
+        "[project]\n"
+        "dependencies = [\n"
+        '    "google-adk[gcp]>=2.0.0,<3.0.0",\n'
+        '    "python-dotenv>=1.0.0",\n'
+        "]\n",
+    )
+    before = pyproject.read_text(encoding="utf-8")
+
+    assert m.ensure_python_dotenv_dependency(pyproject) is False
+    assert pyproject.read_text(encoding="utf-8") == before
+
+
+def test_ensure_dotenv_insert_preserves_extras_and_valid_toml(tmp_path):
+    # Regression: the previous regex-based inserter used non-greedy `.*?\]`,
+    # so it treated the `]` inside `google-adk[gcp]` as the array's closing
+    # bracket and injected `"python-dotenv"` INSIDE the extras, producing
+    # syntactically broken TOML. The bracket-depth-aware inserter must place
+    # `python-dotenv` outside all extras, and the result must round-trip
+    # through tomllib.
+    import tomllib
+
+    pyproject = _write(
+        tmp_path / "pyproject.toml",
+        "[project]\n"
+        "dependencies = [\n"
+        '    "google-adk[gcp]>=2.0.0,<3.0.0",\n'
+        '    "requests",\n'
+        "]\n",
+    )
+
+    assert m.ensure_python_dotenv_dependency(pyproject) is True
+
+    content = pyproject.read_text(encoding="utf-8")
+    # Extras remain intact.
+    assert '"google-adk[gcp]>=2.0.0,<3.0.0"' in content
+    # dotenv landed.
+    assert '"python-dotenv>=1.0.0"' in content
+    # The file is valid TOML and lists python-dotenv under [project].deps.
+    data = tomllib.loads(content)
+    assert "python-dotenv>=1.0.0" in data["project"]["dependencies"]
+    assert "google-adk[gcp]>=2.0.0,<3.0.0" in data["project"]["dependencies"]
+
+
+def test_ensure_dotenv_refuses_to_write_invalid_toml(tmp_path, monkeypatch):
+    # Belt-and-braces: even if the low-level inserter had a bug, the wrapper
+    # must round-trip the result through tomllib and refuse to write output
+    # that isn't valid TOML with python-dotenv in [project].dependencies.
+    pyproject = _write(
+        tmp_path / "pyproject.toml",
+        '[project]\ndependencies = [\n    "requests",\n]\n',
+    )
+    original = pyproject.read_text(encoding="utf-8")
+
+    # Force the insertion helper to return garbage.
+    monkeypatch.setattr(m, "_insert_before_close", lambda c, i: "!!!not toml")
+
+    assert m.ensure_python_dotenv_dependency(pyproject) is False
+    # File is unchanged on refusal.
+    assert pyproject.read_text(encoding="utf-8") == original
+
+
 def test_ensure_dotenv_no_project_table_returns_false(tmp_path):
     # Nothing sensible to modify when there is no [project] table.
     pyproject = _write(tmp_path / "pyproject.toml", "[tool.foo]\nx = 1\n")
@@ -444,7 +552,7 @@ def test_ensure_dotenv_dry_run_reports_but_does_not_write(tmp_path):
 
 
 def test_model_str_to_suffix():
-    assert m._model_str_to_suffix("gemini-2.5-flash") == "GEMINI_2_5_FLASH"
+    assert m._model_str_to_suffix("gemini-3.5-flash") == "GEMINI_3_5_FLASH"
     assert (
         m._model_str_to_suffix("gemini-embedding-001") == "GEMINI_EMBEDDING_001"
     )
@@ -452,15 +560,15 @@ def test_model_str_to_suffix():
 
 
 def test_assign_model_var_names_single():
-    assert m.assign_model_var_names({"gemini-2.5-flash"}) == {
-        "gemini-2.5-flash": "MODEL_NAME"
+    assert m.assign_model_var_names({"gemini-3.5-flash"}) == {
+        "gemini-3.5-flash": "MODEL_NAME"
     }
 
 
 def test_assign_model_var_names_multiple():
-    result = m.assign_model_var_names({"gemini-2.5-flash", "claude-3-sonnet"})
+    result = m.assign_model_var_names({"gemini-3.5-flash", "claude-3-sonnet"})
     assert result == {
-        "gemini-2.5-flash": "MODEL_NAME_GEMINI_2_5_FLASH",
+        "gemini-3.5-flash": "MODEL_NAME_GEMINI_3_5_FLASH",
         "claude-3-sonnet": "MODEL_NAME_CLAUDE_3_SONNET",
     }
 
@@ -468,9 +576,9 @@ def test_assign_model_var_names_multiple():
 def test_assign_model_var_names_collision_disambiguated():
     # Both strings normalise to the same suffix; sorted order decides which
     # keeps the base name and which gets the _2 suffix.
-    result = m.assign_model_var_names({"gemini-2.5-flash", "gemini-2-5-flash"})
-    assert result["gemini-2-5-flash"] == "MODEL_NAME_GEMINI_2_5_FLASH"
-    assert result["gemini-2.5-flash"] == "MODEL_NAME_GEMINI_2_5_FLASH_2"
+    result = m.assign_model_var_names({"gemini-3.5-flash", "gemini-3-5-flash"})
+    assert result["gemini-3-5-flash"] == "MODEL_NAME_GEMINI_3_5_FLASH"
+    assert result["gemini-3.5-flash"] == "MODEL_NAME_GEMINI_3_5_FLASH_2"
 
 
 # ---------------------------------------------------------------------------
@@ -480,9 +588,9 @@ def test_assign_model_var_names_collision_disambiguated():
 
 def test_extract_hardcoded_models_detects_and_skips_docstrings(tmp_path):
     src = (
-        '"""This mentions gemini-2.5-flash in a docstring."""\n'
+        '"""This mentions gemini-3.5-flash in a docstring."""\n'
         "import os\n"
-        'MODEL = "gemini-2.5-flash"\n'
+        'MODEL = "gemini-3.5-flash"\n'
         'OTHER = "not-a-model"\n'
     )
     py = _write(tmp_path / "mod.py", src)
@@ -491,7 +599,7 @@ def test_extract_hardcoded_models_detects_and_skips_docstrings(tmp_path):
 
     assert py in hits
     found_strings = [s for _lineno, s in hits[py]]
-    assert found_strings == ["gemini-2.5-flash"]  # docstring not included
+    assert found_strings == ["gemini-3.5-flash"]  # docstring not included
 
 
 # ---------------------------------------------------------------------------
@@ -500,32 +608,32 @@ def test_extract_hardcoded_models_detects_and_skips_docstrings(tmp_path):
 
 
 def test_replace_hardcoded_models_replaces_and_adds_import_os(tmp_path):
-    src = 'MODEL = "gemini-2.5-flash"\n'
+    src = 'MODEL = "gemini-3.5-flash"\n'
     py = _write(tmp_path / "mod.py", src)
 
     hits = m.extract_hardcoded_models([py])
-    name_map = m.assign_model_var_names({"gemini-2.5-flash"})
+    name_map = m.assign_model_var_names({"gemini-3.5-flash"})
     substituted = m.replace_hardcoded_models([py], hits, name_map)
 
-    assert substituted == {"gemini-2.5-flash": "MODEL_NAME"}
+    assert substituted == {"gemini-3.5-flash": "MODEL_NAME"}
     content = py.read_text(encoding="utf-8")
     assert 'os.getenv("MODEL_NAME")' in content
     assert "import os" in content
-    assert "gemini-2.5-flash" not in content
+    assert "gemini-3.5-flash" not in content
 
 
 def test_replace_hardcoded_models_handles_single_quotes(tmp_path):
     # AST-position based replacement must handle any quote style.
-    src = "import os\nMODEL = 'gemini-2.5-flash'\n"
+    src = "import os\nMODEL = 'gemini-3.5-flash'\n"
     py = _write(tmp_path / "mod.py", src)
 
     hits = m.extract_hardcoded_models([py])
-    name_map = m.assign_model_var_names({"gemini-2.5-flash"})
+    name_map = m.assign_model_var_names({"gemini-3.5-flash"})
     m.replace_hardcoded_models([py], hits, name_map)
 
     content = py.read_text(encoding="utf-8")
     assert 'os.getenv("MODEL_NAME")' in content
-    assert "gemini-2.5-flash" not in content
+    assert "gemini-3.5-flash" not in content
 
 
 def test_replace_hardcoded_models_injects_os_even_if_substring_in_docstring(
@@ -536,12 +644,12 @@ def test_replace_hardcoded_models_injects_os_even_if_substring_in_docstring(
     # the injected os.getenv(...) would raise NameError at runtime.
     src = (
         '"""Example that says import os in prose."""\n'
-        'MODEL = "gemini-2.5-flash"\n'
+        'MODEL = "gemini-3.5-flash"\n'
     )
     py = _write(tmp_path / "mod.py", src)
 
     hits = m.extract_hardcoded_models([py])
-    name_map = m.assign_model_var_names({"gemini-2.5-flash"})
+    name_map = m.assign_model_var_names({"gemini-3.5-flash"})
     m.replace_hardcoded_models([py], hits, name_map)
 
     content = py.read_text(encoding="utf-8")
@@ -556,9 +664,9 @@ def test_replace_hardcoded_models_multiple_occurrences(tmp_path):
     # without offset drift, thanks to reverse-order substitution.
     src = (
         "import os\n"
-        'M1 = "gemini-2.5-flash"\n'
+        'M1 = "gemini-3.5-flash"\n'
         'M2 = "claude-3-sonnet"\n'
-        'M3 = "gemini-2.5-flash"\n'
+        'M3 = "gemini-3.5-flash"\n'
     )
     py = _write(tmp_path / "mod.py", src)
 
@@ -568,24 +676,24 @@ def test_replace_hardcoded_models_multiple_occurrences(tmp_path):
     m.replace_hardcoded_models([py], hits, name_map)
 
     content = py.read_text(encoding="utf-8")
-    assert "gemini-2.5-flash" not in content
+    assert "gemini-3.5-flash" not in content
     assert "claude-3-sonnet" not in content
     # Both duplicate occurrences map to the same env var.
-    assert content.count('os.getenv("MODEL_NAME_GEMINI_2_5_FLASH")') == 2
+    assert content.count('os.getenv("MODEL_NAME_GEMINI_3_5_FLASH")') == 2
     assert content.count('os.getenv("MODEL_NAME_CLAUDE_3_SONNET")') == 1
     ast.parse(content)
 
 
 def test_replace_hardcoded_models_dry_run_reports_but_does_not_write(tmp_path):
-    original = 'MODEL = "gemini-2.5-flash"\n'
+    original = 'MODEL = "gemini-3.5-flash"\n'
     py = _write(tmp_path / "mod.py", original)
 
     hits = m.extract_hardcoded_models([py])
-    name_map = m.assign_model_var_names({"gemini-2.5-flash"})
+    name_map = m.assign_model_var_names({"gemini-3.5-flash"})
     substituted = m.replace_hardcoded_models([py], hits, name_map, dry_run=True)
 
     # Reports the substitution it would make ...
-    assert substituted == {"gemini-2.5-flash": "MODEL_NAME"}
+    assert substituted == {"gemini-3.5-flash": "MODEL_NAME"}
     # ... but leaves the source file untouched.
     assert py.read_text(encoding="utf-8") == original
 
@@ -653,7 +761,7 @@ def _make_sample_recipe(root: Path) -> Path:
     (pkg / "agent.py").write_text(
         "import os\n"
         'KEY = os.getenv("MY_API_KEY")\n'
-        'MODEL = "gemini-2.5-flash"\n',
+        'MODEL = "gemini-3.5-flash"\n',
         encoding="utf-8",
     )
     (recipe / "pyproject.toml").write_text(
@@ -706,5 +814,6 @@ def test_main_real_run_applies_changes(tmp_path, monkeypatch):
     assert "load_dotenv" in init_py.read_text(encoding="utf-8")
     assert "python-dotenv" in pyproject.read_text(encoding="utf-8")
     agent_text = agent_py.read_text(encoding="utf-8")
+    # Replacement preserves the original model string as an inline default.
     assert 'os.getenv("MODEL_NAME")' in agent_text
-    assert "gemini-2.5-flash" not in agent_text
+    assert "gemini-3.5-flash" not in agent_text
