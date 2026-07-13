@@ -1,5 +1,5 @@
 ---
-name: scaffold-python-sample
+name: scaffold-python-recipe
 description: >
   This skill should be used when the user wants to "create a new Python ADK sample",
   "scaffold a new Python sample recipe", "generate a new Python sample in contrib",
@@ -52,7 +52,7 @@ If the user provided a name, validate it against these rules before proceeding. 
 
 Execute the scaffold script:
 ```bash
-python3 .agents/skills/scaffold-python-sample/scripts/scaffold.py --name <RECIPE_NAME> --output-dir <OUTPUT_DIRECTORY>
+python3 .agents/skills/scaffold-python-recipe/scripts/scaffold.py --name <RECIPE_NAME> --output-dir <OUTPUT_DIRECTORY>
 ```
 *The script accepts exactly two flags: `--name` (required) and `--output-dir` (required). Do not pass any other flags.*
 

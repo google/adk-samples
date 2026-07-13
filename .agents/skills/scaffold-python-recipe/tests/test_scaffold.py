@@ -1,6 +1,6 @@
 # Copyright 2026 Google LLC
 # Licensed under the Apache License, Version 2.0
-"""Unit tests for the scaffold-python-sample skill script."""
+"""Unit tests for the scaffold-python-recipe skill script."""
 
 import os
 import shutil

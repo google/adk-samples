@@ -1,17 +1,17 @@
-name: Validate Python Sample
+name: Validate Python Recipe
 
 on:
   pull_request:
     paths:
       - 'core/python/**'
       - 'contrib/**'
-      - '.github/workflows/validate-python-sample.yml'
+      - '.github/workflows/validate-python-recipe.yml'
 
 permissions:
   contents: read
 
 jobs:
-  validate-python-samples:
+  validate-python-recipes:
     name: Check Python recipe structure and constraints
     runs-on: ubuntu-latest
 
@@ -34,7 +34,7 @@ jobs:
           echo "$CHANGED_FILES"
 
           # If the workflow itself changed, validate all Python recipes.
-          WORKFLOW_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^\.github/workflows/validate-python-sample\.yml$" || true)
+          WORKFLOW_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^\.github/workflows/validate-python-recipe\.yml$" || true)
           if [ -n "$WORKFLOW_CHANGED" ]; then
             echo "Workflow file changed — validating all Python recipes."
             echo "validate_all=true" >> "$GITHUB_OUTPUT"

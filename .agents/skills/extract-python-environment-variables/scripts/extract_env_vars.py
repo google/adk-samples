@@ -37,7 +37,7 @@ from pathlib import Path
 PLACEHOLDER = "<TODO: update-this-value>"
 
 # Model name prefixes that indicate a hardcoded model identifier.
-# Kept in sync with validate-python-sample.yml.
+# Kept in sync with validate-python-recipe.yml.
 MODEL_PREFIXES: tuple[str, ...] = (
     "gemini-",
     "gemini-exp-",
@@ -529,7 +529,7 @@ def extract_hardcoded_models(
     Find string literals that look like hardcoded model names in Python files.
 
     Uses AST to walk string constants and checks whether the value starts with
-    any known model prefix (same list as validate-python-sample.yml).
+    any known model prefix (same list as validate-python-recipe.yml).
     Docstring nodes are excluded to avoid false positives from documentation.
 
     Returns:

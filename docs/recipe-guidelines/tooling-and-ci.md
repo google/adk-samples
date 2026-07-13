@@ -71,7 +71,7 @@ AI coding assistants (like Antigravity or Gemini) can use standard instructions 
 
 ### Available Skills
 
-#### `scaffold-python-sample`
+#### `scaffold-python-recipe`
 *   **Purpose**: Creates a compliant directory structure with the template files (`app/`, `tests/`, `pyproject.toml`, `README.md`, `.env.example`, `manifest.yaml`) by running the scaffold script automatically. Run `uv lock` afterwards to generate `uv.lock`.
 *   **Examples to trigger this skill**:
     *   > *"Help me create a new recipe named `weather-alert-agent`"*
@@ -105,7 +105,7 @@ contributors are:
 
 | Workflow | What it enforces |
 |----------|------------------|
-| `validate-python-sample.yml` | Directory size & file-count limits, directory-name rules, required files, and `.env.example` completeness (every variable used in code must be declared). |
+| `validate-python-recipe.yml` | Directory size & file-count limits, directory-name rules, required files, and `.env.example` completeness (every variable used in code must be declared). |
 | `validate-manifest.yml` | `manifest.yaml` schema and placeholder values (same as `uv run validate`). |
 | `validate-lockfiles.yml` | `uv.lock` is present and in sync with `pyproject.toml`. |
 | `python-ruff.yml` | Ruff formatting & lint on changed Python files. |
