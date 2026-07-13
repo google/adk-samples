@@ -1,101 +1,79 @@
-# 🧠 Evolved Economic Research Agent (ERA)
+# Economic Research Agent (ERA)
 
-[![Level 3 Maturity](https://img.shields.io/badge/Maturity-Level%203%20Structural-blueviolet)](https://github.com/google/agents-cli)
 [![Framework-ADK](https://img.shields.io/badge/Framework-ADK%202.0-green)](https://github.com/google/adk)
-[![Live-API](https://img.shields.io/badge/Live--API-100%25%20Grounded-orange)](#)
-[![Zero-Mocks](https://img.shields.io/badge/Mock--Data-Zero-success)](#)
+[![Python-Support](https://img.shields.io/badge/Python-3.10+-blue)](#)
+[![Deployment-Target](https://img.shields.io/badge/Deployment-Agent%20Runtime-orange)](#)
 
-An enterprise-grade, **Autonomous Economic Intelligence** engine for high-fidelity regional economic analysis, labor market evaluation, and cross-industry site selection. Upgraded to **Agent Runtime (ADK 2.0 / AdkApp)** with a 100% Live-API grounded architecture utilizing dynamic **Serper.dev Internet Extraction Engines** to provide infinite geographic coverage and zero mock-data dependencies.
+The **Economic Research Agent (ERA)** is an enterprise-grade AI Reasoning Engine built on the Vertex AI Agent Development Kit (ADK). It automates regional economic analysis, labor market data extraction, and commercial real estate cost modeling by orchestrating live APIs (FRED, BLS, CENSUS, HUD, EIA) in tandem with dynamic Serper.dev Internet Extractors.
 
 ---
 
-## A. Overview & Functionalities
+## A. Capabilities & Architecture
 
-The **Economic Research Agent (ERA)** is a production-grade site-selection and market intelligence consultant. Designed for corporate research, ERA automates comparative metropolitan cost-modeling by orchestrating live public APIs (FRED, BLS, CENSUS, HUD, EIA) into McKinsey-style strategic briefs—now upgraded with an automated **Auditor Judge Agent** (via Serper Live Search) for zero-hallucination verification.
+The ERA executes multi-source data extraction to underwrite regional economics. It utilizes an Auditor-Critic loop via Google Search to cross-verify quantitative datasets and eliminate reliance on static mock data.
 
-> [!NOTE]
-> While organizations like Anthropic maintain dedicated, proprietary economic research teams and blogs focused on modeling AI usage and its macroeconomic impact, the **Economic Research Agent (ERA)** on Agent Garden serves a different purpose. Rather than striving to publish proprietary articles or centralized think-tank insights, our goal is to provide a fully transparent, open-source framework. This enables diverse industries and independent research analysts covering real estate, regional development, labor structures, and utility planning to dynamically spin up customized, live-grounded market intelligence pipelines tailored to their own analytical needs.
+### Technical Details
 
-### 📊 Agent Details
-
-| Feature | Specifics |
+| Feature | Specification |
 | :--- | :--- |
-| **Interaction Type** | Conversational / Strategic Consultant |
-| **Complexity** | Advanced (Multi-Source Synthesis) |
-| **Agent Type** | Single Agent (ADK Class-Based) |
-| **Vertical** | Economic Development / Real Estate / Finance |
-| **Grounding** | 100% Live-API (FRED, BLS, HUD, Census, BEA) |
+| **Architecture** | ReAct Multi-Point Orchestration (Single-Agent Class) |
+| **Framework** | Google Vertex AI ADK |
+| **Vertical** | Economic Development / Real Estate Underwriting |
+| **Grounding APIs** | FRED, BLS, Census, HUD, EIA, RentCast, Serper.dev |
 
-### 💬 Example Interaction (Strategic Consulting)
+### Verification Test Suite Matrix
 
-**User**: "Compare Austin and Raleigh for a new data center HQ."
-
-**ERA**: "I am analyzing technical and fiscal ROI for NAICS 518210 (Data Processing). 
-1. **Utility Benchmarking**: Texas (ERCOT) industrial rates average 8.2c/kWh, while North Carolina (Duke Energy) is 7.5c/kWh.
-2. **Talent Pipeline**: UT Austin graduated 1,200 CS majors in 2023 vs. 850 from NC State.
-3. **Fiscal Climate**: NC has a scheduled corporate tax phasedown to 0% by 2030, offering a better longitudinal OPEX profile.
-*Recommendation: Raleigh for long-term tax stability; Austin for immediate talent density.*"
-
-### 💎 Consultant's Playbook: The "WOW" Matrix
-
-| Source | Strategic "WOW" Query | Consultative Insight |
+| Data Source | Evaluator Query Payload | Derived Output / Metric |
 | :--- | :--- | :--- |
-| **FRED** | "What is the 10-year unemployment trend for Austin vs. Nashville?" | Longitudinal Labor Resilience |
-| **BEA** | "Compare the Real GDP growth rate for the San Francisco MSA vs. Dallas." | Macroeconomic Momentum |
-| **Census** | "Show the educational attainment (Bachelor's+) pipeline for Seattle vs. Raleigh." | Talent Depth & Engineering Density |
-| **HUD** | "Is Austin affordable for a 50% AMI workforce? Correlate rent vs income." | Workforce Retention & COLA Risk |
-| **BLS** | "What is the 10-year wage trend vs. unionization in the Rust Belt?" | Labor Cost & Structural Risk |
-| **FEC** | "Benchmark the political stability of site selection in Ohio using FEC data." | Political Volatility & Lobbying Exposure |
-| **USITC** | "Analyze Arizona as a semiconductor hub. Show trade flows vs state tax rates." | Supply Chain Dependency (Chips) |
-| **EIA** | "Compare industrial electricity rates in Texas vs. Ohio for a data center." | Operational Utility Benchmarking |
-| **Register** | "Are there any recent regulatory notices regarding semiconductors in Texas?" | Live Regulatory Drift & Compliance |
-| **Tax F.** | "What are the corporate income tax brackets for North Carolina in 2024?" | Fiscal Competitiveness |
-| **Workforce** | "Analyze the workforce AI exposure and automation potential for Customer Service Representatives vs. Software Developers." | AI Workforce Adaptation Strategy |
-| **MLS Sourcing** | "Find multifamily investment properties in Columbus, OH and estimate their Cap Rates using HUD rents." | Real Estate Sourcing & Yield Yields |
-| **USPS Cross.** | "Find the county FIPS code for ZIP code 78702 using USPS crosswalk." | Dynamic ZIP-to-FIPS Lookup |
-| **CHAS** | "What is the percentage of cost-burdened households in Travis County, TX (FIPS 48453) using CHAS data?" | Regional Housing Problems & Supply Burden |
-| **Labor Shifts** | "Compare Austin and Columbus for AI-driven labor market disruption and forecast their 3-year displacement outlook." | Labor Market Disruption Forecasting |
-| **Combined** | "Create a Metro Matrix comparing Denver and Seattle for a new Tech Hub." | 360-Degree Site Selection (Level 3) |
+| **FRED** | "What is the 10-year unemployment trend for Austin vs. Nashville?" | MSA Unemployment Time-Series |
+| **BEA** | "Compare the Real GDP growth rate for the San Francisco MSA vs. Dallas." | Real GDP Growth Rate |
+| **Census** | "Show the educational attainment (Bachelor's+) pipeline for Seattle vs. Raleigh." | Regional Educational Attainment |
+| **HUD** | "Is Austin affordable for a 50% AMI workforce? Correlate rent vs income." | HUD Area Median Income (AMI) / FMR |
+| **BLS** | "What is the 10-year wage trend vs. unionization in the Rust Belt?" | OES Occupational Wage Averages |
+| **FEC** | "Benchmark the political stability of site selection in Ohio using FEC data." | Campaign Finance Data Metrics |
+| **USITC** | "Analyze Arizona as a semiconductor hub. Show trade flows vs state tax rates." | International Trade Harmonized Data |
+| **EIA** | "Compare industrial electricity rates in Texas vs. Ohio for a data center." | Industrial/Commercial Utility Rates (kWh) |
+| **Register** | "Are there any recent regulatory notices regarding semiconductors in Texas?" | Federal Register Compliance Data |
+| **Tax Foundation** | "What are the corporate income tax brackets for North Carolina in 2024?" | State-level Corporate Tax Brackets |
+| **Workforce** | "Analyze the workforce AI exposure and automation potential for Developers." | O*NET Task Automation Hierarchies |
+| **MLS Sourcing** | "Find multifamily investment properties in Columbus, OH and estimate their Cap Rates." | Active MLS Property Listings (RentCast) |
+| **USPS** | "Find the county FIPS code for ZIP code 78702 using USPS crosswalk." | ZIP-to-FIPS Geocoding |
+| **CHAS** | "What is the percentage of cost-burdened households in Travis County, TX?" | CHAS Housing Burden Coefficients |
+| **Labor Shifts** | "Compare Austin and Columbus for AI-driven labor market disruption." | Projected Labor Disruption Metrics |
+| **Site Selection** | "Create a Metro Matrix comparing Denver and Seattle for a new Tech Hub." | Side-by-Side Normalized Metro Matrix |
 
-### 💎 Advanced "Multi-Million Dollar" Whitepaper Suite
-Evolve your analysis into premium, PE-grade and blog-ready Corporate Prospectuses utilizing our graduated **Universal Whitepaper Engine**. Trigger autonomously via Python:
+### Universal Whitepaper Generator
+The agent includes a `UniversalWhitepaperOrchestrator` to synthesize raw API extraction payloads into formatted Markdown and HTML reports. It can be invoked via Python:
 
 ```bash
 uv run python -c "from economic_research.agent import ERAAgent; print(ERAAgent().generate_whitepaper('YOUR_QUERY_HERE'))"
 ```
 
-| Strategic Pillar | The "Multi-Million Dollar" WOW Query | Derived Analysis |
+| Strategic Pillar | Validated Query Payload | Output Document |
 | :--- | :--- | :--- |
-| **Pillar B** (Real Estate) | "Underwrite a Multi-Family Investment portfolio across the Sun Belt, contrasting Phoenix, AZ, Atlanta, GA, and Raleigh, NC." | Dynamic RentCast Cap Rates, HUD FMR Affordability Matrices, and Cash-on-Cash Underwriting. |
-| **Pillar A + C** (Workforce AI) | "Select the optimal regional Hub for an Advanced AI R&D Center, contrasting Columbus, OH, Pittsburgh, PA, and Salt Lake City, UT." | O*NET AI Task Exposure, Talent Pipeline Demographics (Census), and EIA Utility Benchmarking. |
-| **Pillar A + D** (Global Trade) | "Underwrite a Tier-1 Semiconductor Manufacturing Facility site selection, contrasting Phoenix, AZ and Syracuse, NY." | USITC Trade Dependencies, State Tax Abatements (Good Jobs First), and Federal Register compliance. |
+| **Pillar B** (Real Estate) | "Underwrite a Multi-Family Investment portfolio across the Sun Belt, contrasting Phoenix, AZ, Atlanta, GA, and Raleigh, NC." | Real Estate Underwriting Brief |
+| **Pillar A + C** (Workforce AI) | "Select the optimal regional Hub for an Advanced AI R&D Center, contrasting Columbus, OH, Pittsburgh, PA, and Salt Lake City, UT." | R&D Site Selection Brief |
+| **Pillar A + D** (Global Trade) | "Underwrite a Tier-1 Semiconductor Manufacturing Facility site selection, contrasting Phoenix, AZ and Syracuse, NY." | Trade & Regulatory Compliance Brief |
 
-### 📡 Consultative Capabilities
+### Grounding & Analysis Modules
 
-#### 💼 Labor & Macro (FRED/BLS)
-- **Live Wage Analysis**: Real-time median hourly wages fetched via live FRED search (No hardcoded mocks).
-- **Unemployment Trends**: 10-year historical time-series sampling for MSA-level analysis.
-- **Union Density**: Live state-level union membership percentages.
+#### Labor & Macroeconomic Data
+- **Wage Distribution Analysis**: Extracts occupational wage coefficients via the live BLS and FRED endpoints.
+- **Unemployment Trajectories**: Provides 10-year historical MSA-level time-series sampling.
 
-#### 🏢 Real Estate & Utilities (CoStar/RentCast/EIA)
-- **Energy Matrix**: Live Industrial electricity rates (per kWh) and regional renewable energy shares using the compliant **EIA v2 Open Data API**.
-- **Commercial ROI Modeling**: Dynamic Serper Harvesters extract live, city-level **CoStar, Zillow, and Redfin PSF average lease rates** and vacancy rates on the fly for any candidate market.
-- **MLS Sourcing & Underwriting**: Fetches active property listings from the **RentCast API** and correlates them with local HUD FMR rents.
-- **Acquisitions Deal Underwriting & Pro-Formas**: Modeled via our graduated `RealEstatePortfolioAdvisor`, generating complete amortization, NOI, DSCR, and Debt Yield brief tables.
+#### Real Estate & Utilities
+- **Industrial Electricity Metrics**: Utilizes the EIA v2 Open Data API to harvest commercial utility costs (per kWh).
+- **Commercial Lease Rates**: Dispatches Serper Internet Extractors to parse live CoStar and regional real estate indices.
+- **MLS Multi-Family Underwriting**: Correlates active real estate listings (RentCast API) with HUD Section 8 Fair Market Rents.
 
-#### 🤖 AI Labor Exposure & Task Forecasting (New!)
-- **AI Task Exposure & Automation Risk**: Maps O*NET task hierarchies against BLS occupational codes to quantify displacement vs. augmentation potential.
-- **Dynamic FEMA NRI Risk Benchmarking**: Dispatches live semantic harvesters to query the FEMA National Risk Index for any MSA, tracking Heat, Flood, and Hurricane risks.
-- **DOT Bureau of Transportation Statistics (BTS)**: Harvests live intermodal port access and shipping cost indexes for manufacturing relocations.
+#### Automation & Task Disruption Analysis
+- **AI Task Exposure Matrix**: Maps O*NET job classifications against regional labor pools to project reskilling demand.
+- **Climate Resilience Indexing**: Integrates live FEMA National Risk Index endpoints for Heat, Flood, and Hurricane risks.
+- **Logistics Intermodal Metrics**: Extracts DOT Bureau of Transportation Statistics (BTS) indices for logistics planning.
 
-#### 🏛️ Economic Subsidies & Policy Risk (New!)
-- **Good Jobs First Harvester**: Discovers active state-level tax abatements, Chapter 313 programs, and job development grants (JDIG) autonomously.
-- **Campaign Finance & Regulatory Drift**: Correlates political stability metrics using the live **FEC API** and **Federal Register** notice tracking.
-
-#### 🧮 Quantitative Decision-Support & Econometrics
-- **Isolated Econometrics Sandbox (`run_econometric_regression`)**: Executes formal OLS regressions, Pearson/Spearman correlations, and ADF stationarity tests on live vectors.
-- **Location Scorecard Generator (`generate_location_scorecard`)**: Normalizes and scores candidate states based on weighted criteria (corporate tax, electricity cost, wages).
-- **Universal Whitepaper Engine (`generate_whitepaper`)**: Leverages our graduated `UniversalWhitepaperOrchestrator` to generate end-to-end Corporate Whitepapers on any "Wow Factor" scenario.
+#### Fiscal & Regulatory Policy
+- **Tax Abatement Tracking**: Parses Good Jobs First data to discover regional Chapter 313 and JDIG tax abatements.
+- **Regulatory Compliance Drift**: Tracks live Federal Register notices and FEC political risk distributions.
 
 ---
 
@@ -140,7 +118,7 @@ graph TD
 
 ## C. Setup & Execution
 
-### 🔑 API Configuration (.env)
+### API Configuration (.env)
 
 The ERA uses a modular grounding strategy. Set these in your `.env` file (see `.env.example`).
 
@@ -159,16 +137,15 @@ The ERA uses a modular grounding strategy. Set these in your `.env` file (see `.
 | **RentCast** | Real Estate Listings | **Optional** | [Sign up for RentCast API](https://www.rentcast.io/api) |
 | **O*NET** | AI Task Exposure | **Optional** | [Sign up for O*NET Web Services](https://services.onetcenter.org/) |
 
-### 🛠️ Installation
-
-ERA uses `uv` for lightning-fast dependency management.
+### Installation
+ERA uses `uv` for dependency management.
 
 ```bash
 # Create and synchronize the virtual environment
 uv sync --dev
 ```
 
-### ☁️ Google Cloud Setup (Prerequisites)
+### Google Cloud Setup (Prerequisites)
 
 Before deploying to the Vertex AI Reasoning Engine, ensure your local environment is authenticated with Google Cloud:
 
@@ -182,28 +159,25 @@ Before deploying to the Vertex AI Reasoning Engine, ensure your local environmen
    gcloud auth application-default login
    ```
 
-### 📦 Using Google Agents CLI (Recommended)
+### Using Google Agents CLI
+This agent is deployed and managed via the **Google Agents CLI** (`agents-cli`). 
 
-This agent is built to be deployed, evaluated, and launched natively via the **Google Agents CLI** (`agents-cli`). The repository structure adheres to the structural standard for seamless lifecycle management.
-
-**Install the CLI** (one-time):
+**Install the CLI**:
 
 ```bash
 uv tool install google-agents-cli
 ```
 
-### 🚀 Running the Agent
-
-The Economic Research Agent offers multiple interaction and playground options:
+### Running the Agent
 
 ```bash
-# 🧠 Option 1: Live Interactive Playground Web UI (Recommended)
+# Option 1: Web-based Playground
 agents-cli playground
 
-# 💻 Option 2: CLI-Based Interactive Execution
+# Option 2: CLI-Based Execution
 make run
 
-# 🛰️ Option 3: Multi-Protocol MCP Server (For Claude / Cursor integration)
+# Option 3: MCP Server Target (For IDE integration)
 make mcp
 ```
 
@@ -211,25 +185,23 @@ make mcp
 
 ## D. Customization & Extension
 
-The ERA is designed for modular growth:
-- **Modifying the Persona**: Edit `economic_research/prompt.py` to change the consultative tone.
-- **Adding New Skills**: Add your skill in `economic_research/tools/`, then register it in `economic_research/agent.py`.
-- **Altering Data Flows**: Use the `shared_libraries/helper.py` to add new HTTP/JSON normalization patterns for regional data.
+- **System Persona**: Modify `economic_research/prompt.py` to alter agent response constraints.
+- **Tool / Skill Integration**: Add new tools to `economic_research/tools/` and register them in `economic_research/agent.py`.
+- **Normalization Utilities**: Utilize `shared_libraries/helper.py` to introduce HTTP/JSON parsing logic.
 
 ---
 
-## E. Evaluation
+## E. Evaluation & Testing
 
-How do we know ERA is accurate?
-- **Golden Suite**: We use a comprehensive 21-question integration suite (`tests/integration/`) targeting specific regional and macro site-selection scenarios.
-- **Grounding Fidelity Metric**: The `eval/run_eval.py` script utilizes Gemini to calculate strict Grounding Coverage scores over live metrics.
-- **Regression Testing**: Execute our rigorous pytest suite to verify live harvesters, adapters, and data extractors.
+- **Golden Suite**: Executes a 21-question integration suite (`tests/integration/`) against baseline regional scenarios.
+- **Grounding Validation**: The `eval/run_eval.py` script leverages Gemini to score Grounding Coverage across public APIs.
+- **Regression Testing**: Supports unit and integration testing via pytest.
 
 ```bash
-# Run the full 21-question validation suite
+# Execute integration test suite
 uv run pytest tests/integration/test_full_golden_suite.py
 
-# Run the live-harvester and skills unit suite
+# Execute unit and harvester tests
 uv run pytest tests/unit/
 ```
 
@@ -237,25 +209,15 @@ uv run pytest tests/unit/
 
 ## F. Deployment
 
-### 🚀 Production Rollout (Agent Runtime)
-
-The Economic Research Agent is engineered for Google Cloud's **Vertex AI Reasoning Engine (Agent Runtime)**. 
-
-To deploy your evolved, live-grounded agent to your Google Cloud perimeter in a single command, run:
+### Vertex AI Agent Runtime
+The ERA is deployed to Google Cloud via the Vertex AI Reasoning Engine:
 
 ```bash
 agents-cli deploy
 ```
 
-> [!TIP]
-> Use `agents-cli deploy --list` and `agents-cli deploy --status` to view and track your remote reasoningEngine allocations in real-time.
+Use `agents-cli deploy --list` and `agents-cli deploy --status` to monitor deployed instances.
 
-### 🔒 Enterprise Security & Privacy
-
-The ERA is engineered for **Enterprise Privacy** within the Google Cloud perimeter:
-- **Zero Local Data Retention**: No local databases or static cache tables are utilized. All operations process in-memory.
-- **Bypassable Actor-Critic Gate**: Toggle the `ERA_BYPASS_SUPERVISOR=true` environment flag to bypass the iterative Audit Judge loops for high-speed CI/CD regression testing.
-
----
-
-*Built for the Agentic Trinity Framework.*
+### Security Configurations
+- **In-Memory Processing**: The agent processes data in-memory without persistent local storage or static cache tables.
+- **Audit Bypass Flag**: Set `ERA_BYPASS_SUPERVISOR=true` in `.env` to bypass Auditor Critic loops for CI/CD pipelines.
