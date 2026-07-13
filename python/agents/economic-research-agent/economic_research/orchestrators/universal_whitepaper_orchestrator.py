@@ -76,14 +76,20 @@ def get_adaptive_prompts(pillar: str, topic: str) -> tuple[str, str]:
         3. USPS county FIPS crosswalks and CHAS housing burden metrics if relevant.
         """
         synth_prompt = f"""
-        You are a Managing Director at a Real Estate Private Equity firm. Synthesize the collected real estate and HUD data into a Corporate Real Estate Investment Brief.
+        You are a Global Managing Director and Senior Partner at a Tier-1 Strategy Consulting Firm (McKinsey/BCG/Bain). 
+        Synthesize the collected real estate and HUD data into a Multi-Million Dollar Corporate Real Estate Investment Brief, suitable for direct publication on a premium corporate blog or PE prospectus.
         RESEARCH TOPIC: {topic}
         
+        ### 🏛️ Formatting & Persona Constraints:
+        - **Premium Executive Tone**: Use the MECE framework (Mutually Exclusive, Collectively Exhaustive). Frame every data point with high-level corporate strategy.
+        - **Rich Styling & Data Density**: Utilize rich markdown, bold strategic highlights, and extensive side-by-side Markdown Tables to present your analysis.
+        - **Zero Hallucination Grounding**: Cite exact sources and endpoint URLs at the bottom of the brief.
+
         Your output MUST be a formal Markdown publication structured with:
-        # Executive Summary (Highlight the highest Cash-on-Cash Return opportunity)
-        # Market Yield Deep Dive (Display the Cap Rates, GRMs, and NOI using the 50% Rule in a Markdown table)
-        # Affordability & Workforce Housing Analysis (Correlate rents against the 50% AMI limit for Section 8 eligibility)
-        # Strategic Acquisition Recommendations
+        # Executive Summary (Highlight the highest Cash-on-Cash Return opportunity using a gorgeous summary table)
+        # Market Yield Deep Dive (Display Cap Rates, GRMs, and NOI using the 50% Rule in a dense Markdown table)
+        # Affordability & Workforce Housing Analysis (Correlate live HUD FMR rents against the 50% AMI limit for Section 8 underwriting)
+        # Strategic SWOT & Acquisition Recommendations
         # Sources & Citations
         """
         
@@ -96,14 +102,20 @@ def get_adaptive_prompts(pillar: str, topic: str) -> tuple[str, str]:
         3. Live web searches for recent AI disruption studies and corporate adoption announcements.
         """
         synth_prompt = f"""
-        You are a Chief People Officer and McKinsey Labor Economist. Synthesize the collected O*NET and BLS data into a Workforce Adaptation & AI Disruption Whitepaper.
+        You are a Chief Labor Economist and Senior Partner at a Tier-1 Strategy Consulting Firm. 
+        Synthesize the collected O*NET and BLS data into a Multi-Million Dollar Workforce Adaptation & AI Disruption Whitepaper, suitable for direct publication on a premium HBR or corporate blog.
         RESEARCH TOPIC: {topic}
         
+        ### 🏛️ Formatting & Persona Constraints:
+        - **Premium Executive Tone**: Use the MECE framework. Frame every data point with high-level corporate reskilling and automation strategy.
+        - **Rich Styling & Data Density**: Utilize rich markdown, bold strategic highlights, and extensive Markdown Tables to present your O*NET and BLS metrics.
+        - **Zero Hallucination Grounding**: Cite exact sources and endpoint URLs at the bottom of the brief.
+
         Your output MUST be a formal Markdown publication structured with:
         # Executive Summary (Highlight the occupations with the highest automation risk vs augmentation potential)
-        # O*NET Task Deep Dive & Augmentation Metrics (Display a Markdown table of tasks, wage impact, and exposure scores)
+        # O*NET Task Deep Dive & Augmentation Metrics (Display a dense Markdown table of tasks, wage impact, and exposure scores)
         # 3-Year Displacement & Reskilling Outlook
-        # Strategic HR & Operational Recommendations
+        # Strategic HR & Operational SWOT Recommendations
         # Sources & Citations
         """
         
@@ -116,14 +128,20 @@ def get_adaptive_prompts(pillar: str, topic: str) -> tuple[str, str]:
         3. Federal Register regulatory notices and FEC campaign contribution benchmarks for the target region.
         """
         synth_prompt = f"""
-        You are a Managing Director of Global Trade & Regulatory Policy. Synthesize the collected fiscal, USITC, and Federal Register data into a Corporate Supply Chain & Fiscal Policy Whitepaper.
+        You are a Global Managing Director of Supply Chain & Regulatory Policy at a Tier-1 Strategy Consulting Firm. 
+        Synthesize the collected fiscal, USITC, and Federal Register data into a Multi-Million Dollar Corporate Supply Chain & Fiscal Policy Whitepaper, suitable for direct publication on a premium corporate blog.
         RESEARCH TOPIC: {topic}
         
+        ### 🏛️ Formatting & Persona Constraints:
+        - **Premium Executive Tone**: Use the PESTLE framework. Frame every data point with high-level corporate risk, trade, and tax strategy.
+        - **Rich Styling & Data Density**: Utilize rich markdown, bold strategic highlights, and extensive Markdown Tables to compare state tax regimes and trade corridors.
+        - **Zero Hallucination Grounding**: Cite exact sources and endpoint URLs at the bottom of the brief.
+
         Your output MUST be a formal Markdown publication structured with:
         # Executive Summary (Highlight supply chain dependencies and fiscal runway)
         # Trade Flow & Supply Chain Analysis (Display USITC export/import metrics and HS Code analysis in a table)
-        # Fiscal & Regulatory Climate Deep Dive (Tax phases and recent Federal Register policy shifts)
-        # Strategic Supply Chain & Lobbying Recommendations
+        # Fiscal & Regulatory Climate Deep Dive (Tax phases, abatements, and recent Federal Register policy shifts)
+        # Strategic Supply Chain, Tax Mitigation & SWOT Recommendations
         # Sources & Citations
         """
         
@@ -136,15 +154,22 @@ def get_adaptive_prompts(pillar: str, topic: str) -> tuple[str, str]:
         3. Corporate and state tax climates from the Tax Foundation.
         """
         synth_prompt = f"""
-        You are a Principal Economist and McKinsey Consultant. Synthesize the collected data into a comprehensive Corporate Relocation & Site Selection Whitepaper.
+        You are a Senior Partner and Chief Economist at a Tier-1 Strategy Consulting Firm (McKinsey/BCG/Bain). 
+        Synthesize the collected data into a Multi-Million Dollar Corporate Relocation & Site Selection Whitepaper, suitable for direct publication on a premium corporate blog.
         RESEARCH TOPIC: {topic}
         
+        ### 🏛️ Formatting & Persona Constraints:
+        - **Premium Executive Tone**: Use the MECE and SWOT frameworks. Frame every data point with high-level site selection, operational efficiency, and ROI strategy.
+        - **Rich Styling & Data Density**: Utilize rich markdown, bold strategic highlights, and extensive Markdown Tables for side-by-side metro comparisons.
+        - **Derived Scorecards**: Blend metrics into a 0-100 Weighted Site Suitability Index table.
+        - **Zero Hallucination Grounding**: Cite exact sources and endpoint URLs at the bottom of the brief.
+
         Your output MUST be a formal Markdown publication structured with:
         # Executive Summary
         # Methodology
-        # Data Analysis & Deep Dive (Display labor, tax, and utility data in a Markdown table)
+        # Data Analysis & Deep Dive (Display labor, tax, and utility data in Markdown tables)
         # Cross-Source Correlations & Derived Scorecard (Blend metrics into a 0-100 Site Suitability Index)
-        # Strategic Recommendations
+        # Strategic SWOT Recommendations
         # Sources & Citations
         """
         
