@@ -89,13 +89,15 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
         if isinstance(ownership, dict):
             if ownership.get("team") == OWNERSHIP_TEAM_PLACEHOLDER:
                 errors.append(
-                    f"  [ownership.team] is still set to the placeholder value "
-                    f'"{OWNERSHIP_TEAM_PLACEHOLDER}". Please replace it with a real team name.'
+                    "  [ownership.team] is still set to the placeholder value "
+                    f'"{OWNERSHIP_TEAM_PLACEHOLDER}". '
+                    "Please replace it with a real team name."
                 )
             if ownership.get("poc") == OWNERSHIP_POC_PLACEHOLDER:
                 errors.append(
-                    f"  [ownership.poc] is still set to the placeholder value "
-                    f'"{OWNERSHIP_POC_PLACEHOLDER}". Please replace it with a real GitHub ID.'
+                    "  [ownership.poc] is still set to the placeholder value "
+                    f'"{OWNERSHIP_POC_PLACEHOLDER}". '
+                    "Please replace it with a real GitHub ID."
                 )
 
     return errors
@@ -233,7 +235,8 @@ def main(scope: str | None = None) -> int:
             "\n  Example: core/rag-agent-search/manifest.yaml"
             "\n"
             "\nCommon mistakes:"
-            "\n  - Missing required fields (type, status, language, description, ownership)"
+            "\n  - Missing required fields (type, status, language, "
+            "description, ownership)"
             "\n  - ownership.team or ownership.poc left as placeholder values"
             "\n  - Invalid enum value for 'type', 'status', or 'language'"
         )

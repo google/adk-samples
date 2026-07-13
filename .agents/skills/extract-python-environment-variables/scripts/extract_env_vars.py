@@ -563,9 +563,10 @@ def assign_model_var_names(model_strings: set[str]) -> dict[str, str]:
     Rules (applied to the sorted list for determinism):
       - If there is only one model → MODEL_NAME (no suffix).
       - Otherwise derive a suffix from the model string itself using
-        _model_str_to_suffix(), e.g. "gemini-2.5-flash" → MODEL_NAME_GEMINI_2_5_FLASH.
-      - If two different model strings produce the same derived suffix (collision),
-        append _2, _3, … to disambiguate.
+        _model_str_to_suffix().
+        E.g., "gemini-3.5-flash" → MODEL_NAME_GEMINI_3_5_FLASH.
+      - If two different model strings produce the same derived suffix
+        (collision), append _2, _3, … to disambiguate.
 
     Returns:
       {model_string: env_var_name}
