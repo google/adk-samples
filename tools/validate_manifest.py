@@ -21,8 +21,7 @@ Usage:
   # Validate a single recipe:
   python3 tools/validate_manifest.py core/rag-agent-search
 
-  Dependencies are managed via the 'tools' dependency group in pyproject.toml.
-  Run `uv sync --group tools` once before using.
+  Dependencies are managed in pyproject.toml. Run `uv sync` once before using.
 
 Exit codes:
   0 — all manifests present and valid

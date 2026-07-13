@@ -13,6 +13,13 @@ dependencies = [
 [project.scripts]
 validate = "validate:main"
 
+[dependency-groups]
+# Test-only dependencies for the repo tooling (tools/) and skill scripts
+# (.agents/skills/*/scripts/). Install with `uv sync --dev`.
+dev = [
+  "pytest>=8",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -56,6 +63,26 @@ ignore = [
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pytest.ini_options]
+# importlib mode avoids sys.path pollution and lets same-named test files
+# coexist across skills without collection collisions.
+addopts = "--import-mode=importlib"
+# Only the repo tooling and skill scripts are tested here. Recipe tests under
+# core/ and contrib/ have their own per-recipe suites (see python-tests.yml).
+testpaths = [
+  "tools/tests",
+  ".agents/skills",
+]
+# Never descend into skill template payloads or virtualenvs. The scaffold
+# skill ships template test files under resources/templates/tests/ that contain
+# unresolved <PLACEHOLDER> tokens and must NOT be collected as real tests.
+norecursedirs = [
+  "resources",
+  ".venv",
+  ".ruff_cache",
+  "*.egg-info",
+]
 
 [tool.codespell]
 ignore-words-list = "rouge"

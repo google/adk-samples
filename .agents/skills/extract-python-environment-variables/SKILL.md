@@ -36,8 +36,8 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
    - Creates `.env.example` from scratch if it does not exist.
 
 3. **Injects `load_dotenv()`** into the package `__init__.py` (the first
-   subdirectory inside the recipe that contains an `__init__.py`). The snippet
-   injected is:
+   subdirectory inside the recipe that contains an `__init__.py`, skipping
+   `tests/` and hidden directories). The snippet injected is:
 
    ```python
    from dotenv import load_dotenv

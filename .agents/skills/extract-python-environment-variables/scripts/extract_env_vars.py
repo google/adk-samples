@@ -299,6 +299,43 @@ def _flat_offset(lines: list[str], lineno: int, col: int) -> int:
     return sum(len(ln) for ln in lines[: lineno - 1]) + col
 
 
+def _imports_os(tree: ast.AST) -> bool:
+    """Return True if the module actually imports ``os`` (binds ``os``).
+
+    A plain substring search for "import os" gives false positives when the
+    text appears in a comment or docstring, so we inspect real import nodes.
+    ``import os`` and ``import os.path`` both bind ``os``; ``import os as o``
+    does not.
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.asname or alias.name.split(".")[0]
+                if name == "os":
+                    return True
+    return False
+
+
+def _has_load_dotenv(tree: ast.AST) -> bool:
+    """Return True if the module already imports load_dotenv / dotenv.
+
+    AST-based so that a mention of "load_dotenv" in a docstring or comment does
+    not suppress a legitimate injection.
+    """
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "dotenv"
+            and any(a.name == "load_dotenv" for a in node.names)
+        ):
+            return True
+        if isinstance(node, ast.Import) and any(
+            a.name == "dotenv" for a in node.names
+        ):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Step 4: Inject load_dotenv() into package __init__.py
 # ---------------------------------------------------------------------------
@@ -307,10 +344,18 @@ def _flat_offset(lines: list[str], lineno: int, col: int) -> int:
 def find_package_init(recipe_dir: Path) -> Path | None:
     """
     Return the __init__.py of the top-level Python package inside recipe_dir.
-    Looks for immediate subdirectories that contain __init__.py.
+
+    Looks for immediate subdirectories that contain __init__.py, skipping
+    test and hidden directories. Without this guard a ``tests/`` package that
+    sorts before the real agent package would receive the load_dotenv()
+    bootstrap by mistake.
     """
     for candidate in sorted(recipe_dir.iterdir()):
-        if candidate.is_dir() and (candidate / "__init__.py").exists():
+        if not candidate.is_dir():
+            continue
+        if candidate.name == "tests" or candidate.name.startswith("."):
+            continue
+        if (candidate / "__init__.py").exists():
             return candidate / "__init__.py"
     return None
 
@@ -322,7 +367,12 @@ def inject_load_dotenv(init_py: Path) -> bool:
     """
     content = init_py.read_text(encoding="utf-8")
 
-    if "load_dotenv" in content:
+    try:
+        already_present = _has_load_dotenv(ast.parse(content))
+    except SyntaxError:
+        # Fall back to a conservative substring check on unparseable files.
+        already_present = "load_dotenv" in content
+    if already_present:
         return False  # Already present — nothing to do
 
     lines = content.splitlines(keepends=True)
@@ -409,7 +459,14 @@ def ensure_python_dotenv_dependency(pyproject: Path) -> bool:
     )
 
     if new_content == content:
-        return False
+        # No dependencies array exists yet. Create one under the [project]
+        # table if present; otherwise there is nothing sensible to modify.
+        project_header = re.search(r"(?m)^\[project\][ \t]*(#.*)?$", content)
+        if not project_header:
+            return False
+        insert_at = project_header.end()
+        block = '\ndependencies = [\n    "python-dotenv>=1.0.0",\n]'
+        new_content = content[:insert_at] + block + content[insert_at:]
 
     pyproject.write_text(new_content, encoding="utf-8")
     return True
@@ -592,8 +649,15 @@ def replace_hardcoded_models(
         modified = "".join(chars)
 
         # Ensure `import os` is present, placed after license + docstring.
+        # AST-based so "import os" appearing only in a comment or docstring
+        # does not suppress the real import (which would leave the injected
+        # os.getenv(...) calls raising NameError at runtime).
         # Include a trailing blank line so the import block is well-formatted.
-        if "import os" not in modified:
+        try:
+            already_imports_os = _imports_os(ast.parse(modified))
+        except SyntaxError:
+            already_imports_os = "import os" in modified
+        if not already_imports_os:
             mod_lines = modified.splitlines(keepends=True)
             idx = _post_header_index(mod_lines)
             # Avoid double blank lines if the line at idx is already blank
