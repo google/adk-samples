@@ -56,12 +56,10 @@ MODEL_PREFIXES: tuple[str, ...] = (
 LOAD_DOTENV_IMPORT = "from dotenv import load_dotenv"
 
 LOAD_DOTENV_SNIPPET = """\
-# Load the .env file
-if not load_dotenv():
-    raise FileNotFoundError(
-        "Critical Error: No .env file found. "
-        "Make sure to copy .env.example to .env and update the values."
-    )"""
+# Load variables from .env if present. In production the environment is
+# already populated by the platform (Cloud Run, GKE, etc.), so a missing
+# .env is expected and not an error.
+load_dotenv()"""
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +322,25 @@ def _imports_os(tree: ast.AST) -> bool:
     return False
 
 
+_RELATIVE_IMPORT_RE = re.compile(r"^\s*from\s+\.")
+_NOQA_E402_SUFFIX = "  # noqa: E402 -- must come after load_dotenv()"
+
+
+def _maybe_suppress_e402(line: str) -> str:
+    """Append a `# noqa: E402` suffix to a relative-import line if absent.
+
+    A no-op for anything that isn't a relative import (``from .x import ...``)
+    or that already carries an E402 noqa comment.
+    """
+    if not _RELATIVE_IMPORT_RE.match(line):
+        return line
+    if "noqa" in line and "E402" in line:
+        return line
+    stripped = line.rstrip("\n")
+    newline = line[len(stripped) :]  # preserve original line ending
+    return stripped + _NOQA_E402_SUFFIX + newline
+
+
 def _has_load_dotenv(tree: ast.AST) -> bool:
     """Return True if the module already imports load_dotenv / dotenv.
 
@@ -411,6 +428,12 @@ def inject_load_dotenv(init_py: Path, dry_run: bool = False) -> bool:
     else:
         # No imports — insert after license header and any module docstring
         lines.insert(_post_header_index(lines), inject_block)
+
+    # Any relative imports (`from .x import ...`) now sit AFTER the injected
+    # load_dotenv() call, which would trigger Ruff E402 ("module-level import
+    # not at top of file"). Suppress that warning per-line, since the ordering
+    # is intentional — env must be populated before agent module-level code.
+    lines = [_maybe_suppress_e402(ln) for ln in lines]
 
     init_py.write_text("".join(lines), encoding="utf-8")
     return True

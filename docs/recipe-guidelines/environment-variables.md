@@ -46,17 +46,27 @@ cp .env.example .env
 ```python
 from dotenv import load_dotenv
 
-# Load the .env file
-if not load_dotenv():
-    raise FileNotFoundError(
-        "Critical Error: No .env file found. "
-        "Make sure to copy .env.example to .env and update the values."
-    )
+# Load variables from .env if present. In production the environment is
+# already populated by the platform (Cloud Run, GKE, etc.), so a missing
+# .env is expected and not an error.
+load_dotenv()
 
-from .agent import app  # relative imports come AFTER load_dotenv()
+from .agent import app  # noqa: E402 -- must come after load_dotenv()
 
 __all__ = ["app"]
 ```
+
+The `# noqa: E402` on the relative import silences Ruff's "module-level
+import not at top of file" rule — the import is intentionally placed after
+`load_dotenv()` so the environment is populated before any of the package's
+module-level code runs.
+
+> **Why no `raise` if `.env` is missing?** In deployed environments (Cloud Run,
+> GKE, Agent Engine, Docker in most setups) there is no `.env` file — variables
+> are injected by the platform. Raising on a missing file would crash on
+> startup in those environments. If a required variable is unset, the recipe
+> code will fail naturally when it tries to use it. For local development,
+> follow the [Local Setup](#local-setup-for-users) step above.
 
 3. In `agent.py` and other modules, read variables normally via `os.getenv()`:
 

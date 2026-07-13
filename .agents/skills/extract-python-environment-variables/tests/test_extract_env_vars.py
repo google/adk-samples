@@ -290,6 +290,27 @@ def test_inject_load_dotenv_no_imports_goes_after_docstring(tmp_path):
     )
 
 
+def test_inject_load_dotenv_adds_noqa_to_trailing_relative_imports(tmp_path):
+    # Since load_dotenv() is a bare statement, Ruff would flag any relative
+    # imports below it as E402. The injection must add a suppression comment
+    # so the resulting file stays lint-clean without human edits.
+    init = _write(
+        tmp_path / "__init__.py",
+        "import os\nfrom .agent import root_agent\n",
+    )
+
+    assert m.inject_load_dotenv(init) is True
+
+    content = init.read_text(encoding="utf-8")
+    rel_line = next(
+        ln for ln in content.splitlines() if ln.startswith("from .agent")
+    )
+    assert "noqa: E402" in rel_line
+    # Idempotent: a second run must not duplicate the suffix.
+    m.inject_load_dotenv(init)
+    assert init.read_text(encoding="utf-8").count("noqa: E402") == 1
+
+
 def test_inject_load_dotenv_ignores_docstring_mention(tmp_path):
     # A mention of load_dotenv in a docstring/comment must NOT suppress a real
     # injection (AST-based idempotency check, not a fragile substring search).

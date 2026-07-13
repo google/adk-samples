@@ -42,12 +42,10 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
    ```python
    from dotenv import load_dotenv
 
-   # Load the .env file
-   if not load_dotenv():
-       raise FileNotFoundError(
-           "Critical Error: No .env file found. "
-           "Make sure to copy .env.example to .env and update the values."
-       )
+   # Load variables from .env if present. In production the environment is
+   # already populated by the platform (Cloud Run, GKE, etc.), so a missing
+   # .env is expected and not an error.
+   load_dotenv()
    ```
 
    If `load_dotenv` is already present the file is left unchanged.

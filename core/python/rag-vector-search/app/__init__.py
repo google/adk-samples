@@ -14,13 +14,11 @@
 
 from dotenv import load_dotenv
 
-# Load the .env file
-if not load_dotenv():
-    raise FileNotFoundError(
-        "Critical Error: No .env file found. "
-        "Make sure to copy .env.example to .env and update the values."
-    )
+# Load variables from .env if present. In production the environment is
+# already populated by the platform (Cloud Run, GKE, etc.), so a missing
+# .env is expected and not an error.
+load_dotenv()
 
-from .agent import app
+from .agent import app  # noqa: E402 -- must come after load_dotenv()
 
 __all__ = ["app"]
