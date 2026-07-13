@@ -193,17 +193,25 @@ def read_defined_vars(env_example: Path) -> set[str]:
 
 
 def update_env_example(
-    env_example: Path, env_vars: dict[str, str | None]
+    env_example: Path,
+    env_vars: dict[str, str | None],
+    dry_run: bool = False,
 ) -> list[str]:
     """
     Append variables not yet in .env.example.
-    Returns the list of variable names that were added.
+    Returns the list of variable names that were (or would be) added.
+
+    When dry_run is True, no file is written; the return value still reports
+    which variables would be added.
     """
     existing = read_defined_vars(env_example)
     to_add = {k: v for k, v in env_vars.items() if k not in existing}
 
     if not to_add:
         return []
+
+    if dry_run:
+        return sorted(to_add.keys())
 
     if env_example.exists():
         current = env_example.read_text(encoding="utf-8")
@@ -360,10 +368,13 @@ def find_package_init(recipe_dir: Path) -> Path | None:
     return None
 
 
-def inject_load_dotenv(init_py: Path) -> bool:
+def inject_load_dotenv(init_py: Path, dry_run: bool = False) -> bool:
     """
     Ensure load_dotenv import + bootstrap snippet exist in __init__.py.
-    Returns True if the file was modified.
+    Returns True if the file was (or would be) modified.
+
+    When dry_run is True, no file is written; the return value still reports
+    whether the snippet would be injected.
     """
     content = init_py.read_text(encoding="utf-8")
 
@@ -374,6 +385,9 @@ def inject_load_dotenv(init_py: Path) -> bool:
         already_present = "load_dotenv" in content
     if already_present:
         return False  # Already present — nothing to do
+
+    if dry_run:
+        return True  # Would inject the bootstrap snippet.
 
     lines = content.splitlines(keepends=True)
 
@@ -407,10 +421,15 @@ def inject_load_dotenv(init_py: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def ensure_python_dotenv_dependency(pyproject: Path) -> bool:
+def ensure_python_dotenv_dependency(
+    pyproject: Path, dry_run: bool = False
+) -> bool:
     """
     Add python-dotenv>=1.0.0 to [project] dependencies if absent.
-    Returns True if the file was modified.
+    Returns True if the file was (or would be) modified.
+
+    When dry_run is True, no file is written; the return value still reports
+    whether the dependency would be added.
     """
     if not pyproject.exists():
         return False
@@ -467,6 +486,9 @@ def ensure_python_dotenv_dependency(pyproject: Path) -> bool:
         insert_at = project_header.end()
         block = '\ndependencies = [\n    "python-dotenv>=1.0.0",\n]'
         new_content = content[:insert_at] + block + content[insert_at:]
+
+    if dry_run:
+        return True  # Would add python-dotenv to dependencies.
 
     pyproject.write_text(new_content, encoding="utf-8")
     return True
@@ -598,6 +620,7 @@ def replace_hardcoded_models(
     py_files: list[Path],
     hits: dict[Path, list[tuple[int, str]]],
     name_map: dict[str, str],
+    dry_run: bool = False,
 ) -> dict[str, str]:
     """
     Replace each hardcoded model string with the correct
@@ -611,6 +634,9 @@ def replace_hardcoded_models(
         docstrings, and f-string fragments are never touched.
 
     Also ensures `import os` is present in every modified file.
+
+    When dry_run is True, no file is written; the returned mapping still
+    reports which substitutions would be made.
 
     Returns a dict of {model_string: env_var_name} for the substitutions made.
     """
@@ -640,6 +666,9 @@ def replace_hardcoded_models(
 
         if not replacements:
             continue
+
+        if dry_run:
+            continue  # Detection recorded in `substituted`; skip writing.
 
         # Apply in reverse order so earlier offsets stay valid
         replacements.sort(key=lambda x: x[0], reverse=True)
@@ -677,8 +706,13 @@ def replace_hardcoded_models(
 # ---------------------------------------------------------------------------
 
 
+def _tag(dry_run: bool) -> str:
+    """Status prefix used in log lines: DRY-RUN when nothing is written."""
+    return "DRY-RUN" if dry_run else "PASS"
+
+
 def run_step_env_vars(
-    recipe_dir: Path, py_files: list[Path]
+    recipe_dir: Path, py_files: list[Path], dry_run: bool = False
 ) -> tuple[Path, dict[str, str | None]]:
     """Steps 2 + 3: extract env var reads and update .env.example."""
     env_vars = extract_env_vars(py_files)
@@ -692,11 +726,12 @@ def run_step_env_vars(
         print("\n[INFO] No environment variable reads detected.")
 
     env_example = recipe_dir / ".env.example"
-    added = update_env_example(env_example, env_vars)
+    added = update_env_example(env_example, env_vars, dry_run=dry_run)
     if added:
+        verb = "Would add" if dry_run else "Added"
         print(
-            f"\n[PASS] Added {len(added)} variable(s) to .env.example: "
-            + ", ".join(added)
+            f"\n[{_tag(dry_run)}] {verb} {len(added)} variable(s) to "
+            ".env.example: " + ", ".join(added)
         )
     else:
         print(
@@ -706,7 +741,7 @@ def run_step_env_vars(
     return env_example, env_vars
 
 
-def run_step_load_dotenv(recipe_dir: Path) -> None:
+def run_step_load_dotenv(recipe_dir: Path, dry_run: bool = False) -> None:
     """Step 4: inject load_dotenv() bootstrap into the package __init__.py."""
     init_py = find_package_init(recipe_dir)
     if not init_py:
@@ -716,18 +751,21 @@ def run_step_load_dotenv(recipe_dir: Path) -> None:
         )
         return
     rel = init_py.relative_to(recipe_dir)
-    if inject_load_dotenv(init_py):
-        print(f"[PASS] Injected load_dotenv() bootstrap into {rel}")
+    if inject_load_dotenv(init_py, dry_run=dry_run):
+        verb = "Would inject" if dry_run else "Injected"
+        print(f"[{_tag(dry_run)}] {verb} load_dotenv() bootstrap into {rel}")
     else:
         print(f"[PASS] load_dotenv() already present in {rel} — skipped.")
 
 
-def run_step_pyproject(recipe_dir: Path) -> None:
+def run_step_pyproject(recipe_dir: Path, dry_run: bool = False) -> None:
     """Step 5: ensure python-dotenv>=1.0.0 is in pyproject.toml."""
     pyproject = recipe_dir / "pyproject.toml"
-    if ensure_python_dotenv_dependency(pyproject):
+    if ensure_python_dotenv_dependency(pyproject, dry_run=dry_run):
+        verb = "Would add" if dry_run else "Added"
         print(
-            "[PASS] Added python-dotenv>=1.0.0 to pyproject.toml dependencies."
+            f"[{_tag(dry_run)}] {verb} python-dotenv>=1.0.0 to pyproject.toml "
+            "dependencies."
         )
     elif pyproject.exists():
         print("[PASS] pyproject.toml already includes python-dotenv — skipped.")
@@ -736,7 +774,10 @@ def run_step_pyproject(recipe_dir: Path) -> None:
 
 
 def run_step_model_names(
-    recipe_dir: Path, py_files: list[Path], env_example: Path
+    recipe_dir: Path,
+    py_files: list[Path],
+    env_example: Path,
+    dry_run: bool = False,
 ) -> None:
     """Step 6: detect hardcoded model strings, replace with os.getenv()."""
     model_hits = extract_hardcoded_models(py_files)
@@ -759,23 +800,30 @@ def run_step_model_names(
                 f' — "{model_str}" → {name_map[model_str]}'
             )
 
-    substituted = replace_hardcoded_models(py_files, model_hits, name_map)
+    substituted = replace_hardcoded_models(
+        py_files, model_hits, name_map, dry_run=dry_run
+    )
     if not substituted:
         return
 
     vars_to_add = {
         var_name: model_str for model_str, var_name in substituted.items()
     }
-    added_models = update_env_example(env_example, vars_to_add)
+    added_models = update_env_example(env_example, vars_to_add, dry_run=dry_run)
 
+    replace_verb = "Would replace" if dry_run else "Replaced"
     for model_str, var_name in substituted.items():
         print(
-            f'[PASS] Replaced hardcoded "{model_str}" with'
+            f'[{_tag(dry_run)}] {replace_verb} hardcoded "{model_str}" with'
             f' os.getenv("{var_name}") in source.'
         )
     if added_models:
+        add_verb = "Would add" if dry_run else "Added"
         for var in added_models:
-            print(f"[PASS] Added {var}={vars_to_add[var]} to .env.example.")
+            print(
+                f"[{_tag(dry_run)}] {add_verb} {var}={vars_to_add[var]} "
+                "to .env.example."
+            )
     else:
         print("[PASS] All MODEL_NAME_* vars already in .env.example — skipped.")
 
@@ -798,7 +846,13 @@ def main() -> None:
         required=True,
         help="Path to the root of the Python recipe (e.g. contrib/my-recipe)",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Only report what would change; do not modify any files.",
+    )
     args = parser.parse_args()
+    dry_run = args.dry_run
 
     recipe_dir = Path(args.recipe_dir).resolve()
     if not recipe_dir.is_dir():
@@ -810,6 +864,8 @@ def main() -> None:
     print(f"\n{'=' * 50}")
     print("  extract-python-environment-variables")
     print(f"  Recipe: {recipe_dir}")
+    if dry_run:
+        print("  MODE: dry-run (no files will be modified)")
     print(f"{'=' * 50}\n")
 
     py_files = find_python_files(recipe_dir)
@@ -817,13 +873,16 @@ def main() -> None:
     for f in py_files:
         print(f"       {f.relative_to(recipe_dir)}")
 
-    env_example, _ = run_step_env_vars(recipe_dir, py_files)
-    run_step_load_dotenv(recipe_dir)
-    run_step_pyproject(recipe_dir)
-    run_step_model_names(recipe_dir, py_files, env_example)
+    env_example, _ = run_step_env_vars(recipe_dir, py_files, dry_run=dry_run)
+    run_step_load_dotenv(recipe_dir, dry_run=dry_run)
+    run_step_pyproject(recipe_dir, dry_run=dry_run)
+    run_step_model_names(recipe_dir, py_files, env_example, dry_run=dry_run)
 
     print(f"\n{'=' * 50}")
-    print("  Done.")
+    if dry_run:
+        print("  Done (dry-run — no files were modified).")
+    else:
+        print("  Done.")
     print(f"{'=' * 50}\n")
 
 

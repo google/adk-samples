@@ -14,6 +14,7 @@
 """Unit tests for the extract-python-environment-variables skill script."""
 
 import ast
+import sys
 from pathlib import Path
 
 import extract_env_vars as m
@@ -195,6 +196,17 @@ def test_update_env_example_handles_missing_trailing_newline(tmp_path):
     assert "B=2" in lines
 
 
+def test_update_env_example_dry_run_reports_but_does_not_write(tmp_path):
+    env = tmp_path / ".env.example"
+
+    added = m.update_env_example(env, {"NEW": "1"}, dry_run=True)
+
+    # Reports what it would add ...
+    assert added == ["NEW"]
+    # ... but writes nothing (file not even created).
+    assert not env.exists()
+
+
 # ---------------------------------------------------------------------------
 # find_package_init
 # ---------------------------------------------------------------------------
@@ -292,6 +304,16 @@ def test_inject_load_dotenv_ignores_docstring_mention(tmp_path):
     assert m.LOAD_DOTENV_IMPORT in content
 
 
+def test_inject_load_dotenv_dry_run_reports_but_does_not_write(tmp_path):
+    original = "import os\n"
+    init = _write(tmp_path / "__init__.py", original)
+
+    # Reports that it would inject ...
+    assert m.inject_load_dotenv(init, dry_run=True) is True
+    # ... but leaves the file untouched.
+    assert init.read_text(encoding="utf-8") == original
+
+
 # ---------------------------------------------------------------------------
 # ensure_python_dotenv_dependency
 # ---------------------------------------------------------------------------
@@ -383,6 +405,16 @@ def test_ensure_dotenv_no_project_table_returns_false(tmp_path):
 
     assert m.ensure_python_dotenv_dependency(pyproject) is False
     assert "python-dotenv" not in pyproject.read_text(encoding="utf-8")
+
+
+def test_ensure_dotenv_dry_run_reports_but_does_not_write(tmp_path):
+    original = '[project]\ndependencies = [\n    "requests",\n]\n'
+    pyproject = _write(tmp_path / "pyproject.toml", original)
+
+    # Reports that it would add the dependency ...
+    assert m.ensure_python_dotenv_dependency(pyproject, dry_run=True) is True
+    # ... but leaves pyproject.toml untouched.
+    assert pyproject.read_text(encoding="utf-8") == original
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +555,20 @@ def test_replace_hardcoded_models_multiple_occurrences(tmp_path):
     ast.parse(content)
 
 
+def test_replace_hardcoded_models_dry_run_reports_but_does_not_write(tmp_path):
+    original = 'MODEL = "gemini-2.5-flash"\n'
+    py = _write(tmp_path / "mod.py", original)
+
+    hits = m.extract_hardcoded_models([py])
+    name_map = m.assign_model_var_names({"gemini-2.5-flash"})
+    substituted = m.replace_hardcoded_models([py], hits, name_map, dry_run=True)
+
+    # Reports the substitution it would make ...
+    assert substituted == {"gemini-2.5-flash": "MODEL_NAME"}
+    # ... but leaves the source file untouched.
+    assert py.read_text(encoding="utf-8") == original
+
+
 # ---------------------------------------------------------------------------
 # helpers: _post_header_index / _docstring_node_ids / _flat_offset
 # ---------------------------------------------------------------------------
@@ -569,3 +615,75 @@ def test_flat_offset():
     assert m._flat_offset(lines, 2, 0) == 4
     # Line 2, col 2 → 4 + 2 == 6
     assert m._flat_offset(lines, 2, 2) == 6
+
+
+# ---------------------------------------------------------------------------
+# main() end-to-end: --dry-run vs a real run
+# ---------------------------------------------------------------------------
+
+
+def _make_sample_recipe(root: Path) -> Path:
+    """A minimal recipe: a package that reads an env var and hardcodes a
+    model, plus a pyproject.toml without python-dotenv and no .env.example."""
+    recipe = root / "my-recipe"
+    pkg = recipe / "my_recipe"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "agent.py").write_text(
+        "import os\n"
+        'KEY = os.getenv("MY_API_KEY")\n'
+        'MODEL = "gemini-2.5-flash"\n',
+        encoding="utf-8",
+    )
+    (recipe / "pyproject.toml").write_text(
+        '[project]\nname = "my-recipe"\ndependencies = [\n    "requests",\n]\n',
+        encoding="utf-8",
+    )
+    return recipe
+
+
+def _run_main(monkeypatch, recipe: Path, *extra_args: str) -> None:
+    argv = ["extract_env_vars", "--recipe-dir", str(recipe), *extra_args]
+    monkeypatch.setattr(sys, "argv", argv)
+    m.main()
+
+
+def test_main_dry_run_changes_nothing(tmp_path, monkeypatch, capsys):
+    recipe = _make_sample_recipe(tmp_path)
+    init_py = recipe / "my_recipe" / "__init__.py"
+    agent_py = recipe / "my_recipe" / "agent.py"
+    pyproject = recipe / "pyproject.toml"
+    before = {
+        p: p.read_text(encoding="utf-8") for p in (init_py, agent_py, pyproject)
+    }
+
+    _run_main(monkeypatch, recipe, "--dry-run")
+
+    # No file was created or modified.
+    assert not (recipe / ".env.example").exists()
+    for p, text in before.items():
+        assert p.read_text(encoding="utf-8") == text
+
+    out = capsys.readouterr().out
+    assert "[DRY-RUN]" in out
+    assert "no files will be modified" in out
+
+
+def test_main_real_run_applies_changes(tmp_path, monkeypatch):
+    recipe = _make_sample_recipe(tmp_path)
+    init_py = recipe / "my_recipe" / "__init__.py"
+    agent_py = recipe / "my_recipe" / "agent.py"
+    pyproject = recipe / "pyproject.toml"
+
+    _run_main(monkeypatch, recipe)
+
+    # .env.example created with the detected env var and the extracted model.
+    env_text = (recipe / ".env.example").read_text(encoding="utf-8")
+    assert "MY_API_KEY=" in env_text
+    assert "MODEL_NAME=" in env_text
+    # load_dotenv injected, python-dotenv added, model string replaced.
+    assert "load_dotenv" in init_py.read_text(encoding="utf-8")
+    assert "python-dotenv" in pyproject.read_text(encoding="utf-8")
+    agent_text = agent_py.read_text(encoding="utf-8")
+    assert 'os.getenv("MODEL_NAME")' in agent_text
+    assert "gemini-2.5-flash" not in agent_text

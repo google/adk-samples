@@ -86,9 +86,29 @@ python3 .agents/skills/extract-python-environment-variables/scripts/extract_env_
   --recipe-dir <RECIPE_DIR>
 ```
 
+### Preview first (optional)
+
+Add `--dry-run` to report exactly what *would* change without modifying any
+files. Nothing is written to `.env.example`, `__init__.py`, `pyproject.toml`, or
+any source file. Useful for inspecting a recipe before committing to the edits:
+
+```bash
+python3 .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
+  --recipe-dir <RECIPE_DIR> --dry-run
+```
+
+In dry-run output, actions are prefixed with `[DRY-RUN]` and phrased as
+"Would add" / "Would inject" / "Would replace".
+
 ---
 
 ## Respond
+
+Do not show the script's raw stdout. Reformat its results into clear Markdown
+tables (variables to add, files to update, model replacements) so they are easy
+to read — this is especially important for `--dry-run` output. For each variable
+or model string, include a column with the source file where it was found
+(locate it in the recipe's Python source; ignore `.env` and `.env.example`).
 
 Once the script finishes successfully, summarise what changed:
 
