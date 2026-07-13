@@ -457,30 +457,58 @@ def extract_hardcoded_models(
     return hits
 
 
+def _model_str_to_suffix(model_str: str) -> str:
+    """
+    Derive a human-readable env var suffix from a model string.
+
+    Strategy:
+      1. Uppercase the model string.
+      2. Replace any character that is not A-Z or 0-9 with an underscore.
+      3. Collapse consecutive underscores into one.
+      4. Strip leading/trailing underscores.
+
+    Examples:
+      "gemini-2.5-flash"      → "GEMINI_2_5_FLASH"
+      "gemini-embedding-001"  → "GEMINI_EMBEDDING_001"
+      "claude-3-sonnet"       → "CLAUDE_3_SONNET"
+      "llama-3.1-70b"         → "LLAMA_3_1_70B"
+    """
+    suffix = re.sub(r"[^A-Z0-9]+", "_", model_str.upper())
+    return suffix.strip("_")
+
+
 def assign_model_var_names(model_strings: set[str]) -> dict[str, str]:
     """
     Assign a standardised MODEL_NAME_* env var name to each unique model string.
 
     Rules (applied to the sorted list for determinism):
-      - A model string containing "embed" → MODEL_NAME_EMBEDDING
-      - The first non-embedding model     → MODEL_NAME
-      - Additional non-embedding models   → MODEL_NAME_2, MODEL_NAME_3, …
+      - If there is only one model → MODEL_NAME (no suffix).
+      - Otherwise derive a suffix from the model string itself using
+        _model_str_to_suffix(), e.g. "gemini-2.5-flash" → MODEL_NAME_GEMINI_2_5_FLASH.
+      - If two different model strings produce the same derived suffix (collision),
+        append _2, _3, … to disambiguate.
 
     Returns:
       {model_string: env_var_name}
     """
-    mapping: dict[str, str] = {}
-    non_embedding_idx = 0
+    sorted_strings = sorted(model_strings)
 
-    for model_str in sorted(model_strings):
-        if "embed" in model_str.lower():
-            mapping[model_str] = "MODEL_NAME_EMBEDDING"
+    # Single model — plain MODEL_NAME, no suffix needed.
+    if len(sorted_strings) == 1:
+        return {sorted_strings[0]: "MODEL_NAME"}
+
+    mapping: dict[str, str] = {}
+    seen_suffixes: dict[str, int] = {}  # suffix → count of times used so far
+
+    for model_str in sorted_strings:
+        base_suffix = _model_str_to_suffix(model_str)
+        count = seen_suffixes.get(base_suffix, 0)
+        seen_suffixes[base_suffix] = count + 1
+        if count == 0:
+            var_name = f"MODEL_NAME_{base_suffix}"
         else:
-            if non_embedding_idx == 0:
-                mapping[model_str] = "MODEL_NAME"
-            else:
-                mapping[model_str] = f"MODEL_NAME_{non_embedding_idx + 1}"
-            non_embedding_idx += 1
+            var_name = f"MODEL_NAME_{base_suffix}_{count + 1}"
+        mapping[model_str] = var_name
 
     return mapping
 
