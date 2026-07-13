@@ -10,9 +10,9 @@ readme = "README.md"
 requires-python = ">=3.10,<3.13"
 
 dependencies = [
-    "google-cloud-aiplatform[adk,agent_engine]>=1.93.0",
-    "google-adk>=1.0.0",
-    "pydantic-settings>=2.8.1",
+    "google-cloud-aiplatform[adk,agent_engine]>=1.160.0",
+    "google-adk>=2.4.0",
+    "pydantic-settings>=2.14.2",
     "tabulate>=0.9.0",
     "cloudpickle>=3.1.1",
     "jsonschema>=4.23.0",
@@ -20,18 +20,18 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.5",
+    "pytest>=9.1.1",
     "pytest-mock>=3.14.0",
     "pytest-cov>=6.0.0",
-    "pytest-asyncio>=0.25.3",
-    "pylint>=3.3.6",
-    "google-cloud-aiplatform[evaluation]>=1.93.0",
-    "agent-starter-pack>=0.32.0",
-    "ruff>=0.4.6",
-    "mypy>=1.15.0",
+    "pytest-asyncio>=1.4.0",
+    "pylint>=4.0.6",
+    "google-cloud-aiplatform[evaluation]>=1.160.0",
+    "agent-starter-pack>=0.41.3",
+    "ruff>=0.15.21",
+    "mypy>=2.2.0",
     "codespell>=2.2.0",
-    "types-pyyaml>=6.0.12.20240917",
-    "types-requests>=2.32.0.20240914",
+    "types-pyyaml>=6.0.12.20260518",
+    "types-requests>=2.33.0.20260712",
 ]
 
 [tool.ruff]
