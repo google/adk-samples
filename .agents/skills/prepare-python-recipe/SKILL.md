@@ -43,7 +43,7 @@ The skill assumes the user has already:
 2. **Pulled latest** from `origin` (`git pull` at the repo root).
 3. **Synced repo root deps** (`uv sync` at the repo root).
 4. **Placed the recipe at its target path** — either freshly scaffolded, moved from another location, or renamed to its final basename under `core/python/<name>/` or `contrib/<name>/`.
-5. **Committed the original recipe to git** (or otherwise saved a clean snapshot). Strongly recommended — the pipeline modifies `pyproject.toml`, `manifest.yaml`, `.env.example`, and Python source files (env-var extraction and ruff auto-fixes edit source), and generates a new `tests/test_runnability.py` and `uv.lock`. Committing the starting state first means `git diff` after the pipeline gives you a clean picture of exactly what the skill changed, which is the single best way to review before making a follow-up commit.
+5. **Committed the original recipe** so `git diff` shows what the pipeline changed.
 
 If the user has NOT done these and asks you to run the skill anyway, tell them to complete the prerequisites first and stop. Do NOT run `git pull`, `git commit`, deactivate their venv, or move/rename directories on their behalf — those are deliberately out of scope.
 
