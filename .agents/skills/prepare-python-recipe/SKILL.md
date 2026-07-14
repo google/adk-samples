@@ -6,7 +6,7 @@ description: >
   .github/workflows/validate-python-recipe.yml. Runs seven phases in
   order on an already-in-place recipe: manifest.yaml generation,
   environment-variable extraction, pyproject.toml alignment, ruff
-  format+check, per-recipe `uv sync`, runnability-test generation, and a
+  format+check, per-recipe `uv lock`, runnability-test generation, and a
   final `py_compile` verification of the generated test file. Assumes
   the user has
   already done the manual prep (deactivated any venv, `git pull` and
@@ -43,8 +43,9 @@ The skill assumes the user has already:
 2. **Pulled latest** from `origin` (`git pull` at the repo root).
 3. **Synced repo root deps** (`uv sync` at the repo root).
 4. **Placed the recipe at its target path** — either freshly scaffolded, moved from another location, or renamed to its final basename under `core/python/<name>/` or `contrib/<name>/`.
+5. **Committed the original recipe to git** (or otherwise saved a clean snapshot). Strongly recommended — the pipeline modifies `pyproject.toml`, `manifest.yaml`, `.env.example`, and Python source files (env-var extraction and ruff auto-fixes edit source), and generates a new `tests/test_runnability.py` and `uv.lock`. Committing the starting state first means `git diff` after the pipeline gives you a clean picture of exactly what the skill changed, which is the single best way to review before making a follow-up commit.
 
-If the user has NOT done these and asks you to run the skill anyway, tell them to complete the prerequisites first and stop. Do NOT run `git pull`, deactivate their venv, or move/rename directories on their behalf — those are deliberately out of scope.
+If the user has NOT done these and asks you to run the skill anyway, tell them to complete the prerequisites first and stop. Do NOT run `git pull`, `git commit`, deactivate their venv, or move/rename directories on their behalf — those are deliberately out of scope.
 
 ---
 
@@ -56,7 +57,7 @@ Runs seven ordered phases against a target recipe. Each phase either invokes an 
 2. **Environment variables** — extract env vars used by the recipe into `.env.example`; ensure `load_dotenv()` is bootstrapped and `python-dotenv` is a dep.
 3. **Align pyproject.toml** — remove `[tool.ruff*]`, raise `requires-python` floor, ensure `[project].name` matches folder, reconcile description with manifest, and ensure `[[tool.uv.index]]` declares public PyPI as default (needed to bypass corp Airlock).
 4. **Lint** — `ruff format` + `ruff check --fix` on the recipe (from the repo root, so the root ruff config wins). **Must run AFTER Phase 3** — align removes any recipe-local `[tool.ruff*]` block, and that removal is what makes the root config the effective one. Running lint before align would check against the recipe's (often more permissive) local config and miss violations that CI will later catch.
-5. **Recipe `uv sync`** — sync the recipe's own venv after pyproject.toml is finalized.
+5. **Recipe `uv lock`** — regenerate `uv.lock` so it reflects the post-align `pyproject.toml`. Does NOT install into `.venv/` — that's a heavier step the user runs after they've reviewed the diff. `uv lock` just resolves and records; `uv sync` would download and install every wheel, which is scope-creep for a "prepare" pipeline.
 6. **Runnability test** — generate `tests/test_runnability.py` if missing (or ask before overwriting).
 7. **Verify (compile-check)** — `python -m py_compile <RECIPE>/tests/test_runnability.py` — a lightweight sanity check that the generated (or existing) test file is syntactically valid Python. Deterministic; does NOT execute the test, resolve imports, or require `.env` to exist. If it fails, the master reports the error verbatim and moves on (the summary marks Phase 7 as failed). The master does NOT attempt to diagnose or fix — that's a human review task.
 
@@ -85,7 +86,7 @@ At the end, print a summary table and remind the user to `git diff` and commit �
    - The manifest generator inferred an `architecture.agent = "multi"` where you counted only one agent, or vice versa.
    - The environment-variable extractor added an unusually large number of new vars (say, ≥ 10) — worth having the user glance at the list.
    - The align script's proposed rewrite of `requires-python` drops support for a version the recipe's README claims to support.
-   - `uv sync` in Phase 5 pulls in a suspicious dependency (say, one that renames or replaces a well-known package).
+   - `uv lock` in Phase 5 records a suspicious dependency in `uv.lock` (say, a package that renames or shadows a well-known one — reviewable via `git diff uv.lock`).
    - The recipe has a non-standard layout the sub-skills don't recognise (multiple `agent.py` files, no `app/` package, etc.) and you're unsure which to use.
    - Any time the "right answer" for a step depends on knowledge outside the recipe itself (project conventions, team decisions, downstream consumers).
 
@@ -130,7 +131,7 @@ Before running anything, quickly confirm the prerequisites and show the user the
 > 2. Extract env vars into .env.example
 > 3. Align pyproject.toml
 > 4. Ruff format + check --fix
-> 5. uv sync inside the recipe
+> 5. uv lock inside the recipe (regenerates uv.lock; does NOT install .venv/)
 > 6. Generate tests/test_runnability.py (if missing)
 > 7. Compile-check the runnability test (`py_compile`; reports failure but does not debug)
 >
@@ -218,19 +219,26 @@ If `ruff check` reports remaining un-fixable errors (exit non-zero), the recipe 
 
 Progress line: `Phase 4 (lint): <N> file(s) formatted, <M> issue(s) auto-fixed, <K> unfixable issue(s) left.`
 
-### Phase 5 — recipe `uv sync`
+### Phase 5 — recipe `uv lock`
 
-Now that `pyproject.toml` is stable, sync the recipe's own venv:
+Now that `pyproject.toml` is stable (Phase 3 aligned it, Phase 4 didn't touch it), regenerate the lockfile so it matches:
 
 ```bash
-uv sync
+uv lock
 ```
 
 Run this WITH `workdir = <RECIPE_DIR>` (do not `cd` — pass the working directory via the tool call).
 
-If `uv sync` fails (dependency conflict, missing package on PyPI, etc.), stop and surface the error.
+**Why `uv lock` and not `uv sync`?** The pipeline's job is to prepare the recipe, not to install and validate its runtime environment. `uv lock` resolves dependencies against the aligned `pyproject.toml` and writes `uv.lock` — that's the artefact CI and downstream consumers need. `uv sync` would additionally download every wheel into `.venv/`, which:
+- Is slow (minutes of network I/O).
+- Sets up a dev environment the user may or may not want.
+- Would fail in ways the pipeline can't cleanly report (build errors in C extensions, network flakiness).
 
-Progress line: `Phase 5 (recipe sync): uv sync completed.`
+The user gets a real `.venv/` by running `uv sync` themselves after reviewing the diff — see the "Next steps" block at the end of the summary.
+
+If `uv lock` fails (dependency conflict, unresolvable version, invalid `pyproject.toml`), stop and surface the error.
+
+Progress line: `Phase 5 (recipe lock): uv lock completed.`
 
 ### Phase 6 — runnability test
 
@@ -290,7 +298,7 @@ At the end, print a summary table:
 | 2. Env vars | ok | 3 added, load_dotenv injected, python-dotenv added |
 | 3. Align | ok | 2 fixes applied |
 | 4. Lint | ok | 12 files formatted, 4 issues auto-fixed |
-| 5. Recipe sync | ok | done |
+| 5. Recipe lock | ok | done |
 | 6. Runnability test | ok | generated |
 | 7. Verify (compile-check) | ok | tests/test_runnability.py compiles |
 
@@ -308,9 +316,12 @@ Close with:
 ```
 Next steps:
   cd <RECIPE_DIR>
-  uv run pytest tests/test_runnability.py -v     # confirm the runnability test passes
-  git diff                                        # review every change
+  git diff                                        # review every change the pipeline made
+  uv sync                                         # install deps into .venv/ (skipped by Phase 5 on purpose)
+  uv run pytest tests/test_runnability.py -v     # confirm the runnability test actually passes
   # commit when you're happy
 ```
+
+The `uv sync` step is what actually installs the recipe's dependencies into a `.venv/`. The pipeline stopped at `uv lock` on purpose — installing is heavier and better done after you've reviewed the diff.
 
 Then stop. Do NOT commit. End your turn.
