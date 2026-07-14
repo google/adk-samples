@@ -33,7 +33,9 @@ _, project_id = google.auth.default()
 logging_client = google_cloud_logging.Client()
 logger = logging_client.logger(__name__)
 allow_origins = (
-    os.getenv("ALLOW_ORIGINS", "").split(",") if os.getenv("ALLOW_ORIGINS") else None
+    os.getenv("ALLOW_ORIGINS", "").split(",")
+    if os.getenv("ALLOW_ORIGINS")
+    else None
 )
 
 # Artifact bucket for ADK (passed via env var)

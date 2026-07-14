@@ -43,7 +43,7 @@ The skill assumes the user has already:
 2. **Pulled latest** from `origin` (`git pull` at the repo root).
 3. **Synced repo root deps** (`uv sync` at the repo root).
 4. **Placed the recipe at its target path** — either freshly scaffolded, moved from another location, or renamed to its final basename under `core/python/<name>/` or `contrib/<name>/`.
-5. **Committed the original recipe** so `git diff` shows what the pipeline changed.
+5. **Committed the original recipe** so `git diff` shows what the skill changed.
 
 If the user has NOT done these and asks you to run the skill anyway, tell them to complete the prerequisites first and stop. Do NOT run `git pull`, `git commit`, deactivate their venv, or move/rename directories on their behalf — those are deliberately out of scope.
 
