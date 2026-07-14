@@ -3,10 +3,12 @@ name: prepare-python-recipe
 description: >
   End-to-end orchestration to prepare or update a Python recipe under
   core/python/ or contrib/ so it passes every check in
-  .github/workflows/validate-python-recipe.yml. Runs six phases in order
-  on an already-in-place recipe: manifest.yaml generation, environment-
-  variable extraction, ruff format+check, pyproject.toml alignment, per-
-  recipe `uv sync`, and runnability-test generation. Assumes the user has
+  .github/workflows/validate-python-recipe.yml. Runs seven phases in
+  order on an already-in-place recipe: manifest.yaml generation,
+  environment-variable extraction, pyproject.toml alignment, ruff
+  format+check, per-recipe `uv sync`, runnability-test generation, and a
+  final `py_compile` verification of the generated test file. Assumes
+  the user has
   already done the manual prep (deactivated any venv, `git pull` and
   `uv sync` from the repo root, placed the recipe at its target path,
   renamed if needed). Delegates to the existing sub-skills
@@ -48,7 +50,7 @@ If the user has NOT done these and asks you to run the skill anyway, tell them t
 
 ## What This Skill Does
 
-Runs six ordered phases against a target recipe. Each phase either invokes an existing sub-skill (or its underlying script) or runs a repo-standard command:
+Runs seven ordered phases against a target recipe. Each phase either invokes an existing sub-skill (or its underlying script) or runs a repo-standard command:
 
 1. **Manifest** — generate `manifest.yaml` if missing; ask the user to verify `ownership.team` and `ownership.poc`.
 2. **Environment variables** — extract env vars used by the recipe into `.env.example`; ensure `load_dotenv()` is bootstrapped and `python-dotenv` is a dep.
@@ -56,6 +58,7 @@ Runs six ordered phases against a target recipe. Each phase either invokes an ex
 4. **Lint** — `ruff format` + `ruff check --fix` on the recipe (from the repo root, so the root ruff config wins). **Must run AFTER Phase 3** — align removes any recipe-local `[tool.ruff*]` block, and that removal is what makes the root config the effective one. Running lint before align would check against the recipe's (often more permissive) local config and miss violations that CI will later catch.
 5. **Recipe `uv sync`** — sync the recipe's own venv after pyproject.toml is finalized.
 6. **Runnability test** — generate `tests/test_runnability.py` if missing (or ask before overwriting).
+7. **Verify (compile-check)** — `python -m py_compile <RECIPE>/tests/test_runnability.py` — a lightweight sanity check that the generated (or existing) test file is syntactically valid Python. Deterministic; does NOT execute the test, resolve imports, or require `.env` to exist. If it fails, the master reports the error verbatim and moves on (the summary marks Phase 7 as failed). The master does NOT attempt to diagnose or fix — that's a human review task.
 
 At the end, print a summary table and remind the user to `git diff` and commit — the skill never commits.
 
@@ -63,9 +66,9 @@ At the end, print a summary table and remind the user to `git diff` and commit �
 
 ## Rules for the Agent
 
-1. **Ask for `--recipe-dir` up front** if the user hasn't given one. All six phases operate on the same recipe.
+1. **Ask for `--recipe-dir` up front** if the user hasn't given one. All seven phases operate on the same recipe.
 
-2. **Confirm before starting**. The pipeline touches many files. Show the user the plan (the six phases + the target recipe path) and ask for a single "yes, go ahead" before Phase 1. Do NOT prompt again for each phase unless a decision is required (see rules 5 and 6).
+2. **Confirm before starting**. The pipeline touches many files. Show the user the plan (the seven phases + the target recipe path) and ask for a single "yes, go ahead" before Phase 1. Do NOT prompt again for each phase unless a decision is required (see rules 5 and 6).
 
 3. **Invoke sub-skill SCRIPTS directly** (not the sub-skills' own agent-facing SKILL.md). Reason: sub-skills each have their own "want me to apply?" prompt. In master-orchestration mode the user has already opted into apply for the whole pipeline; individual prompts would be noise. Command lines for each sub-script are given in each phase below.
 
@@ -122,13 +125,14 @@ Before running anything, quickly confirm the prerequisites and show the user the
 >   - You've run `git pull` and `uv sync` at the repo root.
 >   - `<RECIPE_DIR>` is already at its target path (and renamed to its final basename).
 >
-> I'll run the prepare-python-recipe pipeline on `<RECIPE_DIR>` — 6 phases:
+> I'll run the prepare-python-recipe pipeline on `<RECIPE_DIR>` — 7 phases:
 > 1. Generate manifest.yaml (if missing; verify team + POC)
 > 2. Extract env vars into .env.example
 > 3. Align pyproject.toml
 > 4. Ruff format + check --fix
 > 5. uv sync inside the recipe
 > 6. Generate tests/test_runnability.py (if missing)
+> 7. Compile-check the runnability test (`py_compile`; reports failure but does not debug)
 >
 > Nothing gets committed — you'll `git diff` at the end. Proceed?
 
@@ -249,6 +253,29 @@ If the script errors (no `agent.py` found), surface the message and offer to re-
 
 Progress line: `Phase 6 (runnability test): generated | kept existing | regenerated.`
 
+### Phase 7 — verify (compile-check the runnability test)
+
+Runs LAST. Lightweight sanity check that the generated (or existing) `tests/test_runnability.py` is at least syntactically valid Python. Deliberately weaker than `uv run pytest`: it does NOT execute the test, resolve imports, or require `.env` to be populated. Its only purpose is to catch generator bugs (invalid Python emitted by Phase 6) and gross syntax errors in a hand-edited test file.
+
+**7a. Check the test file exists.** If Phase 6 skipped generation (agent.py not found, so no test was written) or the user chose not to regenerate an existing broken test, there may be nothing to compile. Skip and record it.
+
+```bash
+[ -f <RECIPE_DIR>/tests/test_runnability.py ] && echo exists || echo missing
+```
+
+**7b. Compile.**
+
+```bash
+python -m py_compile <RECIPE_DIR>/tests/test_runnability.py
+```
+
+Report per outcome:
+- Exit 0 → **pass.** Progress line: `Phase 7 (verify): compile OK.`
+- Exit non-zero → **fail.** Print the stderr verbatim in the summary as a Manual TODO. Do NOT attempt to diagnose, retry, or auto-fix. Do NOT halt the pipeline (Phase 7 is the last phase anyway; the summary still gets printed). Progress line: `Phase 7 (verify): compile FAILED — <one-line snippet of the error>.`
+- File missing → **skip.** Progress line: `Phase 7 (verify): skipped (no tests/test_runnability.py to check).`
+
+Note: passing Phase 7 does NOT mean the recipe actually runs — it means the test file is valid Python. Actually running the test (which validates that `agent.py` imports and `root_agent` is non-None) is still a manual `uv run pytest` step listed under "Next steps" in the summary.
+
 ---
 
 ## Respond
@@ -265,14 +292,16 @@ At the end, print a summary table:
 | 4. Lint | ok | 12 files formatted, 4 issues auto-fixed |
 | 5. Recipe sync | ok | done |
 | 6. Runnability test | ok | generated |
+| 7. Verify (compile-check) | ok | tests/test_runnability.py compiles |
 
 Do NOT use emoji unless the user has asked for them. Use plain words in the Outcome column (`ok` / `skipped` / `failed`).
 
-If any phase produced `report_only` items OR Phase 4 left un-fixable ruff errors, list them as **Manual TODOs** below the table:
+If any phase produced `report_only` items, or Phase 4 left un-fixable ruff errors, or Phase 7 reported a compile failure, list them as **Manual TODOs** below the table:
 
 > Manual TODOs:
 > - `[build-system]` is missing from `pyproject.toml`. Add one of the templates from the align-recipe-pyproject skill's SKILL.md (hatchling or uv_build).
 > - `app/app_utils/deploy.py:276` — `ruff check` flagged `C901` (complex-structure) and `PLR0915` (too-many-statements). Ruff can't auto-fix these; refactor the function or add `# noqa: C901, PLR0915` at the function definition after review.
+> - `tests/test_runnability.py` failed `py_compile` — see the error text in Phase 7's output. This usually indicates a generator bug (or a hand-edit that broke the file); investigate before running pytest.
 
 Close with:
 
