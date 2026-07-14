@@ -53,7 +53,7 @@ Runs six ordered phases against a target recipe. Each phase either invokes an ex
 1. **Manifest** — generate `manifest.yaml` if missing; ask the user to verify `ownership.team` and `ownership.poc`.
 2. **Environment variables** — extract env vars used by the recipe into `.env.example`; ensure `load_dotenv()` is bootstrapped and `python-dotenv` is a dep.
 3. **Lint** — `ruff format` + `ruff check --fix` on the recipe (from the repo root, so the root ruff config wins).
-4. **Align pyproject.toml** — remove `[tool.ruff*]`, raise `requires-python` floor, ensure `[project].name` matches folder, reconcile description with manifest.
+4. **Align pyproject.toml** — remove `[tool.ruff*]`, raise `requires-python` floor, ensure `[project].name` matches folder, reconcile description with manifest, and ensure `[[tool.uv.index]]` declares public PyPI as default (needed to bypass corp Airlock).
 5. **Recipe `uv sync`** — sync the recipe's own venv after pyproject.toml is finalized.
 6. **Runnability test** — generate `tests/test_runnability.py` if missing (or ask before overwriting).
 
@@ -206,7 +206,9 @@ uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
   [--description-source=<CHOICE>]
 ```
 
-If the apply run has any `report_only` for `build-system-present` (missing `[build-system]`), note it in the summary — the master does NOT auto-fix that (backend choice is editorial). Do not stop the pipeline; other phases continue.
+If the apply run has any `report_only` results, note them in the summary — the master does NOT auto-fix these. Do not stop the pipeline; other phases continue. Two rules can produce `report_only`:
+  - `build-system-present` (missing `[build-system]` — backend choice is editorial)
+  - `default-pypi-index` (a default index is declared but points somewhere other than public PyPI — divergence may be intentional)
 
 Progress line: `Phase 4 (align): <N> fix(es) applied; <M> report-only issue(s) left.`
 

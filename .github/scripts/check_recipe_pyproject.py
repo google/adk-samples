@@ -1,17 +1,23 @@
 """
-Validates a recipe's pyproject.toml against the repo's [project] metadata rules.
+Validates a recipe's pyproject.toml against the repo's metadata rules.
 
 Rules enforced (see .github/workflows/validate-python-recipe.yml):
 
-  - B2-name: [project].name must exist and equal the recipe folder basename.
-  - B1:      [project].requires-python must declare a lower bound >= 3.11
-             (per AGENTS.md: "Minimum python version: 3.11").
-  - B2-desc: If [project].description is set, it must equal manifest.description
-             from the same recipe's manifest.yaml (after .strip(), exact match).
-             The field is optional; if absent, this check is skipped.
+  - project-name-matches-folder: [project].name must equal the recipe
+    folder basename.
+  - python-version-floor: [project].requires-python must not permit any
+    Python version below 3.11 (per AGENTS.md).
+  - description-matches-manifest: if [project].description is set, it must
+    equal manifest.description from the recipe's manifest.yaml (after
+    .strip(), exact match). Optional; skipped when absent.
+  - default-pypi-index: [[tool.uv.index]] must have an entry with
+    default=true whose url is public PyPI (https://pypi.org/simple[/]).
+    Required so `uv sync` works on Google corp workstations without
+    Airlock auth (see the block comment in the root pyproject.toml for
+    the full rationale).
 
-Note: rule A1 (forbid [tool.ruff*] blocks in recipe pyproject.toml) is enforced
-by a grep in the workflow itself, not here.
+Note: no-local-ruff-config (forbid [tool.ruff*] blocks in recipe
+pyproject.toml) is enforced by a grep in the workflow itself, not here.
 
 Usage: python check_recipe_pyproject.py <recipe-dir>
 
@@ -39,6 +45,15 @@ BELOW_MIN = [
     Version(f"{MIN_PYTHON[0]}.{minor}")
     for minor in range(MIN_PYTHON[1])  # 3.0, 3.1, ..., 3.(min-1)
 ] + [Version(f"{MIN_PYTHON[0] - 1}.99")]  # e.g. 2.99, catches Python 2.x
+
+# Acceptable URLs for the required default `[[tool.uv.index]]` entry.
+# Both trailing-slash and non-trailing-slash forms are legal.
+PYPI_URLS = frozenset(
+    {
+        "https://pypi.org/simple",
+        "https://pypi.org/simple/",
+    }
+)
 
 
 def emit(kind: str, file: Path, msg: str) -> None:
@@ -189,6 +204,70 @@ def check_description(
         )
 
 
+def check_default_pypi_index(pyproject: dict, pyproject_path: Path) -> None:
+    """default-pypi-index: [[tool.uv.index]] with default=true → public PyPI.
+
+    Required so `uv sync` works on Google corp workstations without the
+    developer having to authenticate to the corp Airlock proxy that the
+    system-wide /etc/uv/uv.toml would otherwise redirect to. Per uv's
+    config-file merge rules, project-level indexes are concatenated ahead
+    of system-level ones — declaring public PyPI here as default puts it
+    first in the merged index list.
+
+    Fail modes:
+      - No [[tool.uv.index]] at all: FAIL.
+      - Entries exist but none has default=true: FAIL.
+      - A default entry exists but its url is not public PyPI: FAIL (the
+        recipe author may have a legitimate reason but must justify it;
+        default here is strictness so CI protects the repo standard).
+    """
+    indexes = pyproject.get("tool", {}).get("uv", {}).get("index") or []
+    if not indexes:
+        emit(
+            "FAIL",
+            pyproject_path,
+            "Missing required `[[tool.uv.index]]` block. Every recipe "
+            "must declare public PyPI as its default index so `uv sync` "
+            "works without corp Airlock auth. Add:\n"
+            "  [[tool.uv.index]]\n"
+            '  url = "https://pypi.org/simple/"\n'
+            "  default = true",
+        )
+        return
+
+    for entry in indexes:
+        if entry.get("default") is True:
+            url = entry.get("url")
+            if url and str(url).lower() in PYPI_URLS:
+                emit(
+                    "PASS",
+                    pyproject_path,
+                    f"[[tool.uv.index]] with default=true points at "
+                    f"public PyPI ('{url}').",
+                )
+                return
+            emit(
+                "FAIL",
+                pyproject_path,
+                f"[[tool.uv.index]] has default=true but url='{url}' is "
+                f"not public PyPI. Change it to "
+                f"'https://pypi.org/simple/' (both trailing-slash and "
+                f"non-trailing-slash forms are accepted).",
+            )
+            return
+
+    emit(
+        "FAIL",
+        pyproject_path,
+        "One or more `[[tool.uv.index]]` entries exist but none is marked "
+        "`default = true`. Mark the public-PyPI entry as default, or add "
+        "one:\n"
+        "  [[tool.uv.index]]\n"
+        '  url = "https://pypi.org/simple/"\n'
+        "  default = true",
+    )
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <recipe-dir>", file=sys.stderr)
@@ -214,6 +293,7 @@ def main() -> int:
     check_name(project, pyproject_path, recipe_dir.name)
     check_requires_python(project, pyproject_path)
     check_description(project, pyproject_path, manifest_path)
+    check_default_pypi_index(pyproject, pyproject_path)
     return 0
 
 

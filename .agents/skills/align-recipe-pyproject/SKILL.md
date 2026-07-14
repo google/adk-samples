@@ -28,7 +28,7 @@ Scope: **`pyproject.toml` only**. Standalone `ruff.toml` / `.ruff.toml` files ar
 
 ## What This Skill Checks
 
-Runs `scripts/align_pyproject.py` against a recipe directory. Five rules:
+Runs `scripts/align_pyproject.py` against a recipe directory. Six rules:
 
 | Rule ID | What it checks | Auto-fix |
 |---|---|---|
@@ -37,6 +37,7 @@ Runs `scripts/align_pyproject.py` against a recipe directory. Five rules:
 | `project-name-matches-folder` | `[project].name` must equal the recipe folder basename. | Yes — sets it. |
 | `description-matches-manifest` | If `[project].description` is set, it must equal `manifest.description`. Field is optional; skipped when absent. | Only with `--description-source={pyproject,manifest,delete}`. Refuses to touch description otherwise. |
 | `build-system-present` | `[build-system]` must have both `requires` and `build-backend`. Without it, `uv build` and `pip install .` fail. | **No** — backend choice is editorial. Reported for the human to fix. |
+| `default-pypi-index` | `[[tool.uv.index]]` must have an entry with `default = true` pointing at public PyPI (`https://pypi.org/simple[/]`). Required so `uv sync` works on Google corp workstations without corp Airlock auth — see the block comment in the root `pyproject.toml` for the full rationale. | Yes when the block is entirely missing — appends it. **No** when a default entry exists but points elsewhere (custom private index, TestPyPI, mirror) — reported for the human to reconcile, since the divergence may be intentional. |
 
 ### Edit safety
 
@@ -63,9 +64,11 @@ Runs `scripts/align_pyproject.py` against a recipe directory. Five rules:
 
 6. **If `build-system-present` returns `report_only`**, `[build-system]` is missing or incomplete. Tell the user the recipe cannot be built as a package until this is fixed, and offer them a hatchling or `uv_build` template snippet. Do **not** silently pick one.
 
-7. **After apply mode succeeds**, remind the user to run `uv sync` in the recipe directory if the pyproject changes touched dependencies (the script emits this in `notes` when relevant).
+7. **If `default-pypi-index` returns `report_only`**, the recipe declares a default index that is NOT public PyPI (e.g. a private mirror, TestPyPI). The skill will not overwrite an intentional choice. Show the user the current `url` from `details.current_url` and ask whether it's deliberate. If yes, they can `# noqa`-comment it or update the repo standard; if no, they should change the URL to `https://pypi.org/simple/`. Do not auto-rewrite.
 
-8. **Do not commit any changes.** Show the diff or file contents; let the user commit.
+8. **After apply mode succeeds**, remind the user to run `uv sync` in the recipe directory if the pyproject changes touched dependencies (the script emits this in `notes` when relevant).
+
+9. **Do not commit any changes.** Show the diff or file contents; let the user commit.
 
 ---
 
@@ -151,7 +154,7 @@ Status-specific guidance for what to put in the **Details** cell:
 - **`would_fix`** (dry-run) — describe the current-state problem, then say what apply would do. Include the `from` → `to` or the list of tables to be removed.
 - **`fixed`** (apply) — one-liner confirming the change (new value or list of removed tables).
 - **`needs_input`** (only `description-matches-manifest`) — the Details cell says something like `"descriptions differ — needs --description-source={pyproject,manifest,delete}"`. Do not put the two long descriptions inside the table. See "Follow-up content" below.
-- **`report_only`** (only `build-system-present`) — the Details cell names what's missing (e.g. `"[build-system] missing; recipe cannot be built as a package"`). Snippets go below the table.
+- **`report_only`** (two rules can hit this: `build-system-present` and `default-pypi-index` when a non-PyPI default is declared) — the Details cell names what's missing or non-conforming (e.g. `"[build-system] missing; recipe cannot be built as a package"` or `"default index is TestPyPI, not public PyPI"`). Follow-up content goes below the table (see next section).
 - **`error`** — the Details cell shows the message verbatim; if it's very long, truncate with `…` and put the full text below.
 
 ### Follow-up content below the table
@@ -190,7 +193,9 @@ Only for statuses that need extra context. Order: table first, then this content
 
 - **Dry-run with only `needs_input` for `description-matches-manifest`** — after the table, show the two descriptions side by side and ask the user to pick one of `pyproject`, `manifest`, or `delete`. When they choose, run apply yourself with `--description-source=<their choice>` and render the resulting table. Do not offer generic "apply" — the flag is required.
 
-- **Dry-run with only `report_only` for `build-system-present`** (and no `would_fix` rows) — after the table, show the two `[build-system]` template snippets and stop. This is a manual edit; the skill does not auto-fix it.
+- **Dry-run with only `report_only`** (and no `would_fix` rows) — after the table, address the specific case:
+  - `build-system-present`: show the two `[build-system]` template snippets and stop. This is a manual edit; the skill does not auto-fix it.
+  - `default-pypi-index`: quote `details.current_url`, explain that this is not public PyPI, and ask whether it's intentional. If not, tell the user to change the URL to `https://pypi.org/simple/`. Do not auto-rewrite.
 
 - **Dry-run with only `error` rows** — do not offer to apply. Errors mean the script bailed before it could compute a fix; the user has to resolve the underlying issue first.
 

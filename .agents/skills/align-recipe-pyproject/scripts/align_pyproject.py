@@ -543,6 +543,126 @@ def check_build_system(doc: tomlkit.TOMLDocument) -> Check:
     )
 
 
+# ---------- default-pypi-index ---------------------------------------------
+#
+# On Google corp workstations, /etc/uv/uv.toml redirects the default index to
+# a corp Airlock proxy that requires auth. We require every recipe to declare
+# public PyPI as its default index so `uv sync` works without the developer
+# having to authenticate to Airlock — see the block comment in the root
+# pyproject.toml for full context.
+
+_PYPI_URLS = frozenset(
+    {
+        "https://pypi.org/simple",
+        "https://pypi.org/simple/",
+    }
+)
+
+
+def _find_default_index(doc: tomlkit.TOMLDocument) -> tuple[Any, str | None]:
+    """Return (entry, url) for the first [[tool.uv.index]] with default=true.
+
+    Returns (None, None) if there is no default entry. Only the FIRST default
+    entry is inspected — having two `default = true` entries is undefined at
+    the tie-break level (per uv docs) and not our problem to normalize.
+    """
+    tool = doc.get("tool")
+    if tool is None:
+        return (None, None)
+    uv = tool.get("uv")
+    if uv is None:
+        return (None, None)
+    index = uv.get("index")
+    if not index:
+        return (None, None)
+    for entry in index:
+        if entry.get("default") is True:
+            return (entry, entry.get("url"))
+    return (None, None)
+
+
+def _url_is_public_pypi(url: str | None) -> bool:
+    """True for `https://pypi.org/simple` and its trailing-slash variant."""
+    if not url:
+        return False
+    return url.lower() in _PYPI_URLS
+
+
+def _append_default_pypi_index(doc: tomlkit.TOMLDocument) -> None:
+    """Append a `[[tool.uv.index]]` block declaring public PyPI as default.
+
+    Placed under `[tool.uv]` (created if absent). Existing non-default
+    `[[tool.uv.index]]` entries are preserved and remain higher-priority
+    (per uv's index ordering).
+
+    No leading comment is emitted — tomlkit attaches comments passed to a
+    table INSIDE the table (after its header), which reads awkwardly.
+    Recipes hand-edited by the scaffold-python-recipe template or the
+    prepare-python-recipe skill get a single-line comment (`# Use public
+    PyPI as the default index for this recipe.`); recipes fixed later by
+    this auto-fix path just get the bare block. Both are equivalent
+    functionally.
+    """
+    if "tool" not in doc:
+        doc["tool"] = tomlkit.table()
+    tool = doc["tool"]
+    if "uv" not in tool:
+        tool["uv"] = tomlkit.table()
+    uv = tool["uv"]
+    if "index" not in uv:
+        uv["index"] = tomlkit.aot()
+
+    entry = tomlkit.table()
+    entry["url"] = "https://pypi.org/simple/"
+    entry["default"] = True
+    uv["index"].append(entry)
+
+
+def check_default_pypi_index(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
+    """Ensure a [[tool.uv.index]] with default=true points at public PyPI.
+
+    Auto-fix: appends the block if no default index is declared at all.
+    Report-only: if a default IS declared but points somewhere other than
+    public PyPI (custom private index, TestPyPI, mirror). The skill does
+    NOT rewrite a user's intentional non-PyPI default.
+    """
+    entry, url = _find_default_index(doc)
+
+    if entry is not None and _url_is_public_pypi(url):
+        return Check(
+            "default-pypi-index",
+            OK,
+            f"[[tool.uv.index]] with default=true points at public PyPI "
+            f"('{url}').",
+        )
+
+    if entry is not None:
+        # A default index exists but it isn't PyPI. Don't clobber it.
+        return Check(
+            "default-pypi-index",
+            REPORT_ONLY,
+            f"[[tool.uv.index]] has default=true but url='{url}' is not "
+            f"public PyPI ('https://pypi.org/simple/'). If this is a "
+            f"deliberate mirror or private index, ignore. Otherwise, change "
+            f"the url to 'https://pypi.org/simple/' (this skill does not "
+            f"auto-rewrite non-PyPI defaults).",
+            {"current_url": url},
+        )
+
+    # No default index declared at all — auto-fix by appending the block.
+    verb = "Added" if apply else "Would add"
+    if apply:
+        _append_default_pypi_index(doc)
+    return Check(
+        "default-pypi-index",
+        FIXED if apply else WOULD_FIX,
+        f'{verb} `[[tool.uv.index]]` with `url = "https://pypi.org/simple/"` '
+        f"and `default = true`. Required so `uv sync` works on Google corp "
+        f"workstations without Airlock auth.",
+        {"added_url": "https://pypi.org/simple/"},
+    )
+
+
 # ---------- Orchestration -------------------------------------------------
 
 
@@ -610,6 +730,7 @@ def run(
         )
     )
     report.add(check_build_system(doc))
+    report.add(check_default_pypi_index(doc, apply))
 
     # Persist the (possibly mutated) pyproject.toml — only in apply mode, and
     # only if at least one auto-fix actually changed the doc.

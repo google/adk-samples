@@ -4,9 +4,13 @@ description: >
   Scans a Python recipe to find every place an environment variable is read,
   then ensures all variables are declared in .env.example, that load_dotenv()
   is bootstrapped in the package __init__.py, and that python-dotenv>=1.0.0
-  is listed in pyproject.toml. Use when the user wants to "extract env vars",
-  "update .env.example", "add load_dotenv", or "fix environment variables" in
-  a Python recipe.
+  is listed in pyproject.toml. Also detects hardcoded model-name string
+  literals in the recipe's source (e.g. "gemini-3-flash-preview" in
+  agent.py) and rewrites them to os.getenv("MODEL_NAME"), adding
+  MODEL_NAME=<the original value> to .env.example — this modifies source
+  files, not just configuration. Use when the user wants to "extract env
+  vars", "update .env.example", "add load_dotenv", "replace hardcoded
+  model names", or "fix environment variables" in a Python recipe.
 metadata:
   author: Google
   license: Apache-2.0
