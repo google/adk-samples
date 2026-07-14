@@ -562,9 +562,14 @@ _PYPI_URLS = frozenset(
 def _find_default_index(doc: tomlkit.TOMLDocument) -> tuple[Any, str | None]:
     """Return (entry, url) for the first [[tool.uv.index]] with default=true.
 
-    Returns (None, None) if there is no default entry. Only the FIRST default
-    entry is inspected — having two `default = true` entries is undefined at
-    the tie-break level (per uv docs) and not our problem to normalize.
+    Returns (None, None) if there is no default entry, or if `tool.uv.index`
+    was declared as a single table instead of an array of tables (in that
+    case the caller should detect the syntax mistake via an isinstance
+    check first and emit an ERROR — this function refuses to iterate a
+    non-list to avoid `AttributeError` on key-string `.get()` calls).
+
+    Only the FIRST default entry is inspected — having two `default = true`
+    entries is undefined at the tie-break level per uv docs.
     """
     tool = doc.get("tool")
     if tool is None:
@@ -573,7 +578,7 @@ def _find_default_index(doc: tomlkit.TOMLDocument) -> tuple[Any, str | None]:
     if uv is None:
         return (None, None)
     index = uv.get("index")
-    if not index:
+    if not index or not isinstance(index, list):
         return (None, None)
     for entry in index:
         if entry.get("default") is True:
@@ -625,7 +630,29 @@ def check_default_pypi_index(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
     Report-only: if a default IS declared but points somewhere other than
     public PyPI (custom private index, TestPyPI, mirror). The skill does
     NOT rewrite a user's intentional non-PyPI default.
+    Error: if `[tool.uv.index]` was declared as a single table instead of
+    an array of tables (bad TOML syntax) — refuse to auto-append (would
+    create a syntax conflict) and tell the user to fix it by hand.
     """
+    # Guard against `[tool.uv.index]` (single-bracket) syntax mistake:
+    # tomlkit parses it as a Table (dict-like), not an AoT (list-like).
+    # Iterating a Table yields its key names (strings), and `.get()` on a
+    # string is AttributeError. Detect this up-front and emit a clean ERROR
+    # so the user sees the fix instead of a stack trace.
+    tool = doc.get("tool")
+    uv = tool.get("uv") if tool is not None else None
+    raw_index = uv.get("index") if uv is not None else None
+    if raw_index is not None and not isinstance(raw_index, list):
+        return Check(
+            "default-pypi-index",
+            ERROR,
+            "`[tool.uv.index]` is declared as a single table but uv requires "
+            "an array of tables. Use double brackets: `[[tool.uv.index]]` "
+            '(with `url = "https://pypi.org/simple/"` and `default = true`). '
+            "Fix by hand — auto-rewriting would risk producing a TOML syntax "
+            "conflict.",
+        )
+
     entry, url = _find_default_index(doc)
 
     if entry is not None and _url_is_public_pypi(url):

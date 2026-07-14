@@ -235,6 +235,23 @@ def check_default_pypi_index(pyproject: dict, pyproject_path: Path) -> None:
         )
         return
 
+    # `[tool.uv.index]` (single brackets) parses as a dict; `[[tool.uv.index]]`
+    # (double brackets, array-of-tables) parses as a list of dicts. Only the
+    # latter is what uv accepts. Guard against the single-bracket mistake so
+    # we emit a clean FAIL instead of crashing with AttributeError when we
+    # iterate the dict and try `.get()` on a key-string below.
+    if not isinstance(indexes, list):
+        emit(
+            "FAIL",
+            pyproject_path,
+            "`[tool.uv.index]` is declared as a single table but uv "
+            "requires an array of tables. Use double brackets:\n"
+            "  [[tool.uv.index]]   ← not [tool.uv.index]\n"
+            '  url = "https://pypi.org/simple/"\n'
+            "  default = true",
+        )
+        return
+
     for entry in indexes:
         if entry.get("default") is True:
             url = entry.get("url")
