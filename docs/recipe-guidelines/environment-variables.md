@@ -7,11 +7,17 @@
 Define any environment variables (API keys, project IDs, model names) in `.env.example` with placeholder values. **Never commit `.env` files with active secrets.**
 
 ## Placeholder Convention
-Use `<TODO: update-this-value>` as the placeholder for any variable that has no sensible default:
+Use `<TODO: update-this-value>` as the placeholder for **every** variable in
+`.env.example`. A recipe author *may* commit a concrete default by hand if
+they have a genuinely sensible one, but the `extract-python-environment-variables`
+skill will never write inferred defaults on their behalf — every entry it adds
+gets the placeholder. Consistency across recipes is easier to maintain when
+`.env.example` is treated as a template the human fills in.
+
 ```
 GOOGLE_CLOUD_PROJECT=<TODO: update-this-value>
 GOOGLE_CLOUD_LOCATION=<TODO: update-this-value>
-MODEL_NAME=gemini-2.5-flash
+MODEL_NAME=<TODO: update-this-value>
 ```
 
 ## Required Variables
@@ -78,8 +84,11 @@ model_name = os.getenv("MODEL_NAME")
 
 > **Note:** The `extract-python-environment-variables` skill can automate all
 > of the above — scanning your code for env var reads, populating
-> `.env.example`, and injecting the `load_dotenv()` snippet into `__init__.py`.
-> See [Developer Agent Skills](tooling-and-ci.md#developer-agent-skills-agentsskills).
+> `.env.example` with `<TODO: update-this-value>` placeholders (never inferred
+> defaults), injecting the `load_dotenv()` snippet into `__init__.py`, and
+> replacing hardcoded model literals with bare `os.getenv("MODEL_NAME")`
+> calls (also with no default argument — the skill never writes defaults into
+> Python source either). See [Developer Agent Skills](tooling-and-ci.md#developer-agent-skills-agentsskills).
 
 ---
 

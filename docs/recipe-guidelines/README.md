@@ -21,10 +21,20 @@ Before opening a pull request, ensure your recipe meets these requirements:
     *   `.env.example`: List of environment variables with placeholder values (`<TODO: update-this-value>`).
     *   `tests/test_runnability.py`: To test the runnability of the recipe.
     → [Required Files](required-files.md)
+*   [ ] **`pyproject.toml` rules** (all enforced by CI, auto-fixable by the `align-recipe-pyproject` skill):
+    *   `[project].name` matches the recipe folder basename.
+    *   `[project].requires-python` has a `>=3.11` (or higher) lower bound.
+    *   `[project].description` (if set) matches `manifest.description`.
+    *   `[[tool.uv.index]]` declares public PyPI as `default = true` (bypasses corp Airlock proxies).
+    *   No `[tool.ruff*]` block (ruff config is centralized in root `pyproject.toml`).
+    *   No standalone `ruff.toml` / `.ruff.toml` files anywhere in the recipe.
 *   [ ] **Environment Variables**: `.env.example` declares the required prefixes (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `MODEL_NAME`) **and** every variable your code reads. Undeclared variables used in code **fail CI**. → [Environment Variables](environment-variables.md)
-*   [ ] **Python Version**: `pyproject.toml` sets `requires-python = ">=3.11,<3.14"` (Python 3.11 is the minimum supported version). → [Dependency Management](required-files.md#dependency-management-pyprojecttoml)
-*   [ ] **Code Quality**: Python code formatted and linted with **Ruff** using repository-root rules. → [Ruff](tooling-and-ci.md#code-quality--formatting-ruff)
-*   [ ] **Validation**: `uv run validate` passes with a `[PASS]` output (this validates `manifest.yaml`). The other items above (size, naming, required files, `.env.example`, Ruff, runnability) are enforced by **CI**, not by `uv run validate` — see [Continuous Integration](tooling-and-ci.md#continuous-integration).
+*   [ ] **Code Quality**: Python code formatted and linted with **Ruff** using repository-root rules (the workflow reads the root `pyproject.toml` directly — no CLI overrides). → [Ruff](tooling-and-ci.md#code-quality--formatting-ruff)
+*   [ ] **Validation**: `uv run validate` passes with a `[PASS]` output (this validates `manifest.yaml`). The other items above (size, naming, required files, `.env.example`, pyproject rules, Ruff, runnability) are enforced by **CI**, not by `uv run validate` — see [Continuous Integration](tooling-and-ci.md#continuous-integration).
+
+> **Fast path to green CI:** the `prepare-python-recipe` skill runs every
+> sub-skill and check above in the right order end-to-end. See the
+> [Quick Update Guide](quick-update.md) or [Developer Agent Skills](tooling-and-ci.md#developer-agent-skills-agentsskills).
 
 ---
 
@@ -38,3 +48,4 @@ Before opening a pull request, ensure your recipe meets these requirements:
 | [Environment Variables](environment-variables.md) | `.env.example` conventions, required variables, completeness (CI-enforced), `load_dotenv()` bootstrap. |
 | [Testing](testing.md) | Runnability tests + running/testing recipes locally. |
 | [Tooling & CI](tooling-and-ci.md) | Ruff, `uv run validate`, developer agent skills, and the CI workflows that gate PRs. |
+| [Quick Update](quick-update.md) | 2-minute checklist and step-by-step instructions to prepare/update recipes using automated skills. |
