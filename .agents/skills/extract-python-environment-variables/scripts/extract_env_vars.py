@@ -17,16 +17,32 @@ extract_env_vars.py
 
 Scans a Python recipe directory and:
   1. Detects all environment variable reads in non-test Python files.
-  2. Creates or updates .env.example with any missing variables. EVERY
-     new entry is written with the TODO placeholder as its value; the
-     script NEVER writes inferred defaults from source code (see the
-     block comment in update_env_example for the rationale).
+  2. Creates or updates .env.example with any missing variables.
   3. Injects the load_dotenv() bootstrap snippet into the package __init__.py.
   4. Ensures python-dotenv>=1.0.0 is listed in pyproject.toml dependencies.
-  5. Detects hardcoded model name strings, replaces them with
-     os.getenv("MODEL_NAME"), and adds MODEL_NAME to .env.example (also
-     with the TODO placeholder; the replaced hardcoded value is surfaced
-     in the log only, not persisted in .env.example).
+  5. Detects hardcoded model name strings and replaces them with
+     bare os.getenv("MODEL_NAME") calls (no default argument).
+
+Two hard rules the script NEVER breaks:
+
+  (1) NO INFERRED DEFAULTS ANYWHERE. Every new .env.example entry is
+      written with the TODO placeholder as its value, regardless of any
+      `os.getenv("VAR", "some_default")` fallback the source code may
+      have. The model-replacement path likewise emits bare
+      os.getenv("MODEL_NAME") — no second argument, even though the
+      original hardcoded model string is known.
+
+  (2) ADDITIVE-ONLY FOR PYTHON FILES. The script never writes new
+      os.environ.setdefault(...) bootstrap lines into any Python file.
+      Pre-existing os.environ.setdefault(...) or
+      os.getenv("VAR", "default") calls that a recipe author wrote by
+      hand are LEFT UNTOUCHED — the script's only writes to Python
+      files are (a) the load_dotenv snippet and (b) the model-literal
+      replacement.
+
+Rationale: default values are the maintainer's decision, not the
+script's. Persisting inferred defaults or writing new bootstrap
+setdefault() calls would be presumptuous.
 """
 
 import argparse
@@ -789,6 +805,13 @@ def _model_replacement(
         return None
     start = _flat_offset(lines, node.lineno, node.col_offset)
     end = _flat_offset(lines, node.end_lineno, node.end_col_offset)
+    # Emit BARE `os.getenv("VAR")` — no default argument. This is a hard
+    # rule of the skill: we do NOT write inferred defaults into Python
+    # source, even though `os.getenv("MODEL_NAME", node.value)` would be
+    # trivially "safer" (the recipe would keep working after the rewrite
+    # even without .env set up). Default values are the maintainer's
+    # decision; the skill's job is to lift the constant out of the source,
+    # not to also decide what fallback the maintainer wants.
     return start, end, f'os.getenv("{var_name}")', node.value, var_name
 
 

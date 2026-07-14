@@ -6,15 +6,21 @@ description: >
   is bootstrapped in the package __init__.py, and that python-dotenv>=1.0.0
   is listed in pyproject.toml. Also detects hardcoded model-name string
   literals in the recipe's source (e.g. "gemini-3-flash-preview" in
-  agent.py) and rewrites them to os.getenv("MODEL_NAME"), adding MODEL_NAME
-  to .env.example with a TODO placeholder — this modifies source files, not
-  just configuration. IMPORTANT: this skill NEVER writes default values
-  into .env.example. Every entry gets the same TODO placeholder regardless
-  of whether the source code has an `os.getenv("VAR", "default")` fallback
-  — .env.example is a template the human fills in, not a place to smuggle
-  inferred defaults. Use when the user wants to "extract env vars", "update
-  .env.example", "add load_dotenv", "replace hardcoded model names", or
-  "fix environment variables" in a Python recipe.
+  agent.py) and rewrites them to bare os.getenv("MODEL_NAME") calls (NO
+  fallback default), adding MODEL_NAME to .env.example with a TODO
+  placeholder — this modifies source files, not just configuration.
+  IMPORTANT — two hard rules the skill NEVER breaks:
+  (1) `.env.example` gets ONLY TODO placeholders, never inferred defaults.
+  (2) Python source files get NO default values written by the skill —
+  the model-replacement path emits `os.getenv("VAR")` with no second
+  argument, and the skill never emits `os.environ.setdefault(...)`
+  bootstrap lines. Pre-existing `os.environ.setdefault(...)` or
+  `os.getenv("VAR", "default")` calls that the recipe author wrote by
+  hand are LEFT UNTOUCHED — the skill is additive-only for Python files
+  (adds `load_dotenv()` bootstrap; replaces hardcoded model literals).
+  Use when the user wants to "extract env vars", "update .env.example",
+  "add load_dotenv", "replace hardcoded model names", or "fix environment
+  variables" in a Python recipe.
 metadata:
   author: Google
   license: Apache-2.0
@@ -61,12 +67,44 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
 
    If `load_dotenv` is already present the file is left unchanged.
 
-4. **Updates `pyproject.toml`** — adds `python-dotenv>=1.0.0` to `[project]`
+4. **Replaces hardcoded model names** in source (e.g. `model="gemini-3.5-flash"`
+   in `agent.py`) with **bare `os.getenv("MODEL_NAME")`** — no default argument.
+
+5. **Updates `pyproject.toml`** — adds `python-dotenv>=1.0.0` to `[project]`
    dependencies if it is not already there.
 
 ---
 
-## Rules
+## Hard rules the skill NEVER breaks
+
+**Rule 1 — No inferred defaults anywhere.** The skill never persists a
+concrete default value it inferred from source code. Applies to:
+- `.env.example` — every new entry gets `<TODO: update-this-value>`,
+  even when the source has `os.getenv("VAR", "some-fallback")`.
+- Python files — the model-replacement path emits
+  `os.getenv("MODEL_NAME")` with **no second argument**. It does NOT emit
+  `os.getenv("MODEL_NAME", "the-original-hardcoded-value")` even though
+  that would be trivially "safer."
+
+**Rule 2 — Additive-only for Python files.** The skill never writes new
+`os.environ.setdefault(...)` bootstrap lines into any Python file.
+Pre-existing `os.environ.setdefault(...)` calls or
+`os.getenv("VAR", "default")` calls that a recipe author wrote by hand
+are LEFT UNTOUCHED. The skill's only writes to Python files are:
+- Adding the `from dotenv import load_dotenv` + `load_dotenv()` snippet
+  (once, only if not already present).
+- Replacing hardcoded model literals with bare `os.getenv(...)` calls.
+
+Rationale: default values are the maintainer's decision, not the
+skill's. Persisting an inferred default (in `.env.example` or in a new
+Python bootstrap line) is presumptuous — it makes the recipe look like
+it works when the value is really the maintainer's job to fill in.
+Pre-existing lines are the maintainer's own committed choice; the
+skill respects that and doesn't rewrite them.
+
+---
+
+## Rules for the Agent
 
 1. **Always use the script** — never manually edit `.env.example`, `__init__.py`,
    or `pyproject.toml` to perform these changes.
