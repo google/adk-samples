@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import datetime
-import os
 from zoneinfo import ZoneInfo
 
 from google.adk.agents import Agent
@@ -74,7 +73,7 @@ async def generate_memories_callback(callback_context: CallbackContext):
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
-        model=os.getenv("MODEL_NAME"),
+        model="gemini-3-flash-preview",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=(
