@@ -7,6 +7,7 @@ Exits 0 if all distributions have hashes, 1 otherwise.
 """
 
 import sys
+
 import tomllib
 
 lockfile_path = sys.argv[1]

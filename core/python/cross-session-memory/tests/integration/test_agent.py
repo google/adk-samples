@@ -16,7 +16,9 @@ from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.memory import InMemoryMemoryService  # Memory Bank
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from google.adk.tools.preload_memory_tool import PreloadMemoryTool  # Memory Bank
+from google.adk.tools.preload_memory_tool import (
+    PreloadMemoryTool,
+)  # Memory Bank
 from google.genai import types
 
 from app.agent import generate_memories_callback, root_agent  # Memory Bank
@@ -26,7 +28,9 @@ from app.agent import generate_memories_callback, root_agent  # Memory Bank
 def test_agent_has_memory_wired() -> None:
     """Verify that the agent has Memory Bank callback and tools configured."""
     assert root_agent.after_agent_callback == generate_memories_callback
-    has_preload_tool = any(isinstance(t, PreloadMemoryTool) for t in root_agent.tools)
+    has_preload_tool = any(
+        isinstance(t, PreloadMemoryTool) for t in root_agent.tools
+    )
     assert has_preload_tool, "Expected PreloadMemoryTool in agent tools"
 
 
@@ -40,7 +44,9 @@ def test_agent_stream() -> None:
     # --- Memory Bank ---
     memory_service = InMemoryMemoryService()
 
-    session = session_service.create_session_sync(user_id="test_user", app_name="test")
+    session = session_service.create_session_sync(
+        user_id="test_user", app_name="test"
+    )
     runner = Runner(
         agent=root_agent,
         session_service=session_service,
