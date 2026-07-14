@@ -11,22 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Runnability tests for the recipe."""
 
-import os
+import app.agent
 
-import google.auth
-from dotenv import load_dotenv
 
-# Load variables from .env if present. In production the environment is
-# already populated by the platform (Cloud Run, GKE, etc.), so a missing
-# .env is expected and not an error.
-load_dotenv()
-
-_, project_id = google.auth.default()
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
-
-from .agent import app  # noqa: E402 -- must come after load_dotenv()
-
-__all__ = ["app"]
+def test_agent_runnability() -> None:
+    """Verify agent.py imports and defines the expected globals."""
+    assert app.agent.root_agent is not None
+    assert app.agent.app is not None
