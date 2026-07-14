@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+
+# macOS
+.DS_Store
+
+# Testing
+.pytest_cache/
+
+# Deployment artifacts
+deployment_metadata.json
+.requirements.txt
