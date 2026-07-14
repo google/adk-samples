@@ -11,27 +11,12 @@ permissions:
   contents: read
   pull-requests: write # Essential for posting reviewdog suggestion comments
 
-# Configurable settings shared globally across checking jobs
-env:
-  # Maximum allowed line length for Python files
-  LINE_LENGTH: "80"
-  
-  # Styling and coding rules to select
-  # - E: pycodestyle errors (includes E501 line length checks)
-  # - F: pyflakes (checks logic errors, undefined vars, unused imports)
-  # - W: pycodestyle warnings
-  # - I: isort (checks import statement ordering and format)
-  # - C: flake8-comprehensions
-  # - B: flake8-bugbear
-  # - UP: pyupgrade
-  # - RUF: ruff specific rules
-  RULE_SELECT: "E,F,W,I,C,B,UP,RUF"
-  
-  # Styling rules to ignore
-  # - C901: Code complexity (keeps checks flexible)
-  # - B006: Mutable default arguments (required by some agent templates)
-  # - Note: E501 (line-too-long) is NOT here, so the 80 character limit is enforced!
-  RULE_IGNORE: "C901,B006"
+# Ruff configuration (line length, selected rules, ignored rules, per-file
+# ignores, formatter options) is the repo's single source of truth for Python
+# style and lives in the root pyproject.toml under [tool.ruff]. This workflow
+# deliberately does NOT pass --line-length/--select/--ignore on the CLI, so
+# ruff discovers configuration by walking up from each target file. Update
+# pyproject.toml (not this file) to change the standard.
 
 jobs:
   ruff-format:
@@ -71,8 +56,8 @@ jobs:
           
           echo "Formatting files: $CHANGED_FILES"
           
-          # 3. Format ONLY the modified python files
-          uvx ruff format --line-length=${{ env.LINE_LENGTH }} --force-exclude $CHANGED_FILES
+          # 3. Format ONLY the modified python files (rules come from pyproject.toml)
+          uvx ruff format --force-exclude $CHANGED_FILES
 
           # 4. Post formatting suggestion comments strictly targeting modified files
           git diff $CHANGED_FILES | reviewdog -f=diff \
@@ -118,13 +103,8 @@ jobs:
           
           echo "Applying auto-fixes to: $CHANGED_FILES"
           
-          # 3. Apply auto-fixes ONLY to the modified python files
-          uvx ruff check \
-            --line-length=${{ env.LINE_LENGTH }} \
-            --select=${{ env.RULE_SELECT }} \
-            --ignore=${{ env.RULE_IGNORE }} \
-            --force-exclude \
-            --fix $CHANGED_FILES || true
+          # 3. Apply auto-fixes ONLY to the modified python files (rules come from pyproject.toml)
+          uvx ruff check --force-exclude --fix $CHANGED_FILES || true
 
           # 4. Post auto-fix suggestion comments strictly targeting modified files
           git diff $CHANGED_FILES | reviewdog -f=diff \
@@ -154,11 +134,8 @@ jobs:
           
           echo "Running diagnostics linter on: $CHANGED_FILES"
           
-          # 3. Run strict diagnostic linter in RDJSON format on only the modified python files
+          # 3. Run strict diagnostic linter in RDJSON format on only the modified python files (rules come from pyproject.toml)
           uvx ruff check \
-            --line-length=${{ env.LINE_LENGTH }} \
-            --select=${{ env.RULE_SELECT }} \
-            --ignore=${{ env.RULE_IGNORE }} \
             --force-exclude \
             --output-format=rdjson \
             --exit-zero $CHANGED_FILES | reviewdog -f=rdjson \

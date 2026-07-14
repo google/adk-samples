@@ -13,7 +13,7 @@ dependencies = [
     "fastapi>=0.115.8,<1.0.0",
     "uvicorn~=0.34.0",
 ]
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.11,<3.14"
 
 
 [dependency-groups]
@@ -30,26 +30,6 @@ lint = [
     "ty>=0.0.1a0",
     "codespell>=2.2.0,<3.0.0",
 ]
-
-[tool.ruff]
-line-length = 88
-target-version = "py310"
-
-[tool.ruff.lint]
-select = [
-    "E",   # pycodestyle
-    "F",   # pyflakes
-    "W",   # pycodestyle warnings
-    "I",   # isort
-    "C",  # flake8-comprehensions
-    "B",   # flake8-bugbear
-    "UP", # pyupgrade
-    "RUF", # ruff specific rules
-]
-ignore = ["E501", "C901", "B006"] # ignore line too long, too complex
-
-[tool.ruff.lint.isort]
-known-first-party = ["app"]
 
 [tool.ty]
 # ty is Astral's Rust-based type checker (same team as ruff/uv)

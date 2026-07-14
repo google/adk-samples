@@ -21,6 +21,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: false
+
       - name: Detect affected Python recipe directories
         id: affected
         run: |
@@ -88,7 +94,8 @@ jobs:
                 continue
               fi
               # Match:  language: python  or  language: "python"  or  language: 'python'
-              if ! grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*$' "$manifest"; then
+              # Trailing YAML comments (e.g. `language: python  # note`) are permitted.
+              if ! grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*(#.*)?$' "$manifest"; then
                 continue
               fi
             fi
@@ -124,7 +131,8 @@ jobs:
             [ -d "$d" ] || continue
             manifest="${d}manifest.yaml"
             [ -f "$manifest" ] || continue
-            if grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*$' "$manifest"; then
+            # Trailing YAML comments (e.g. `language: python  # note`) are permitted.
+            if grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*(#.*)?$' "$manifest"; then
               ALL="${ALL}${d%/}"$'\n'
             fi
           done
@@ -193,7 +201,8 @@ jobs:
             # Limits depend on whether manifest.yaml sets:  large: true
             # ------------------------------------------------------------------
             manifest="$recipe/manifest.yaml"
-            if [ -f "$manifest" ] && grep -qiE '^\s*large\s*:\s*true\s*$' "$manifest"; then
+            # Trailing YAML comments (e.g. `large: true  # rationale`) are permitted.
+            if [ -f "$manifest" ] && grep -qiE '^\s*large\s*:\s*true\s*(#.*)?$' "$manifest"; then
               EFFECTIVE_MAX_SIZE_MB="$MAX_SIZE_MB_LARGE"
               EFFECTIVE_MAX_FILES="$MAX_FILES_LARGE"
               echo "[INFO] Large recipe detected — using relaxed limits (${EFFECTIVE_MAX_SIZE_MB} MB / ${EFFECTIVE_MAX_FILES} files)."
@@ -310,6 +319,98 @@ jobs:
               else
                 echo "[PASS] All environment variables used in Python files are defined in .env.example."
               fi
+            fi
+
+            # ------------------------------------------------------------------
+            # Check 7: recipe must not carry its own Ruff configuration.
+            #          Ruff config is centralized in the repo root pyproject.toml.
+            #
+            # Ruff discovers configuration from three sources (whichever is
+            # nearest walking up from a target file):
+            #   1. `[tool.ruff*]` tables in pyproject.toml
+            #   2. a `ruff.toml`   file
+            #   3. a `.ruff.toml`  file
+            # All three must be blocked in recipe directories, or centralization
+            # has a hole. `ruff.toml` and `.ruff.toml` are searched over the
+            # whole recipe subtree because ruff walks up per-file, so a nested
+            # copy would still override the root config for files below it.
+            # ------------------------------------------------------------------
+            pyproject="$recipe/pyproject.toml"
+            check7_failed=0
+
+            if [ -f "$pyproject" ] && grep -qE '^\s*\[tool\.ruff(\.|\])' "$pyproject"; then
+              echo "::error file=$pyproject::Recipe pyproject.toml must not declare a [tool.ruff*] block. Ruff configuration is centralized in the repo root pyproject.toml (see [tool.ruff] there). Remove all [tool.ruff*] tables from this file."
+              echo "[FAIL] pyproject.toml contains a [tool.ruff*] block — remove it (see root pyproject.toml)."
+              check7_failed=1
+            fi
+
+            # Find any standalone ruff config files anywhere under the recipe.
+            standalone_ruff_configs=$(find "$recipe" -type f \
+              \( -name 'ruff.toml' -o -name '.ruff.toml' \) 2>/dev/null || true)
+            if [ -n "$standalone_ruff_configs" ]; then
+              while IFS= read -r ruff_cfg; do
+                [ -z "$ruff_cfg" ] && continue
+                echo "::error file=$ruff_cfg::Recipe must not contain a standalone ruff.toml or .ruff.toml. Ruff configuration is centralized in the repo root pyproject.toml. Delete this file."
+                echo "[FAIL] Standalone Ruff config found: $ruff_cfg — delete it (see root pyproject.toml)."
+              done <<< "$standalone_ruff_configs"
+              check7_failed=1
+            fi
+
+            if [ "$check7_failed" -eq 1 ]; then
+              RECIPE_FAILED=1
+            else
+              echo "[PASS] Recipe carries no local Ruff configuration."
+            fi
+
+            # ------------------------------------------------------------------
+            # Check 8: [project] metadata rules. Delegated to
+            #          .github/scripts/check_recipe_pyproject.py:
+            #    - project-name-matches-folder: [project].name must equal the
+            #      recipe folder basename.
+            #    - python-version-floor: [project].requires-python must not
+            #      permit Python versions below 3.11.
+            #    - description-matches-manifest: if [project].description is
+            #      set, it must equal manifest.description (after .strip(),
+            #      exact match).
+            # ------------------------------------------------------------------
+            if [ -f "$pyproject" ]; then
+              # tomllib is stdlib on Python >= 3.11 (setup-uv installs 3.11);
+              # pyyaml + packaging are pulled into an ephemeral env via
+              # `uv run --with`. `packaging` is used for PEP 440 version
+              # specifier parsing (see check_requires_python).
+              set +e
+              pyproject_result=$(uv run --no-project --with pyyaml --with packaging \
+                python .github/scripts/check_recipe_pyproject.py "$recipe")
+              py_exit=$?
+              set -e
+
+              if [ "$py_exit" -ne 0 ]; then
+                echo "::error file=$pyproject::pyproject.toml metadata checker crashed (uv/python exit=$py_exit). See job output."
+                echo "[FAIL] pyproject.toml metadata checker crashed (uv/python exit=$py_exit)."
+                RECIPE_FAILED=1
+              fi
+
+              while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                kind="${line%%::*}"
+                rest="${line#*::}"
+                file="${rest%%::*}"
+                msg="${rest#*::}"
+                case "$kind" in
+                  PASS)
+                    echo "[PASS] $msg"
+                    ;;
+                  FAIL)
+                    echo "::error file=$file::$msg"
+                    echo "[FAIL] $msg"
+                    RECIPE_FAILED=1
+                    ;;
+                  *)
+                    # Unrecognized line — surface it so it isn't silently lost.
+                    echo "$line"
+                    ;;
+                esac
+              done <<< "$pyproject_result"
             fi
 
             # ------------------------------------------------------------------
