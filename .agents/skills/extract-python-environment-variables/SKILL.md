@@ -6,11 +6,15 @@ description: >
   is bootstrapped in the package __init__.py, and that python-dotenv>=1.0.0
   is listed in pyproject.toml. Also detects hardcoded model-name string
   literals in the recipe's source (e.g. "gemini-3-flash-preview" in
-  agent.py) and rewrites them to os.getenv("MODEL_NAME"), adding
-  MODEL_NAME=<the original value> to .env.example — this modifies source
-  files, not just configuration. Use when the user wants to "extract env
-  vars", "update .env.example", "add load_dotenv", "replace hardcoded
-  model names", or "fix environment variables" in a Python recipe.
+  agent.py) and rewrites them to os.getenv("MODEL_NAME"), adding MODEL_NAME
+  to .env.example with a TODO placeholder — this modifies source files, not
+  just configuration. IMPORTANT: this skill NEVER writes default values
+  into .env.example. Every entry gets the same TODO placeholder regardless
+  of whether the source code has an `os.getenv("VAR", "default")` fallback
+  — .env.example is a template the human fills in, not a place to smuggle
+  inferred defaults. Use when the user wants to "extract env vars", "update
+  .env.example", "add load_dotenv", "replace hardcoded model names", or
+  "fix environment variables" in a Python recipe.
 metadata:
   author: Google
   license: Apache-2.0
@@ -34,9 +38,12 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
    - `os.getenv("VAR")` / `os.getenv("VAR", "default")`
 
 2. **Updates `.env.example`** — appends any variables not already declared.
-   - If a default value is present in the code (e.g. `os.getenv("FOO", "bar")`),
-     that value is used in `.env.example`.
-   - Otherwise the placeholder `<UPDATE_THIS_VALUE>` is used.
+   - **Every value is the placeholder `<TODO: update-this-value>`.** The
+     skill never writes inferred defaults into `.env.example`, even when
+     the source code has an `os.getenv("VAR", "some_default")` fallback.
+     `.env.example` is a template the human fills in; the source-code
+     fallback is a runtime default, not a value the maintainer has
+     committed to as canonical.
    - Creates `.env.example` from scratch if it does not exist.
 
 3. **Injects `load_dotenv()`** into the package `__init__.py` (the first

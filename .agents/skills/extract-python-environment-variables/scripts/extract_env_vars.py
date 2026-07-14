@@ -17,11 +17,16 @@ extract_env_vars.py
 
 Scans a Python recipe directory and:
   1. Detects all environment variable reads in non-test Python files.
-  2. Creates or updates .env.example with any missing variables.
+  2. Creates or updates .env.example with any missing variables. EVERY
+     new entry is written with the TODO placeholder as its value; the
+     script NEVER writes inferred defaults from source code (see the
+     block comment in update_env_example for the rationale).
   3. Injects the load_dotenv() bootstrap snippet into the package __init__.py.
   4. Ensures python-dotenv>=1.0.0 is listed in pyproject.toml dependencies.
   5. Detects hardcoded model name strings, replaces them with
-     os.getenv("MODEL_NAME"), and adds MODEL_NAME to .env.example.
+     os.getenv("MODEL_NAME"), and adds MODEL_NAME to .env.example (also
+     with the TODO placeholder; the replaced hardcoded value is surfaced
+     in the log only, not persisted in .env.example).
 """
 
 import argparse
@@ -260,8 +265,12 @@ def update_env_example(
         " extract-python-environment-variables\n"
     )
     for var in sorted(to_add):
-        value = to_add[var] if to_add[var] is not None else PLACEHOLDER
-        block += f"{var}={value}\n"
+        # Deliberately do NOT write extracted defaults from source code into
+        # .env.example. .env.example is a template the human maintainer fills
+        # in, not a place to smuggle inferred defaults. Every value written
+        # here is the PLACEHOLDER, regardless of whether the source code has
+        # an `os.getenv("VAR", "some_default")` fallback.
+        block += f"{var}={PLACEHOLDER}\n"
 
     env_example.write_text(current + block, encoding="utf-8")
     return sorted(to_add.keys())
@@ -987,9 +996,16 @@ def run_step_model_names(
     if added_models:
         add_verb = "Would add" if dry_run else "Added"
         for var in added_models:
+            # The `.env.example` line is written with PLACEHOLDER as the value
+            # (see update_env_example — this skill NEVER writes inferred
+            # defaults into .env.example, even when replacing a hardcoded
+            # value). We surface the original hardcoded string here in the
+            # log ONLY so the maintainer knows what value to fill in — the
+            # string is NOT persisted in .env.example.
             print(
-                f"[{_tag(dry_run)}] {add_verb} {var}={vars_to_add[var]} "
-                "to .env.example."
+                f"[{_tag(dry_run)}] {add_verb} {var} to .env.example "
+                f"with placeholder value (the replaced hardcoded value was "
+                f'"{vars_to_add[var]}" — fill it in manually).'
             )
     else:
         print("[PASS] All MODEL_NAME_* vars already in .env.example — skipped.")
