@@ -52,8 +52,8 @@ Runs six ordered phases against a target recipe. Each phase either invokes an ex
 
 1. **Manifest** — generate `manifest.yaml` if missing; ask the user to verify `ownership.team` and `ownership.poc`.
 2. **Environment variables** — extract env vars used by the recipe into `.env.example`; ensure `load_dotenv()` is bootstrapped and `python-dotenv` is a dep.
-3. **Lint** — `ruff format` + `ruff check --fix` on the recipe (from the repo root, so the root ruff config wins).
-4. **Align pyproject.toml** — remove `[tool.ruff*]`, raise `requires-python` floor, ensure `[project].name` matches folder, reconcile description with manifest, and ensure `[[tool.uv.index]]` declares public PyPI as default (needed to bypass corp Airlock).
+3. **Align pyproject.toml** — remove `[tool.ruff*]`, raise `requires-python` floor, ensure `[project].name` matches folder, reconcile description with manifest, and ensure `[[tool.uv.index]]` declares public PyPI as default (needed to bypass corp Airlock).
+4. **Lint** — `ruff format` + `ruff check --fix` on the recipe (from the repo root, so the root ruff config wins). **Must run AFTER Phase 3** — align removes any recipe-local `[tool.ruff*]` block, and that removal is what makes the root config the effective one. Running lint before align would check against the recipe's (often more permissive) local config and miss violations that CI will later catch.
 5. **Recipe `uv sync`** — sync the recipe's own venv after pyproject.toml is finalized.
 6. **Runnability test** — generate `tests/test_runnability.py` if missing (or ask before overwriting).
 
@@ -73,7 +73,7 @@ At the end, print a summary table and remind the user to `git diff` and commit �
 
 5. **Fixed checkpoints — always pause here**:
    - **Manifest team/POC verification** — after Phase 1, `manifest.yaml` will contain the placeholders `"YOUR TEAM NAME"` and `"your-github-id"`. Show them and ask for real values.
-   - **Description mismatch** — if Phase 4 returns `needs_input` for `description-matches-manifest`, show both sides and ask the user to pick `pyproject`, `manifest`, or `delete`.
+   - **Description mismatch** — if Phase 3 returns `needs_input` for `description-matches-manifest`, show both sides and ask the user to pick `pyproject`, `manifest`, or `delete`.
    - **Test file exists** — before Phase 6, if `tests/test_runnability.py` already exists, ask whether to regenerate (default: keep existing). Regeneration uses `--overwrite`.
    - **Anything a sub-script flags as `error`** — surface the message, stop the pipeline, do NOT retry.
 
@@ -125,8 +125,8 @@ Before running anything, quickly confirm the prerequisites and show the user the
 > I'll run the prepare-python-recipe pipeline on `<RECIPE_DIR>` — 6 phases:
 > 1. Generate manifest.yaml (if missing; verify team + POC)
 > 2. Extract env vars into .env.example
-> 3. Ruff format + check --fix
-> 4. Align pyproject.toml
+> 3. Align pyproject.toml
+> 4. Ruff format + check --fix
 > 5. uv sync inside the recipe
 > 6. Generate tests/test_runnability.py (if missing)
 >
@@ -170,24 +170,13 @@ Read the script's stdout (human-readable table). Extract the counts: how many va
 
 Progress line: `Phase 2 (env vars): <N> vars added to .env.example, load_dotenv <injected|already present>, python-dotenv <added|already present>.`
 
-### Phase 3 — ruff
+### Phase 3 — align pyproject.toml
 
-Run both from the repo root (not the recipe dir) so the root `pyproject.toml`'s ruff config wins:
-
-```bash
-uv run ruff format <RECIPE_DIR>
-uv run ruff check --fix <RECIPE_DIR>
-```
-
-If `ruff check` reports remaining un-fixable errors (exit non-zero), stop and surface them. If it fixes everything, continue.
-
-Progress line: `Phase 3 (lint): <N> file(s) formatted, <M> issue(s) auto-fixed.`
-
-### Phase 4 — align pyproject.toml
+**Must run BEFORE Phase 4 (lint).** Align removes any recipe-local `[tool.ruff*]` block — after removal the recipe uses the root `pyproject.toml`'s ruff config. If Phase 4 (lint) ran first, it would check against whatever local config the recipe shipped with (often more permissive than root), miss violations that root's config would catch, and CI would fail on files the pipeline claimed were clean. Do NOT reorder these two phases without changing this reasoning.
 
 Invoke the align script directly. Two-pass logic:
 
-**4a. Dry-run first** to detect whether description mismatch will need user input:
+**3a. Dry-run first** to detect whether description mismatch will need user input:
 
 ```bash
 uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
@@ -197,7 +186,7 @@ uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
 
 Parse the JSON. If any check has `status == "needs_input"` for `description-matches-manifest`, pause: show both `pyproject_description` and `manifest_description` from `details`, ask the user to pick `pyproject`, `manifest`, or `delete`.
 
-**4b. Apply** — with the description-source flag if you got one:
+**3b. Apply** — with the description-source flag if you got one:
 
 ```bash
 uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
@@ -210,7 +199,20 @@ If the apply run has any `report_only` results, note them in the summary — the
   - `build-system-present` (missing `[build-system]` — backend choice is editorial)
   - `default-pypi-index` (a default index is declared but points somewhere other than public PyPI — divergence may be intentional)
 
-Progress line: `Phase 4 (align): <N> fix(es) applied; <M> report-only issue(s) left.`
+Progress line: `Phase 3 (align): <N> fix(es) applied; <M> report-only issue(s) left.`
+
+### Phase 4 — ruff
+
+Run both from the repo root (not the recipe dir) so the root `pyproject.toml`'s ruff config wins. This runs AFTER Phase 3 on purpose (see Phase 3's header comment for why):
+
+```bash
+uv run ruff format <RECIPE_DIR>
+uv run ruff check --fix <RECIPE_DIR>
+```
+
+If `ruff check` reports remaining un-fixable errors (exit non-zero), the recipe has genuine violations that ruff can't auto-fix (typically `C901` complex-structure, `PLR0912/0915` too-many-branches/statements). Do NOT stop the pipeline — note them in the summary as a Manual TODO so the user can refactor or add per-file `# noqa` markers after review.
+
+Progress line: `Phase 4 (lint): <N> file(s) formatted, <M> issue(s) auto-fixed, <K> unfixable issue(s) left.`
 
 ### Phase 5 — recipe `uv sync`
 
@@ -259,17 +261,18 @@ At the end, print a summary table:
 |---|---|---|
 | 1. Manifest | ok | generated; team=<x>, poc=<y> |
 | 2. Env vars | ok | 3 added, load_dotenv injected, python-dotenv added |
-| 3. Lint | ok | 12 files formatted, 4 issues auto-fixed |
-| 4. Align | ok | 2 fixes applied |
+| 3. Align | ok | 2 fixes applied |
+| 4. Lint | ok | 12 files formatted, 4 issues auto-fixed |
 | 5. Recipe sync | ok | done |
 | 6. Runnability test | ok | generated |
 
 Do NOT use emoji unless the user has asked for them. Use plain words in the Outcome column (`ok` / `skipped` / `failed`).
 
-If any phase produced `report_only` items (typically `build-system-present`), list them as **Manual TODOs** below the table:
+If any phase produced `report_only` items OR Phase 4 left un-fixable ruff errors, list them as **Manual TODOs** below the table:
 
 > Manual TODOs:
 > - `[build-system]` is missing from `pyproject.toml`. Add one of the templates from the align-recipe-pyproject skill's SKILL.md (hatchling or uv_build).
+> - `app/app_utils/deploy.py:276` — `ruff check` flagged `C901` (complex-structure) and `PLR0915` (too-many-statements). Ruff can't auto-fix these; refactor the function or add `# noqa: C901, PLR0915` at the function definition after review.
 
 Close with:
 
