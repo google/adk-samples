@@ -13,16 +13,13 @@
 # limitations under the License.
 
 import datetime
-import os
 from zoneinfo import ZoneInfo
 
 from google.adk.agents import Agent
 from google.adk.agents.callback_context import CallbackContext  # Memory Bank
 from google.adk.apps import App
 from google.adk.models import Gemini
-from google.adk.tools.preload_memory_tool import (
-    PreloadMemoryTool,
-)  # Memory Bank
+from google.adk.tools.preload_memory_tool import PreloadMemoryTool  # Memory Bank
 from google.genai import types
 
 
@@ -70,12 +67,13 @@ def get_current_time(query: str) -> str:
 async def generate_memories_callback(callback_context: CallbackContext):
     """Sends the session's events to Memory Bank for memory generation."""
     await callback_context.add_session_to_memory()
+    return None
 
 
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
-        model=os.getenv("MODEL_NAME"),
+        model="gemini-3-flash-preview",
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=(

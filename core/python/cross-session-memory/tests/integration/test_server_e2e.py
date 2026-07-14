@@ -120,9 +120,7 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
 
     # Create session first
     user_id = "test_user_123"
-    session_data = {
-        "state": {"preferred_language": "English", "visit_count": 1}
-    }
+    session_data = {"state": {"preferred_language": "English", "visit_count": 1}}
 
     session_url = f"{BASE_URL}/apps/app/users/{user_id}/sessions"
     session_response = requests.post(
@@ -178,15 +176,11 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
     assert has_text_content, "Expected at least one event with text content"
 
 
-def test_chat_stream_error_handling(
-    server_fixture: subprocess.Popen[str],
-) -> None:
+def test_chat_stream_error_handling(server_fixture: subprocess.Popen[str]) -> None:
     """Test the chat stream error handling."""
     logger.info("Starting chat stream error handling test")
     data = {
-        "input": {
-            "messages": [{"type": "invalid_type", "content": "Cause an error"}]
-        }
+        "input": {"messages": [{"type": "invalid_type", "content": "Cause an error"}]}
     }
     response = requests.post(
         STREAM_URL, headers=HEADERS, json=data, stream=True, timeout=10
@@ -228,14 +222,10 @@ def cleanup_agent_engine_sessions() -> None:
     try:
         # Use same environment variable as server, default to project name
         default_agent_name = "memory-bank-sample"
-        agent_name = os.environ.get(
-            "AGENT_ENGINE_SESSION_NAME", default_agent_name
-        )
+        agent_name = os.environ.get("AGENT_ENGINE_SESSION_NAME", default_agent_name)
 
         # Find and delete agent engines with this name
-        existing_agents = list(
-            agent_engines.list(filter=f"display_name={agent_name}")
-        )
+        existing_agents = list(agent_engines.list(filter=f"display_name={agent_name}"))
 
         for agent_engine in existing_agents:
             try:
