@@ -316,18 +316,52 @@ def _module_referenced(modules: set[str], prefix: str) -> bool:
 
 
 def detect_features(agent_file: Path, recipe_dir: Path) -> Detections:
-    """Run every AST/scan detector against agent.py (and its sibling .py's
-    for the INTEGRATION_TEST convention) and return the flags the generator
-    needs to emit the right test."""
-    module = ast.parse(
+    """Run every AST/scan detector against agent.py + its package __init__.py
+    (both run when the test does `import <module>`), and return the flags
+    the generator needs to emit the right test."""
+    agent_module = ast.parse(
         agent_file.read_text(),
         filename=str(agent_file),
     )
 
-    assignments = find_top_level_assignments(module)
-    calls = find_call_targets(module)
-    env_reads = find_env_var_reads(module)
-    imports = find_imported_modules(module)
+    # The package's __init__.py runs BEFORE agent.py's own top-level code
+    # when Python resolves `import app.agent`. So any side effect there
+    # (google.auth.default(), vertexai.init(), env-var reads) matters for
+    # the test's ability to import cleanly. Historical bug: cross-session-
+    # memory has `_, project_id = google.auth.default()` in __init__.py;
+    # scanning only agent.py missed it and the generated test crashed at
+    # import time in CI without ADC.
+    side_effect_modules: list[ast.Module] = [agent_module]
+    package_init = agent_file.parent / "__init__.py"
+    if (
+        package_init.is_file()
+        and package_init.resolve() != agent_file.resolve()
+    ):
+        try:
+            side_effect_modules.append(
+                ast.parse(
+                    package_init.read_text(),
+                    filename=str(package_init),
+                )
+            )
+        except (SyntaxError, UnicodeDecodeError):
+            # Broken __init__.py isn't ours to fix; skip it and let the
+            # generated test surface the problem when run.
+            pass
+
+    # Top-level assignments (`root_agent`, `app`) come from agent.py by
+    # convention — even if a package re-exports them via __init__.py, the
+    # test does `import <module>` which is agent.py, not the package.
+    assignments = find_top_level_assignments(agent_module)
+
+    # Side-effect signals: union across agent.py AND __init__.py.
+    calls: set[str] = set()
+    imports: set[str] = set()
+    env_reads: set[str] = set()
+    for m in side_effect_modules:
+        calls |= find_call_targets(m)
+        imports |= find_imported_modules(m)
+        env_reads |= find_env_var_reads(m)
 
     d = Detections()
     d.has_root_agent = "root_agent" in assignments
@@ -384,6 +418,10 @@ def generate_test_source(
       * Minimal:  module-level `import <module>` + assertions.
       * Guarded:  env-var setup + optional `with patch(...)` around the
                   import, done inside the test function.
+
+    Post-processes through `ruff format` when available so long emitted
+    lines (e.g. multi-patch `with (...):` blocks) come out already wrapped
+    per the repo's ruff config, and no reformat is needed downstream.
     """
     needs_env = (
         detections.needs_gcp_project_env
@@ -392,8 +430,38 @@ def generate_test_source(
     has_side_effects = needs_env or detections.needs_vertexai_patch
 
     if not has_side_effects:
-        return _emit_minimal(module_name, detections)
-    return _emit_guarded(module_name, detections)
+        raw = _emit_minimal(module_name, detections)
+    else:
+        raw = _emit_guarded(module_name, detections)
+    return _ruff_format_if_available(raw)
+
+
+def _ruff_format_if_available(source: str) -> str:
+    """Best-effort: pipe `source` through `ruff format --stdin-filename=... -`.
+
+    Returns the raw source unchanged if `ruff` isn't on PATH, if the format
+    subprocess errors, or if it takes too long. The generator's contract is
+    still "emit valid Python" — this is a nicety that removes the need for
+    the user to run `ruff format` on the generated file separately.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["ruff", "format", "--stdin-filename=test_runnability.py", "-"],
+            input=source,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
+        return source
+    return result.stdout
 
 
 def _emit_minimal(module_name: str, detections: Detections) -> str:
@@ -415,18 +483,38 @@ def _emit_minimal(module_name: str, detections: Detections) -> str:
 
 
 def _emit_guarded(module_name: str, detections: Detections) -> str:
-    """Full-safety-belt test: env-var setup + optional vertexai patch.
+    """Full-safety-belt test: env-var setup + optional import-time patches.
 
-    Import happens inside a `with patch(...)` context if vertexai.init is
-    called at module load — the patch is only needed while the module loads.
-    Assertions run AFTER the with block: at that point the module's globals
-    are already stable, so keeping the patch active there would be misleading
-    about what actually needs mocking.
+    Import happens inside a `with patch(...)` context whenever the recipe
+    has import-time side effects that would fail without live credentials
+    (vertexai.init, google.auth.default). The patches are only needed while
+    the module loads; assertions run AFTER the with block so the test file
+    honestly reflects what actually needs mocking (the load, not the
+    checks).
     """
+    # ---- build the list of patches (each is a single with-item string) --
+    patches: list[str] = []
+    needs_magicmock = False
+    if detections.needs_vertexai_patch:
+        patches.append('patch("vertexai.init")')
+    if detections.needs_gcp_project_env:
+        # `google.auth.default()` requires ADC to be discoverable at call
+        # time. In CI or a fresh clone that's usually not set up, so any
+        # unconditional call at import time crashes the test. Patch it to
+        # return a plausible (credentials, project_id) tuple. Env-var
+        # setdefault below still helps for recipes that gate the call on
+        # GOOGLE_CLOUD_PROJECT — for those the patch is a no-op fallback.
+        patches.append(
+            'patch("google.auth.default", '
+            'return_value=(MagicMock(), "test-project"))'
+        )
+        needs_magicmock = True
+
     # ---- imports ----
     imports = ["import os"]
-    if detections.needs_vertexai_patch:
-        imports.append("from unittest.mock import patch")
+    if patches:
+        mock_names = ["MagicMock", "patch"] if needs_magicmock else ["patch"]
+        imports.append(f"from unittest.mock import {', '.join(mock_names)}")
 
     # ---- explanatory comment (matches the hand-written recipe tests) ----
     comment_lines = _build_setup_comment(detections)
@@ -443,11 +531,8 @@ def _emit_guarded(module_name: str, detections: Detections) -> str:
         )
 
     # ---- import block (with-patch context OR plain function-level import) --
-    if detections.needs_vertexai_patch:
-        import_lines = [
-            '    with patch("vertexai.init"):',
-            f"        import {module_name}",
-        ]
+    if patches:
+        import_lines = _emit_with_block(patches, module_name)
     else:
         import_lines = [f"    import {module_name}"]
 
@@ -476,22 +561,49 @@ def _emit_guarded(module_name: str, detections: Detections) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _emit_with_block(patches: list[str], module_name: str) -> list[str]:
+    """Return the lines for a `with <patches>: import <module>` block.
+
+    Single-patch form uses one line: `with patch(...):`. Multi-patch form
+    uses the PEP 8 parenthesised style (`with (\\n <patch>,\\n ...):`)
+    which ruff format prefers once the combined line exceeds 79 chars —
+    emitting it that way up front avoids a mandatory reformat after
+    generation.
+    """
+    if len(patches) == 1:
+        return [
+            f"    with {patches[0]}:",
+            f"        import {module_name}",
+        ]
+    body = [f"        {p}," for p in patches]
+    return [
+        "    with (",
+        *body,
+        "    ):",
+        f"        import {module_name}",
+    ]
+
+
 def _build_setup_comment(detections: Detections) -> list[str]:
     """Return the `# ...` comment lines that explain why env-var setup and
-    the vertexai patch are needed. Each returned line already includes its
+    the patches are needed. Each returned line already includes its
     leading 4-space indent and `# ` marker, wrapped to fit under 80 chars.
     """
     bits: list[str] = []
     if detections.needs_gcp_project_env:
+        # Two things happen for this signal: env-var setdefault (helps
+        # recipes that gate google.auth.default() on GOOGLE_CLOUD_PROJECT)
+        # AND a google.auth.default() patch (needed when the recipe calls
+        # it unconditionally at import time). Comment mentions both.
         bits.append(
-            "Provide a dummy GCP project so agent.py does not call "
-            "google.auth.default()"
+            "provide a dummy GCP project and patch google.auth.default() "
+            "so import-time credential lookups don't need ADC"
         )
     if detections.needs_vertexai_patch:
         bits.append("mock vertexai.init to avoid a real GCP call")
     if not bits and detections.needs_integration_test_env:
         bits.append(
-            "Set INTEGRATION_TEST so helpers imported by agent.py take "
+            "set INTEGRATION_TEST so helpers imported by agent.py take "
             "their mock path"
         )
     prose = ", and ".join(bits) if bits else "Import-time setup"

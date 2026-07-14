@@ -199,8 +199,12 @@ def test_update_env_example_creates_file_when_absent(tmp_path):
 
     assert added == ["NEW_VAR", "NO_DEFAULT"]
     content = env.read_text(encoding="utf-8")
-    assert "NEW_VAR=val" in content
+    # Hard rule: every entry gets PLACEHOLDER, even when the source-code
+    # default ("val" here) is passed in. See update_env_example's inline
+    # comment for the rationale.
+    assert f"NEW_VAR={m.PLACEHOLDER}" in content
     assert f"NO_DEFAULT={m.PLACEHOLDER}" in content
+    assert "NEW_VAR=val" not in content
 
 
 def test_update_env_example_appends_only_missing(tmp_path):
@@ -211,7 +215,9 @@ def test_update_env_example_appends_only_missing(tmp_path):
     assert added == ["FRESH"]
     content = env.read_text(encoding="utf-8")
     assert content.count("EXISTING") == 1
-    assert "FRESH=2" in content
+    # Passed-in "2" is ignored; every entry gets PLACEHOLDER.
+    assert f"FRESH={m.PLACEHOLDER}" in content
+    assert "FRESH=2" not in content
 
 
 def test_update_env_example_noop_when_all_present(tmp_path):
@@ -232,7 +238,9 @@ def test_update_env_example_handles_missing_trailing_newline(tmp_path):
 
     lines = env.read_text(encoding="utf-8").splitlines()
     assert "A=1" in lines
-    assert "B=2" in lines
+    # Passed-in "2" is ignored; every entry gets PLACEHOLDER.
+    assert f"B={m.PLACEHOLDER}" in lines
+    assert "B=2" not in lines
 
 
 def test_update_env_example_dry_run_reports_but_does_not_write(tmp_path):

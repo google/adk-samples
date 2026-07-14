@@ -30,16 +30,20 @@ Runs `scripts/generate_runnability_test.py` against a recipe directory. Steps:
 
 1. **Locate `agent.py`.** Walks the recipe safely (excludes `.venv`, `venv`, `build`, `dist`, `__pycache__`, `node_modules`, `*.egg-info`, and dot-directories) and picks the shallowest `agent.py` match. If none is found, errors out and suggests `--agent-file`. Only one file is generated per invocation.
 
-2. **Parse `agent.py` with `ast`** to detect:
-   - **Top-level assignments** — is `root_agent = ...` present? Is `app = ...` present?
-   - **Import-time calls** — does `vertexai.init(...)` fire at module load? Does `google.auth.default()`?
-   - **Env-var access** — does the code read `GOOGLE_CLOUD_PROJECT` via `os.getenv` / `os.environ.get` / `os.environ["…"]`?
+2. **Parse `agent.py` AND the package's `__init__.py` with `ast`** to detect:
+   - **Top-level assignments** (agent.py only, per convention) — is `root_agent = ...` present? Is `app = ...` present?
+   - **Import-time calls** (agent.py + `__init__.py`) — does `vertexai.init(...)` fire at module load? Does `google.auth.default()`? Both files are checked because `__init__.py` runs first when the test does `import <module>`, and a side effect there matters as much as one in `agent.py`. Historical bug closed by this: cross-session-memory has `_, project_id = google.auth.default()` in `__init__.py`; before, the scanner missed it and the generated test crashed in CI without ADC.
+   - **Env-var access** (agent.py + `__init__.py`) — does the code read `GOOGLE_CLOUD_PROJECT` via `os.getenv` / `os.environ.get` / `os.environ["…"]`?
 
 3. **Scan sibling `.py` files** in the recipe (same safe walker) for `INTEGRATION_TEST` env-var reads. This is a per-package convention: `agent.py` often calls a helper (e.g. `retrievers.create_search_tool`) at module load, and THAT helper is what reads `INTEGRATION_TEST`. Restricting the scan to `agent.py` would miss it.
 
 4. **Emit the test.** Two shapes:
    - **Minimal** (no side effects detected) — module-level `import <module>` + `assert root_agent is not None` (and `app is not None` if present).
-   - **Guarded** (any side effect detected) — env-var `setdefault` calls at the top of the test function, `with patch("vertexai.init"):` around the import (only if vertexai is used), and assertions **outside** the `with` block (the patch is only needed during import; keeping it active around assertions would be misleading).
+   - **Guarded** (any side effect detected) — env-var `setdefault` calls at the top of the test function; a `with patch(...):` block around the import listing every patch needed (`patch("vertexai.init")` when vertexai is used, `patch("google.auth.default", return_value=(MagicMock(), "test-project"))` when the recipe touches `google.auth`); and assertions **outside** the `with` block (the patches are only needed during import; keeping them active around assertions would be misleading).
+
+   The `google.auth.default` patch is what makes the test survive a recipe that calls `google.auth.default()` unconditionally at import time (like cross-session-memory's `__init__.py`). Just setting `GOOGLE_CLOUD_PROJECT` isn't enough for that pattern — the call still fires and still needs valid ADC — hence the patch.
+
+   Emission is post-processed through `ruff format` when available, so multi-patch `with (...):` blocks come out already wrapped per the repo's ruff config.
 
 5. **Write it** to `<recipe-dir>/tests/test_runnability.py` (creating `tests/` if needed). Refuses to clobber an existing file unless `--overwrite` is passed.
 
