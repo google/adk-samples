@@ -100,6 +100,8 @@ At the end, print a summary table and remind the user to `git diff` and commit �
 
 7. **Halt on hard error**. If any phase's script exits with a non-zero code that isn't `refused_overwrite` (handled by rule 5), stop. Print the phase name, the error, and what's already been done. Do NOT continue past a hard error.
 
+   **Carve-out for Phase 3 (align).** The align script exits `1` whenever any check is left in `report_only` status (e.g. missing `[build-system]`, a non-PyPI default index) — those are deferrals-by-design, NOT hard errors (see Phase 3b). Do NOT halt on Phase 3's exit code alone: decide from its JSON. Halt only if a check has status `error` (or an unexpected `needs_input` / `would_fix`); a non-zero exit whose only non-clean checks are `report_only` means "continue".
+
 8. **Report progress compactly**. After each phase, one line: `Phase N (<name>): <one-line outcome>`. Do NOT dump raw JSON. Do NOT re-render each sub-skill's own table — the summary at the end covers it. Judgment-based interruptions from rule 6 are separate from progress lines and should be their own turn (question, then wait for the answer).
 
 9. **Never commit**. The skill is done when the summary is printed. Let the user `git diff` and commit.
@@ -209,7 +211,7 @@ uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
   [--description-source=<CHOICE>]
 ```
 
-If the apply run has any `report_only` results, note them in the summary — the master does NOT auto-fix these. Do not stop the pipeline; other phases continue. Two rules can produce `report_only`:
+**The align script exits `1` (non-zero) whenever any check is `report_only`** — that is expected, not a hard error, so do NOT apply rule 7's halt to it. Decide from the JSON, not the exit code: if the apply run's only non-clean checks are `report_only`, note them in the summary (the master does NOT auto-fix these) and continue; halt only if a check has status `error`. Two rules can produce `report_only`:
   - `build-system-present` (missing `[build-system]` — backend choice is editorial)
   - `default-pypi-index` (a default index is declared but points somewhere other than public PyPI — divergence may be intentional)
 

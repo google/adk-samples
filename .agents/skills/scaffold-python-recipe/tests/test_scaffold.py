@@ -145,6 +145,35 @@ def test_scaffold_rejects_invalid_name_before_writing(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# is_safe_output_dir / output_dir traversal guard
+# ---------------------------------------------------------------------------
+
+
+def test_is_safe_output_dir():
+    assert m.is_safe_output_dir("contrib") is True
+    assert m.is_safe_output_dir("core/python") is True
+    # Absolute destinations are allowed at the function level (see docstring).
+    assert m.is_safe_output_dir("/abs/tmp/dir") is True
+    # Relative traversal is refused.
+    assert m.is_safe_output_dir("../../other-repo") is False
+    assert m.is_safe_output_dir("a/../b") is False
+    assert m.is_safe_output_dir("a\\..\\b") is False
+
+
+def test_scaffold_rejects_output_dir_traversal(tmp_path):
+    # An output_dir with a '..' segment must be refused before any copy, so a
+    # recipe can't be dropped outside the intended tree.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    traversal = str(tmp_path / "inside" / ".." / "outside")
+
+    ok = m.scaffold(name="ok-name", output_dir=traversal)
+
+    assert ok is False
+    assert not (outside / "ok-name").exists()
+
+
+# ---------------------------------------------------------------------------
 # resilient placeholder replacement (Finding 1)
 # ---------------------------------------------------------------------------
 
