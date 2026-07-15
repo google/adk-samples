@@ -290,7 +290,14 @@ Note: passing Phase 7 does NOT mean the recipe actually runs — it means the te
 
 While the pipeline runs, print a short progress line per phase (see above). Do NOT dump raw JSON. Do NOT re-render sub-skill tables.
 
-At the end, print a summary table:
+**Track three things as the pipeline runs** so you can report them at the end:
+- Every file the pipeline created or modified (across all seven phases). Observe this from each sub-script's stdout plus your own knowledge of what each phase touches (Phase 1 → `manifest.yaml`; Phase 2 → `.env.example`, package `__init__.py`, `pyproject.toml`, any source files where a hardcoded model name was replaced; Phase 3 → `pyproject.toml`; Phase 4 → any `.py` under the recipe; Phase 5 → `uv.lock`; Phase 6 → `tests/test_runnability.py`; Phase 7 → nothing).
+- Every action the pipeline **attempted but couldn't complete** (a phase halted by rule 7, Phase 4 unfixable ruff, Phase 7 compile fail).
+- Every deferred item that needs human follow-up (Phase 3 `report_only`).
+
+At the end, print the sections below in order. Section 3 is **conditional** — omit it entirely if nothing belongs in it. Sections 1, 2, and 4 always print.
+
+### 1. Summary table
 
 | Phase | Outcome | Notes |
 |---|---|---|
@@ -302,26 +309,67 @@ At the end, print a summary table:
 | 6. Runnability test | ok | generated |
 | 7. Verify (compile-check) | ok | tests/test_runnability.py compiles |
 
-Do NOT use emoji unless the user has asked for them. Use plain words in the Outcome column (`ok` / `skipped` / `failed`).
+Use plain words in the Outcome column (`ok` / `skipped` / `failed`). No emoji unless the user asked for them.
 
-If any phase produced `report_only` items, or Phase 4 left un-fixable ruff errors, or Phase 7 reported a compile failure, list them as **Manual TODOs** below the table:
+### 2. Files created or modified
 
-> Manual TODOs:
-> - `[build-system]` is missing from `pyproject.toml`. Add one of the templates from the align-recipe-pyproject skill's SKILL.md (hatchling or uv_build).
-> - `app/app_utils/deploy.py:276` — `ruff check` flagged `C901` (complex-structure) and `PLR0915` (too-many-statements). Ruff can't auto-fix these; refactor the function or add `# noqa: C901, PLR0915` at the function definition after review.
-> - `tests/test_runnability.py` failed `py_compile` — see the error text in Phase 7's output. This usually indicates a generator bug (or a hand-edit that broke the file); investigate before running pytest.
+Short bullet list, grouped **Created** and **Modified**, one line per file. Aggregate large groups (e.g. "12 `.py` files formatted (Phase 4)") rather than listing each individually. Omit files that were checked but untouched. If a group is empty, drop its heading. If nothing changed at all, print `Nothing changed — the recipe was already fully aligned.`
 
-Close with:
+Example:
+
+> **Created**
+> - `manifest.yaml` (Phase 1)
+> - `tests/test_runnability.py` (Phase 6)
+> - `uv.lock` (Phase 5)
+>
+> **Modified**
+> - `pyproject.toml` (Phases 2, 3 — added `python-dotenv`; aligned rules)
+> - `<pkg>/__init__.py` (Phase 2 — added `load_dotenv()`)
+> - `.env.example` (Phase 2 — 3 vars added)
+> - `agent.py` (Phase 2 — replaced hardcoded model name with `os.getenv("MODEL_NAME")`)
+> - 12 `.py` files formatted, 4 auto-fixed (Phase 4)
+
+### 3. What the skill tried but couldn't complete (conditional — omit section if empty)
+
+**Only print this section if at least one item belongs in it.** If the pipeline finished every attempted action cleanly, omit the section entirely — do NOT print a "nothing failed" placeholder. The summary table's Outcome column already conveys clean runs.
+
+One line per item. This is for automation attempts that couldn't finish — not for deferrals-by-design (those go in Section 4).
+
+Cases that go here:
+
+- **Halted phase (rule 7 hard error)**: a phase's script exited non-zero and the pipeline stopped. Show the phase, the command that failed, and a one-line snippet of the stderr. Explicitly note which phases did NOT run as a result.
+- **Phase 4 unfixable ruff**: `ruff check --fix` ran but couldn't auto-fix some violations. Show `<file>:<line>` — `<codes>` for each.
+- **Phase 7 compile fail**: `py_compile` on `tests/test_runnability.py` returned an error. Show a one-line snippet of the stderr.
+
+Example:
+
+> - **Phase 4 (ruff)** — 2 violations remain that `ruff check --fix` can't auto-fix: `app/deploy.py:276` (`C901`, `PLR0915`), `app/tools.py:52` (`C901`). Refactor or add `# noqa: <codes>` at the def line.
+> - **Phase 7 (verify)** — `python -m py_compile tests/test_runnability.py` failed: `SyntaxError: invalid syntax (line 14)`. Likely a generator bug or hand-edit; regenerate or fix before running pytest.
+
+### 4. What you still need to do
+
+A single short TODO list. Keep every entry to one line. Standard items come first (always shown), then conditional items (only if the phase raised them), then a copy-pasteable command block. Do NOT invent items — only include what actually applies to this run.
+
+**Standard — always include (skip only if genuinely N/A):**
+
+1. **Verify manifest** — open `<RECIPE_DIR>/manifest.yaml` and confirm `ownership.team` and `ownership.poc` are correct.
+2. **Fill in `.env.example`** — replace each `<TODO: ...>` placeholder with the real value (or delete the line if the variable isn't used).
+3. **Review the diff** — `cd <RECIPE_DIR> && git diff` — inspect every change the pipeline made before committing.
+
+**Conditional — include ONLY if the phase raised it:**
+
+- **Phase 3 report-only, `build-system`**: add a `[build-system]` block to `pyproject.toml` — see `.agents/skills/align-recipe-pyproject/SKILL.md` for hatchling / uv_build templates.
+- **Phase 3 report-only, `pypi-index`**: `[[tool.uv.index]]` default points somewhere other than public PyPI — verify this is intentional or fix per the align skill.
+
+**Commands — always show:**
 
 ```
-Next steps:
-  cd <RECIPE_DIR>
-  git diff                                        # review every change the pipeline made
-  uv sync                                         # install deps into .venv/ (skipped by Phase 5 on purpose)
-  uv run pytest tests/test_runnability.py -v     # confirm the runnability test actually passes
-  # commit when you're happy
+cd <RECIPE_DIR>
+uv sync                                         # install deps into .venv/ (Phase 5 only ran uv lock)
+uv run pytest tests/test_runnability.py -v     # confirm the runnability test actually passes
+# commit when you're happy
 ```
 
-The `uv sync` step is what actually installs the recipe's dependencies into a `.venv/`. The pipeline stopped at `uv lock` on purpose — installing is heavier and better done after you've reviewed the diff.
+`uv sync` is what actually installs the recipe's dependencies into `.venv/`. The pipeline stopped at `uv lock` on purpose — installing is heavier and better done after you've reviewed the diff.
 
 Then stop. Do NOT commit. End your turn.
