@@ -41,7 +41,7 @@ If the user has not specified which directory, ask them to choose. Do not procee
 
 The recipe name must satisfy **all** of the following rules:
 - Contains only lowercase letters and hyphens (`a-z`, `-`)
-- Is 26 characters or less
+- Is 30 characters or less
 - Does not start or end with a hyphen
 
 If the user provided a name, validate it against these rules before proceeding. If it is invalid, explain which rule it violates and ask for a corrected name. Do not proceed until a valid name is confirmed.

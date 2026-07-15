@@ -25,7 +25,7 @@ Both limits are enforced by the `validate-python-recipe` CI workflow — see [To
 Recipe directory names must be:
 *   **Lowercase letters and hyphens only** — no digits, underscores, or uppercase. CI enforces the exact pattern `^[a-z][a-z-]*$`.
 *   **Start with a lowercase letter** (e.g., `rag-agent-search`).
-*   **26 characters or less**.
+*   **30 characters or less**.
 
 > **Note:** Digits are not allowed, so version-style suffixes like `-v2` or
 > `-1` will fail CI.

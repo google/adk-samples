@@ -151,7 +151,7 @@ jobs:
           # ==================================================================
           # Configurable limits
           # ==================================================================
-          MAX_FOLDER_NAME_LENGTH=26
+          MAX_FOLDER_NAME_LENGTH=30
 
           MAX_SIZE_MB=1
           MAX_FILES=50
@@ -190,7 +190,7 @@ jobs:
               RECIPE_FAILED=1
             elif [ "${#folder_name}" -gt "$MAX_FOLDER_NAME_LENGTH" ]; then
               echo "::error file=$recipe::Folder name '$folder_name' is ${#folder_name} characters long. Maximum allowed is ${MAX_FOLDER_NAME_LENGTH} characters."
-              echo "[FAIL] Folder name: '$folder_name' — exceeds 26 character limit."
+              echo "[FAIL] Folder name: '$folder_name' — exceeds 30 character limit."
               RECIPE_FAILED=1
             else
               echo "[PASS] Folder name: '$folder_name'"
