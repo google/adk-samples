@@ -14,11 +14,17 @@ those — no dead safety belt for recipes that don't need it, no missing mock
 for recipes that do.
 
 Detection scope:
-  - `agent.py` itself: top-level assignments (root_agent, app), top-level
-    calls (vertexai.init, google.auth.default), env var reads.
-  - Sibling `.py` files in the same package directory: only for env-var
-    convention scan (e.g. INTEGRATION_TEST, used by helpers that agent.py
-    imports at module-load time).
+  - `agent.py` plus every ancestor package `__init__.py` (all of which run
+    when the test does `import a.b.agent`): top-level assignments
+    (root_agent, app — from agent.py only, by convention), calls
+    (vertexai.init, google.auth.default) and env-var reads. Call/import
+    detection uses `ast.walk`, so it is deliberately broad — a match inside
+    a function body still flags the recipe. A false positive is cheap (a
+    no-op patch); a false negative would crash the generated test at import.
+  - All `.py` files under the recipe directory tree: for the env-var
+    convention scan (e.g. INTEGRATION_TEST, read by helpers that agent.py
+    imports at module-load time — such helpers need not sit beside
+    agent.py).
 
 Usage:
 
@@ -36,6 +42,16 @@ Exit codes:
      --overwrite to accept clobbering).
   2  hard error: recipe-dir invalid, agent.py not found, or parse failure.
 """
+
+# `from __future__ import annotations` keeps every annotation a lazy string,
+# so the PEP 604 `X | None` fields on the Report/Detections dataclasses are
+# NOT evaluated at class-definition time. Without it, defining those classes
+# raises `TypeError: unsupported operand type(s) for |` on Python 3.9 (the
+# `|` type-union operator is 3.10+), which the system `python3` on macOS may
+# still be. The script uses no other 3.10+ runtime feature, so this alone
+# lets it run anywhere 3.9+. (The SKILL.md also invokes it via
+# `uv run --no-project python3` to guarantee a modern interpreter.)
+from __future__ import annotations
 
 import argparse
 import ast
@@ -67,6 +83,7 @@ from typing import Any
 IGNORED_DIRS_NON_DOT = frozenset(
     {
         "venv",
+        "env",
         "build",
         "dist",
         "__pycache__",
@@ -264,8 +281,12 @@ def find_env_var_reads(module: ast.Module) -> set[str]:
                     first.value, str
                 ):
                     vars.add(first.value)
-        # os.environ["VAR"]  (read or write side; either counts)
-        if isinstance(node, ast.Subscript):
+        # os.environ["VAR"] — only a READ (ast.Load) counts. A write
+        # (`os.environ["VAR"] = ...`, ast.Store) or delete (ast.Del) means
+        # the recipe SETS the variable itself and does not depend on the
+        # test providing one, so it must not trigger the env-var setdefault
+        # (or, for GOOGLE_CLOUD_PROJECT, the google.auth patch).
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
             base = node.value
             if (
                 isinstance(base, ast.Attribute)
@@ -316,31 +337,37 @@ def _module_referenced(modules: set[str], prefix: str) -> bool:
 
 
 def detect_features(agent_file: Path, recipe_dir: Path) -> Detections:
-    """Run every AST/scan detector against agent.py + its package __init__.py
-    (both run when the test does `import <module>`), and return the flags
-    the generator needs to emit the right test."""
+    """Run every AST/scan detector against agent.py + every ancestor package
+    __init__.py (all of which run when the test does `import a.b.agent`), and
+    return the flags the generator needs to emit the right test."""
     agent_module = ast.parse(
-        agent_file.read_text(),
+        agent_file.read_text(encoding="utf-8"),
         filename=str(agent_file),
     )
 
-    # The package's __init__.py runs BEFORE agent.py's own top-level code
-    # when Python resolves `import app.agent`. So any side effect there
-    # (google.auth.default(), vertexai.init(), env-var reads) matters for
-    # the test's ability to import cleanly. Historical bug: cross-session-
-    # memory has `_, project_id = google.auth.default()` in __init__.py;
-    # scanning only agent.py missed it and the generated test crashed at
-    # import time in CI without ADC.
+    # Every ancestor package's __init__.py runs BEFORE agent.py's own
+    # top-level code when Python resolves `import a.b.agent`: a/__init__.py
+    # first, then a/b/__init__.py, then the module. So a side effect in ANY
+    # ancestor package (google.auth.default(), vertexai.init(), env-var
+    # reads) matters for the test's ability to import cleanly — not just the
+    # immediate parent. Historical bug: cross-session-memory has
+    # `_, project_id = google.auth.default()` in __init__.py; scanning only
+    # agent.py missed it and the generated test crashed at import time in CI
+    # without ADC. Walking only the immediate parent reopened the same gap
+    # for recipes nested two or more levels deep (e.g. app/agents/agent.py).
     side_effect_modules: list[ast.Module] = [agent_module]
-    package_init = agent_file.parent / "__init__.py"
-    if (
-        package_init.is_file()
-        and package_init.resolve() != agent_file.resolve()
-    ):
+    for pkg_dir in agent_file.parents:
+        if pkg_dir == recipe_dir:
+            break  # recipe root is on sys.path, not an imported package.
+        package_init = pkg_dir / "__init__.py"
+        if not package_init.is_file():
+            continue
+        if package_init.resolve() == agent_file.resolve():
+            continue  # entry point IS an __init__.py; don't double-parse.
         try:
             side_effect_modules.append(
                 ast.parse(
-                    package_init.read_text(),
+                    package_init.read_text(encoding="utf-8"),
                     filename=str(package_init),
                 )
             )
@@ -397,7 +424,7 @@ def _any_pyfile_reads_env_var(recipe_dir: Path, var: str) -> bool:
     `var` via os.getenv / os.environ.get / os.environ[...]."""
     for p in _walk_recipe_pyfiles(recipe_dir):
         try:
-            module = ast.parse(p.read_text(), filename=str(p))
+            module = ast.parse(p.read_text(encoding="utf-8"), filename=str(p))
         except (SyntaxError, UnicodeDecodeError):
             continue
         if var in find_env_var_reads(module):
@@ -632,11 +659,25 @@ def _analyze(
     agent_file = find_agent_file(recipe_dir, agent_file_override)
     if agent_file is None:
         report.action = "error"
-        report.message = (
-            f"No agent.py found under {recipe_dir}. If your recipe uses a "
-            f"different entry-point file, pass --agent-file <path> "
-            f"(relative to the recipe dir or absolute)."
-        )
+        if agent_file_override is not None:
+            # The user passed --agent-file but it didn't resolve to a file;
+            # tell them exactly that instead of pointing them back to the
+            # flag they already used.
+            resolved = (
+                agent_file_override
+                if agent_file_override.is_absolute()
+                else recipe_dir / agent_file_override
+            )
+            report.message = (
+                f"The path passed with --agent-file ({resolved}) does not "
+                f"exist or is not a file."
+            )
+        else:
+            report.message = (
+                f"No agent.py found under {recipe_dir}. If your recipe uses "
+                f"a different entry-point file, pass --agent-file <path> "
+                f"(relative to the recipe dir or absolute)."
+            )
         return False
     report.agent_file = str(agent_file)
 
@@ -655,6 +696,16 @@ def _analyze(
     except SyntaxError as e:
         report.action = "error"
         report.message = f"Failed to parse {agent_file}: {e}"
+        return False
+    except UnicodeDecodeError as e:
+        # A non-UTF-8 source file is the user's problem to fix, not a bug in
+        # this skill — say so plainly instead of letting the generic
+        # top-level safety net blame the skill.
+        report.action = "error"
+        report.message = (
+            f"{agent_file} is not valid UTF-8 ({e}). Fix the file's "
+            f"encoding and re-run."
+        )
         return False
 
     if not report.detections.has_root_agent:
@@ -699,7 +750,7 @@ def run(
 
     try:
         tests_dir.mkdir(parents=True, exist_ok=True)
-        target.write_text(report.test_content)
+        target.write_text(report.test_content, encoding="utf-8")
     except OSError as e:
         report.action = "error"
         report.message = f"Failed to write {target}: {e}"

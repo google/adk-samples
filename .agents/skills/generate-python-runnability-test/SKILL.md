@@ -28,14 +28,14 @@ Use this skill to create the `tests/test_runnability.py` file that every Python 
 
 Runs `scripts/generate_runnability_test.py` against a recipe directory. Steps:
 
-1. **Locate `agent.py`.** Walks the recipe safely (excludes `.venv`, `venv`, `build`, `dist`, `__pycache__`, `node_modules`, `*.egg-info`, and dot-directories) and picks the shallowest `agent.py` match. If none is found, errors out and suggests `--agent-file`. Only one file is generated per invocation.
+1. **Locate `agent.py`.** Walks the recipe safely (excludes `.venv`, `venv`, `env`, `build`, `dist`, `__pycache__`, `node_modules`, `tests`, `*.egg-info`, and dot-directories) and picks the shallowest `agent.py` match. If none is found, errors out and suggests `--agent-file`. Only one file is generated per invocation.
 
-2. **Parse `agent.py` AND the package's `__init__.py` with `ast`** to detect:
+2. **Parse `agent.py` AND every ancestor package `__init__.py` with `ast`** to detect:
    - **Top-level assignments** (agent.py only, per convention) — is `root_agent = ...` present? Is `app = ...` present?
-   - **Import-time calls** (agent.py + `__init__.py`) — does `vertexai.init(...)` fire at module load? Does `google.auth.default()`? Both files are checked because `__init__.py` runs first when the test does `import <module>`, and a side effect there matters as much as one in `agent.py`. Historical bug closed by this: cross-session-memory has `_, project_id = google.auth.default()` in `__init__.py`; before, the scanner missed it and the generated test crashed in CI without ADC.
-   - **Env-var access** (agent.py + `__init__.py`) — does the code read `GOOGLE_CLOUD_PROJECT` via `os.getenv` / `os.environ.get` / `os.environ["…"]`?
+   - **Import-time calls** (agent.py + every ancestor `__init__.py`) — does `vertexai.init(...)` fire at module load? Does `google.auth.default()`? Every ancestor `__init__.py` is checked because Python runs each of them in order when the test does `import a.b.agent` (`a/__init__.py`, then `a/b/__init__.py`, then the module), so a side effect in any of them matters as much as one in `agent.py`. Historical bug closed by this: cross-session-memory has `_, project_id = google.auth.default()` in `__init__.py`; before, the scanner missed it and the generated test crashed in CI without ADC. Detection uses `ast.walk` (any depth), so it is intentionally broad — a call nested in a function body still flags the recipe; the resulting patch is a harmless no-op if it never fires at import time, whereas a missed import-time call would crash the generated test.
+   - **Env-var access** (agent.py + every ancestor `__init__.py`) — does the code *read* `GOOGLE_CLOUD_PROJECT` via `os.getenv` / `os.environ.get` / `os.environ["…"]`? Only reads count: an `os.environ["…"] = value` write means the recipe sets its own value and doesn't depend on the test providing one, so it's ignored.
 
-3. **Scan sibling `.py` files** in the recipe (same safe walker) for `INTEGRATION_TEST` env-var reads. This is a per-package convention: `agent.py` often calls a helper (e.g. `retrievers.create_search_tool`) at module load, and THAT helper is what reads `INTEGRATION_TEST`. Restricting the scan to `agent.py` would miss it.
+3. **Scan all source `.py` files** in the recipe directory tree (same safe walker) for `INTEGRATION_TEST` env-var reads. This is a per-package convention: `agent.py` often calls a helper (e.g. `retrievers.create_search_tool`) at module load, and THAT helper — which may live anywhere in the recipe tree, not necessarily beside `agent.py` — is what reads `INTEGRATION_TEST`. Restricting the scan to `agent.py` would miss it.
 
 4. **Emit the test.** Two shapes:
    - **Minimal** (no side effects detected) — module-level `import <module>` + `assert root_agent is not None` (and `app is not None` if present).
@@ -98,18 +98,18 @@ Runs `scripts/generate_runnability_test.py` against a recipe directory. Steps:
 ### Dry-run (start here)
 
 ```bash
-python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
+uv run --no-project python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
   --recipe-dir <RECIPE_DIR> --dry-run
 ```
 
 Output on stdout: JSON with `agent_file`, `module_name`, `detections`, `test_content`, `action` (`would_write` / `refused_overwrite` / `error`), and `message`. Exit code `0`.
 
-Note: no `--with` flags are needed — the script only uses Python's stdlib (`ast`, `argparse`, `json`, `pathlib`, `dataclasses`, `os`, `sys`, `textwrap`). This makes dry-runs cheap and side-effect-free.
+Note: no `--with` flags are needed — the script only uses Python's stdlib (`ast`, `argparse`, `json`, `pathlib`, `dataclasses`, `os`, `sys`, `subprocess`, `textwrap`). `uv run --no-project python3` is used (rather than a bare `python3`) to guarantee a modern managed interpreter, consistent with the other Python recipe skills; the system `python3` on macOS can still be an old version. Dry-runs remain cheap and side-effect-free.
 
 ### Apply
 
 ```bash
-python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
+uv run --no-project python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
   --recipe-dir <RECIPE_DIR>
 ```
 
@@ -118,14 +118,14 @@ Writes `<RECIPE_DIR>/tests/test_runnability.py`. Refuses if the file exists (exi
 ### Apply with overwrite
 
 ```bash
-python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
+uv run --no-project python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
   --recipe-dir <RECIPE_DIR> --overwrite
 ```
 
 ### Override the entry-point file (rare)
 
 ```bash
-python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
+uv run --no-project python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
   --recipe-dir <RECIPE_DIR> --agent-file some/other/entry.py --dry-run
 ```
 
