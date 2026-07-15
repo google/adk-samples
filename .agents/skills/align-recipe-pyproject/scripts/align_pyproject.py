@@ -5,6 +5,15 @@ Enforces the same pyproject.toml rules that
 .github/workflows/validate-python-recipe.yml checks in CI, plus one critical
 additional check.
 
+MAINTENANCE NOTE — keep in sync with the CI validator. Four of these rules
+(project-name-matches-folder, python-version-floor, description-matches-
+manifest, default-pypi-index) are also implemented independently by
+.github/scripts/check_recipe_pyproject.py. That script only READS/validates
+(stdlib tomllib + pyyaml, so CI needs no extra deps); this one REWRITES
+(comment-preserving tomlkit + ruamel.yaml). They are intentionally separate
+but MUST stay semantically in sync — if you change a rule's meaning here,
+mirror it there (and vice versa).
+
   - no-local-ruff-config
         Recipe pyproject.toml must not declare any [tool.ruff*] table. Ruff
         configuration is centralized in the root pyproject.toml.
@@ -15,11 +24,12 @@ additional check.
         [project].requires-python must not permit any Python version below
         3.11 (per AGENTS.md "Minimum python version: 3.11"). Recipes that
         require Python 3.12+ are the author's choice and are left alone.
-        Auto-fix: rewrite the specifier, preserving upper bounds and
-        exclusions, so the lower bound becomes >=3.11. If a mechanical
-        rewrite would produce a self-contradictory result (e.g.
-        `>=3.10,!=3.11` -> `>=3.11,!=3.11`), refuse to apply and return
-        NEEDS_INPUT.
+        Auto-fix: raise the lower bound to >=3.11 while preserving every
+        upper bound, exclusion, compatible-release ceiling, and pin (only the
+        pure lower-bound operators >= and > are dropped). If the rewrite
+        would produce a self-contradictory result — because the recipe's own
+        ceiling/pin/exclusion excludes 3.11 (e.g. `>=3.10,!=3.11` or
+        `==3.10.*`) — refuse to apply and return NEEDS_INPUT.
   - project-name-matches-folder
         [project].name must equal the recipe folder basename.
         Auto-fix: set it.
@@ -32,6 +42,14 @@ additional check.
         Without it, `uv build` and `pip install .` fail. Not auto-fixed
         because the canonical backend is an editorial choice (hatchling vs
         uv_build).
+  - default-pypi-index
+        [[tool.uv.index]] must have an entry with default=true pointing at
+        public PyPI (https://pypi.org/simple[/]). Required so `uv sync` works
+        on Google corp workstations without corp Airlock auth.
+        Auto-fix: when no default index is declared, promote an existing
+        public-PyPI entry to default=true, or append one if none exists.
+        Report-only when a default entry exists but points elsewhere (private
+        mirror, TestPyPI) — the divergence may be intentional.
 
 Usage:
 
@@ -65,11 +83,27 @@ from ruamel.yaml import YAML
 
 MIN_PYTHON = (3, 11)
 MIN_PYTHON_STR = f"{MIN_PYTHON[0]}.{MIN_PYTHON[1]}"
-# Any Python release that predates MIN_PYTHON. If the recipe's specifier
-# admits any of these, its lower bound is too low.
-BELOW_MIN = [
-    Version(f"{MIN_PYTHON[0]}.{minor}") for minor in range(MIN_PYTHON[1])
-] + [Version(f"{MIN_PYTHON[0] - 1}.99")]
+# Representative Python versions strictly below MIN_PYTHON, used to probe
+# whether a requires-python specifier admits anything under the floor. For
+# each minor series below MIN_PYTHON we include BOTH the .0 release and a
+# very-high micro (`.9999`): the .0 catches plain floors like `>=3.10`, while
+# the high micro catches micro-version floors like `>=3.10.5` / `~=3.10.2`
+# whose lower bound sits above X.Y.0 — a single `.0` probe would sail past
+# them and wrongly report OK. The trailing 2.99 catches Python 2.x.
+# Known residual: an exact micro pin (e.g. `==3.10.5`) is not detected, since
+# no finite probe set can hit an arbitrary pinned micro; such pins are
+# effectively nonexistent in real requires-python declarations.
+# NOTE: mirrored in .github/scripts/check_recipe_pyproject.py — keep in sync.
+_PROBE_MICRO = 9999  # synthetic "very high" micro (see note above)
+_BELOW_MIN_MINORS = range(MIN_PYTHON[1])  # 3.0, 3.1, ..., 3.(min-1)
+BELOW_MIN = (
+    [Version(f"{MIN_PYTHON[0]}.{m}") for m in _BELOW_MIN_MINORS]
+    + [
+        Version(f"{MIN_PYTHON[0]}.{m}.{_PROBE_MICRO}")
+        for m in _BELOW_MIN_MINORS
+    ]
+    + [Version(f"{MIN_PYTHON[0] - 1}.99")]
+)
 
 # Status values for a Check entry.
 OK = "ok"  # nothing to do
@@ -96,12 +130,22 @@ class Report:
     mode: str  # "dry-run" or "apply"
     checks: list[Check] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # A manifest.yaml write staged by the description-matches-manifest fix
+    # (--description-source=pyproject). Held here rather than written inside
+    # the check so run() can write pyproject.toml and manifest.yaml together
+    # at the end — otherwise a later pyproject write failure would leave
+    # manifest.yaml already modified on disk (an inconsistent state the old
+    # error message wrongly reported as "nothing changed"). Not serialised.
+    pending_manifest: tuple[Path, Any, YAML] | None = None
 
     def add(self, check: Check) -> None:
         self.checks.append(check)
 
     def note(self, text: str) -> None:
         self.notes.append(text)
+
+    def stage_manifest_write(self, path: Path, data: Any, yaml: YAML) -> None:
+        self.pending_manifest = (path, data, yaml)
 
     def to_json(self) -> str:
         return json.dumps(
@@ -123,8 +167,9 @@ def check_no_local_ruff_config(
 ) -> Check:
     """Remove any [tool.ruff*] table from pyproject.toml.
 
-    Assumes doc["tool"] (if present) is a table — the caller validates
-    top-level types via _validate_top_level_tables().
+    Assumes doc["tool"] (if present) is a table — run() validates that the
+    top-level [project]/[tool]/[build-system] keys are tables inline, before
+    dispatching any check.
     """
     tool = doc.get("tool")
     if tool is None or "ruff" not in tool:
@@ -219,12 +264,20 @@ def _validate_and_apply_python_floor_rewrite(
             f"[project].requires-python = '{current}' permits Python "
             f"versions below {MIN_PYTHON_STR}, but a mechanical rewrite "
             f"would produce '{target}' which excludes {MIN_PYTHON_STR} "
-            f"itself (the recipe's own exclusion contradicts the required "
-            f"floor). Fix by hand.",
+            f"itself (the recipe's own upper bound, pin, or exclusion "
+            f"contradicts the required floor). Fix by hand.",
             {"current": current, "attempted_rewrite": target},
         )
 
-    reason = f"permits Python {permits_older[0]}"
+    # Prefer a real witness version for the message; fall back to a generic
+    # phrase rather than surfacing a synthetic `.9999` probe (which would only
+    # appear for a micro-version floor like `>=3.10.5`).
+    real = [v for v in permits_older if v.micro != _PROBE_MICRO]
+    reason = (
+        f"permits Python {real[0]}"
+        if real
+        else f"permits Python below {MIN_PYTHON_STR}"
+    )
     verb = "Rewrote" if apply else "Would rewrite"
     if apply:
         project["requires-python"] = target
@@ -252,7 +305,11 @@ def check_python_version_floor(
     project = doc.get("project")
     current = None if project is None else project.get("requires-python")
 
-    if current is None:
+    # Treat an empty / whitespace-only string the same as a missing field:
+    # both mean "no floor declared". Routing it here avoids the generic
+    # rewrite path emitting a misleading "permits Python 3.0" reason for a
+    # value that never mentioned 3.0.
+    if current is None or (isinstance(current, str) and not current.strip()):
         return _add_missing_python_floor(doc, project, apply)
 
     try:
@@ -287,15 +344,27 @@ def check_python_version_floor(
 def _rewrite_requires_python(spec: SpecifierSet) -> str:
     """Return a new requires-python string with the lower bound at MIN_PYTHON.
 
-    Strategy: drop any specifier that establishes a lower bound
-    (>=, >, ~=, ==), then prepend `>=MIN_PYTHON`. Preserve upper bounds
-    and exclusions (<, <=, !=).
+    Strategy: drop only the *pure* lower-bound operators (`>=`, `>`) and
+    prepend `>=MIN_PYTHON`. Every other operator is kept verbatim so its
+    constraint survives the rewrite:
+
+      - Pure upper bounds / exclusions (`<`, `<=`, `!=`) are preserved as-is.
+      - Compound and pin operators (`~=`, `==`, `===`) are *also kept*,
+        because each encodes an upper bound or a pin — not just a floor.
+        Dropping them (as an earlier version did) silently discarded the
+        ceiling: `~=3.10` (== `>=3.10,<4`) became an unbounded `>=3.11`, and
+        `==3.10.*` became `>=3.11`. Keeping them lets the caller's
+        contradiction guard (_validate_and_apply_python_floor_rewrite) act on
+        the real result — a compatible-release ceiling that still admits
+        MIN_PYTHON is preserved (`~=3.10` -> `>=3.11,~=3.10` == `>=3.11,<4`),
+        while a pin that excludes MIN_PYTHON (`==3.10.*` -> `>=3.11,==3.10.*`)
+        is correctly rejected as NEEDS_INPUT instead of silently broadened.
     """
-    lower_bound_ops = {">=", ">", "~=", "=="}
+    pure_lower_bound_ops = {">=", ">"}
     kept = [
         str(s)
         for s in spec
-        if Specifier(str(s)).operator not in lower_bound_ops
+        if Specifier(str(s)).operator not in pure_lower_bound_ops
     ]
     return ",".join([f">={MIN_PYTHON_STR}", *kept])
 
@@ -373,6 +442,7 @@ def _load_manifest(manifest_path: Path) -> tuple[Any, YAML] | Check:
 
 
 def _apply_desc_source_pyproject(
+    report: Report,
     manifest_path: Path,
     manifest: Any,
     yaml: YAML,
@@ -380,21 +450,16 @@ def _apply_desc_source_pyproject(
     details: dict,
     apply: bool,
 ) -> Check:
-    """Overwrite manifest.description with the pyproject value."""
+    """Overwrite manifest.description with the pyproject value.
+
+    In apply mode the manifest is mutated in memory and its write is *staged*
+    on the report — run() flushes it only after pyproject.toml is safely on
+    disk, so the two files are updated together rather than manifest-first.
+    """
     verb = "Overwrote" if apply else "Would overwrite"
     if apply:
         manifest["description"] = py_desc
-        try:
-            with open(manifest_path, "w") as f:
-                yaml.dump(manifest, f)
-        except OSError as e:
-            return Check(
-                "description-matches-manifest",
-                ERROR,
-                f"Failed to write {manifest_path}: {e}. Nothing changed on "
-                f"disk.",
-                details,
-            )
+        report.stage_manifest_write(manifest_path, manifest, yaml)
     return Check(
         "description-matches-manifest",
         FIXED if apply else WOULD_FIX,
@@ -438,25 +503,16 @@ def _apply_desc_source_delete(
     )
 
 
-def check_description_matches_manifest(
-    recipe_dir: Path,
-    pyproject_path: Path,
-    doc: tomlkit.TOMLDocument,
-    description_source: str | None,
-    apply: bool,
-) -> Check:
-    project = doc.get("project")
-    py_desc_raw = None if project is None else project.get("description")
-    manifest_path = recipe_dir / "manifest.yaml"
+def _load_manifest_description(
+    manifest_path: Path, py_desc_raw: str
+) -> tuple[Any, Any, YAML] | Check:
+    """Load manifest.yaml and return (mf_desc_raw, manifest, yaml).
 
-    if py_desc_raw is None:
-        return Check(
-            "description-matches-manifest",
-            OK,
-            "[project].description is not set — check skipped "
-            "(field is optional).",
-        )
-
+    Returns an ERROR Check instead if the manifest is missing, unparseable,
+    or its `description` is a non-string value. Extracted from
+    check_description_matches_manifest to keep that function's return count
+    within the repo's ruff limit.
+    """
     if not manifest_path.is_file():
         return Check(
             "description-matches-manifest",
@@ -472,8 +528,58 @@ def check_description_matches_manifest(
         return loaded
     manifest, yaml = loaded
 
-    py_desc = (py_desc_raw or "").strip()
-    mf_desc = (manifest.get("description") or "").strip()
+    mf_desc_raw = manifest.get("description")
+    if mf_desc_raw is not None and not isinstance(mf_desc_raw, str):
+        return Check(
+            "description-matches-manifest",
+            ERROR,
+            f"manifest.description must be a string but is a "
+            f"{type(mf_desc_raw).__name__}; fix manifest.yaml by hand.",
+            {"manifest_description": str(mf_desc_raw)},
+        )
+    return (mf_desc_raw, manifest, yaml)
+
+
+def check_description_matches_manifest(
+    recipe_dir: Path,
+    pyproject_path: Path,
+    doc: tomlkit.TOMLDocument,
+    description_source: str | None,
+    apply: bool,
+    report: Report,
+) -> Check:
+    project = doc.get("project")
+    py_desc_raw = None if project is None else project.get("description")
+    manifest_path = recipe_dir / "manifest.yaml"
+
+    if py_desc_raw is None:
+        return Check(
+            "description-matches-manifest",
+            OK,
+            "[project].description is not set — check skipped "
+            "(field is optional).",
+        )
+
+    # tomlkit's String is a str subclass, so a well-formed description passes
+    # this. A description written as a non-string (array, integer, inline
+    # table — all syntactically valid TOML) would otherwise crash on .strip()
+    # below; catch it here with an actionable message instead.
+    if not isinstance(py_desc_raw, str):
+        return Check(
+            "description-matches-manifest",
+            ERROR,
+            f"[project].description must be a string but is a "
+            f"{type(py_desc_raw).__name__}; fix it by hand before re-running.",
+            {"pyproject_description": str(py_desc_raw)},
+        )
+
+    resolved = _load_manifest_description(manifest_path, py_desc_raw)
+    if isinstance(resolved, Check):
+        return resolved
+    mf_desc_raw, manifest, yaml = resolved
+
+    py_desc = py_desc_raw.strip()
+    mf_desc = (mf_desc_raw or "").strip()
 
     if py_desc == mf_desc:
         return Check(
@@ -501,7 +607,7 @@ def check_description_matches_manifest(
     # safety branch for unknown values is needed here.
     dispatch = {
         "pyproject": lambda: _apply_desc_source_pyproject(
-            manifest_path, manifest, yaml, py_desc, details, apply
+            report, manifest_path, manifest, yaml, py_desc, details, apply
         ),
         "manifest": lambda: _apply_desc_source_manifest(
             project, mf_desc, details, apply
@@ -593,6 +699,24 @@ def _url_is_public_pypi(url: str | None) -> bool:
     return url.lower() in _PYPI_URLS
 
 
+def _find_pypi_entry(doc: tomlkit.TOMLDocument) -> Any:
+    """Return the first [[tool.uv.index]] entry that points at public PyPI.
+
+    Ignores the `default` flag — used to promote an existing (non-default)
+    PyPI entry rather than appending a redundant second PyPI block. Returns
+    None if there is no such entry (or the index table is malformed).
+    """
+    tool = doc.get("tool")
+    uv = tool.get("uv") if tool is not None else None
+    index = uv.get("index") if uv is not None else None
+    if not index or not isinstance(index, list):
+        return None
+    for entry in index:
+        if _url_is_public_pypi(entry.get("url")):
+            return entry
+    return None
+
+
 def _append_default_pypi_index(doc: tomlkit.TOMLDocument) -> None:
     """Append a `[[tool.uv.index]]` block declaring public PyPI as default.
 
@@ -676,7 +800,24 @@ def check_default_pypi_index(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
             {"current_url": url},
         )
 
-    # No default index declared at all — auto-fix by appending the block.
+    # No default index declared at all. If a public-PyPI entry already exists
+    # (just not marked default), promote it rather than appending a redundant
+    # second PyPI block. Only append a fresh block when there's no PyPI entry.
+    existing = _find_pypi_entry(doc)
+    if existing is not None:
+        verb = "Set" if apply else "Would set"
+        if apply:
+            existing["default"] = True
+        return Check(
+            "default-pypi-index",
+            FIXED if apply else WOULD_FIX,
+            f"{verb} `default = true` on the existing public-PyPI "
+            f"`[[tool.uv.index]]` entry (url='{existing.get('url')}') rather "
+            f"than appending a duplicate. Required so `uv sync` works on "
+            f"Google corp workstations without Airlock auth.",
+            {"promoted_url": existing.get("url")},
+        )
+
     verb = "Added" if apply else "Would add"
     if apply:
         _append_default_pypi_index(doc)
@@ -693,6 +834,80 @@ def check_default_pypi_index(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
 # ---------- Orchestration -------------------------------------------------
 
 
+def _run_check(check_id: str, fn: Any) -> Check:
+    """Run one check, isolating its exceptions into a scoped ERROR Check.
+
+    Without this, an exception in any single check (e.g. a malformed field
+    that slips past the up-front schema guard) would propagate out of run()
+    and collapse the whole report to one generic `unhandled-exception`,
+    discarding every other rule's otherwise-valid result. This skill exists
+    to fix up messy recipes, so one bad field must degrade gracefully — the
+    offending rule reports an error and the rest still run.
+    """
+    try:
+        return fn()
+    except Exception as e:  # deliberately broad — scoped into a Check below
+        return Check(
+            check_id,
+            ERROR,
+            f"Check '{check_id}' could not run: {type(e).__name__}: {e}. "
+            f"This usually means a malformed field in pyproject.toml or "
+            f"manifest.yaml — fix it by hand (or report a bug if the field "
+            f"looks valid).",
+        )
+
+
+def _persist_changes(
+    report: Report, pyproject_path: Path, doc: tomlkit.TOMLDocument
+) -> None:
+    """Write pyproject.toml, then any staged manifest.yaml, in that order.
+
+    pyproject.toml goes first; the deferred manifest write (staged by the
+    --description-source=pyproject fix) is flushed only after pyproject.toml
+    is safely on disk, so the two files move together instead of
+    manifest-first. On failure, an accurately-worded ERROR Check is appended
+    naming exactly what did and did not reach disk.
+    """
+    try:
+        with open(pyproject_path, "w") as f:
+            f.write(tomlkit.dumps(doc))
+    except OSError as e:
+        # Nothing has touched disk yet — the manifest write was deferred.
+        report.add(
+            Check(
+                "persist-pyproject",
+                ERROR,
+                f"Failed to write {pyproject_path}: {e}. No files were "
+                f"modified (any staged manifest.yaml update was skipped too); "
+                f"the recipe is unchanged on disk.",
+            )
+        )
+        return
+
+    if report.pending_manifest is not None:
+        manifest_path, manifest_data, manifest_yaml = report.pending_manifest
+        try:
+            with open(manifest_path, "w") as f:
+                manifest_yaml.dump(manifest_data, f)
+        except OSError as e:
+            report.add(
+                Check(
+                    "persist-manifest",
+                    ERROR,
+                    f"pyproject.toml was updated, but writing {manifest_path} "
+                    f"failed: {e}. The two files may now be inconsistent — "
+                    f"re-run once the write problem is resolved to reconcile "
+                    f"them.",
+                )
+            )
+            return
+
+    report.note(
+        "Run `uv sync` in the recipe to pick up any pyproject.toml "
+        "dependency changes."
+    )
+
+
 def run(
     recipe_dir: Path,
     dry_run: bool,
@@ -700,6 +915,25 @@ def run(
 ) -> Report:
     mode = "dry-run" if dry_run else "apply"
     report = Report(recipe_dir=str(recipe_dir), mode=mode)
+
+    # Guard rail: refuse to operate on a git repository root. The repo root
+    # has its own pyproject.toml (the root ruff config, the corp-Airlock index
+    # block, etc.) that this skill must never mutate. A recipe directory never
+    # contains a `.git` entry; a temp/fixture directory used for testing
+    # doesn't either — so this rejects only the genuinely dangerous case
+    # without the brittleness of hard-coding `core/python/` / `contrib/`
+    # path prefixes (which would also break fixture-based testing).
+    if (recipe_dir / ".git").exists():
+        report.add(
+            Check(
+                "recipe-directory",
+                ERROR,
+                f"{recipe_dir} looks like a git repository root (it contains "
+                f"a .git entry), not a recipe. Point --recipe-dir at a recipe "
+                f"root under core/python/<name>/ or contrib/<name>/.",
+            )
+        )
+        return report
 
     pyproject_path = recipe_dir / "pyproject.toml"
     if not pyproject_path.is_file():
@@ -744,42 +978,55 @@ def run(
             return report
 
     apply = not dry_run
-    report.add(check_no_local_ruff_config(pyproject_path, doc, apply))
-    report.add(check_python_version_floor(pyproject_path, doc, apply))
+    # Each check is isolated: a crash in one becomes a scoped ERROR Check for
+    # that rule only, so the other five still produce results.
     report.add(
-        check_project_name_matches_folder(
-            recipe_dir, pyproject_path, doc, apply
+        _run_check(
+            "no-local-ruff-config",
+            lambda: check_no_local_ruff_config(pyproject_path, doc, apply),
         )
     )
     report.add(
-        check_description_matches_manifest(
-            recipe_dir, pyproject_path, doc, description_source, apply
+        _run_check(
+            "python-version-floor",
+            lambda: check_python_version_floor(pyproject_path, doc, apply),
         )
     )
-    report.add(check_build_system(doc))
-    report.add(check_default_pypi_index(doc, apply))
+    report.add(
+        _run_check(
+            "project-name-matches-folder",
+            lambda: check_project_name_matches_folder(
+                recipe_dir, pyproject_path, doc, apply
+            ),
+        )
+    )
+    report.add(
+        _run_check(
+            "description-matches-manifest",
+            lambda: check_description_matches_manifest(
+                recipe_dir,
+                pyproject_path,
+                doc,
+                description_source,
+                apply,
+                report,
+            ),
+        )
+    )
+    report.add(
+        _run_check("build-system-present", lambda: check_build_system(doc))
+    )
+    report.add(
+        _run_check(
+            "default-pypi-index",
+            lambda: check_default_pypi_index(doc, apply),
+        )
+    )
 
-    # Persist the (possibly mutated) pyproject.toml — only in apply mode, and
-    # only if at least one auto-fix actually changed the doc.
+    # Persist edits — only in apply mode, and only if at least one auto-fix
+    # actually changed something.
     if apply and any(c.status == FIXED for c in report.checks):
-        try:
-            with open(pyproject_path, "w") as f:
-                f.write(tomlkit.dumps(doc))
-        except OSError as e:
-            report.add(
-                Check(
-                    "persist-pyproject",
-                    ERROR,
-                    f"Failed to write {pyproject_path}: {e}. In-memory "
-                    f"changes have been discarded; the file on disk is "
-                    f"unchanged.",
-                )
-            )
-            return report
-        report.note(
-            "Run `uv sync` in the recipe to pick up any pyproject.toml "
-            "dependency changes."
-        )
+        _persist_changes(report, pyproject_path, doc)
 
     return report
 

@@ -19,6 +19,14 @@ Rules enforced (see .github/workflows/validate-python-recipe.yml):
 Note: no-local-ruff-config (forbid [tool.ruff*] blocks in recipe
 pyproject.toml) is enforced by a grep in the workflow itself, not here.
 
+MAINTENANCE NOTE — keep in sync with the align skill. These four rules are
+also implemented (as auto-fixes) by
+.agents/skills/align-recipe-pyproject/scripts/align_pyproject.py. This script
+only READS/validates (stdlib tomllib + pyyaml); that one REWRITES
+(comment-preserving tomlkit + ruamel.yaml). They are intentionally separate
+but MUST stay semantically in sync — if you change a rule's meaning here,
+mirror it there (and vice versa).
+
 Usage: python check_recipe_pyproject.py <recipe-dir>
 
 Output format (one record per line, for the shell caller to parse):
@@ -39,12 +47,28 @@ from packaging.version import Version
 
 MIN_PYTHON = (3, 11)
 MIN_PYTHON_STR = f"{MIN_PYTHON[0]}.{MIN_PYTHON[1]}"
-# Any Python release that predates MIN_PYTHON. If the recipe's specifier
-# permits any of these, its lower bound is too low.
-BELOW_MIN = [
-    Version(f"{MIN_PYTHON[0]}.{minor}")
-    for minor in range(MIN_PYTHON[1])  # 3.0, 3.1, ..., 3.(min-1)
-] + [Version(f"{MIN_PYTHON[0] - 1}.99")]  # e.g. 2.99, catches Python 2.x
+# Representative Python versions strictly below MIN_PYTHON, used to probe
+# whether a requires-python specifier admits anything under the floor. For
+# each minor series below MIN_PYTHON we include BOTH the .0 release and a
+# very-high micro (`.9999`): the .0 catches plain floors like `>=3.10`, while
+# the high micro catches micro-version floors like `>=3.10.5` / `~=3.10.2`
+# whose lower bound sits above X.Y.0 — a single `.0` probe would sail past
+# them and wrongly report OK. The trailing 2.99 catches Python 2.x.
+# Known residual: an exact micro pin (e.g. `==3.10.5`) is not detected, since
+# no finite probe set can hit an arbitrary pinned micro; such pins are
+# effectively nonexistent in real requires-python declarations.
+# NOTE: mirrored in .agents/skills/align-recipe-pyproject/scripts/
+# align_pyproject.py — keep in sync.
+_PROBE_MICRO = 9999  # synthetic "very high" micro (see note above)
+_BELOW_MIN_MINORS = range(MIN_PYTHON[1])  # 3.0, 3.1, ..., 3.(min-1)
+BELOW_MIN = (
+    [Version(f"{MIN_PYTHON[0]}.{m}") for m in _BELOW_MIN_MINORS]
+    + [
+        Version(f"{MIN_PYTHON[0]}.{m}.{_PROBE_MICRO}")
+        for m in _BELOW_MIN_MINORS
+    ]
+    + [Version(f"{MIN_PYTHON[0] - 1}.99")]
+)
 
 # Acceptable URLs for the required default `[[tool.uv.index]]` entry.
 # Both trailing-slash and non-trailing-slash forms are legal.
@@ -125,12 +149,16 @@ def check_requires_python(project: dict, pyproject_path: Path) -> None:
     # too loose (e.g. '>=3.10', '~=3.10', '!=3.11', '<=3.12', unpinned).
     permits_older = [v for v in BELOW_MIN if v in spec]
     if permits_older:
+        # Only surface a real witness version, never a synthetic `.9999`
+        # probe (which is the only match for a micro floor like `>=3.10.5`).
+        real = [v for v in permits_older if v.micro != _PROBE_MICRO]
+        example = f" (e.g. {real[0]})" if real else ""
         emit(
             "FAIL",
             pyproject_path,
             f"[project].requires-python = '{requires_python}' permits Python "
-            f"versions below {MIN_PYTHON_STR} (e.g. {permits_older[0]}); "
-            f"lower bound must be >= {MIN_PYTHON_STR} (per AGENTS.md).",
+            f"versions below {MIN_PYTHON_STR}{example}; lower bound must be "
+            f">= {MIN_PYTHON_STR} (per AGENTS.md).",
         )
         return
 
