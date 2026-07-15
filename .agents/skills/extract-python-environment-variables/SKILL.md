@@ -43,6 +43,11 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
    - `os.environ.get("VAR")` / `os.environ.get("VAR", "default")`
    - `os.getenv("VAR")` / `os.getenv("VAR", "default")`
 
+   Only names matching `^[A-Z_][A-Z0-9_]*$` (UPPER_SNAKE_CASE) are captured;
+   a lowercase name like `os.getenv("my_api_key")` is **skipped** and a
+   `[WARN]` line lists any that were dropped. Rename such vars to uppercase
+   in source, or add them to `.env.example` by hand.
+
 2. **Updates `.env.example`** — appends any variables not already declared.
    - **Every value is the placeholder `<TODO: update-this-value>`.** The
      skill never writes inferred defaults into `.env.example`, even when
@@ -128,8 +133,14 @@ If the user has not specified the recipe directory, ask for it before proceeding
 
 ## Run
 
+Run it through `uv` so it always executes on a Python 3.11+ interpreter — the
+script uses the stdlib `tomllib`, which only exists from 3.11 onward. A bare
+`python3` that resolves to 3.9/3.10 fails with `ModuleNotFoundError: tomllib`.
+No `--with` packages are needed (the script is stdlib-only).
+
 ```bash
-python3 .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
+uv run --no-project python3 \
+  .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
   --recipe-dir <RECIPE_DIR>
 ```
 
@@ -140,7 +151,8 @@ files. Nothing is written to `.env.example`, `__init__.py`, `pyproject.toml`, or
 any source file. Useful for inspecting a recipe before committing to the edits:
 
 ```bash
-python3 .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
+uv run --no-project python3 \
+  .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
   --recipe-dir <RECIPE_DIR> --dry-run
 ```
 

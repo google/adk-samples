@@ -120,6 +120,20 @@ def test_extract_env_vars_ignores_non_uppercase_names(tmp_path):
     assert result == {"OK_NAME": None}
 
 
+def test_extract_env_vars_warns_on_non_uppercase_names(tmp_path, capsys):
+    # Issue 3: lowercase names are dropped, but the drop must be surfaced on
+    # stderr so the maintainer isn't left wondering why the var vanished.
+    src = "import os\nx = os.getenv('lower_case')\ny = os.getenv('OK_NAME')\n"
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    assert result == {"OK_NAME": None}
+    err = capsys.readouterr().err
+    assert "lower_case" in err
+    assert "UPPER_SNAKE_CASE" in err
+
+
 def test_extract_env_vars_non_none_default_wins(tmp_path):
     # Same var appears first without a default, then with one.
     src = "import os\na = os.getenv('DUP')\nb = os.getenv('DUP', 'winner')\n"
@@ -319,6 +333,7 @@ def test_inject_load_dotenv_after_absolute_import_before_relative(tmp_path):
     assert m.inject_load_dotenv(init) is True
 
     content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert m.LOAD_DOTENV_IMPORT in content
     # load_dotenv must land AFTER the absolute import ...
     assert content.index("import os") < content.index("load_dotenv")
@@ -332,6 +347,7 @@ def test_inject_load_dotenv_no_imports_goes_after_docstring(tmp_path):
     assert m.inject_load_dotenv(init) is True
 
     content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert content.index('"""Package docstring."""') < content.index(
         "load_dotenv"
     )
@@ -349,6 +365,7 @@ def test_inject_load_dotenv_adds_noqa_to_trailing_relative_imports(tmp_path):
     assert m.inject_load_dotenv(init) is True
 
     content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     rel_line = next(
         ln for ln in content.splitlines() if ln.startswith("from .agent")
     )
@@ -369,6 +386,7 @@ def test_inject_load_dotenv_ignores_docstring_mention(tmp_path):
     assert m.inject_load_dotenv(init) is True
 
     content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert m.LOAD_DOTENV_IMPORT in content
 
 
@@ -380,6 +398,58 @@ def test_inject_load_dotenv_dry_run_reports_but_does_not_write(tmp_path):
     assert m.inject_load_dotenv(init, dry_run=True) is True
     # ... but leaves the file untouched.
     assert init.read_text(encoding="utf-8") == original
+
+
+def test_inject_load_dotenv_not_placed_inside_docstring(tmp_path):
+    # Regression (Issue 1, failure mode A): an ``import`` line inside the
+    # module docstring must NOT be mistaken for a real import. The old text
+    # scanner inserted the bootstrap inside the triple-quoted string, where
+    # load_dotenv() silently never executed.
+    init = _write(
+        tmp_path / "__init__.py",
+        '"""\n'
+        "Usage example::\n"
+        "    import os\n"
+        '    KEY = os.getenv("API_KEY")\n'
+        '"""\n'
+        "from .agent import root_agent\n",
+    )
+
+    assert m.inject_load_dotenv(init) is True
+
+    content = init.read_text(encoding="utf-8")
+    tree = ast.parse(content)  # (b) result is valid Python
+    # (a) load_dotenv() is a real top-level statement, not text in a string.
+    top_level_calls = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and getattr(node.value.func, "id", None) == "load_dotenv"
+    ]
+    assert len(top_level_calls) == 1
+    # (c) the docstring value is unchanged (still contains the example import).
+    docstring = ast.get_docstring(tree)
+    assert docstring is not None
+    assert "import os" in docstring
+
+
+def test_inject_load_dotenv_ignores_import_inside_conditional(tmp_path):
+    # Regression (Issue 1, failure mode B): an import nested in an if-block is
+    # not a top-level import. The old text scanner inserted the bootstrap
+    # after it, dedenting into the block and raising IndentationError.
+    init = _write(
+        tmp_path / "__init__.py",
+        "import os\nif True:\n    import pdb\n    x = 1\n",
+    )
+
+    assert m.inject_load_dotenv(init) is True
+
+    content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # must remain valid Python (no IndentationError)
+    # load_dotenv lands after the real top-level import, before the block.
+    assert content.index("import os") < content.index("load_dotenv")
+    assert content.index("load_dotenv") < content.index("if True:")
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +695,7 @@ def test_replace_hardcoded_models_replaces_and_adds_import_os(tmp_path):
 
     assert substituted == {"gemini-3.5-flash": "MODEL_NAME"}
     content = py.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert 'os.getenv("MODEL_NAME")' in content
     assert "import os" in content
     assert "gemini-3.5-flash" not in content
@@ -640,6 +711,7 @@ def test_replace_hardcoded_models_handles_single_quotes(tmp_path):
     m.replace_hardcoded_models([py], hits, name_map)
 
     content = py.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert 'os.getenv("MODEL_NAME")' in content
     assert "gemini-3.5-flash" not in content
 
@@ -755,6 +827,36 @@ def test_flat_offset():
 
 
 # ---------------------------------------------------------------------------
+# run_step_pyproject messaging (Issue 4)
+# ---------------------------------------------------------------------------
+
+
+def test_run_step_pyproject_warns_when_insertion_not_possible(tmp_path, capsys):
+    # Issue 4: python-dotenv is genuinely absent and cannot be inserted (no
+    # [project] table). The step must WARN "add by hand" rather than falsely
+    # printing "[PASS] already includes".
+    _write(tmp_path / "pyproject.toml", "[tool.foo]\nx = 1\n")
+
+    m.run_step_pyproject(tmp_path)
+
+    out = capsys.readouterr().out
+    assert "[WARN] Could not safely add python-dotenv" in out
+    assert "already includes" not in out
+
+
+def test_run_step_pyproject_pass_when_already_present(tmp_path, capsys):
+    _write(
+        tmp_path / "pyproject.toml",
+        '[project]\ndependencies = [\n    "python-dotenv>=1.0.0",\n]\n',
+    )
+
+    m.run_step_pyproject(tmp_path)
+
+    out = capsys.readouterr().out
+    assert "[PASS] pyproject.toml already includes python-dotenv" in out
+
+
+# ---------------------------------------------------------------------------
 # main() end-to-end: --dry-run vs a real run
 # ---------------------------------------------------------------------------
 
@@ -822,6 +924,8 @@ def test_main_real_run_applies_changes(tmp_path, monkeypatch):
     assert "load_dotenv" in init_py.read_text(encoding="utf-8")
     assert "python-dotenv" in pyproject.read_text(encoding="utf-8")
     agent_text = agent_py.read_text(encoding="utf-8")
-    # Replacement preserves the original model string as an inline default.
+    # Hard rule: the replacement is BARE os.getenv("MODEL_NAME") — no inferred
+    # default is written, even though the original model string is known.
     assert 'os.getenv("MODEL_NAME")' in agent_text
+    assert 'os.getenv("MODEL_NAME", ' not in agent_text
     assert "gemini-3.5-flash" not in agent_text
