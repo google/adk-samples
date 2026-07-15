@@ -100,6 +100,21 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
                     "Please replace it with a real GitHub ID."
                 )
 
+        # A description left as a "TODO ..." placeholder (e.g. the scaffold
+        # template's default) is long enough to satisfy the schema's
+        # minLength, so it would otherwise slip through. Guard it explicitly,
+        # mirroring the ownership checks above. A prefix match (rather than an
+        # exact string) keeps this robust to wording changes and catches any
+        # hand-written "TODO ..." description too.
+        description = data.get("description")
+        if isinstance(
+            description, str
+        ) and description.strip().upper().startswith("TODO"):
+            errors.append(
+                "  [description] is still a TODO placeholder. Please replace "
+                "it with a real description of what the recipe demonstrates."
+            )
+
     return errors
 
 

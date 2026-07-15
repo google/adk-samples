@@ -62,7 +62,7 @@ python3 .agents/skills/scaffold-python-recipe/scripts/scaffold.py --name <RECIPE
 Once the script succeeds, inform the user the recipe is ready and highlight the following required next steps:
 
 1. **Update `manifest.yaml`**: Fill in the `description`, `ownership.team`, and `ownership.poc` fields (placeholders are marked with `TODO:`). This file is validated by CI and must not contain placeholder values. Use the `generate-manifest` skill if you want it populated automatically from the source code.
-2. **Update `RECIPE.md`**: Fill in the Title, Description, Owner, and Point of Contact fields (used for tracking ownership and support).
+2. **Update `README.md`**: Replace the generic title and description with details specific to this recipe (ownership/POC live in `manifest.yaml`, above — not in the README).
 
 Then, provide these quick-start commands:
 ```bash

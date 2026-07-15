@@ -140,6 +140,26 @@ def test_validate_manifest_placeholder_team_and_poc(tmp_path):
     assert any("ownership.poc" in e for e in errors)
 
 
+def test_validate_manifest_placeholder_description(tmp_path):
+    # A TODO placeholder description is long enough to pass the schema's
+    # minLength, so it must be caught by the explicit placeholder guard.
+    schema = m.load_schema()
+    content = textwrap.dedent(
+        """\
+        type: standalone
+        status: active
+        language: python
+        description: "TODO: Replace with a clear description of what this recipe demonstrates (min 10 characters)."
+        ownership:
+          team: My Team
+          poc: my-github-id
+        """
+    )
+    manifest = _write(tmp_path / "manifest.yaml", content)
+    errors = m.validate_manifest(manifest, schema)
+    assert any("description" in e for e in errors)
+
+
 # ---------------------------------------------------------------------------
 # collect_recipe_dirs (monkeypatch REPO_ROOT to a fake tree)
 # ---------------------------------------------------------------------------
