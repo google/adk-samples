@@ -59,7 +59,7 @@ Runs seven ordered phases against a target recipe. Each phase either invokes an 
 4. **Lint** — `ruff format` + `ruff check --fix` on the recipe (from the repo root, so the root ruff config wins). **Must run AFTER Phase 3** — align removes any recipe-local `[tool.ruff*]` block, and that removal is what makes the root config the effective one. Running lint before align would check against the recipe's (often more permissive) local config and miss violations that CI will later catch.
 5. **Recipe `uv lock`** — regenerate `uv.lock` so it reflects the post-align `pyproject.toml`. Does NOT install into `.venv/` — that's a heavier step the user runs after they've reviewed the diff. `uv lock` just resolves and records; `uv sync` would download and install every wheel, which is scope-creep for a "prepare" pipeline.
 6. **Runnability test** — generate `tests/test_runnability.py` if missing (or ask before overwriting).
-7. **Verify (compile-check)** — `python -m py_compile <RECIPE>/tests/test_runnability.py` — a lightweight sanity check that the generated (or existing) test file is syntactically valid Python. Deterministic; does NOT execute the test, resolve imports, or require `.env` to exist. If it fails, the master reports the error verbatim and moves on (the summary marks Phase 7 as failed). The master does NOT attempt to diagnose or fix — that's a human review task.
+7. **Verify (compile-check)** — `uv run --no-project python3 -m py_compile <RECIPE>/tests/test_runnability.py` — a lightweight sanity check that the generated (or existing) test file is syntactically valid Python. Deterministic; does NOT execute the test, resolve imports, or require `.env` to exist. If it fails, the master reports the error verbatim and moves on (the summary marks Phase 7 as failed). The master does NOT attempt to diagnose or fix — that's a human review task.
 
 At the end, print a summary table and remind the user to `git diff` and commit — the skill never commits.
 
@@ -76,10 +76,11 @@ At the end, print a summary table and remind the user to `git diff` and commit �
 4. **Exception for pure-instructions skills**: `generate-manifest` has no script — it's a pure-instructions skill. For that one only, load its SKILL.md (via the `skill` tool) and follow it inline.
 
 5. **Fixed checkpoints — always pause here**:
-   - **Manifest team/POC verification** — after Phase 1, `manifest.yaml` will contain the placeholders `"TODO: Replace with your team name"` and `"TODO: Replace with your GitHub user ID"`. Show them and ask for real values.
+   - **Manifest team/POC verification** — after Phase 1, `manifest.yaml` will contain the placeholders `"TODO: Replace with your team name"` and `"TODO: Replace with your GitHub user ID"`. Show them and ask for real values. (These exact strings are the canonical placeholders that `generate-manifest` writes AND that `tools/validate_manifest.py` enforces in CI — the three must stay in sync; if the validator's strings ever change, update this checkpoint, Phase 1c, and generate-manifest together.)
    - **Description mismatch** — if Phase 3 returns `needs_input` for `description-matches-manifest`, show both sides and ask the user to pick `pyproject`, `manifest`, or `delete`.
    - **Test file exists** — before Phase 6, if `tests/test_runnability.py` already exists, ask whether to regenerate (default: keep existing). Regeneration uses `--overwrite`.
-   - **Anything a sub-script flags as `error`** — surface the message, stop the pipeline, do NOT retry.
+   - **Entry point not found (Phase 6)** — if the runnability-test generator errors because no `agent.py` was found, surface the message and offer to re-run with `--agent-file <path>` once the user says where the entry point is. This is the one `error` case with a defined recovery instead of a hard stop.
+   - **Anything else a sub-script flags as `error`** — surface the message, stop the pipeline, do NOT retry (the entry-point case above is the only exception).
 
 6. **Judgment-based interruptions — pause when it genuinely helps.** This skill is interactive by design. Beyond the fixed checkpoints in rule 5, feel free to interrupt any time doing so meaningfully improves the outcome. Some situations where a pause is appropriate:
    - A sub-script returns unexpected detections (e.g. the runnability-test generator reports `has_root_agent: false` — a legit recipe should always have one; something may be wrong).
@@ -119,7 +120,15 @@ If the user has not specified the recipe directory, ask for it before proceeding
 
 ### Phase 0 — plan + confirm (do this first, always)
 
-Before running anything, quickly confirm the prerequisites and show the user the plan:
+**First, verify the recipe directory actually exists** — a path typo shouldn't cost the user the whole plan-confirmation round-trip only to fail in Phase 1:
+
+```bash
+[ -d <RECIPE_DIR> ] || { echo "Recipe directory not found: <RECIPE_DIR>"; exit 1; }
+```
+
+If it isn't a directory, stop immediately with that message — do NOT show the plan or prompt.
+
+Then, before running anything, quickly confirm the prerequisites and show the user the plan:
 
 > Prerequisites (I'll assume these are done — tell me if not):
 >   - You've deactivated any active venv.
@@ -160,18 +169,18 @@ Progress line: `Phase 1 (manifest): generated | pre-existing; team=<x>, poc=<y>.
 Invoke the script directly:
 
 ```bash
-python3 .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
+uv run --no-project python3 .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
   --recipe-dir <RECIPE_DIR>
 ```
 
-(No `--dry-run` — master runs it in apply mode.)
+(No `--dry-run` — master runs it in apply mode. Use `uv run --no-project python3`, not a bare `python3`: the script imports `tomllib`, which is stdlib only on Python 3.11+, and uv's managed interpreter guarantees that.)
 
 The script:
 - Appends any newly-discovered env vars to `.env.example`
 - Injects `load_dotenv()` into the package `__init__.py` if missing
 - Adds `python-dotenv>=1.0.0` to `[project].dependencies` if missing
 
-Read the script's stdout (human-readable table). Extract the counts: how many vars added, whether `load_dotenv` was injected, whether `python-dotenv` was added.
+Read the script's stdout (structured `[INFO]` / `[PASS]` / `[WARN]` log lines, not a table). Extract the counts: how many vars added, whether `load_dotenv` was injected, whether `python-dotenv` was added.
 
 Progress line: `Phase 2 (env vars): <N> vars added to .env.example, load_dotenv <injected|already present>, python-dotenv <added|already present>.`
 
@@ -215,7 +224,9 @@ uv run ruff format <RECIPE_DIR>
 uv run ruff check --fix <RECIPE_DIR>
 ```
 
-If `ruff check` reports remaining un-fixable errors (exit non-zero), the recipe has genuine violations that ruff can't auto-fix (typically `C901` complex-structure, `PLR0912/0915` too-many-branches/statements). Do NOT stop the pipeline — note them in the summary as a Manual TODO so the user can refactor or add per-file `# noqa` markers after review.
+`ruff check`'s exit code matters here — do NOT treat every non-zero code the same way:
+- **Exit 1** — genuine violations ruff can't auto-fix (typically `C901` complex-structure, `PLR0912/0915` too-many-branches/statements). Do NOT stop the pipeline — note them in the summary as a Manual TODO so the user can refactor or add per-file `# noqa` markers after review.
+- **Exit 2** — ruff itself errored (invalid config, a file-system problem, or a bug in ruff), NOT a violation count. Phase 4 effectively did not run, so treat this as a hard error under rule 7: stop the pipeline and surface the message. Do not mistake it for "violations remain" and continue.
 
 Progress line: `Phase 4 (lint): <N> file(s) formatted, <M> issue(s) auto-fixed, <K> unfixable issue(s) left.`
 
@@ -251,11 +262,13 @@ Progress line: `Phase 5 (recipe lock): uv lock completed.`
 **6b. If missing** — generate:
 
 ```bash
-python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
+uv run --no-project python3 .agents/skills/generate-python-runnability-test/scripts/generate_runnability_test.py \
   --recipe-dir <RECIPE_DIR>
 ```
 
-**6b. If exists** — pause and ask the user: keep existing (default) or regenerate. If they choose regenerate, run with `--overwrite`.
+(Use `uv run --no-project python3`, not a bare `python3`, so a modern managed interpreter runs it — matching this sub-skill's own SKILL.md and the rest of the pipeline.)
+
+**6b. If exists** — pause and ask the user: keep existing (default) or regenerate. If they choose regenerate, re-run the same command with `--overwrite` appended.
 
 If the script errors (no `agent.py` found), surface the message and offer to re-run with `--agent-file <path>` when the user tells you where the entry point is.
 
@@ -274,8 +287,10 @@ Runs LAST. Lightweight sanity check that the generated (or existing) `tests/test
 **7b. Compile.**
 
 ```bash
-python -m py_compile <RECIPE_DIR>/tests/test_runnability.py
+uv run --no-project python3 -m py_compile <RECIPE_DIR>/tests/test_runnability.py
 ```
+
+Use `uv run --no-project python3` here too — not a bare `python`/`python3`. Two reasons: `python` may not be on PATH at all on some systems, and (more importantly) a guarded test with multiple patches emits a parenthesized `with (...)` block, which is **Python 3.10+ syntax**. Compiling it under an older system interpreter would report a spurious `SyntaxError` on a file that is actually valid. uv's managed interpreter is 3.11+, so this is a true syntax check rather than a version artifact.
 
 Report per outcome:
 - Exit 0 → **pass.** Progress line: `Phase 7 (verify): compile OK.`
@@ -344,7 +359,7 @@ Cases that go here:
 Example:
 
 > - **Phase 4 (ruff)** — 2 violations remain that `ruff check --fix` can't auto-fix: `app/deploy.py:276` (`C901`, `PLR0915`), `app/tools.py:52` (`C901`). Refactor or add `# noqa: <codes>` at the def line.
-> - **Phase 7 (verify)** — `python -m py_compile tests/test_runnability.py` failed: `SyntaxError: invalid syntax (line 14)`. Likely a generator bug or hand-edit; regenerate or fix before running pytest.
+> - **Phase 7 (verify)** — `uv run --no-project python3 -m py_compile tests/test_runnability.py` failed: `SyntaxError: invalid syntax (line 14)`. Likely a generator bug or hand-edit; regenerate or fix before running pytest.
 
 ### 4. What you still need to do
 
@@ -352,7 +367,7 @@ A single short TODO list. Keep every entry to one line. Standard items come firs
 
 **Standard — always include (skip only if genuinely N/A):**
 
-1. **Verify manifest** — open `<RECIPE_DIR>/manifest.yaml` and confirm `ownership.team` and `ownership.poc` are correct.
+1. **Verify manifest** — open `<RECIPE_DIR>/manifest.yaml` and confirm `ownership.team` and `ownership.poc` are correct. Omit this item if the user supplied real values at the Phase 1c prompt during this run — they just confirmed them, so re-listing it is noise. Keep it when the manifest pre-existed with values the pipeline never asked the user about.
 2. **Fill in `.env.example`** — replace each `<TODO: ...>` placeholder with the real value (or delete the line if the variable isn't used).
 3. **Review the diff** — `cd <RECIPE_DIR> && git diff` — inspect every change the pipeline made before committing.
 
