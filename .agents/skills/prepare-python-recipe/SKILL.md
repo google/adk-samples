@@ -76,7 +76,7 @@ At the end, print a summary table and remind the user to `git diff` and commit �
 4. **Exception for pure-instructions skills**: `generate-manifest` has no script — it's a pure-instructions skill. For that one only, load its SKILL.md (via the `skill` tool) and follow it inline.
 
 5. **Fixed checkpoints — always pause here**:
-   - **Manifest team/POC verification** — after Phase 1, `manifest.yaml` will contain the placeholders `"YOUR TEAM NAME"` and `"your-github-id"`. Show them and ask for real values.
+   - **Manifest team/POC verification** — after Phase 1, `manifest.yaml` will contain the placeholders `"TODO: Replace with your team name"` and `"TODO: Replace with your GitHub user ID"`. Show them and ask for real values.
    - **Description mismatch** — if Phase 3 returns `needs_input` for `description-matches-manifest`, show both sides and ask the user to pick `pyproject`, `manifest`, or `delete`.
    - **Test file exists** — before Phase 6, if `tests/test_runnability.py` already exists, ask whether to regenerate (default: keep existing). Regeneration uses `--overwrite`.
    - **Anything a sub-script flags as `error`** — surface the message, stop the pipeline, do NOT retry.
@@ -151,7 +151,7 @@ Get a yes-or-no. If no, stop.
 
 **1b. If exists** — skip generation. Note it in the summary.
 
-**1c. Verify team/POC** — regardless of whether we generated fresh or the file already existed, read `manifest.yaml` and locate `ownership.team` and `ownership.poc`. If either equals a placeholder value (`"YOUR TEAM NAME"` or `"your-github-id"`), pause and ask the user for real values. When they answer, edit `manifest.yaml` in place (use the `edit` tool). If both are already filled in, do not ask.
+**1c. Verify team/POC** — regardless of whether we generated fresh or the file already existed, read `manifest.yaml` and locate `ownership.team` and `ownership.poc`. If either equals a placeholder value (`"TODO: Replace with your team name"` or `"TODO: Replace with your GitHub user ID"`), pause and ask the user for real values. When they answer, edit `manifest.yaml` in place (use the `edit` tool). If both are already filled in, do not ask.
 
 Progress line: `Phase 1 (manifest): generated | pre-existing; team=<x>, poc=<y>.`
 

@@ -31,17 +31,18 @@ Read the following files if they exist:
 
 | Field | Rule |
 |---|---|
-| `type` | Infer from code: `standalone` if it has its own runnable entry point; `module` if it is only importable. |
+| `type` | Infer from code. `standalone` = has its own runnable entry point: look for an `if __name__ == "__main__"` block, a `make playground`/run target, an `adk web`/`adk run` invocation, or a CLI. `module` = only importable (it just exports a `root_agent`/`Agent` for another workflow to orchestrate, with no way to run on its own). When ambiguous, re-read the schema's `type` description and prefer `module` only when there is genuinely no entry point. |
 | `deployable` | OPTIONAL. `true` only if a single `make` target or script deploys everything with no manual steps. Omit the field entirely if false (schema default is `false`). |
+| `large` | OPTIONAL. Omit if the recipe has fewer than 50 files and less than 1 MB of bundled data (schema default is `false`). Set `large: true` only if it exceeds that tier (up to 200 files / 10 MB). |
 | `status` | Always `"active"` unless there is explicit evidence of abandonment. |
 | `language` | Read from file extensions or `pyproject.toml`. Never guess. |
-| `description` | Read `README.md` and `AGENTS.md` only (author-written intent, not code). Write a draft of at most 15 words summarising what the recipe does. Append the comment `# TODO: review and expand this draft description`. If neither file exists or the intent is unclear, fall back to `"DESCRIPTION"` with the same TODO comment. |
+| `description` | Read `README.md` and `AGENTS.md` only (author-written intent, not code). Write a draft of at most 15 words summarising what the recipe does. The schema requires at least 10 characters, so keep the draft comfortably above that. Append the comment `# TODO: review and expand this draft description`. If neither file exists or the intent is unclear, fall back to `"DESCRIPTION"` with the same TODO comment. |
 | `architecture.agent` | Infer from code only: count `Agent(` or equivalent constructor calls. `single` or `multi`. Omit the whole `architecture` block if uncertain. |
 | `architecture.stateful` | Infer from code: `true` only if the recipe writes persistently to an external system (DB, vector store, GCS) during normal operation — not just one-time setup. |
 | `architecture.datasources` | Infer from code: `hardcoded` = data literals in source; `local` = files bundled in repo; `external` = live systems queried at runtime. Can be multiple. |
 | `dependencies` | Include the block but comment it out entirely. Do NOT infer library or service names — GCP product names change and guesses will be wrong. Use the commented-out sample shown in the template. |
-| `ownership.team` | Always use the placeholder `"YOUR TEAM NAME"`. Never invent or infer a team name. |
-| `ownership.poc` | Always use the placeholder `"your-github-id"`. Never invent or infer a GitHub ID from email addresses, file authors, or any other source. |
+| `ownership.team` | Always use the exact placeholder `"TODO: Replace with your team name"` — this is the literal string the validator checks for, so it correctly fails validation until a human fills it in. Never invent or infer a team name. |
+| `ownership.poc` | Always use the exact placeholder `"TODO: Replace with your GitHub user ID"` — this is the literal string the validator checks for. Never invent or infer a GitHub ID from email addresses, file authors, or any other source. |
 | `ownership.contributors` | OPTIONAL. Omit the field entirely. Leave a commented-out sample line so the author knows it exists. Never infer contributor IDs. |
 | `tags` | Include but comment out entirely, with a sample entry showing the expected style. Do NOT generate real tags — tag choices are the author's call. |
 
@@ -51,63 +52,39 @@ Before writing the manifest, briefly state what you found for each inferred fiel
 
 ### 5. Write the manifest
 
-Write `manifest.yaml` to the root of the recipe directory. Follow this format exactly — include inline comments for every field documenting the allowed values, matching the style of the reference manifest in `tools/` or `core/`:
+Write `manifest.yaml` to the root of the recipe directory. Match the concise inline-comment style used by the existing manifests in `core/` — allowed values shown as `# Options: [...]` after each field:
 
 ```yaml
-# REQUIRED — Recipe type.
-#   standalone : complete, runnable recipe with its own entry point
-#   module     : importable sub-agent meant to be orchestrated by another workflow
-type: "..."
+type: "..."          # Options: [standalone | module]
+status: "active"     # Options: [active | inactive]
+language: "..."      # Options: [python | java | go | kotlin | typescript]
+description: "..."   # TODO: review and expand this draft description
 
-# OPTIONAL — One-click/one-command deployable with no manual steps? Omit if false (default).
-# deployable: true
+# deployable: true   # (optional) one-command deploy, no manual steps; omit if false (default)
+# large: true        # (optional) set only if the recipe exceeds 50 files / 1 MB (max 200 files / 10 MB); omit if false (default)
 
-# REQUIRED — Maintenance status.
-#   active | inactive
-status: "active"
-
-# REQUIRED — Primary programming language.
-#   python | java | go | kotlin | typescript
-language: "..."
-
-# REQUIRED — Short description of what this recipe does and the value it provides.
-description: "..."  # TODO: review and expand this draft description
-
-# OPTIONAL — Agent architecture details. Omit the whole block if unknown.
-architecture:
-  # single | multi
-  agent: "..."
-
-  # true  : recipe writes persistently to an external system during normal operation
-  # false : read-only at runtime
-  stateful: false
-
-  # One or more of: hardcoded | local | external
-  #   hardcoded : data literals embedded in source code
-  #   local     : files bundled in the repo
-  #   external  : live system queried at runtime (DB, API, etc.)
-  datasources:
+architecture:          # (optional) omit the whole block if nothing below can be inferred from code
+  agent: "..."          # Options: [single | multi]
+  stateful: false       # Options: [true | false]
+  datasources:          # Options: [hardcoded | local | external]
     - "..."
 
-# OPTIONAL — Library and service dependencies.
-# dependencies:
+# dependencies: (optional) uncomment and fill in with canonical names
 #   libraries:
 #     - "ADK"
-#     - "pandas"     # replace with actual libraries used
+#     - "pandas"            # example — replace with actual libraries used
 #   services:
 #     - "GCP Project"
-#     - "Cloud Run"  # replace with actual GCP/external services used
+#     - "Cloud Run"         # example — replace with actual GCP/external services used
 
-# REQUIRED — Ownership. team and poc are required; contributors is optional.
 ownership:
-  team: "YOUR TEAM NAME"  # TODO: replace with your team name
-  poc: "your-github-id"   # TODO: replace with the GitHub ID of the primary contact
-  # contributors:          # TODO: optional — add GitHub IDs of additional contributors
+  team: "TODO: Replace with your team name"
+  poc: "TODO: Replace with your GitHub user ID"
+  # contributors: (optional) uncomment and add GitHub IDs of additional contributors
   #   - "github-id-1"
 
-# OPTIONAL — Classification tags (technology names, patterns, use-case keywords).
-# tags:
-#   - "rag"
+# tags: (optional) uncomment and replace with meaningful labels
+#   - "rag"               # example — use technology names, patterns, and use-case keywords
 #   - "gemini"
 ```
 
@@ -115,16 +92,23 @@ Omit `architecture` entirely if none of its sub-fields can be determined from th
 
 ### 6. Validate
 
-After writing the manifest, run the validation tool from the `tools/` directory:
+After writing the manifest, run the validator **from the repo root** (do not `cd` into `tools/`, and do not pass `--active`):
 
 ```bash
-cd tools && uv run --active validate manifest <recipe-path>
+uv run validate manifest <recipe-path>
 ```
 
-If validation fails, fix the errors and re-validate until it passes. Report the final `[PASS]` output to the user. Do not change or modify any other files in the repository. Also do not commit the changes.
+`<recipe-path>` must be **relative to the repo root** (e.g. `core/python/my-recipe`), not an absolute path.
+
+Interpret the result carefully — there are two kinds of failure:
+
+- **Real schema errors** (missing required field, invalid enum value, description under 10 characters, malformed YAML): fix these in the manifest and re-validate until they are gone.
+- **`ownership.team` / `ownership.poc` placeholder errors**: these are EXPECTED and must be left as-is. The validator deliberately fails while the placeholders are in place, to force a human to supply real values before merge. Do NOT invent a team name or GitHub ID to make validation pass.
+
+So a correctly generated manifest will still report `[FAIL]` — but only on the two ownership placeholders, and nothing else. That is the intended outcome; report it to the user as "valid except for the ownership placeholders you need to fill in". Do not change or modify any other files in the repository. Also do not commit the changes.
 
 ### 7. Report back
 
 Tell the user:
 1. What was inferred from the code and which file/line supports each inference.
-2. Which fields need human input: `description` (draft generated — must be reviewed and expanded), `ownership.team`, `ownership.poc` (placeholders), and `dependencies`/`tags` (commented out, ready to uncomment and fill in).
+2. Which fields need human input before the manifest will pass validation: `ownership.team` and `ownership.poc` (placeholders — validation intentionally fails until these are replaced with real values). Also flag `description` (draft generated — must be reviewed and expanded) and `dependencies`/`tags` (commented out, ready to uncomment and fill in).
