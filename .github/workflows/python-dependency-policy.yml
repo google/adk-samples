@@ -224,6 +224,11 @@ jobs:
       # In uv.lock, path/editable/directory sources use unquoted keys in inline
       # tables: source = { path = "..." } or source = { editable = "..." }.
       # These only exist on the committer's machine and break all other environments.
+      #
+      # Exception: source = { editable = "." } is the standard uv self-install
+      # entry that every `uv sync` writes for the workspace root package itself.
+      # It refers to the current directory — the recipe being installed — not a
+      # foreign machine-specific path, so it must not be flagged.
       # ---------------------------------------------------------------------------
       - name: Check for local path dependencies
         if: steps.lockfiles.outputs.lockfiles_file != ''
@@ -235,9 +240,11 @@ jobs:
           FAILED=0
 
           while IFS= read -r lockfile; do
-            # Same \b fix as Check 2: catches source = { path = "..." } etc.
-            # with or without a leading space after the opening brace.
-            MATCHES=$(grep -En 'source\s*=.*\b(path|editable|directory)\s*=' "$lockfile" || true)
+            # Step 1: find all lines with a path/editable/directory source key.
+            # Step 2: drop the self-referential editable = "." (the project's own
+            #         workspace entry — always present, never a foreign path).
+            MATCHES=$(grep -En 'source\s*=.*\b(path|editable|directory)\s*=' "$lockfile" | \
+              grep -Ev '\b(editable|path|directory)\s*=\s*"\."' || true)
             if [ -n "$MATCHES" ]; then
               echo "[FAIL] $lockfile contains local path dependencies:"
               echo "$MATCHES" | sed 's/^/  /'

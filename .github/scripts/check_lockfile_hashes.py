@@ -29,6 +29,29 @@ _NO_HASH_SOURCE_KEYS = frozenset(
 )
 
 
+def _check_package(
+    pkg: dict,
+    missing: list[str],
+    bad_hash: list[str],
+) -> None:
+    """Validate hashes for all distributions in one lockfile package entry."""
+    source = pkg.get("source", {})
+    if any(key in source for key in _NO_HASH_SOURCE_KEYS):
+        return
+
+    name = pkg.get("name", "<unknown>")
+    version = pkg.get("version", "")
+    dists = pkg.get("wheels", []) + ([pkg["sdist"]] if "sdist" in pkg else [])
+
+    for dist in dists:
+        url_or_path = dist.get("url", dist.get("path", "?"))
+        hash_val = dist.get("hash", "")
+        if not hash_val:
+            missing.append(f"  {name}=={version}: {url_or_path}")
+        elif not _HASH_RE.match(hash_val):
+            bad_hash.append(f"  {name}=={version}: malformed hash {hash_val!r}")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         print(
@@ -46,40 +69,21 @@ def main() -> None:
         print(f"[FAIL] {lockfile_path}: file not found", file=sys.stderr)
         sys.exit(1)
     except tomllib.TOMLDecodeError as exc:
-        print(
-            f"[FAIL] {lockfile_path} is not valid TOML: {exc}", file=sys.stderr
-        )
+        print(f"[FAIL] {lockfile_path} is not valid TOML: {exc}", file=sys.stderr)
         sys.exit(1)
 
     missing: list[str] = []
     bad_hash: list[str] = []
 
     for pkg in data.get("package", []):
-        name = pkg.get("name", "<unknown>")
-        version = pkg.get("version", "")
-        source = pkg.get("source", {})
-
-        if any(key in source for key in _NO_HASH_SOURCE_KEYS):
-            continue
-
-        for dist in pkg.get("wheels", []) + (
-            [pkg["sdist"]] if "sdist" in pkg else []
-        ):
-            url_or_path = dist.get("url", dist.get("path", "?"))
-            hash_val = dist.get("hash", "")
-            if not hash_val:
-                missing.append(f"  {name}=={version}: {url_or_path}")
-            elif not _HASH_RE.match(hash_val):
-                bad_hash.append(
-                    f"  {name}=={version}: malformed hash {hash_val!r}"
-                )
+        _check_package(pkg, missing, bad_hash)
 
     if missing or bad_hash:
         print(f"[FAIL] {lockfile_path} — hash issues:")
-        for line in missing:
-            print(line)
-        for line in bad_hash:
-            print(line)
+        for entry in missing:
+            print(entry)
+        for entry in bad_hash:
+            print(entry)
         sys.exit(1)
 
 

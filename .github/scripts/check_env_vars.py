@@ -277,8 +277,8 @@ def _collect_used_vars(recipe_dir: Path) -> set[str]:
 def _parse_env_example(env_example: Path) -> set[str]:
     """Return the set of variable names declared in .env.example."""
     defined: set[str] = set()
-    for line in env_example.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
+    for raw in env_example.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
         if not line or line.startswith("#"):
             continue
         m = re.match(r"^(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=", line)
