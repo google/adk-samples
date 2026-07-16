@@ -134,7 +134,7 @@ If the user has not specified the recipe directory, ask for it before proceeding
 
 ### Phase 0 — plan + confirm (do this first, always)
 
-**First, verify the recipe directory actually exists** — a path typo shouldn't cost the user the whole plan-confirmation round-trip only to fail in Phase 1:
+**Step 0a — Verify the recipe directory actually exists.** A path typo shouldn't cost the user the whole plan-confirmation round-trip only to fail in Phase 1:
 
 ```bash
 [ -d <RECIPE_DIR> ] || { echo "Recipe directory not found: <RECIPE_DIR>"; exit 1; }
@@ -142,7 +142,21 @@ If the user has not specified the recipe directory, ask for it before proceeding
 
 If it isn't a directory, stop immediately with that message — do NOT show the plan or prompt.
 
-Then, before running anything, briefly flag the assumptions the pipeline is making and show the user the plan. Do NOT frame these as "prerequisites" — they're a heads-up so the user can push back if any assumption is wrong, not a preflight checklist for the user to tick off:
+**Step 0b — Verify the recipe folder name matches CI's naming rules.** `python-validate-recipe.yml`'s Check 1 (folder-name regex + max length) rejects folders that don't match `^[a-z][a-z-]*$` or exceed `.github/policy.yml` `recipe_naming.max_folder_name_length`. Historically the pipeline was BLIND to this — it would run all 7 phases against a folder named `data_science` or `MyBadName`, report success, and let CI reject the PR later (or worse: Phase 3's `project-name-matches-folder` would propagate the bad name into `[project].name`). This check catches it up front.
+
+```bash
+MAX_LEN=$(uv run --no-project --with pyyaml python3 .github/scripts/load_policy.py recipe_naming.max_folder_name_length)
+uv run --no-project python3 .agents/skills/prepare-python-recipe/scripts/check_folder_name.py \
+  --recipe-dir <RECIPE_DIR> --max-length "$MAX_LEN"
+```
+
+The check exits 0 silently on a compliant name; on violation it exits 1 with the specific offending characters, the length overrun (if any), and a suggested compliant name derived from the current one (lowercase, `_` → `-`, drop disallowed characters, truncate on a hyphen boundary). The suggestion is ADVISORY — the script never renames anything.
+
+**If it fails, HALT the pipeline before Phase 1.** Print the script's stderr verbatim (it already includes the suggestion and the manual `git mv` command). Do NOT show the plan, do NOT prompt to proceed, do NOT ask "want me to rename?" — renaming a recipe directory is the user's decision, not the skill's. They rename by hand and re-invoke the skill.
+
+**Only proceed past this step if the folder-name check passed.**
+
+**Step 0c — Show the plan and get confirmation.** Before running anything, briefly flag the assumptions the pipeline is making and show the user the plan. Do NOT frame these as "prerequisites" — they're a heads-up so the user can push back if any assumption is wrong, not a preflight checklist for the user to tick off:
 
 > A few things I'm assuming — say so if any aren't true:
 >   - You've deactivated any active venv.
