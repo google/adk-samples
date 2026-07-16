@@ -22,8 +22,8 @@ architecture:
 #     - "Cloud Run"         # example — replace with actual GCP/external services used
 
 ownership:
-  team: "TODO: Replace with your team name"
-  poc: "TODO: Replace with your GitHub user ID"
+  team: "Replace with your team name"
+  poc: "Replace with your GitHub user ID"
   # contributors: (optional) uncomment and add GitHub IDs of additional contributors
   #   - "github-id-1"
 
