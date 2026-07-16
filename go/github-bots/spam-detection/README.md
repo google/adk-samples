@@ -87,9 +87,9 @@ go run . -issue 123
 | --- | --- | --- |
 | `GITHUB_TOKEN` | — (required) | Token with `issues: write`. |
 | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | — | Gemini API key (or use Vertex AI). |
-| `OWNER` | `google` | Repository owner. |
-| `REPO` | `adk-go` | Repository name. |
-| `LLM_MODEL_NAME` | `gemini-3.5-flash` | Model to use. |
+| `OWNER` | — (required) | Repository owner. |
+| `REPO` | — (required) | Repository name. |
+| `LLM_MODEL_NAME` | `gemini-flash-latest` | Model to use. |
 | `SPAM_LABEL_NAME` | `spam` | Label applied to flagged issues (must already exist). |
 | `MAINTAINERS` | (empty) | Comma-separated logins whose comments are trusted and never reviewed. |
 | `ISSUE_COUNT` | `3` | Max issues per scheduled sweep (most-recently-updated first). |
@@ -134,6 +134,10 @@ jobs:
       issue_number: ${{ github.event.issue.number || inputs.issue }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
       maintainers: 'octocat,hubot'
+      # Pin the bot CODE to the same commit as the workflow above. Omitting this
+      # runs adk-samples@main, so a pinned `uses:` would still execute unpinned
+      # code — set both to the same <commit-sha> for a reproducible run.
+      samples_ref: <commit-sha>
     secrets:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 ```

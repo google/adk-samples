@@ -30,6 +30,15 @@ func TestRenderPromptNoStrayBraces(t *testing.T) {
 	}
 }
 
+func TestRenderPromptStripsBracesFromConfig(t *testing.T) {
+	// A brace arriving via a config value (e.g. an odd spam label) must not leak
+	// into the instruction, where llmagent would treat it as a missing state key.
+	cfg := &Config{Owner: "google", Repo: "adk-go", SpamLabel: "spam{bot}"}
+	if out := renderPrompt(cfg); strings.ContainsAny(out, "{}") {
+		t.Errorf("renderPrompt() with a braced label left stray brace(s):\n%s", out)
+	}
+}
+
 func TestRenderPromptSubstitutesPlaceholders(t *testing.T) {
 	cfg := &Config{Owner: "acme", Repo: "widgets", SpamLabel: "junk"}
 	out := renderPrompt(cfg)

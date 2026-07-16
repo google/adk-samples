@@ -57,6 +57,42 @@ func testClient(t *testing.T, cfg *Config, h http.Handler) *GitHubClient {
 	}
 }
 
+func TestFetchIssueGraphQLErrorFailsLoud(t *testing.T) {
+	// A transient GraphQL error returns issue:null WITH an error. It must surface
+	// as a real error (fail loud), not be masked as ErrIssueNotFound (which would
+	// silently skip the issue and exit 0).
+	const body = `{"data":{"repository":{"issue":null}},"errors":[{"message":"rate limited"}]}`
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	_, err := c.FetchIssue(context.Background(), 5)
+	if err == nil || errors.Is(err, ErrIssueNotFound) || !strings.Contains(err.Error(), "rate limited") {
+		t.Fatalf("FetchIssue() error = %v, want a graphql error (not ErrIssueNotFound)", err)
+	}
+}
+
+func TestFetchIssueCanonicalizesBotLogin(t *testing.T) {
+	// GraphQL returns a bare bot login ("github-actions"); toIssue must canonicalize
+	// it to the REST "[bot]" form so the ignore filter and self-identity match.
+	const body = `{"data":{"repository":{"issue":{
+		"number":5,"title":"t","body":"b",
+		"author":{"login":"alice","__typename":"User"},
+		"authorAssociation":"NONE","labels":{"nodes":[]},
+		"comments":{"nodes":[
+			{"author":{"login":"github-actions","__typename":"Bot"},"authorAssociation":"NONE","body":"beep"}
+		]}}}}}`
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	iss, err := c.FetchIssue(context.Background(), 5)
+	if err != nil {
+		t.Fatalf("FetchIssue() error = %v", err)
+	}
+	if len(iss.Comments) != 1 || iss.Comments[0].Author != "github-actions[bot]" {
+		t.Errorf("bot comment author = %q, want canonical %q", iss.Comments[0].Author, "github-actions[bot]")
+	}
+}
+
 func TestSearchSpamCandidatesExcludesPRs(t *testing.T) {
 	const body = `{"total_count":3,"incomplete_results":false,"items":[
 		{"number":1},

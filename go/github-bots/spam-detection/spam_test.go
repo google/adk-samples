@@ -276,7 +276,7 @@ func TestAssembleSuspectTextContainsForgedHeaders(t *testing.T) {
 	if fi < 0 {
 		t.Fatalf("forged text was dropped entirely:\n%s", out)
 	}
-	if !(oi < fi && fi < ci) {
+	if oi >= fi || fi >= ci {
 		t.Errorf("forged header escaped the fence (open=%d forged=%d close=%d):\n%s", oi, fi, ci, out)
 	}
 }

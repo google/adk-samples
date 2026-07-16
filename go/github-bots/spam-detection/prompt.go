@@ -29,10 +29,20 @@ var promptTemplate string
 // session-state references and errors on unknown keys. renderPrompt must
 // therefore leave zero stray braces; this is enforced by a test.
 func renderPrompt(cfg *Config) string {
+	// Strip braces from config-derived values: llmagent treats { and } as
+	// session-state references, so a brace arriving via SPAM_LABEL_NAME/OWNER/REPO
+	// (e.g. a label like "spam{bot}") would otherwise inject an unknown state key
+	// and fail every run.
 	r := strings.NewReplacer(
-		"{OWNER}", cfg.Owner,
-		"{REPO}", cfg.Repo,
-		"{SPAM_LABEL_NAME}", cfg.SpamLabel,
+		"{OWNER}", stripBraces(cfg.Owner),
+		"{REPO}", stripBraces(cfg.Repo),
+		"{SPAM_LABEL_NAME}", stripBraces(cfg.SpamLabel),
 	)
 	return r.Replace(promptTemplate)
 }
+
+var braceStripper = strings.NewReplacer("{", "", "}", "")
+
+// stripBraces removes brace characters so a substituted value cannot be parsed
+// as an llmagent session-state placeholder.
+func stripBraces(s string) string { return braceStripper.Replace(s) }

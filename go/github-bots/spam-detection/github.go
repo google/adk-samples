@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,10 +70,12 @@ func NewGitHubClient(ctx context.Context, cfg *Config, log *slog.Logger) (*GitHu
 		maintainers: maintainerSet(cfg.Maintainers),
 	}
 
-	// Resolve identity once. github-actions[bot] already ends in "[bot]" (so the
-	// author filter ignores it), but resolving the login makes the bot robust to
-	// any token identity (e.g. a PAT).
-	if u, _, err := rest.Users.Get(ctx, ""); err == nil {
+	// Resolve identity once, under a short timeout so a hanging API call can't
+	// stall startup indefinitely. Resolving the login makes the bot robust to any
+	// token identity (e.g. a PAT); on failure it falls back to suffix filtering.
+	idCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if u, _, err := rest.Users.Get(idCtx, ""); err == nil {
 		c.selfLogin = u.GetLogin()
 		log.Info("resolved bot identity", "login", c.selfLogin)
 	} else {
@@ -176,6 +179,10 @@ func (c *GitHubClient) SearchSpamCandidates(ctx context.Context) ([]int, error) 
 
 type ghActor struct {
 	Login string `json:"login"`
+	// Typename is the GraphQL __typename ("Bot" for bot accounts). GitHub's
+	// GraphQL API returns a bare bot login (e.g. "github-actions") without the
+	// "[bot]" suffix that REST appends, so the type is the reliable bot signal.
+	Typename string `json:"__typename"`
 }
 
 type ghComment struct {
@@ -203,6 +210,14 @@ type rawIssue struct {
 func login(a *ghActor) string {
 	if a == nil {
 		return ""
+	}
+	// Canonicalize a bot login to the REST "[bot]" form. GraphQL returns the bare
+	// login (e.g. "github-actions"), but selfLogin is resolved via REST
+	// ("github-actions[bot]") and the ignore filter matches on the "[bot]"
+	// suffix; without this, bot content would slip through to the model and the
+	// bot could fail to recognize its own alert comments.
+	if a.Typename == "Bot" && !strings.HasSuffix(a.Login, "[bot]") {
+		return a.Login + "[bot]"
 	}
 	return a.Login
 }
@@ -234,11 +249,11 @@ query($owner: String!, $name: String!, $number: Int!, $commentLimit: Int!) {
       number
       title
       body
-      author { login }
+      author { login __typename }
       authorAssociation
-      labels(first: 20) { nodes { name } }
+      labels(first: 100) { nodes { name } }
       comments(last: $commentLimit) {
-        nodes { author { login } authorAssociation body }
+        nodes { author { login __typename } authorAssociation body }
       }
     }
   }
@@ -254,6 +269,7 @@ type issueResponse struct {
 		} `json:"repository"`
 	} `json:"data"`
 	Errors []struct {
+		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"errors"`
 }
@@ -297,13 +313,23 @@ func (c *GitHubClient) FetchIssue(ctx context.Context, number int) (Issue, error
 		}
 		return Issue{}, fmt.Errorf("resolve repository %s/%s: %s", c.cfg.Owner, c.cfg.Repo, msg)
 	}
-	// Repository resolved but the issue is null: the number does not exist or
-	// refers to a pull request (issue() resolves only Issues).
+	// Inspect GraphQL errors BEFORE treating a null issue as not-found. GitHub
+	// signals a genuinely missing issue/PR with a NOT_FOUND-typed error (map that
+	// to ErrIssueNotFound → skip), but a transient error (rate limit, timeout,
+	// query-complexity) also returns issue:null with a DIFFERENT error type — that
+	// is infrastructure failure and must fail loud, not be silently skipped.
+	if len(out.Errors) > 0 {
+		for _, e := range out.Errors {
+			if e.Type == "NOT_FOUND" {
+				return Issue{}, fmt.Errorf("issue #%d: %w", number, ErrIssueNotFound)
+			}
+		}
+		return Issue{}, fmt.Errorf("graphql error: %s", out.Errors[0].Message)
+	}
+	// Repository resolved, no errors, but the issue is null: the number does not
+	// exist or refers to a pull request (issue() resolves only Issues).
 	if out.Data.Repository.Issue == nil {
 		return Issue{}, fmt.Errorf("issue #%d: %w", number, ErrIssueNotFound)
-	}
-	if len(out.Errors) > 0 {
-		return Issue{}, fmt.Errorf("graphql error: %s", out.Errors[0].Message)
 	}
 	return out.Data.Repository.Issue.toIssue(), nil
 }

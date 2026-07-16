@@ -26,10 +26,13 @@ func setRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv("GITHUB_TOKEN", "test-token")
 	t.Setenv("GEMINI_API_KEY", "test-key")
+	// OWNER/REPO are required (no default), so they are part of the minimum.
+	t.Setenv("OWNER", "google")
+	t.Setenv("REPO", "adk-go")
 	t.Setenv("GOOGLE_API_KEY", "")
 	t.Setenv("GOOGLE_GENAI_USE_VERTEXAI", "")
 	for _, k := range []string{
-		"OWNER", "REPO", "LLM_MODEL_NAME", "SPAM_LABEL_NAME", "MAINTAINERS",
+		"LLM_MODEL_NAME", "SPAM_LABEL_NAME", "MAINTAINERS",
 		"ISSUE_COUNT", "FRESHNESS_WINDOW_DAYS", "CONCURRENCY_LIMIT", "ISSUE_TIMEOUT", "DRY_RUN",
 	} {
 		t.Setenv(k, "")
@@ -45,8 +48,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.Owner != "google" || cfg.Repo != "adk-go" {
 		t.Errorf("default owner/repo = %s/%s, want google/adk-go", cfg.Owner, cfg.Repo)
 	}
-	if cfg.Model != "gemini-3.5-flash" {
-		t.Errorf("default model = %q, want gemini-3.5-flash", cfg.Model)
+	if cfg.Model != "gemini-flash-latest" {
+		t.Errorf("default model = %q, want gemini-flash-latest", cfg.Model)
 	}
 	if cfg.SpamLabel != "spam" {
 		t.Errorf("default SpamLabel = %q, want spam", cfg.SpamLabel)
@@ -68,6 +71,18 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if len(cfg.Maintainers) != 0 {
 		t.Errorf("default Maintainers = %v, want empty", cfg.Maintainers)
+	}
+}
+
+func TestLoadConfigMissingOwnerRepo(t *testing.T) {
+	for _, unset := range []string{"OWNER", "REPO"} {
+		t.Run(unset, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv(unset, "")
+			if _, err := loadConfig(nil); err == nil {
+				t.Fatalf("loadConfig() with empty %s = nil error, want error (no silent default)", unset)
+			}
+		})
 	}
 }
 

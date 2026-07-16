@@ -67,8 +67,10 @@ jobs:
         env:
           # Caller-context values (resolve to the repo that called this workflow).
           GITHUB_TOKEN: '${{ github.token }}'
-          OWNER: '${{ github.repository_owner }}'
-          REPO: '${{ github.event.repository.name }}'
+          # github.repository is "owner/name" and is populated on every event; use
+          # it (split in the script below) as the single reliable source for both
+          # OWNER and REPO rather than the event payload.
+          REPO_SLUG: '${{ github.repository }}'
           GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
           DRY_RUN: '${{ inputs.dry_run }}'
           ISSUE_COUNT: '${{ inputs.issue_count }}'
@@ -78,6 +80,8 @@ jobs:
           ISSUE_NUMBER: '${{ inputs.issue_number }}'
         run: |
           set -euo pipefail
+          export OWNER="${REPO_SLUG%%/*}"
+          export REPO="${REPO_SLUG#*/}"
           if [[ -n "${ISSUE_NUMBER}" ]]; then
             if [[ "${ISSUE_NUMBER}" =~ ^[0-9]+$ ]]; then
               go run . "-issue=${ISSUE_NUMBER}"
