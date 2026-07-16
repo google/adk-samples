@@ -720,9 +720,30 @@ def _find_pypi_entry(doc: tomlkit.TOMLDocument) -> Any:
 def _append_default_pypi_index(doc: tomlkit.TOMLDocument) -> None:
     """Append a `[[tool.uv.index]]` block declaring public PyPI as default.
 
-    Placed under `[tool.uv]` (created if absent). Existing non-default
-    `[[tool.uv.index]]` entries are preserved and remain higher-priority
-    (per uv's index ordering).
+    Two code paths depending on whether any `[[tool.uv.index]]` AoT already
+    exists:
+
+    1. AoT already present (recipe has index entries but none marked
+       `default=true`): append a new entry into the existing AoT via
+       tomlkit. Placement is unambiguous — the new entry sits with its
+       siblings, which is exactly what the user wants.
+
+    2. AoT NOT present (nothing under `[tool.uv.index]` at all): DO NOT let
+       tomlkit place the new block. tomlkit places a newly-created nested
+       AoT immediately after its parent's last child table, and that
+       position can fall INSIDE a trailing comment block that visually
+       introduces the NEXT top-level table. In real recipes with a
+       `[tool.uv.build-backend]` sub-table followed by comments introducing
+       `[tool.agent-starter-pack]`, tomlkit will wedge the new
+       `[[tool.uv.index]]` between those comments and their target table,
+       silently reassigning comment ownership. To avoid this, defer the
+       block to a raw string append after `tomlkit.dumps(doc)` — see
+       `_persist_changes`. The string always lands at the end of the file,
+       which is unambiguous and preserves every comment's semantic
+       attribution.
+
+    Existing non-default `[[tool.uv.index]]` entries are preserved either
+    way and remain higher-priority (per uv's index ordering).
 
     No leading comment is emitted — tomlkit attaches comments passed to a
     table INSIDE the table (after its header), which reads awkwardly.
@@ -732,19 +753,26 @@ def _append_default_pypi_index(doc: tomlkit.TOMLDocument) -> None:
     this auto-fix path just get the bare block. Both are equivalent
     functionally.
     """
-    if "tool" not in doc:
-        doc["tool"] = tomlkit.table()
-    tool = doc["tool"]
-    if "uv" not in tool:
-        tool["uv"] = tomlkit.table()
-    uv = tool["uv"]
-    if "index" not in uv:
-        uv["index"] = tomlkit.aot()
+    tool = doc.get("tool")
+    uv = tool.get("uv") if tool is not None else None
+    existing_aot = uv.get("index") if uv is not None else None
 
-    entry = tomlkit.table()
-    entry["url"] = "https://pypi.org/simple/"
-    entry["default"] = True
-    uv["index"].append(entry)
+    if existing_aot is not None:
+        # Path 1: append into the existing AoT (safe placement).
+        entry = tomlkit.table()
+        entry["url"] = "https://pypi.org/simple/"
+        entry["default"] = True
+        existing_aot.append(entry)
+        return
+
+    # Path 2: no existing AoT. Defer the append to post-serialization so
+    # tomlkit's placement heuristic can't wedge the block inside a trailing
+    # comment group. `_persist_changes` will pick this up.
+    doc._pending_pypi_index_append = (
+        "\n[[tool.uv.index]]\n"
+        'url = "https://pypi.org/simple/"\n'
+        "default = true\n"
+    )
 
 
 def check_default_pypi_index(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
@@ -870,7 +898,18 @@ def _persist_changes(
     """
     try:
         with open(pyproject_path, "w") as f:
-            f.write(tomlkit.dumps(doc))
+            rendered = tomlkit.dumps(doc)
+            # `_append_default_pypi_index` stashes a raw block on the doc
+            # when it needs the [[tool.uv.index]] declaration to land at
+            # end-of-file rather than wherever tomlkit's placement heuristic
+            # would put a newly-created nested AoT — see the docstring
+            # there for the comment-adjacency bug this avoids.
+            pending = getattr(doc, "_pending_pypi_index_append", None)
+            if pending:
+                if not rendered.endswith("\n"):
+                    rendered += "\n"
+                rendered += pending
+            f.write(rendered)
     except OSError as e:
         # Nothing has touched disk yet — the manifest write was deferred.
         report.add(

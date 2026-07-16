@@ -14,9 +14,9 @@ description: >
   renamed if needed). Delegates to the existing sub-skills
   (generate-manifest, extract-python-environment-variables,
   align-recipe-pyproject, generate-python-runnability-test) so the master
-  never duplicates their logic. Pauses at fixed decision points (manifest
-  team/POC verification, description mismatch, existing test regeneration)
-  AND is free to interrupt for clarification any time a phase's output
+  never duplicates their logic. Pauses at fixed decision points
+  (description mismatch, existing test regeneration) AND is free to
+  interrupt for clarification any time a phase's output
   looks ambiguous, unexpected, or would benefit from a human judgment
   call — this is an interactive skill by design. Use when the user wants
   to "prepare a recipe", "update a recipe end to end", "run all the
@@ -31,7 +31,20 @@ metadata:
 
 Master orchestration skill. Runs the other Python-recipe skills in the right order, with the right inputs, in a single pipeline. Use when the user wants a recipe brought fully up to standard in one go.
 
-**This is an interactive skill.** It's expected to pause and ask questions when doing so genuinely improves the outcome — not just at the four fixed checkpoints below, but any time a phase's output is ambiguous, surprising, or would benefit from a judgment call. See rule 5 (fixed checkpoints) and rule 6 (judgment-based interruptions) for the difference.
+**This is an interactive skill.** It's expected to pause and ask questions when doing so genuinely improves the outcome — not just at the fixed checkpoints below, but any time a phase's output is ambiguous, surprising, or would benefit from a judgment call. See rule 5 (fixed checkpoints) and rule 6 (judgment-based interruptions) for the difference.
+
+---
+
+## Canonical placeholder strings
+
+Two ownership placeholders are written by `generate-manifest` and enforced by `tools/validate_manifest.py`. They must be the EXACT strings below — never invent, translate, or rephrase them:
+
+```
+OWNERSHIP_TEAM_PLACEHOLDER = "TODO: Replace with your team name"
+OWNERSHIP_POC_PLACEHOLDER  = "TODO: Replace with your GitHub user ID"
+```
+
+`generate-manifest` is the single source of truth for these values. This skill NEVER replaces them mid-pipeline — they are intentionally left in place so CI validation fails until a human fills them in. Replacing them lives in the user's post-pipeline TODO list (see the summary's "What you still need to do" section).
 
 ---
 
@@ -53,7 +66,7 @@ If the user has NOT done these and asks you to run the skill anyway, tell them t
 
 Runs seven ordered phases against a target recipe. Each phase either invokes an existing sub-skill (or its underlying script) or runs a repo-standard command:
 
-1. **Manifest** — generate `manifest.yaml` if missing; ask the user to verify `ownership.team` and `ownership.poc`.
+1. **Manifest** — generate `manifest.yaml` if missing. Ownership placeholders (`ownership.team`, `ownership.poc`) are LEFT AS-IS — never replaced mid-pipeline. See "Canonical placeholder strings" above.
 2. **Environment variables** — extract env vars used by the recipe into `.env.example`; ensure `load_dotenv()` is bootstrapped and `python-dotenv` is a dep.
 3. **Align pyproject.toml** — remove `[tool.ruff*]`, raise `requires-python` floor, ensure `[project].name` matches folder, reconcile description with manifest, and ensure `[[tool.uv.index]]` declares public PyPI as default (needed to bypass corp Airlock).
 4. **Lint** — `ruff format` + `ruff check --fix` on the recipe (from the repo root, so the root ruff config wins). **Must run AFTER Phase 3** — align removes any recipe-local `[tool.ruff*]` block, and that removal is what makes the root config the effective one. Running lint before align would check against the recipe's (often more permissive) local config and miss violations that CI will later catch.
@@ -76,7 +89,6 @@ At the end, print a summary table and remind the user to `git diff` and commit �
 4. **Exception for pure-instructions skills**: `generate-manifest` has no script — it's a pure-instructions skill. For that one only, load its SKILL.md (via the `skill` tool) and follow it inline.
 
 5. **Fixed checkpoints — always pause here**:
-   - **Manifest team/POC verification** — after Phase 1, `manifest.yaml` will contain the placeholders `"TODO: Replace with your team name"` and `"TODO: Replace with your GitHub user ID"`. Show them and ask for real values. (These exact strings are the canonical placeholders that `generate-manifest` writes AND that `tools/validate_manifest.py` enforces in CI — the three must stay in sync; if the validator's strings ever change, update this checkpoint, Phase 1c, and generate-manifest together.)
    - **Description mismatch** — if Phase 3 returns `needs_input` for `description-matches-manifest`, show both sides and ask the user to pick `pyproject`, `manifest`, or `delete`.
    - **Test file exists** — before Phase 6, if `tests/test_runnability.py` already exists, ask whether to regenerate (default: keep existing). Regeneration uses `--overwrite`.
    - **Entry point not found (Phase 6)** — if the runnability-test generator errors because no `agent.py` was found, surface the message and offer to re-run with `--agent-file <path>` once the user says where the entry point is. This is the one `error` case with a defined recovery instead of a hard stop.
@@ -130,15 +142,15 @@ If the user has not specified the recipe directory, ask for it before proceeding
 
 If it isn't a directory, stop immediately with that message — do NOT show the plan or prompt.
 
-Then, before running anything, quickly confirm the prerequisites and show the user the plan:
+Then, before running anything, briefly flag the assumptions the pipeline is making and show the user the plan. Do NOT frame these as "prerequisites" — they're a heads-up so the user can push back if any assumption is wrong, not a preflight checklist for the user to tick off:
 
-> Prerequisites (I'll assume these are done — tell me if not):
+> A few things I'm assuming — say so if any aren't true:
 >   - You've deactivated any active venv.
 >   - You've run `git pull` and `uv sync` at the repo root.
 >   - `<RECIPE_DIR>` is already at its target path (and renamed to its final basename).
 >
 > I'll run the prepare-python-recipe pipeline on `<RECIPE_DIR>` — 7 phases:
-> 1. Generate manifest.yaml (if missing; verify team + POC)
+> 1. Generate manifest.yaml (if missing)
 > 2. Extract env vars into .env.example
 > 3. Align pyproject.toml
 > 4. Ruff format + check --fix
@@ -158,13 +170,11 @@ Get a yes-or-no. If no, stop.
 [ -f <RECIPE_DIR>/manifest.yaml ] && echo exists || echo missing
 ```
 
-**1b. If missing** — load the `generate-manifest` skill (via the `skill` tool with `name="generate-manifest"`) and follow its instructions for this recipe. That skill writes `manifest.yaml` with placeholders for team/POC.
+**1b. If missing** — load the `generate-manifest` skill (via the `skill` tool with `name="generate-manifest"`) and follow its instructions for this recipe. That skill writes `manifest.yaml` with the canonical ownership placeholders — LEAVE THEM AS-IS.
 
-**1b. If exists** — skip generation. Note it in the summary.
+**1b. If exists** — skip generation. Do NOT read `ownership.team` / `ownership.poc` and do NOT prompt about them. Whatever they are (real values or the canonical placeholders), leave them untouched — the user handles ownership post-pipeline.
 
-**1c. Verify team/POC** — regardless of whether we generated fresh or the file already existed, read `manifest.yaml` and locate `ownership.team` and `ownership.poc`. If either equals a placeholder value (`"TODO: Replace with your team name"` or `"TODO: Replace with your GitHub user ID"`), pause and ask the user for real values. When they answer, edit `manifest.yaml` in place (use the `edit` tool). If both are already filled in, do not ask.
-
-Progress line: `Phase 1 (manifest): generated | pre-existing; team=<x>, poc=<y>.`
+Progress line: `Phase 1 (manifest): generated | pre-existing.`
 
 ### Phase 2 — extract env vars
 
@@ -318,7 +328,7 @@ At the end, print the sections below in order. Section 3 is **conditional** — 
 
 | Phase | Outcome | Notes |
 |---|---|---|
-| 1. Manifest | ok | generated; team=<x>, poc=<y> |
+| 1. Manifest | ok | generated (ownership placeholders left for user to fill in) |
 | 2. Env vars | ok | 3 added, load_dotenv injected, python-dotenv added |
 | 3. Align | ok | 2 fixes applied |
 | 4. Lint | ok | 12 files formatted, 4 issues auto-fixed |
@@ -369,7 +379,7 @@ A single short TODO list. Keep every entry to one line. Standard items come firs
 
 **Standard — always include (skip only if genuinely N/A):**
 
-1. **Verify manifest** — open `<RECIPE_DIR>/manifest.yaml` and confirm `ownership.team` and `ownership.poc` are correct. Omit this item if the user supplied real values at the Phase 1c prompt during this run — they just confirmed them, so re-listing it is noise. Keep it when the manifest pre-existed with values the pipeline never asked the user about.
+1. **Fill in ownership** — open `<RECIPE_DIR>/manifest.yaml` and replace `ownership.team` (`"TODO: Replace with your team name"`) and `ownership.poc` (`"TODO: Replace with your GitHub user ID"`) with real values. CI validation intentionally fails until you do. If the manifest pre-existed and already had real values, this is a no-op — glance to confirm.
 2. **Fill in `.env.example`** — replace each `<TODO: ...>` placeholder with the real value (or delete the line if the variable isn't used).
 3. **Review the diff** — `cd <RECIPE_DIR> && git diff` — inspect every change the pipeline made before committing.
 
