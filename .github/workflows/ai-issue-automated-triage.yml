@@ -64,6 +64,11 @@ jobs:
           ISSUE_BODY: '${{ github.event.issue.body }}'
           ISSUE_NUMBER: '${{ github.event.issue.number }}'
           REPOSITORY: '${{ github.repository }}'
+          # Required for Gemini CLI 0.51.0+ to execute tool calls (untrusted
+          # workspaces block tool execution entirely). Safe here because this
+          # workflow only ever checks out `main` — never PR-author code — so
+          # there is no fork-supplied .gemini/ config to worry about.
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
         with:
           gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
           gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'

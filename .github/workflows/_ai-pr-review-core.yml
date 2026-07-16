@@ -104,6 +104,21 @@ jobs:
           fetch-depth: 0
           ref: 'refs/pull/${{ inputs.pr_number_review }}/head'
 
+      # SECURITY: strip any PR-author-supplied .gemini/ directory from the
+      # workspace before we trust it. The Run AI PR Review step below sets
+      # GEMINI_CLI_TRUST_WORKSPACE=true (required for the CLI to execute any
+      # tool calls at all in 0.51.0+), and a trusted workspace would otherwise
+      # let a fork's .gemini/settings.json broaden the tool allowlist or
+      # register additional MCP servers. Removing it here means the caller-
+      # supplied `settings:` block is the only configuration source.
+      - name: 'Sanitize workspace of Gemini config'
+        run: |
+          set -euo pipefail
+          if [ -e .gemini ]; then
+            echo "::warning::Removing PR-author-supplied .gemini/ from the checked-out workspace"
+            rm -rf .gemini
+          fi
+
       - name: 'Generate GitHub App Token'
         id: 'generate_token'
         if: |-
@@ -236,11 +251,15 @@ jobs:
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           GITHUB_PERSONAL_ACCESS_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
-          # Set to false: the workspace may contain a fork's .gemini/settings.json
-          # or similar config that could broaden the tool allowlist or register
-          # additional MCP servers. The caller-supplied `settings:` block below
-          # defines the authoritative sandbox; workspace config must not expand it.
-          GEMINI_CLI_TRUST_WORKSPACE: 'false'
+          # Safe to trust because the "Sanitize workspace of Gemini config" step
+          # above deleted any PR-author-supplied .gemini/ directory from the
+          # checked-out workspace before this step runs. The caller-supplied
+          # `settings:` block below is therefore the authoritative sandbox with
+          # no risk of a fork's .gemini/settings.json widening the tool allowlist.
+          # (Setting this to 'false' is not viable — Gemini CLI 0.51.0+ refuses
+          # to run any tool calls in an untrusted workspace, which blocks the
+          # entire review.)
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
           PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'
           CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files || steps.get_pr_review.outputs.changed_files }}'
