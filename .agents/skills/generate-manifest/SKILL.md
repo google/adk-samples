@@ -33,7 +33,7 @@ Read the following files if they exist:
 |---|---|
 | `type` | Infer from code. `standalone` = has its own runnable entry point: look for an `if __name__ == "__main__"` block, a `make playground`/run target, an `adk web`/`adk run` invocation, or a CLI. `module` = only importable (it just exports a `root_agent`/`Agent` for another workflow to orchestrate, with no way to run on its own). When ambiguous, re-read the schema's `type` description and prefer `module` only when there is genuinely no entry point. |
 | `deployable` | OPTIONAL. `true` only if a single `make` target or script deploys everything with no manual steps. Omit the field entirely if false (schema default is `false`). |
-| `large` | OPTIONAL. Omit if the recipe has fewer than 50 files and less than 1 MB of bundled data (schema default is `false`). Set `large: true` only if it exceeds that tier (up to 200 files / 10 MB). |
+| `large` | OPTIONAL. Whether to opt into the relaxed size tier. Exact limits depend on whether the recipe lives under `core/` or `contrib/` and are defined in `.github/policy.yml` (`recipe_size_limits`) — as of writing: `contrib/` default is 70 files / 2 MB and large is 200 files / 10 MB; `core/` default is 500 files / 50 MB. Omit the field unless the recipe would otherwise exceed the default tier's limits (schema default is `false`). |
 | `status` | Always `"active"` unless there is explicit evidence of abandonment. |
 | `language` | Read from file extensions or `pyproject.toml`. Never guess. |
 | `description` | Read `README.md` and `AGENTS.md` only (author-written intent, not code). Write a draft of at most 15 words summarising what the recipe does. The schema requires at least 10 characters, so keep the draft comfortably above that. Append the comment `# TODO: review and expand this draft description`. If neither file exists or the intent is unclear, fall back to `"DESCRIPTION"` with the same TODO comment. |
@@ -61,7 +61,7 @@ language: "..."      # Options: [python | java | go | kotlin | typescript]
 description: "..."   # TODO: review and expand this draft description
 
 # deployable: true   # (optional) one-command deploy, no manual steps; omit if false (default)
-# large: true        # (optional) set only if the recipe exceeds 50 files / 1 MB (max 200 files / 10 MB); omit if false (default)
+# large: true        # (optional) opt into the relaxed size tier; see .github/policy.yml (recipe_size_limits) for the exact numbers; omit if false (default)
 
 architecture:          # (optional) omit the whole block if nothing below can be inferred from code
   agent: "..."          # Options: [single | multi]

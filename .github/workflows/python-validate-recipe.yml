@@ -160,16 +160,45 @@ jobs:
           set -euo pipefail
 
           # ==================================================================
-          # Configurable limits
+          # Load configurable limits from .github/policy.yml (single source of
+          # truth for repo-wide constants). Every value below is looked up by
+          # dotted key path; to change a limit, edit policy.yml.
           # ==================================================================
-          MAX_FOLDER_NAME_LENGTH=30
+          POLICY=(uv run --no-project --with pyyaml python3 .github/scripts/load_policy.py)
 
-          MAX_SIZE_MB=1
-          MAX_FILES=50
+          MAX_FOLDER_NAME_LENGTH=$("${POLICY[@]}" recipe_naming.max_folder_name_length)
 
-          MAX_SIZE_MB_LARGE=10
-          MAX_FILES_LARGE=200
-          # ==================================================================
+          CORE_MAX_FILES=$("${POLICY[@]}" recipe_size_limits.core.default.max_files)
+          CORE_MAX_SIZE_MB=$("${POLICY[@]}" recipe_size_limits.core.default.max_size_mb)
+          CORE_LARGE_MAX_FILES=$("${POLICY[@]}" recipe_size_limits.core.large.max_files)
+          CORE_LARGE_MAX_SIZE_MB=$("${POLICY[@]}" recipe_size_limits.core.large.max_size_mb)
+
+          CONTRIB_MAX_FILES=$("${POLICY[@]}" recipe_size_limits.contrib.default.max_files)
+          CONTRIB_MAX_SIZE_MB=$("${POLICY[@]}" recipe_size_limits.contrib.default.max_size_mb)
+          CONTRIB_LARGE_MAX_FILES=$("${POLICY[@]}" recipe_size_limits.contrib.large.max_files)
+          CONTRIB_LARGE_MAX_SIZE_MB=$("${POLICY[@]}" recipe_size_limits.contrib.large.max_size_mb)
+
+          # Excluded paths — union across every language section in policy.yml
+          # so the check is consistent regardless of the recipe's declared
+          # language. New languages: add a section under `excluded_paths:` in
+          # policy.yml; no workflow change needed.
+          EXCLUDED_DIRS=()
+          EXCLUDED_FILES=()
+          for section in common python java kotlin go typescript; do
+            while IFS= read -r d; do
+              [ -n "$d" ] && EXCLUDED_DIRS+=("$d")
+            done < <("${POLICY[@]}" "excluded_paths.$section.dirs")
+            while IFS= read -r f; do
+              [ -n "$f" ] && EXCLUDED_FILES+=("$f")
+            done < <("${POLICY[@]}" "excluded_paths.$section.files")
+          done
+
+          echo "[INFO] Policy loaded from .github/policy.yml"
+          echo "[INFO]   core:    default=${CORE_MAX_FILES} files / ${CORE_MAX_SIZE_MB} MB, large=${CORE_LARGE_MAX_FILES} files / ${CORE_LARGE_MAX_SIZE_MB} MB"
+          echo "[INFO]   contrib: default=${CONTRIB_MAX_FILES} files / ${CONTRIB_MAX_SIZE_MB} MB, large=${CONTRIB_LARGE_MAX_FILES} files / ${CONTRIB_LARGE_MAX_SIZE_MB} MB"
+          echo "[INFO]   folder name max length: ${MAX_FOLDER_NAME_LENGTH}"
+          echo "[INFO]   excluded dirs (${#EXCLUDED_DIRS[@]}): ${EXCLUDED_DIRS[*]}"
+          echo "[INFO]   excluded files (${#EXCLUDED_FILES[@]}): ${EXCLUDED_FILES[*]}"
 
           if [ "$VALIDATE_ALL" = "true" ]; then
             RECIPES="$ALL_RECIPES"
@@ -215,44 +244,96 @@ jobs:
 
               # ------------------------------------------------------------------
               # Check 2: Folder size  /  Check 3: File count
-              # Limits depend on whether manifest.yaml sets:  large: true
+              #
+              # Which limit applies is chosen by:
+              #   1. Top-level ancestor of the recipe path (core vs contrib).
+              #   2. `large:` field in manifest.yaml (default: false → default
+              #      tier; true → relaxed tier).
+              #
+              # Files and directories listed under excluded_paths in
+              # .github/policy.yml never count toward either the size or the
+              # file count. Applied as a union across all language sections.
               # ------------------------------------------------------------------
+
+              # Pick the tier limits based on core vs contrib ancestor.
+              case "$recipe" in
+                core/*)
+                  TIER_ROOT="core"
+                  DEFAULT_MAX_FILES="$CORE_MAX_FILES"
+                  DEFAULT_MAX_SIZE_MB="$CORE_MAX_SIZE_MB"
+                  LARGE_MAX_FILES="$CORE_LARGE_MAX_FILES"
+                  LARGE_MAX_SIZE_MB="$CORE_LARGE_MAX_SIZE_MB"
+                  ;;
+                contrib/*)
+                  TIER_ROOT="contrib"
+                  DEFAULT_MAX_FILES="$CONTRIB_MAX_FILES"
+                  DEFAULT_MAX_SIZE_MB="$CONTRIB_MAX_SIZE_MB"
+                  LARGE_MAX_FILES="$CONTRIB_LARGE_MAX_FILES"
+                  LARGE_MAX_SIZE_MB="$CONTRIB_LARGE_MAX_SIZE_MB"
+                  ;;
+                *)
+                  echo "::error file=$recipe::Recipe path must live under core/ or contrib/, got '$recipe'"
+                  echo "[FAIL] Unrecognised recipe root."
+                  exit 1
+                  ;;
+              esac
+
               manifest="$recipe/manifest.yaml"
               # Trailing YAML comments (e.g. `large: true  # rationale`) are permitted.
               if [ -f "$manifest" ] && grep -qiE '^\s*large\s*:\s*true\s*(#.*)?$' "$manifest"; then
-                EFFECTIVE_MAX_SIZE_MB="$MAX_SIZE_MB_LARGE"
-                EFFECTIVE_MAX_FILES="$MAX_FILES_LARGE"
-                echo "[INFO] Large recipe detected — using relaxed limits (${EFFECTIVE_MAX_SIZE_MB} MB / ${EFFECTIVE_MAX_FILES} files)."
+                EFFECTIVE_MAX_FILES="$LARGE_MAX_FILES"
+                EFFECTIVE_MAX_SIZE_MB="$LARGE_MAX_SIZE_MB"
+                echo "[INFO] Tier: $TIER_ROOT / large — limits ${EFFECTIVE_MAX_SIZE_MB} MB / ${EFFECTIVE_MAX_FILES} files."
               else
-                EFFECTIVE_MAX_SIZE_MB="$MAX_SIZE_MB"
-                EFFECTIVE_MAX_FILES="$MAX_FILES"
+                EFFECTIVE_MAX_FILES="$DEFAULT_MAX_FILES"
+                EFFECTIVE_MAX_SIZE_MB="$DEFAULT_MAX_SIZE_MB"
+                echo "[INFO] Tier: $TIER_ROOT / default — limits ${EFFECTIVE_MAX_SIZE_MB} MB / ${EFFECTIVE_MAX_FILES} files."
               fi
               EFFECTIVE_MAX_SIZE_BYTES=$(( EFFECTIVE_MAX_SIZE_MB * 1024 * 1024 ))
 
-              # Exclude uv.lock files from the size calculation — they are
-              # auto-generated and can be large without reflecting recipe content.
-              lockfile_size_bytes=$(find "$recipe" -name "uv.lock" -type f \
-                -exec du -sb {} + 2>/dev/null | awk '{s+=$1} END {print s+0}')
-              folder_size_bytes=$(( $(du -sb "$recipe" | awk '{print $1}') - lockfile_size_bytes ))
+              # Build a find expression that prunes excluded directories (fast
+              # — find won't descend into them) and skips excluded file names.
+              # Directory pruning uses -name (basename match), so e.g. a
+              # `build/` anywhere in the recipe tree is excluded.
+              FIND_CMD=(find "$recipe")
+              if [ ${#EXCLUDED_DIRS[@]} -gt 0 ]; then
+                FIND_CMD+=('(' -type d '(')
+                for i in "${!EXCLUDED_DIRS[@]}"; do
+                  [ "$i" -gt 0 ] && FIND_CMD+=(-o)
+                  FIND_CMD+=(-name "${EXCLUDED_DIRS[$i]}")
+                done
+                FIND_CMD+=(')' -prune ')' -o)
+              fi
+              FIND_CMD+=('(' -type f)
+              for file in "${EXCLUDED_FILES[@]}"; do
+                FIND_CMD+=(-not -name "$file")
+              done
+              FIND_CMD+=(-print ')')
+
+              # Enumerate the counted file list once, then derive both the
+              # count and the total size from it — cheaper than two tree walks
+              # and guarantees the two numbers stay consistent.
+              mapfile -t COUNTED_FILES < <("${FIND_CMD[@]}")
+              file_count=${#COUNTED_FILES[@]}
+
+              if [ "$file_count" -eq 0 ]; then
+                folder_size_bytes=0
+              else
+                # printf | xargs handles arbitrarily large file lists safely
+                # (bypasses ARG_MAX on the command line).
+                folder_size_bytes=$(printf '%s\0' "${COUNTED_FILES[@]}" \
+                  | xargs -0 du -sb 2>/dev/null \
+                  | awk '{s+=$1} END {print s+0}')
+              fi
               folder_size_kb=$(( folder_size_bytes / 1024 ))
 
               if [ "$folder_size_bytes" -gt "$EFFECTIVE_MAX_SIZE_BYTES" ]; then
-                echo "::error file=$recipe::Recipe folder exceeds ${EFFECTIVE_MAX_SIZE_MB} MB (${folder_size_kb} KB, excluding uv.lock). Remove large files or binaries."
-                echo "[FAIL] Folder size: ${folder_size_kb} KB (excluding uv.lock) — exceeds ${EFFECTIVE_MAX_SIZE_MB} MB limit."
+                echo "::error file=$recipe::Recipe folder exceeds ${EFFECTIVE_MAX_SIZE_MB} MB (${folder_size_kb} KB, excluding paths listed in .github/policy.yml). Remove large files or binaries."
+                echo "[FAIL] Folder size: ${folder_size_kb} KB — exceeds ${EFFECTIVE_MAX_SIZE_MB} MB limit."
                 RECIPE_FAILED=1
               else
-                echo "[PASS] Folder size: ${folder_size_kb} KB (excluding uv.lock)"
+                echo "[PASS] Folder size: ${folder_size_kb} KB"
               fi
-
-              # Exclude generated/tooling directories from the file count so that
-              # an accidentally-committed __pycache__, .venv, or .pytest_cache does
-              # not trigger a spurious count failure for the wrong reason.
-              file_count=$(find "$recipe" -type f \
-                ! -path '*/__pycache__/*' \
-                ! -path '*/.venv/*' \
-                ! -path '*/.pytest_cache/*' \
-                ! -path '*/.mypy_cache/*' \
-                | wc -l | tr -d ' ')
 
               if [ "$file_count" -gt "$EFFECTIVE_MAX_FILES" ]; then
                 echo "::error file=$recipe::Recipe folder contains $file_count files, exceeding the limit of ${EFFECTIVE_MAX_FILES}."
@@ -307,44 +388,46 @@ jobs:
 
               # ------------------------------------------------------------------
               # Check 6: Environment variables used in Python files but missing
-              #           from .env.example
+              #           from .env.example.  Delegated to
+              #          .github/scripts/check_env_vars.py, which AST-parses
+              #          the recipe's Python source — handles multi-line calls,
+              #          import aliases (from os import getenv), and suppresses
+              #          false positives for OS/CI variables (HOME, PATH,
+              #          GITHUB_*, INTEGRATION_TEST, …).
               # ------------------------------------------------------------------
-              env_example="$recipe/.env.example"
-              if [ -f "$env_example" ]; then
-                # Collect variable names defined in .env.example (KEY=... lines, with optional export prefix)
-                defined_vars=$(grep -oE '^(export\s+)?[A-Z_][A-Z0-9_]*' "$env_example" \
-                  | sed 's/^export[[:space:]]*//' \
-                  | sort -u || true)
+              if [ -f "$recipe/.env.example" ]; then
+                set +e
+                env_vars_result=$(uv run --no-project \
+                  python3 .github/scripts/check_env_vars.py "$recipe")
+                env_vars_exit=$?
+                set -e
 
-                # Collect variable names referenced in Python files via:
-                #   os.environ["VAR"], os.environ.get("VAR"), os.getenv("VAR")
-                # Excludes: tests/ directory, commented-out lines.
-                # Note: direct imports (from os import getenv) are not detected — known limitation.
-                used_vars=$(find "$recipe" -type f -name "*.py" ! -path "*/tests/*" -print0 \
-                  | xargs -0 grep -hE 'os\.(environ\.get|getenv)\(\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]|os\.environ\[\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]\s*\]' \
-                  | grep -v '^\s*#' \
-                  | grep -oE 'os\.(environ\.get|getenv)\(\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]|os\.environ\[\s*['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]\s*\]' \
-                  | grep -oE '['"'"'"][A-Z_][A-Z0-9_]*['"'"'"]' \
-                  | tr -d '"' | tr -d "'" \
-                  | sort -u || true)
-
-                missing_vars=""
-                for var in $used_vars; do
-                  if ! echo "$defined_vars" | grep -qx "$var"; then
-                    missing_vars="${missing_vars}${var}"$'\n'
-                  fi
-                done
-
-                if [ -n "$missing_vars" ]; then
-                  while IFS= read -r var; do
-                    [ -z "$var" ] && continue
-                    echo "::error file=$env_example::Environment variable '$var' is used in Python code but not defined in .env.example. Define all required environment variables in .env.example and load them in your code with load_dotenv()."
-                    echo "[FAIL] Env var '$var' used in code but missing from .env.example."
-                  done <<< "$missing_vars"
+                if [ "$env_vars_exit" -ne 0 ]; then
+                  echo "::error file=$recipe/.env.example::env-var checker crashed (exit=$env_vars_exit). See job output."
+                  echo "[FAIL] env-var checker crashed (exit=$env_vars_exit)."
                   RECIPE_FAILED=1
-                else
-                  echo "[PASS] All environment variables used in Python files are defined in .env.example."
                 fi
+
+                while IFS= read -r line; do
+                  [ -z "$line" ] && continue
+                  kind="${line%%::*}"
+                  rest="${line#*::}"
+                  file="${rest%%::*}"
+                  msg="${rest#*::}"
+                  case "$kind" in
+                    PASS)
+                      echo "[PASS] $msg"
+                      ;;
+                    FAIL)
+                      echo "::error file=$file::$msg"
+                      echo "[FAIL] $msg"
+                      RECIPE_FAILED=1
+                      ;;
+                    *)
+                      echo "$line"
+                      ;;
+                  esac
+                done <<< "$env_vars_result"
               fi
 
               # ------------------------------------------------------------------

@@ -11,7 +11,7 @@ need.
 
 Before opening a pull request, ensure your recipe meets these requirements:
 
-*   [ ] **Design Constraints**: Total directory size **under 1MB** (excluding `uv.lock`), at most **50 main files** (excluding docs & tests), and demonstrates a clear intent and value for the ADK community. → [Design & Naming](design-and-naming.md)
+*   [ ] **Design Constraints**: Recipe stays within the size/file-count limits for its tier and demonstrates a clear intent and value for the ADK community. Default limits are **500 files / 50 MB** in `core/` and **70 files / 2 MB** in `contrib/`; setting `large: true` in `manifest.yaml` relaxes them. Auto-generated content and language tool caches (`uv.lock`, `__pycache__/`, `node_modules/`, `target/`, etc.) don't count. See [`.github/policy.yml`](../../.github/policy.yml) for the exact numbers and the full exclusion list. → [Design & Naming](design-and-naming.md)
 *   [ ] **Directory Name**: Lowercase letters and hyphens only, **must start with a letter** (no digits, underscores, or uppercase); **30 characters or less**. → [Naming Conventions](design-and-naming.md#naming-conventions)
 *   [ ] **Required Files** (Python recipes — for other languages see [Non-Python Recipes](required-files.md#non-python-recipes)):
     *   `pyproject.toml`: to define the recipe as a Python project and its dependencies.

@@ -45,16 +45,24 @@ jobs:
 
       - name: Detect affected recipe directories
         id: affected
+        env:
+          # Pass all dynamic/user-controlled values through env vars rather
+          # than interpolating GitHub expressions directly into the shell
+          # script body (security hardening — prevents expression injection).
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
+          set -euo pipefail
+
           # For pull_request events, diff against the base branch merge-base (three-dot diff).
           # For push events, diff against the previous commit if available.
           # For workflow_dispatch or unknown base, validate all recipes.
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE_REF="${{ github.event.pull_request.base.ref }}"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
             git fetch origin "$BASE_REF"
             CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
-          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
-            CHANGED_FILES=$(git diff --name-only "${{ github.event.before }}" HEAD)
+          elif [ "$EVENT_NAME" = "push" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            CHANGED_FILES=$(git diff --name-only "$BEFORE" HEAD)
           else
             # workflow_dispatch or new branch with no previous commit — validate all
             echo "No base to diff against — will validate all recipes."
@@ -122,24 +130,36 @@ jobs:
             # core/README.md must be excluded; new recipe dirs are safe to
             # filter this way because the branch is already checked out by
             # the time this step runs, so new dirs exist on disk.
-            CHANGED_RECIPES=$(echo "$CHANGED_RECIPES" | sort -u | grep -v '^$' | while read -r path; do [ -d "$path" ] && echo "$path"; done || true)
+            CHANGED_RECIPES=$(echo "$CHANGED_RECIPES" | sort -u | grep -v '^$' | while IFS= read -r path; do [ -d "$path" ] && echo "$path"; done || true)
 
             echo "Changed recipes: $CHANGED_RECIPES"
-            echo "changed_recipes=$(echo "$CHANGED_RECIPES" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+
+            # Use multiline heredoc output to preserve newlines safely and
+            # avoid word-splitting on recipe paths in the consuming step.
+            {
+              echo "changed_recipes<<RECIPES_EOF"
+              echo "$CHANGED_RECIPES"
+              echo "RECIPES_EOF"
+            } >> "$GITHUB_OUTPUT"
             echo "validate_all=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Validate affected recipe manifests
+        env:
+          VALIDATE_ALL: ${{ steps.affected.outputs.validate_all }}
+          CHANGED_RECIPES: ${{ steps.affected.outputs.changed_recipes }}
         run: |
-          if [ "${{ steps.affected.outputs.validate_all }}" = "true" ]; then
+          set -euo pipefail
+
+          if [ "$VALIDATE_ALL" = "true" ]; then
             uv run validate manifest
           else
-            RECIPES="${{ steps.affected.outputs.changed_recipes }}"
-            if [ -z "$RECIPES" ]; then
+            if [ -z "$CHANGED_RECIPES" ]; then
               echo "[INFO] No recipe directories to validate."
               exit 0
             fi
-            for recipe in $RECIPES; do
+            while IFS= read -r recipe; do
+              [ -z "$recipe" ] && continue
               uv run validate manifest "$recipe"
-            done
+            done <<< "$CHANGED_RECIPES"
           fi

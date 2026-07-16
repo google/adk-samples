@@ -5,12 +5,18 @@ you. Detailed reference lives in [`docs/recipe-guidelines/`](recipe-guidelines/)
 
 ## Minimum requirements (Python)
 
-- **Location:** `core/python/<name>` or `contrib/<name>`.
+- **Location:** `core/<language>/<name>` or `contrib/<language>/<name>` (e.g.
+  `core/python/rag-agent-search`, `contrib/java/hello-agent`).
 - **Directory name:** matches `^[a-z][a-z-]*$` (lowercase + hyphens, starts with a
   letter, no digits/underscores/uppercase), 30 chars or less.
-- **Size & files:** under 1MB (only `uv.lock` is excluded); 50 or fewer files
-  total (everything is counted, including `uv.lock`). Setting `large: true` in
-  `manifest.yaml` relaxes both to 10MB / 200 files.
+- **Size & files:** limits depend on where the recipe lives and whether
+  `manifest.yaml` sets `large: true`. Default tier: **500 files / 50 MB** in
+  `core/`, **70 files / 2 MB** in `contrib/`. Relaxed tier (`large: true`): a
+  defensive cap in `core/`, **200 files / 10 MB** in `contrib/`. Auto-generated
+  files and language tool caches (`uv.lock`, `__pycache__/`, `node_modules/`,
+  `target/`, etc.) don't count — see
+  [`.github/policy.yml`](../.github/policy.yml) for the full exclusion list and
+  the source of truth for every number above.
 - **Model:** use `gemini-3.5-flash`; `gemini-2.0-flash` and `gemini-2.5-flash` are
   deprecated.
 - **Required files:**
