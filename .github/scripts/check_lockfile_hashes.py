@@ -12,6 +12,7 @@ Exit codes:
 
 import re
 import sys
+
 import tomllib
 
 # Hashes produced by uv are always sha256; sha384 and sha512 are accepted
@@ -23,7 +24,9 @@ _HASH_RE = re.compile(r"^(sha256|sha384|sha512):[0-9a-f]+$")
 # rejected by upstream pipeline checks (Check 3 / Check 2) before this script
 # runs, so skipping them here is primarily defence-in-depth: the script stays
 # correct even if the pipeline order ever changes.
-_NO_HASH_SOURCE_KEYS = frozenset({"virtual", "path", "editable", "directory", "git"})
+_NO_HASH_SOURCE_KEYS = frozenset(
+    {"virtual", "path", "editable", "directory", "git"}
+)
 
 
 def main() -> None:
@@ -43,7 +46,9 @@ def main() -> None:
         print(f"[FAIL] {lockfile_path}: file not found", file=sys.stderr)
         sys.exit(1)
     except tomllib.TOMLDecodeError as exc:
-        print(f"[FAIL] {lockfile_path} is not valid TOML: {exc}", file=sys.stderr)
+        print(
+            f"[FAIL] {lockfile_path} is not valid TOML: {exc}", file=sys.stderr
+        )
         sys.exit(1)
 
     missing: list[str] = []

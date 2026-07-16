@@ -6,6 +6,10 @@ on:
       - 'core/python/**'
       - 'contrib/**'
       - '.github/workflows/python-validate-recipe.yml'
+      - '.github/policy.yml'
+      - '.github/scripts/load_policy.py'
+      - '.github/scripts/check_env_vars.py'
+      - '.github/scripts/check_recipe_pyproject.py'
 
 permissions:
   contents: read
@@ -40,10 +44,14 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # If the workflow itself changed, validate all Python recipes.
-          WORKFLOW_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^\.github/workflows/python-validate-recipe\.yml$" || true)
-          if [ -n "$WORKFLOW_CHANGED" ]; then
-            echo "Workflow file changed — validating all Python recipes."
+          # If any infrastructure file that controls this workflow's behaviour
+          # changed (the workflow itself, the policy limits, or any checker
+          # script), validate ALL Python recipes so the new configuration is
+          # applied across the board rather than only to the recipes touched
+          # in the same PR.
+          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/workflows/python-validate-recipe\.yml|\.github/policy\.yml|\.github/scripts/(load_policy|check_env_vars|check_recipe_pyproject)\.py)$" || true)
+          if [ -n "$INFRA_CHANGED" ]; then
+            echo "Workflow, policy, or checker script changed — validating all Python recipes."
             echo "validate_all=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi

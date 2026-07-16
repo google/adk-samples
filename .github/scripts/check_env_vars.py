@@ -319,9 +319,7 @@ def main() -> int:
     used_vars = _collect_used_vars(recipe_dir)
 
     missing = sorted(
-        v
-        for v in used_vars
-        if v not in defined_vars and not _is_allowed(v)
+        v for v in used_vars if v not in defined_vars and not _is_allowed(v)
     )
 
     if missing:
