@@ -105,21 +105,21 @@ def check(folder_name: str, max_len: int) -> list[str]:
         # Enumerate the concrete offending characters/positions so the
         # user sees exactly what to fix, not just "bad regex".
         offenders = sorted(
-            {
-                c
-                for c in folder_name
-                if not (c == "-" or "a" <= c <= "z")
-            }
+            {c for c in folder_name if not (c == "-" or "a" <= c <= "z")}
         )
         detail_bits: list[str] = []
-        if folder_name and not (
-            "a" <= folder_name[0] <= "z"
-        ):
-            detail_bits.append(f"starts with '{folder_name[0]}' (must start with a lowercase letter)")
+        if folder_name and not ("a" <= folder_name[0] <= "z"):
+            detail_bits.append(
+                f"starts with '{folder_name[0]}' (must start with a lowercase letter)"
+            )
         if offenders:
             offender_str = ", ".join(f"'{c}'" for c in offenders)
             detail_bits.append(f"disallowed characters: {offender_str}")
-        detail = "; ".join(detail_bits) if detail_bits else "does not match ^[a-z][a-z-]*$"
+        detail = (
+            "; ".join(detail_bits)
+            if detail_bits
+            else "does not match ^[a-z][a-z-]*$"
+        )
         violations.append(
             f"Folder name '{folder_name}' fails regex ^[a-z][a-z-]*$ — {detail}."
         )

@@ -464,9 +464,7 @@ def _suppress_e402_on_late_relative_imports(
     new_lines: list[str] = []
     marked = 0
     for i, line in enumerate(lines, start=1):
-        if i in late_lines and not (
-            "noqa" in line and "E402" in line
-        ):
+        if i in late_lines and not ("noqa" in line and "E402" in line):
             stripped = line.rstrip("\n")
             newline = line[len(stripped) :]
             new_lines.append(stripped + _NOQA_E402_SUFFIX + newline)
