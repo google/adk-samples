@@ -57,5 +57,5 @@ uv run ruff format core/python/my-recipe && uv run ruff check core/python/my-rec
 cd core/python/my-recipe && uv run pytest
 ```
 
-CI (`validate-python-recipe.yml`, `validate-manifest.yml`, `validate-lockfiles.yml`,
+CI (`python-validate-recipe.yml`, `validate-manifest.yml`, `python-dependency-policy.yml`,
 `python-ruff.yml`, `python-tests.yml`) enforces every requirement above on the PR.

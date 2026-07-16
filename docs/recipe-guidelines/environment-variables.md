@@ -32,7 +32,7 @@ Every recipe's `.env.example` must declare at least one variable starting with e
 ## Completeness (enforced by CI — fails the build)
 Every environment variable your Python code reads — via `os.getenv`,
 `os.environ.get`, or `os.environ[...]` in non-test files — **must** be declared
-in `.env.example`, or the `validate-python-recipe` CI check **fails the pull
+in `.env.example`, or the `python-validate-recipe` CI check **fails the pull
 request**. The `extract-python-environment-variables` skill can populate these
 for you automatically.
 

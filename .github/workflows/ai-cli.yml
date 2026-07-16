@@ -1,4 +1,4 @@
-name: '♊️ Gemini CLI'
+name: '✨ AI CLI'
 
 on:
   pull_request_review_comment:
@@ -186,7 +186,7 @@ jobs:
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: 'Run Gemini'
+      - name: 'Run AI'
         id: 'run_gemini'
         uses: 'google-github-actions/run-gemini-cli@v0'
         env:

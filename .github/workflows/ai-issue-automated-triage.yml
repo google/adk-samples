@@ -1,4 +1,4 @@
-name: '🏷️ Gemini Automated Issue Triage'
+name: '✨ AI Automated Issue Triage'
 
 on:
   issues:
@@ -55,7 +55,7 @@ jobs:
           app-id: '${{ vars.APP_ID }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
 
-      - name: 'Run Gemini Issue Triage'
+      - name: 'Run AI Issue Triage'
         uses: 'google-github-actions/run-gemini-cli@v0'
         id: 'gemini_issue_triage'
         env:

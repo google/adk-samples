@@ -2,7 +2,7 @@
 Aligns a Python recipe's pyproject.toml with the repo's standards.
 
 Enforces the same pyproject.toml rules that
-.github/workflows/validate-python-recipe.yml checks in CI, plus one critical
+.github/workflows/python-validate-recipe.yml checks in CI, plus one critical
 additional check.
 
 MAINTENANCE NOTE — keep in sync with the CI validator. Four of these rules

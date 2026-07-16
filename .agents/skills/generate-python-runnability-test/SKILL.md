@@ -11,7 +11,7 @@ description: >
   dry-run (report + preview) and apply (write to disk) modes. Use when the
   user wants to "add a runnability test", "generate test_runnability.py",
   "create a smoke test for the recipe", or fix the missing-required-file
-  failure from `validate-python-recipe.yml`.
+  failure from `python-validate-recipe.yml`.
 metadata:
   author: Google
   license: Apache-2.0
@@ -20,7 +20,7 @@ metadata:
 
 # Generate Python Runnability Test
 
-Use this skill to create the `tests/test_runnability.py` file that every Python recipe under `core/python/` or `contrib/` must ship (see `validate-python-recipe.yml` Check 4). The generated test is deliberately minimal — it just verifies the agent module imports and defines the expected globals. Business-logic testing lives elsewhere.
+Use this skill to create the `tests/test_runnability.py` file that every Python recipe under `core/python/` or `contrib/` must ship (see `python-validate-recipe.yml` Check 4). The generated test is deliberately minimal — it just verifies the agent module imports and defines the expected globals. Business-logic testing lives elsewhere.
 
 ---
 

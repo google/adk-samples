@@ -1,7 +1,7 @@
 """
 Validates a recipe's pyproject.toml against the repo's metadata rules.
 
-Rules enforced (see .github/workflows/validate-python-recipe.yml):
+Rules enforced (see .github/workflows/python-validate-recipe.yml):
 
   - project-name-matches-folder: [project].name must equal the recipe
     folder basename.

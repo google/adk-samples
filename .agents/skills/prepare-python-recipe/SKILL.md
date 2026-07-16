@@ -3,7 +3,7 @@ name: prepare-python-recipe
 description: >
   End-to-end orchestration to prepare or update a Python recipe under
   core/python/ or contrib/ so it passes every check in
-  .github/workflows/validate-python-recipe.yml. Runs seven phases in
+  .github/workflows/python-validate-recipe.yml. Runs seven phases in
   order on an already-in-place recipe: manifest.yaml generation,
   environment-variable extraction, pyproject.toml alignment, ruff
   format+check, per-recipe `uv lock`, runnability-test generation, and a

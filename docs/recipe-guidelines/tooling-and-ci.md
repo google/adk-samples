@@ -147,9 +147,9 @@ contributors are:
 
 | Workflow | What it enforces |
 |----------|------------------|
-| `validate-python-recipe.yml` | Directory size & file-count limits, directory-name rules, required files, `.env.example` completeness (every variable used in code must be declared), and the six `pyproject.toml` rules from the `align-recipe-pyproject` skill: no `[tool.ruff*]` block, no standalone `ruff.toml` / `.ruff.toml` files, `[project].name` matches the folder basename, `[project].requires-python` has a `>=3.11` (or higher) floor, `[project].description` matches `manifest.description` if set, and `[[tool.uv.index]]` declares public PyPI as `default = true`. The `pyproject.toml` checks are delegated to `.github/scripts/check_recipe_pyproject.py`. |
+| `python-validate-recipe.yml` | Directory size & file-count limits, directory-name rules, required files, `.env.example` completeness (every variable used in code must be declared), and the six `pyproject.toml` rules from the `align-recipe-pyproject` skill: no `[tool.ruff*]` block, no standalone `ruff.toml` / `.ruff.toml` files, `[project].name` matches the folder basename, `[project].requires-python` has a `>=3.11` (or higher) floor, `[project].description` matches `manifest.description` if set, and `[[tool.uv.index]]` declares public PyPI as `default = true`. The `pyproject.toml` checks are delegated to `.github/scripts/check_recipe_pyproject.py`. |
 | `validate-manifest.yml` | `manifest.yaml` schema and placeholder values (same as `uv run validate`). |
-| `validate-lockfiles.yml` | `uv.lock` is present and in sync with `pyproject.toml`. |
+| `python-dependency-policy.yml` | `uv.lock` supply-chain and reproducibility policy: only public PyPI is referenced (no internal or `pkg.dev` registries), no VCS (`git = …`) dependencies, no local `path` / `editable` / `directory` dependencies, every distribution has a hash, every lockfile is in sync with its sibling `pyproject.toml`, and every installable `pyproject.toml` has a sibling `uv.lock`. Hash-presence logic is delegated to `.github/scripts/check_lockfile_hashes.py`. |
 | `python-ruff.yml` | Ruff formatting & lint on changed Python files. Uses the root `pyproject.toml`'s `[tool.ruff]` config directly (no CLI overrides in the workflow) — combined with the `no-local-ruff-config` rule above, this makes the root `pyproject.toml` the single source of truth for ruff configuration. |
 | `python-tests.yml` | Per-recipe test suites (`uv run pytest`) for changed recipes. |
 
@@ -157,7 +157,7 @@ Because `uv run validate` only covers `manifest.yaml`, run Ruff
 (`uv run ruff check` / `uv run ruff format`) and your recipe's tests
 (`uv run pytest`) locally before opening a PR so your changes match CI.
 The `align-recipe-pyproject` and `prepare-python-recipe` skills above
-auto-fix most of what `validate-python-recipe.yml` checks — running one
+auto-fix most of what `python-validate-recipe.yml` checks — running one
 of them on your recipe before pushing is the fastest way to green CI.
 
 ---

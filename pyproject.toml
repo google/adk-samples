@@ -65,7 +65,7 @@ ignore = [
 # Every Python recipe's package is named `app` by convention, so isort should
 # treat it as first-party across the whole repo. Hoisted here so recipe
 # pyproject.toml files no longer need their own [tool.ruff*] block (see the
-# A1 check in .github/workflows/validate-python-recipe.yml).
+# A1 check in .github/workflows/python-validate-recipe.yml).
 known-first-party = ["app"]
 
 [tool.ruff.format]

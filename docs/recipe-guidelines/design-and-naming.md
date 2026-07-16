@@ -16,7 +16,7 @@ To keep the repository clean and easy to clone, we enforce the following boundar
 *   **Size Limit**: Under **1MB** total directory size, **excluding `uv.lock`** (no large assets or datasets).
 *   **File Limit**: Maximum of **50 main files** (excludes `README.md`, `manifest.yaml`, `AGENTS.md`, and the `tests/` directory).
 
-Both limits are enforced by the `validate-python-recipe` CI workflow — see [Tooling & CI](tooling-and-ci.md#continuous-integration).
+Both limits are enforced by the `python-validate-recipe` CI workflow — see [Tooling & CI](tooling-and-ci.md#continuous-integration).
 
 ---
 

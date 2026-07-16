@@ -77,7 +77,7 @@ addopts = "--ignore=tests/integration"
 
 Notes on the template:
 
-*   **`[[tool.uv.index]]`** — Required by CI. On Google corp workstations `/etc/uv/uv.toml` redirects the default index to a corp Airlock proxy that needs auth. Declaring public PyPI here (project-level indexes are concatenated ahead of system-level ones per uv's config merge rules) means `uv sync` works without Airlock auth. Enforced by the `default-pypi-index` rule in `validate-python-recipe.yml`.
+*   **`[[tool.uv.index]]`** — Required by CI. On Google corp workstations `/etc/uv/uv.toml` redirects the default index to a corp Airlock proxy that needs auth. Declaring public PyPI here (project-level indexes are concatenated ahead of system-level ones per uv's config merge rules) means `uv sync` works without Airlock auth. Enforced by the `default-pypi-index` rule in `python-validate-recipe.yml`.
 *   **No `[tool.ruff*]` block.** Ruff config is centralized in the [root `pyproject.toml`](../../pyproject.toml). Recipe-local ruff config is forbidden and enforced by CI (the `no-local-ruff-config` rule) — this ensures every recipe is linted with the same standards.
 *   **`requires-python`** — Must have a `>=3.11` (or higher) lower bound. Interpretation A: the repo standard is a floor; higher lower bounds (e.g. `>=3.12`) are your choice and left alone by CI and the `align-recipe-pyproject` skill.
 *   **`[project].name`** — Must match the recipe folder basename exactly (enforced by CI).

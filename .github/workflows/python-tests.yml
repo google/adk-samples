@@ -3,8 +3,17 @@ name: 🐍 Python Tests
 on:
   pull_request:
     paths:
-      - "core/**"
-      - "contrib/**"
+      # Only file types that can meaningfully affect Python test results.
+      # Doc-only PRs (README changes etc.) intentionally skip this workflow.
+      - "core/**/*.py"
+      - "core/**/pyproject.toml"
+      - "core/**/uv.lock"
+      - "core/**/manifest.yaml"
+      - "contrib/**/*.py"
+      - "contrib/**/pyproject.toml"
+      - "contrib/**/uv.lock"
+      - "contrib/**/manifest.yaml"
+      - ".github/workflows/python-tests.yml"
   workflow_dispatch:
     inputs:
       run_all:
@@ -15,10 +24,18 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on the same PR (or on the same ref for
+# workflow_dispatch) so a rapid series of pushes doesn't queue up redundant
+# matrix runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   detect-recipes:
     name: Detect affected Python recipes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       recipes: ${{ steps.detect.outputs.recipes }}
       count: ${{ steps.detect.outputs.count }}
@@ -30,6 +47,9 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
+        # enable-cache: false — detect-recipes only uses shell utilities and
+        # never invokes uv, so caching would be pure overhead here. The
+        # run-tests job leaves the default (true) to benefit from wheel reuse.
         uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
@@ -37,25 +57,45 @@ jobs:
 
       - name: Detect Python recipes to test
         id: detect
+        env:
+          # Pass user-controlled and dynamic values through env vars rather
+          # than interpolating GitHub expressions directly into the script
+          # body (security hardening — see GitHub Actions hardening guide).
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ALL: ${{ github.event.inputs.run_all }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          # Helper: collect all Python recipe dirs under core/ and contrib/
-          # A recipe dir is any directory that contains a manifest.yaml with language: python.
-          # Uses find so it works at any nesting depth (e.g. core/python/rag-agent-search).
+          set -euo pipefail
+
+          # pipefail matters here: without it, a transient `git fetch` failure
+          # would produce an empty diff → 0 recipes → skipped matrix →
+          # skipped gate → branch protection sees the required check as
+          # passing without ever running a test.
+
+          # Robust "is this a Python recipe" check: tolerates single/double/no
+          # quotes around the value, case-insensitive on the value, and a
+          # trailing YAML comment. Replaces two duplicated grep patterns.
+          is_python_recipe() {
+            grep -qiE "^[[:space:]]*language:[[:space:]]*[\"']?python[\"']?[[:space:]]*(#.*)?$" "$1"
+          }
+
+          # Helper: collect all Python recipe dirs under core/ and contrib/.
+          # A recipe dir is any directory that contains a manifest.yaml
+          # declaring language: python.
           all_python_recipes() {
             for root in core contrib; do
               [ -d "$root" ] || continue
-              find "$root" -name "manifest.yaml" | while read -r manifest; do
-                dir="$(dirname "$manifest")"
-                if grep -q '^language:[[:space:]]*"python"' "$manifest" || \
-                   grep -q "^language:[[:space:]]*python" "$manifest"; then
-                  echo "$dir"
+              while IFS= read -r manifest; do
+                if is_python_recipe "$manifest"; then
+                  dirname "$manifest"
                 fi
-              done
+              done < <(find "$root" -name "manifest.yaml")
             done
           }
 
-          # Helper: given a changed file path, return the recipe dir that owns it
-          # by walking up until we find a directory containing manifest.yaml.
+          # Helper: given a changed file path, return the recipe dir that
+          # owns it by walking up until we find a directory containing
+          # manifest.yaml.
           find_recipe_dir() {
             local path="$1"
             local dir
@@ -69,39 +109,47 @@ jobs:
             done
           }
 
-          # Determine whether to run all recipes or just the diff-affected ones
-          RUN_ALL="${{ github.event.inputs.run_all }}"
+          # These env vars can be null (workflow_dispatch has no PR;
+          # pull_request has no inputs). set -u would otherwise error.
+          RUN_ALL="${RUN_ALL:-}"
+          BASE_REF="${BASE_REF:-}"
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$RUN_ALL" = "true" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$RUN_ALL" != "true" ]; then
+              # PR-diff mode requires a base ref, which workflow_dispatch
+              # does not provide. Silently falling back to origin/main
+              # produces an empty diff when the workflow was dispatched
+              # from main and green-lights the run without testing anything.
+              # Refuse the combination explicitly.
+              echo "::error::workflow_dispatch requires run_all=true. PR-diff mode is only available on pull_request events."
+              exit 1
+            fi
             echo "workflow_dispatch with run_all=true — testing all Python recipes."
             RECIPES=$(all_python_recipes)
           else
             # PR mode: diff against the base branch.
-            # Fall back to 'main' when github.event.pull_request is null
-            # (e.g. workflow_dispatch with run_all=false).
-            BASE_REF="${{ github.event.pull_request.base.ref }}"
-            BASE_REF="${BASE_REF:-main}"
+            if [ -z "$BASE_REF" ]; then
+              echo "::error::pull_request event with no base ref — cannot compute diff."
+              exit 1
+            fi
             git fetch origin "$BASE_REF"
             CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
 
             echo "Changed files:"
             echo "$CHANGED_FILES"
 
-            # Map each changed file to its recipe dir (the nearest ancestor with manifest.yaml)
-            # then keep only unique Python recipe dirs.
+            # Map each changed file to its recipe dir (nearest ancestor with
+            # manifest.yaml) and keep only unique Python recipe dirs.
             RECIPES=""
             while IFS= read -r file; do
               [ -z "$file" ] && continue
-              # Only care about files under core/ or contrib/
               case "$file" in
                 core/*|contrib/*) ;;
                 *) continue ;;
               esac
               recipe_dir="$(find_recipe_dir "$file")"
               [ -z "$recipe_dir" ] && continue
-              manifest="$recipe_dir/manifest.yaml"
-              if grep -q '^language:[[:space:]]*"python"' "$manifest" || \
-                 grep -q "^language:[[:space:]]*python" "$manifest"; then
+              if is_python_recipe "$recipe_dir/manifest.yaml"; then
                 RECIPES="${RECIPES}${recipe_dir}"$'\n'
               else
                 echo "[SKIP] $recipe_dir — not a Python recipe."
@@ -135,6 +183,9 @@ jobs:
     needs: detect-recipes
     if: needs.detect-recipes.outputs.count != '0'
     runs-on: ubuntu-latest
+    # 20 min covers uv sync + runnability test with headroom. Override per
+    # matrix entry later if a specific recipe needs longer.
+    timeout-minutes: 20
 
     strategy:
       fail-fast: false
@@ -146,6 +197,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install uv
+        # Leave enable-cache at the default (true) — wheel caching between
+        # runs is worthwhile here (contrast with detect-recipes above).
         uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
@@ -155,14 +208,17 @@ jobs:
         env:
           RECIPE: ${{ matrix.recipe }}
         run: |
-          # Ensure tests/ directory exists
+          set -euo pipefail
+
           if [ ! -d "tests" ]; then
             echo "::error::Missing tests/ directory in ${RECIPE}"
             exit 1
           fi
 
-          # Ensure at least one test_runnability.py exists anywhere under tests/
-          RUNNABILITY=$(find tests -name "test_runnability.py" | head -1)
+          # `find … -print -quit` stops after the first match without needing
+          # a pipe. `find … | head -1` under pipefail would false-fail when
+          # `head` closes stdin early and `find` dies from SIGPIPE.
+          RUNNABILITY=$(find tests -name "test_runnability.py" -print -quit)
           if [ -z "$RUNNABILITY" ]; then
             echo "::error::No test_runnability.py found under ${RECIPE}/tests/"
             exit 1
@@ -177,6 +233,7 @@ jobs:
       - name: Set up .env for tests
         working-directory: ${{ matrix.recipe }}
         run: |
+          set -euo pipefail
           if [ ! -f .env ] && [ -f .env.example ]; then
             cp .env.example .env
             echo "Copied .env.example to .env"
@@ -186,18 +243,45 @@ jobs:
         working-directory: ${{ matrix.recipe }}
         run: uv run pytest
 
-  # Final gate job: fails the workflow if any recipe's tests failed
+  # Final gate. `if: always()` so the required check always reports even when
+  # detect-recipes or run-tests were cancelled/skipped/failed — a skipped
+  # required check is often treated as passing by branch protection, which is
+  # the silent-green failure mode we're guarding against.
+  #
+  # Fails if:
+  #   - detect-recipes did not succeed (crash, cancellation, ...)
+  #   - run-tests ended in any state other than success or skipped
+  # `skipped` on run-tests is OK because it means detect-recipes legitimately
+  # found zero Python recipes to test.
   test-results:
     name: Python test results
-    needs: run-tests
-    if: always() && needs.run-tests.result != 'skipped'
+    needs: [detect-recipes, run-tests]
+    if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Check results
+        env:
+          DETECT_RESULT: ${{ needs.detect-recipes.result }}
+          RUN_RESULT: ${{ needs.run-tests.result }}
         run: |
-          if [ "${{ needs.run-tests.result }}" = "failure" ]; then
-            echo "::error::One or more Python recipe test suites failed."
+          set -euo pipefail
+
+          if [ "$DETECT_RESULT" != "success" ]; then
+            echo "::error::detect-recipes did not succeed (result: $DETECT_RESULT)."
             exit 1
           fi
-          echo "All Python recipe tests passed."
+
+          case "$RUN_RESULT" in
+            success)
+              echo "All Python recipe tests passed."
+              ;;
+            skipped)
+              echo "No Python recipes to test — gate passes."
+              ;;
+            *)
+              echo "::error::run-tests did not succeed (result: $RUN_RESULT)."
+              exit 1
+              ;;
+          esac

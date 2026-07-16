@@ -2,7 +2,7 @@
 name: align-recipe-pyproject
 description: >
   Aligns a Python recipe's pyproject.toml with the repo's standards enforced
-  by .github/workflows/validate-python-recipe.yml, plus one critical
+  by .github/workflows/python-validate-recipe.yml, plus one critical
   [build-system] presence check. Scope is pyproject.toml only — standalone
   ruff.toml / .ruff.toml files (also forbidden in recipes) are caught by the
   CI workflow instead, not by this skill. Runs in two modes: a read-only
@@ -20,9 +20,9 @@ metadata:
 
 # Align Recipe pyproject.toml
 
-Use this skill to bring a Python recipe's `pyproject.toml` (and, when it disagrees, its `manifest.yaml` description) into conformance with the repo standard enforced by `.github/workflows/validate-python-recipe.yml`.
+Use this skill to bring a Python recipe's `pyproject.toml` (and, when it disagrees, its `manifest.yaml` description) into conformance with the repo standard enforced by `.github/workflows/python-validate-recipe.yml`.
 
-Scope: **`pyproject.toml` only**. Standalone `ruff.toml` / `.ruff.toml` files are also forbidden in recipes but are enforced by the CI workflow (Check 7 in `validate-python-recipe.yml`) — outside this skill's concern.
+Scope: **`pyproject.toml` only**. Standalone `ruff.toml` / `.ruff.toml` files are also forbidden in recipes but are enforced by the CI workflow (Check 7 in `python-validate-recipe.yml`) — outside this skill's concern.
 
 ---
 
