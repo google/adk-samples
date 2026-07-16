@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-github/v66/github"
 )
@@ -131,6 +132,43 @@ func TestListUntriagedFollowsPagination(t *testing.T) {
 	}
 }
 
+func TestListUntriagedBuildsQuery(t *testing.T) {
+	// The GraphQL search query must target the configured repo and, when a
+	// freshness window is set, restrict to recently-created issues.
+	cfg := testConfig()
+	cfg.FreshnessWindow = 7 * 24 * time.Hour
+	var gotQuery string
+	c := testClient(t, cfg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Variables struct {
+				Q string `json:"q"`
+			} `json:"variables"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		gotQuery = req.Variables.Q
+		_, _ = io.WriteString(w, `{"data":{"search":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}`)
+	}))
+	if _, err := c.ListUntriaged(context.Background(), 3); err != nil {
+		t.Fatalf("ListUntriaged() error = %v", err)
+	}
+	for _, want := range []string{"repo:google/adk-go", "is:issue", "is:open", "created:>="} {
+		if !strings.Contains(gotQuery, want) {
+			t.Errorf("ListUntriaged query = %q, want it to contain %q", gotQuery, want)
+		}
+	}
+}
+
+func TestListUntriagedGraphQLError(t *testing.T) {
+	const body = `{"errors":[{"message":"rate limited"}]}`
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	_, err := c.ListUntriaged(context.Background(), 3)
+	if err == nil || !strings.Contains(err.Error(), "rate limited") {
+		t.Fatalf("ListUntriaged() error = %v, want graphql error propagated", err)
+	}
+}
+
 func TestGetIssueFound(t *testing.T) {
 	const body = `{"data":{"repository":{"issue":{"number":42,"title":"t","body":"b",
 		"issueType":{"name":"Bug"},"labels":{"nodes":[{"name":"bug"}]}}}}}`
@@ -191,7 +229,7 @@ func TestSetTypeSendsPatch(t *testing.T) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		_ = json.NewDecoder(r.Body).Decode(&gotBody)
-		_, _ = io.WriteString(w, `{}`)
+		_, _ = io.WriteString(w, `{"type":{"name":"Bug"}}`)
 	}))
 	if err := c.SetType(context.Background(), 7, "Bug"); err != nil {
 		t.Fatalf("SetType() error = %v", err)
@@ -204,6 +242,32 @@ func TestSetTypeSendsPatch(t *testing.T) {
 	}
 	if gotBody["type"] != "Bug" {
 		t.Errorf("body type = %v, want Bug", gotBody["type"])
+	}
+}
+
+func TestSetTypeSilentDropIsError(t *testing.T) {
+	// GitHub returns 200 with the unchanged issue (no type applied) when the
+	// token lacks push access, silently dropping the type. SetType must detect
+	// that the type was not applied and return an error so the run fails loudly
+	// instead of reporting a success that never happened.
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"number":7,"type":null}`)
+	}))
+	err := c.SetType(context.Background(), 7, "Bug")
+	if err == nil {
+		t.Fatal("SetType(7, \"Bug\") = nil, want error when GitHub does not apply the type")
+	}
+}
+
+func TestAddLabelSilentDropIsError(t *testing.T) {
+	// Labels are likewise silently dropped without push access. The response
+	// lists the issue's labels after the add; if ours is absent, fail loudly.
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `[{"name":"go"}]`)
+	}))
+	err := c.AddLabel(context.Background(), 7, "bug")
+	if err == nil {
+		t.Fatal("AddLabel(7, \"bug\") = nil, want error when GitHub does not apply the label")
 	}
 }
 

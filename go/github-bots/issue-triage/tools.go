@@ -92,18 +92,20 @@ func (c *Client) doChangeType(ctx context.Context, number int, issueType string)
 	if !ok {
 		return errResult("issue type %q is not allowed; use one of: %s", issueType, strings.Join(allowedTypes, ", ")), nil
 	}
-	n, ok := c.authorizedNeed(number)
-	if !ok {
+	// Reserve the "type" need atomically before the write, so a concurrent
+	// duplicate call for the same issue cannot also pass this gate and overwrite.
+	claimed, authorized := c.claimType(number)
+	if !authorized {
 		return errResult("issue #%d is not part of the current triage set; only triage issues you fetched", number), nil
 	}
-	if !n.typ {
+	if !claimed {
 		return errResult("issue #%d already has a type; not overwriting", number), nil
 	}
 	if err := c.SetType(ctx, number, canonical); err != nil {
+		c.releaseType(number) // the write failed; let a later call retry
 		c.recordToolError()
 		return actionResult{}, err
 	}
-	c.consumeType(number) // prevent a second set on the same issue this run
 	return okResult("set issue #%d type to %s", number, canonical), nil
 }
 
@@ -117,18 +119,21 @@ func (c *Client) doAddLabel(ctx context.Context, number int, label string) (acti
 	if !ok {
 		return errResult("label %q is not in the allowlist; will not apply", label), nil
 	}
-	n, ok := c.authorizedNeed(number)
-	if !ok {
+	// Reserve the "label" need atomically before the write, so a concurrent
+	// duplicate call for the same issue cannot also pass this gate and add a
+	// second label.
+	claimed, authorized := c.claimLabel(number)
+	if !authorized {
 		return errResult("issue #%d is not part of the current triage set; only triage issues you fetched", number), nil
 	}
-	if !n.label {
+	if !claimed {
 		return errResult("issue #%d already has a categorization label; not adding another", number), nil
 	}
 	if err := c.AddLabel(ctx, number, canonical); err != nil {
+		c.releaseLabel(number) // the write failed; let a later call retry
 		c.recordToolError()
 		return actionResult{}, err
 	}
-	c.consumeLabel(number) // prevent adding a second label on the same issue this run
 	return okResult("added label %q to issue #%d", canonical, number), nil
 }
 

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,11 +67,18 @@ func NewClient(cfg *Config, log *slog.Logger) *Client {
 }
 
 // authorize records that an issue may be mutated, for the given missing fields.
+// It merges with any existing authorization so a repeated list cannot resurrect
+// a need already satisfied this run (which would re-enable an overwrite): a field
+// stays needed only if it was needed before and still is.
 func (c *Client) authorize(number int, n need) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.authorized == nil {
 		c.authorized = make(map[int]need)
+	}
+	if existing, ok := c.authorized[number]; ok {
+		n.typ = n.typ && existing.typ
+		n.label = n.label && existing.label
 	}
 	c.authorized[number] = n
 }
@@ -84,23 +92,61 @@ func (c *Client) authorizedNeed(number int) (need, bool) {
 	return n, ok
 }
 
-// consumeType marks an issue's type need as satisfied after a successful set, so
-// the same run cannot set (and thus overwrite) it again.
-func (c *Client) consumeType(number int) {
+// claimType atomically reserves an issue's type need for a single mutation. It
+// reports whether the issue is authorized at all, and whether this call won the
+// reservation (the type was still needed and is now marked satisfied). Reserving
+// before the network write is what makes the no-overwrite guarantee hold under
+// the framework's concurrent tool execution: of several same-issue calls in one
+// turn, exactly one can claim the need and reach the API. If the subsequent
+// write fails, the caller must releaseType so the field can be retried.
+func (c *Client) claimType(number int) (claimed, authorized bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n, ok := c.authorized[number]
+	if !ok {
+		return false, false
+	}
+	if !n.typ {
+		return false, true
+	}
+	n.typ = false
+	c.authorized[number] = n
+	return true, true
+}
+
+// releaseType restores a type need reserved by claimType, after a failed write.
+func (c *Client) releaseType(number int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if n, ok := c.authorized[number]; ok {
-		n.typ = false
+		n.typ = true
 		c.authorized[number] = n
 	}
 }
 
-// consumeLabel marks an issue's label need as satisfied after a successful add.
-func (c *Client) consumeLabel(number int) {
+// claimLabel atomically reserves an issue's label need for a single mutation,
+// with the same contract as claimType.
+func (c *Client) claimLabel(number int) (claimed, authorized bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n, ok := c.authorized[number]
+	if !ok {
+		return false, false
+	}
+	if !n.label {
+		return false, true
+	}
+	n.label = false
+	c.authorized[number] = n
+	return true, true
+}
+
+// releaseLabel restores a label need reserved by claimLabel, after a failed add.
+func (c *Client) releaseLabel(number int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if n, ok := c.authorized[number]; ok {
-		n.label = false
+		n.label = true
 		c.authorized[number] = n
 	}
 }
@@ -317,8 +363,20 @@ func (c *Client) SetType(ctx context.Context, number int, issueType string) erro
 	if err != nil {
 		return fmt.Errorf("build set-type request: %w", err)
 	}
-	if _, err := c.rest.Do(ctx, req, nil); err != nil {
+	// Setting a type requires push access; without it GitHub returns 200 with the
+	// issue unchanged, silently dropping the type. Read back the response and
+	// confirm the type was actually applied so a no-op can't masquerade as success.
+	// (The REST payload names the field "type", unlike GraphQL's "issueType".)
+	var updated struct {
+		Type *struct {
+			Name string `json:"name"`
+		} `json:"type"`
+	}
+	if _, err := c.rest.Do(ctx, req, &updated); err != nil {
 		return fmt.Errorf("set issue type: %w", err)
+	}
+	if updated.Type == nil || !strings.EqualFold(updated.Type.Name, issueType) {
+		return fmt.Errorf("set issue type: GitHub did not apply type %q to issue #%d (the token likely lacks push access)", issueType, number)
 	}
 	c.log.Info("set issue type", "issue", number, "type", issueType)
 	return nil
@@ -329,8 +387,22 @@ func (c *Client) AddLabel(ctx context.Context, number int, label string) error {
 	if c.shouldSkip(number, "add label %q", label) {
 		return nil
 	}
-	if _, _, err := c.rest.Issues.AddLabelsToIssue(ctx, c.cfg.Owner, c.cfg.Repo, number, []string{label}); err != nil {
+	// AddLabelsToIssue returns the issue's labels after the add. Like types,
+	// labels are silently dropped without push access, so confirm ours is present
+	// rather than trusting a 200.
+	labels, _, err := c.rest.Issues.AddLabelsToIssue(ctx, c.cfg.Owner, c.cfg.Repo, number, []string{label})
+	if err != nil {
 		return fmt.Errorf("add label: %w", err)
+	}
+	applied := false
+	for _, l := range labels {
+		if strings.EqualFold(l.GetName(), label) {
+			applied = true
+			break
+		}
+	}
+	if !applied {
+		return fmt.Errorf("add label: GitHub did not apply label %q to issue #%d (the token likely lacks push access)", label, number)
 	}
 	c.log.Info("added label", "issue", number, "label", label)
 	return nil

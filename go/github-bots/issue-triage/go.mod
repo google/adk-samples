@@ -1,4 +1,4 @@
-module issuetriage
+module github.com/google/adk-samples/go/github-bots/issue-triage
 
 go 1.25.3
 

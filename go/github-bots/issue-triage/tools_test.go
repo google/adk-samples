@@ -23,6 +23,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/go-github/v66/github"
@@ -48,6 +50,18 @@ func countingClient(t *testing.T, cfg *Config, status int, body string) (*Client
 		log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		authorized: make(map[int]need),
 	}, &calls
+}
+
+func TestDoListRecordsToolError(t *testing.T) {
+	// A failed list is an infrastructure error: it must propagate as a Go error
+	// AND be recorded so the run exits non-zero.
+	c, _ := countingClient(t, testConfig(), http.StatusInternalServerError, `{"message":"boom"}`)
+	if _, err := c.doList(context.Background(), 3); err == nil {
+		t.Fatal("doList() = nil error on HTTP 500, want error")
+	}
+	if !c.hadToolError() {
+		t.Error("doList() did not record the infrastructure error")
+	}
 }
 
 func TestDoChangeTypeRejectsWithoutHTTP(t *testing.T) {
@@ -83,7 +97,7 @@ func TestDoChangeTypeRejectsWithoutHTTP(t *testing.T) {
 }
 
 func TestDoChangeTypeAuthorizedSucceeds(t *testing.T) {
-	c, calls := countingClient(t, testConfig(), http.StatusOK, `{}`)
+	c, calls := countingClient(t, testConfig(), http.StatusOK, `{"type":{"name":"Bug"}}`)
 	c.authorize(7, need{typ: true})
 	res, err := c.doChangeType(context.Background(), 7, "Bug")
 	if err != nil {
@@ -144,13 +158,116 @@ func TestDoChangeTypeRESTErrorIsGoError(t *testing.T) {
 	}
 }
 
+func TestAuthorizeDoesNotResurrectConsumedNeed(t *testing.T) {
+	// A second list_untriaged_issues in the same run can re-authorize an issue
+	// whose need was already satisfied (e.g. GitHub read-after-write lag still
+	// reports it untriaged). Merging must not resurrect a consumed field, else a
+	// second overwrite becomes possible.
+	c := &Client{cfg: testConfig(), log: discardLogger(), authorized: make(map[int]need)}
+	c.authorize(7, need{typ: true, label: true})
+	if claimed, _ := c.claimType(7); !claimed {
+		t.Fatal("claimType(7) = false on first claim, want true")
+	}
+	// Re-authorize as if a later list returned the (stale) issue again.
+	c.authorize(7, need{typ: true, label: true})
+	if claimed, _ := c.claimType(7); claimed {
+		t.Error("claimType(7) = true after re-authorize, want false (consumed need must not resurrect)")
+	}
+}
+
+func TestDoChangeTypeConcurrentSingleWrite(t *testing.T) {
+	// ADK executes a turn's tool calls concurrently (one goroutine per call). If
+	// the model emits change_issue_type twice for the same issue, exactly one
+	// call must reach the API; the other must be refused without a write, so the
+	// no-overwrite guarantee holds under concurrency, not just sequentially.
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		_, _ = io.WriteString(w, `{"type":{"name":"Bug"}}`)
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL + "/")
+	rest := github.NewClient(nil)
+	rest.BaseURL = base
+	c := &Client{rest: rest, cfg: testConfig(), log: discardLogger(), authorized: make(map[int]need)}
+	c.authorize(7, need{typ: true})
+
+	const goroutines = 8
+	var (
+		wg        sync.WaitGroup
+		successes atomic.Int64
+	)
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := c.doChangeType(context.Background(), 7, "Bug")
+			if err != nil {
+				return
+			}
+			if res.Status == "success" {
+				successes.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := calls.Load(); got != 1 {
+		t.Errorf("doChangeType(7, \"Bug\") x%d concurrent = %d API writes, want 1", goroutines, got)
+	}
+	if got := successes.Load(); got != 1 {
+		t.Errorf("doChangeType(7, \"Bug\") x%d concurrent = %d successes, want 1", goroutines, got)
+	}
+}
+
+func TestDoAddLabelConcurrentSingleWrite(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		_, _ = io.WriteString(w, `[{"name":"bug"}]`)
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL + "/")
+	rest := github.NewClient(nil)
+	rest.BaseURL = base
+	c := &Client{rest: rest, cfg: testConfig(), log: discardLogger(), authorized: make(map[int]need)}
+	c.authorize(7, need{label: true})
+
+	const goroutines = 8
+	var (
+		wg        sync.WaitGroup
+		successes atomic.Int64
+	)
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := c.doAddLabel(context.Background(), 7, "bug")
+			if err != nil {
+				return
+			}
+			if res.Status == "success" {
+				successes.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := calls.Load(); got != 1 {
+		t.Errorf("doAddLabel(7, \"bug\") x%d concurrent = %d API writes, want 1", goroutines, got)
+	}
+	if got := successes.Load(); got != 1 {
+		t.Errorf("doAddLabel(7, \"bug\") x%d concurrent = %d successes, want 1", goroutines, got)
+	}
+}
+
 func TestDoChangeTypeConsumesNeed(t *testing.T) {
 	// After a successful type set, a second set on the same issue this run must
 	// be refused (don't overwrite what we just set) without an HTTP call.
 	var calls int
 	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
-		_, _ = io.WriteString(w, `{}`)
+		_, _ = io.WriteString(w, `{"type":{"name":"Bug"}}`)
 	}))
 	c.authorize(7, need{typ: true})
 	if res, err := c.doChangeType(context.Background(), 7, "Bug"); err != nil || res.Status != "success" {
@@ -198,7 +315,7 @@ func TestDoChangeTypeCanonicalizesCasing(t *testing.T) {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		gotType = body["type"]
-		_, _ = io.WriteString(w, `{}`)
+		_, _ = io.WriteString(w, `{"type":{"name":"Bug"}}`)
 	}))
 	c.authorize(7, need{typ: true})
 	res, err := c.doChangeType(context.Background(), 7, "bug")

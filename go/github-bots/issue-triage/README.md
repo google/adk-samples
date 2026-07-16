@@ -54,8 +54,8 @@ real I/O failures return a Go `error`. `OnToolErrorCallbacks` returns
 
 ## Running locally
 
-Requires **Go 1.23+**. Copy `.env.example` to `.env` and fill it in (or export
-the variables), then:
+Requires **Go 1.25+** (see `go.mod`). Copy `.env.example` to `.env` and fill it
+in (or export the variables), then:
 
 ```bash
 # Dry-run a single issue (no writes; logs intended actions).
@@ -77,9 +77,9 @@ go run . -issue 123
 | --- | --- | --- |
 | `GITHUB_TOKEN` | — (required) | Token with `issues: write`. |
 | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | — | Gemini API key (or use Vertex AI). |
-| `OWNER` | `google` | Repository owner. |
-| `REPO` | `adk-go` | Repository name. |
-| `LLM_MODEL_NAME` | `gemini-3.5-flash` | Model to use. |
+| `OWNER` | — (required) | Repository owner. |
+| `REPO` | — (required) | Repository name. |
+| `LLM_MODEL_NAME` | `gemini-flash-latest` | Model to use. |
 | `ALLOWED_LABELS` | `bug,enhancement,documentation,question` | Categorization label allowlist. |
 | `ISSUE_COUNT` | `3` | Max issues per scheduled sweep (newest first). |
 | `FRESHNESS_WINDOW_DAYS` | `0` (off) | Restrict the sweep to issues created within N days. |
@@ -114,6 +114,10 @@ jobs:
     with:
       issue_number: ${{ github.event.issue.number || inputs.issue }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      # Pin the bot CODE to the same commit as the workflow above. Omitting this
+      # runs adk-samples@main, so a pinned `uses:` would still execute unpinned
+      # code — set both to the same <commit-sha> for a reproducible run.
+      samples_ref: <commit-sha>
     secrets:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 ```
@@ -136,8 +140,12 @@ go test ./...
 ## Notes
 
 - **Issue types** must be enabled at the organization level (they are for the
-  `google` org: Bug/Feature/Task). Setting a type also requires the token to have
-  push access; otherwise GitHub silently drops the change (so confirm your first
-  non-dry-run run actually applied a type).
+  `google` org: Bug/Feature/Task). Setting a type — and adding a label — requires
+  a token with **push access**; without it GitHub returns success but silently
+  drops the change. The bot reads back each write and **fails the run** if the
+  type/label was not actually applied, so a permissions gap surfaces loudly
+  instead of passing silently. In the reusable workflow, `issues: write` alone is
+  not push access: if type/label changes are being dropped, grant the caller job
+  `contents: write` (or run the bot with a token that has push access).
 - **Component labels / owner assignment** from the original Python
   `adk_triaging_agent` are intentionally omitted; both are natural extensions.

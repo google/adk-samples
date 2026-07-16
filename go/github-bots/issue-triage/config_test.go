@@ -20,16 +20,19 @@ import (
 	"time"
 )
 
-// setRequired sets the minimum credentials and clears optional env vars so
-// defaults are observable.
+// setRequired sets the minimum required configuration and clears optional env
+// vars so defaults are observable. OWNER/REPO are required (no default), so they
+// are part of the minimum here.
 func setRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv("GITHUB_TOKEN", "test-token")
 	t.Setenv("GEMINI_API_KEY", "test-key")
+	t.Setenv("OWNER", "google")
+	t.Setenv("REPO", "adk-go")
 	t.Setenv("GOOGLE_API_KEY", "")
 	t.Setenv("GOOGLE_GENAI_USE_VERTEXAI", "")
 	for _, k := range []string{
-		"OWNER", "REPO", "LLM_MODEL_NAME", "ALLOWED_LABELS",
+		"LLM_MODEL_NAME", "ALLOWED_LABELS",
 		"ISSUE_COUNT", "FRESHNESS_WINDOW_DAYS", "ISSUE_TIMEOUT", "DRY_RUN",
 	} {
 		t.Setenv(k, "")
@@ -43,10 +46,10 @@ func TestLoadConfigDefaults(t *testing.T) {
 		t.Fatalf("loadConfig() error = %v", err)
 	}
 	if cfg.Owner != "google" || cfg.Repo != "adk-go" {
-		t.Errorf("default owner/repo = %s/%s, want google/adk-go", cfg.Owner, cfg.Repo)
+		t.Errorf("owner/repo = %s/%s, want google/adk-go", cfg.Owner, cfg.Repo)
 	}
-	if cfg.Model != "gemini-3.5-flash" {
-		t.Errorf("default model = %q, want gemini-3.5-flash", cfg.Model)
+	if cfg.Model != "gemini-flash-latest" {
+		t.Errorf("default model = %q, want gemini-flash-latest", cfg.Model)
 	}
 	if cfg.IssueCount != 3 {
 		t.Errorf("default IssueCount = %d, want 3", cfg.IssueCount)
@@ -100,6 +103,25 @@ func TestLoadConfigMissingToken(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
 	if _, err := loadConfig(nil); err == nil {
 		t.Fatal("loadConfig() expected error for missing GITHUB_TOKEN, got nil")
+	}
+}
+
+func TestLoadConfigMissingOwnerRepo(t *testing.T) {
+	tests := []struct {
+		name  string
+		unset string
+	}{
+		{"missing owner", "OWNER"},
+		{"missing repo", "REPO"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv(tc.unset, "")
+			if _, err := loadConfig(nil); err == nil {
+				t.Fatalf("loadConfig() with empty %s = nil error, want error (no silent default)", tc.unset)
+			}
+		})
 	}
 }
 

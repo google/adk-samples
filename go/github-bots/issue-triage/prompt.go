@@ -33,11 +33,20 @@ var promptTemplate string
 // default labels, so overriding ALLOWED_LABELS with a different vocabulary also
 // warrants updating that section.
 func renderPrompt(cfg *Config) string {
+	// Strip braces from config-derived values: llmagent treats { and } as
+	// session-state references, so a brace arriving via OWNER/REPO/ALLOWED_LABELS
+	// would otherwise reintroduce the stray-brace failure the test above guards.
 	r := strings.NewReplacer(
-		"{OWNER}", cfg.Owner,
-		"{REPO}", cfg.Repo,
-		"{ALLOWED_LABELS}", strings.Join(cfg.AllowedLabels, ", "),
+		"{OWNER}", stripBraces(cfg.Owner),
+		"{REPO}", stripBraces(cfg.Repo),
+		"{ALLOWED_LABELS}", stripBraces(strings.Join(cfg.AllowedLabels, ", ")),
 		"{ALLOWED_TYPES}", strings.Join(allowedTypes, ", "),
 	)
 	return r.Replace(promptTemplate)
 }
+
+var braceStripper = strings.NewReplacer("{", "", "}", "")
+
+// stripBraces removes brace characters so a substituted value cannot be parsed
+// as an llmagent session-state placeholder.
+func stripBraces(s string) string { return braceStripper.Replace(s) }
