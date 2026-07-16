@@ -56,8 +56,16 @@ def is_recipe_dir(path: Path) -> bool:
     # they are containers whose children are the actual recipes.
     if path.name in LANGUAGE_NAMESPACE_DIRS:
         return False
-    children = [p for p in path.iterdir() if p.name != "README.md"]
-    return len(children) > 0
+    children = [
+        p for p in path.iterdir() if not p.name.startswith(".") and p.name != "README.md"
+    ]
+    if not children:
+        return False
+    # A directory whose non-hidden children are exclusively language namespace
+    # dirs is itself a container (e.g. core/harnesses/), not a recipe.
+    if all(p.is_dir() and p.name in LANGUAGE_NAMESPACE_DIRS for p in children):
+        return False
+    return True
 
 
 def load_schema() -> dict:

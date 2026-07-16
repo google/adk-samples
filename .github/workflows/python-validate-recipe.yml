@@ -109,6 +109,17 @@ jobs:
                 recipe_name="${without_root%%/*}"
                 recipe_dir="contrib/${recipe_name}"
                 ;;
+              core/*/*)
+                # core/<recipe>/anything (flat, non-namespaced) → candidate,
+                # check manifest for language: python later.
+                without_root="${file#core/}"
+                recipe_name="${without_root%%/*}"
+                # Skip the language namespace dir itself (core/python, core/go…)
+                case "$recipe_name" in
+                  python|java|go|typescript|kotlin) continue ;;
+                esac
+                recipe_dir="core/${recipe_name}"
+                ;;
               *)
                 continue
                 ;;
@@ -117,11 +128,12 @@ jobs:
             [ -z "$recipe_dir" ] && continue
             [ -d "$recipe_dir" ] || continue   # skip deleted dirs
 
-            # For contrib recipes NOT under a language namespace dir, only
-            # include if manifest.yaml declares language: python. Namespaced
-            # dirs (contrib/python/*, like core/python/*) are Python by
-            # convention and don't need the manifest check.
-            if [[ "$recipe_dir" == contrib/* && "$recipe_dir" != contrib/python/* ]]; then
+            # For recipes NOT under a language namespace dir (flat core/<recipe>/
+            # or contrib/<recipe>/), only include if manifest.yaml declares
+            # language: python. Namespaced dirs (core/python/*, contrib/python/*)
+            # are Python by convention and don't need the manifest check.
+            if [[ "$recipe_dir" == contrib/* && "$recipe_dir" != contrib/python/* ]] || \
+               [[ "$recipe_dir" == core/* && "$recipe_dir" != core/python/* ]]; then
               manifest="$recipe_dir/manifest.yaml"
               if [ ! -f "$manifest" ]; then
                 continue
@@ -161,6 +173,21 @@ jobs:
           # core/python/* — always Python
           for d in core/python/*/; do
             [ -d "$d" ] && ALL="${ALL}${d%/}"$'\n'
+          done
+
+          # core/<recipe>/ (flat, non-namespaced) — only if manifest declares python.
+          # Skips language namespace dirs (core/python/, core/go/, etc.).
+          for d in core/*/; do
+            [ -d "$d" ] || continue
+            recipe_name="$(basename "${d%/}")"
+            case "$recipe_name" in
+              python|java|go|typescript|kotlin) continue ;;
+            esac
+            manifest="${d}manifest.yaml"
+            [ -f "$manifest" ] || continue
+            if grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*(#.*)?$' "$manifest"; then
+              ALL="${ALL}${d%/}"$'\n'
+            fi
           done
 
           # contrib/python/* — always Python (namespace dir, like core/python/).
