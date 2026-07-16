@@ -69,7 +69,9 @@ def main() -> None:
         print(f"[FAIL] {lockfile_path}: file not found", file=sys.stderr)
         sys.exit(1)
     except tomllib.TOMLDecodeError as exc:
-        print(f"[FAIL] {lockfile_path} is not valid TOML: {exc}", file=sys.stderr)
+        print(
+            f"[FAIL] {lockfile_path} is not valid TOML: {exc}", file=sys.stderr
+        )
         sys.exit(1)
 
     missing: list[str] = []
