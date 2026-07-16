@@ -154,14 +154,22 @@ jobs:
           echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
           echo "additional_instructions=" >> "${GITHUB_OUTPUT}"
 
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
+          for attempt in 1 2 3; do
+            PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)" && break
+            echo "::warning::gh pr view failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
           {
             echo "pr_data<<EOF"
             echo "${PR_DATA}"
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
+          for attempt in 1 2 3; do
+            CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)" && break
+            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
           {
             echo "changed_files<<EOF"
             echo "${CHANGED_FILES}"
@@ -189,14 +197,22 @@ jobs:
           DELIM="EOF_$(uuidgen)"
           { echo "additional_instructions<<${DELIM}"; echo "${ADDITIONAL_INSTRUCTIONS}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
+          for attempt in 1 2 3; do
+            PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)" && break
+            echo "::warning::gh pr view failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
           {
             echo "pr_data<<EOF"
             echo "${PR_DATA}"
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
+          for attempt in 1 2 3; do
+            CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)" && break
+            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
           {
             echo "changed_files<<EOF"
             echo "${CHANGED_FILES}"
@@ -231,14 +247,22 @@ jobs:
           DELIM="EOF_$(uuidgen)"
           { echo "additional_instructions<<${DELIM}"; echo "${ADDITIONAL_INSTRUCTIONS}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
+          for attempt in 1 2 3; do
+            PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)" && break
+            echo "::warning::gh pr view failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
           {
             echo "pr_data<<EOF"
             echo "${PR_DATA}"
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
+          for attempt in 1 2 3; do
+            CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)" && break
+            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
           {
             echo "changed_files<<EOF"
             echo "${CHANGED_FILES}"
