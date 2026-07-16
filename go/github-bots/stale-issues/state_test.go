@@ -36,6 +36,20 @@ func daysAgo(d float64) time.Time {
 	return testNow.Add(-time.Duration(d * float64(24*time.Hour)))
 }
 
+func TestBuildTimelineCanonicalizesBotLogin(t *testing.T) {
+	// GitHub GraphQL returns a bare bot login ("github-actions"); after
+	// canonicalization to the "[bot]" form, the ignore filter must still drop the
+	// bot's comment rather than counting it as human activity.
+	raw := &rawIssue{Author: &rawActor{Login: testAuthor, Typename: "User"}, CreatedAt: daysAgo(10)}
+	raw.Comments.Nodes = []rawComment{
+		{Author: &rawActor{Login: "github-actions", Typename: "Bot"}, Body: "beep", CreatedAt: daysAgo(1)},
+	}
+	events, _, _ := buildTimeline(raw, testSelf, testStaleLabel)
+	if len(events) != 1 || events[0].Type != eventCreated {
+		t.Fatalf("buildTimeline() = %+v, want only the created event (bare bot comment must be ignored)", events)
+	}
+}
+
 func TestComputeIssueState(t *testing.T) {
 	tests := []struct {
 		name            string

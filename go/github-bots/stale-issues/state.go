@@ -65,6 +65,10 @@ type historyEvent struct {
 
 type rawActor struct {
 	Login string `json:"login"`
+	// Typename is the GraphQL __typename ("Bot" for bot accounts). GitHub's
+	// GraphQL API returns a bare bot login (e.g. "github-actions") without the
+	// "[bot]" suffix that REST appends, so the type is the reliable bot signal.
+	Typename string `json:"__typename"`
 }
 
 type rawComment struct {
@@ -336,6 +340,14 @@ func computeIssueState(raw *rawIssue, selfLogin string, maintainers []string, st
 func actorLogin(a *rawActor) string {
 	if a == nil {
 		return ""
+	}
+	// Canonicalize a bot login to the REST "[bot]" form. GraphQL returns the bare
+	// login (e.g. "github-actions"), but selfLogin is resolved via REST
+	// ("github-actions[bot]") and the ignore/self filters match on the "[bot]"
+	// suffix; without this, bot activity would be counted as a human's and the
+	// bot could fail to recognize its own alert comments.
+	if a.Typename == "Bot" && !strings.HasSuffix(a.Login, "[bot]") {
+		return a.Login + "[bot]"
 	}
 	return a.Login
 }

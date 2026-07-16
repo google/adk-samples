@@ -133,22 +133,22 @@ const issueHistoryQuery = `
 query($owner: String!, $name: String!, $number: Int!, $commentLimit: Int!, $editLimit: Int!, $timelineLimit: Int!) {
   repository(owner: $owner, name: $name) {
     issue(number: $number) {
-      author { login }
+      author { login __typename }
       createdAt
       labels(first: 20) { nodes { name } }
       comments(last: $commentLimit) {
-        nodes { author { login } body createdAt lastEditedAt }
+        nodes { author { login __typename } body createdAt lastEditedAt }
       }
       userContentEdits(last: $editLimit) {
-        nodes { editor { login } editedAt }
+        nodes { editor { login __typename } editedAt }
       }
       timelineItems(itemTypes: [LABELED_EVENT, UNLABELED_EVENT, RENAMED_TITLE_EVENT, REOPENED_EVENT], last: $timelineLimit) {
         nodes {
           __typename
-          ... on LabeledEvent { createdAt actor { login } label { name } }
-          ... on UnlabeledEvent { createdAt actor { login } label { name } }
-          ... on RenamedTitleEvent { createdAt actor { login } }
-          ... on ReopenedEvent { createdAt actor { login } }
+          ... on LabeledEvent { createdAt actor { login __typename } label { name } }
+          ... on UnlabeledEvent { createdAt actor { login __typename } label { name } }
+          ... on RenamedTitleEvent { createdAt actor { login __typename } }
+          ... on ReopenedEvent { createdAt actor { login __typename } }
         }
       }
     }
