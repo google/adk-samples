@@ -206,9 +206,16 @@ func buildTimeline(raw *rawIssue, selfLogin, staleLabel string) (events []histor
 		if isIgnoredActor(actor, selfLogin) {
 			continue
 		}
-		et := eventReopened
-		if t.Typename == "RenamedTitleEvent" {
+		var et eventType
+		switch t.Typename {
+		case "RenamedTitleEvent":
 			et = eventRenamedTitle
+		case "ReopenedEvent":
+			et = eventReopened
+		default:
+			// Ignore unrequested/unknown timeline item types rather than
+			// misattributing them (the query only asks for the four handled here).
+			continue
 		}
 		events = append(events, historyEvent{Type: et, Actor: actor, Time: t.CreatedAt})
 	}

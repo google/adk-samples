@@ -77,10 +77,104 @@ type actionResult struct {
 
 var okResult = actionResult{Status: "success"}
 
+// The do* methods below are the tool handler bodies, extracted so they are
+// directly unit-testable (the functiontool closures are thin wrappers). Each
+// enforces per-issue authorization first; validation failures return a
+// model-readable errResult with a nil Go error, while infrastructure failures
+// record a tool error (so the run fails loudly) and return the Go error.
+
+// doGetIssueState fetches an issue's state. It is authorized like the mutating
+// tools so untrusted content cannot make the model pull an out-of-scope issue's
+// data into context.
+func (c *GitHubClient) doGetIssueState(ctx context.Context, number int) (IssueState, error) {
+	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return IssueState{Status: "error", LastActionType: msg}, nil
+	}
+	st, err := c.GetIssueState(ctx, number)
+	if err != nil {
+		c.recordToolError()
+		return IssueState{}, err
+	}
+	return st, nil
+}
+
+func (c *GitHubClient) doAddLabel(ctx context.Context, number int, label string) (actionResult, error) {
+	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return errResult("%s", msg), nil
+	}
+	if !c.isManagedLabel(label) {
+		return errResult("label %q is not managed by this bot", label), nil
+	}
+	if err := c.AddLabel(ctx, number, label); err != nil {
+		c.recordToolError()
+		return actionResult{}, err
+	}
+	return okResult, nil
+}
+
+func (c *GitHubClient) doRemoveLabel(ctx context.Context, number int, label string) (actionResult, error) {
+	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return errResult("%s", msg), nil
+	}
+	if !c.isManagedLabel(label) {
+		return errResult("label %q is not managed by this bot", label), nil
+	}
+	if err := c.RemoveLabel(ctx, number, label); err != nil {
+		c.recordToolError()
+		return actionResult{}, err
+	}
+	return okResult, nil
+}
+
+func (c *GitHubClient) doMarkStale(ctx context.Context, number int) (actionResult, error) {
+	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return errResult("%s", msg), nil
+	}
+	comment := fmt.Sprintf(
+		"This issue has been automatically marked as stale because it has not had recent "+
+			"activity for %s days after a maintainer requested clarification. It will be "+
+			"closed if no further activity occurs within %s days.",
+		formatDays(c.cfg.StaleAfter), formatDays(c.cfg.CloseAfter),
+	)
+	if err := c.MarkStale(ctx, number, comment); err != nil {
+		c.recordToolError()
+		return actionResult{}, err
+	}
+	return okResult, nil
+}
+
+func (c *GitHubClient) doAlertEdit(ctx context.Context, number int) (actionResult, error) {
+	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return errResult("%s", msg), nil
+	}
+	// The body must start with botAlertSignature so the bot recognizes its own
+	// alert on future runs and avoids spamming.
+	if err := c.Comment(ctx, number, botAlertSignature+". Maintainers, please review."); err != nil {
+		c.recordToolError()
+		return actionResult{}, err
+	}
+	return okResult, nil
+}
+
+func (c *GitHubClient) doClose(ctx context.Context, number int) (actionResult, error) {
+	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return errResult("%s", msg), nil
+	}
+	comment := fmt.Sprintf(
+		"This has been automatically closed because it has been marked as stale for over %s days.",
+		formatDays(c.cfg.CloseAfter),
+	)
+	if err := c.CloseAsStale(ctx, number, comment); err != nil {
+		c.recordToolError()
+		return actionResult{}, err
+	}
+	return okResult, nil
+}
+
 // tools builds the function tools the agent uses. The names match those
 // referenced by the prompt's decision tree. Each handler closes over the
 // GitHub client; agent.Context embeds context.Context, so it is passed
-// directly to the API calls.
+// directly to the do* methods.
 func (c *GitHubClient) tools() ([]tool.Tool, error) {
 	var (
 		tools []tool.Tool
@@ -98,90 +192,42 @@ func (c *GitHubClient) tools() ([]tool.Tool, error) {
 		Name:        "get_issue_state",
 		Description: "Fetches and analyzes the full state of a GitHub issue, returning its staleness, last actor role, labels, and timing.",
 	}, func(ctx agent.Context, a issueArg) (IssueState, error) {
-		return c.GetIssueState(ctx, a.IssueNumber)
+		return c.doGetIssueState(ctx, a.IssueNumber)
 	}))
 
 	add(functiontool.New(functiontool.Config{
 		Name:        "add_label_to_issue",
 		Description: "Adds the specified label to the issue.",
 	}, func(ctx agent.Context, a labelArg) (actionResult, error) {
-		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
-			return errResult("%s", msg), nil
-		}
-		if !c.isManagedLabel(a.Label) {
-			return errResult("label %q is not managed by this bot", a.Label), nil
-		}
-		if err := c.AddLabel(ctx, a.IssueNumber, a.Label); err != nil {
-			return actionResult{}, err
-		}
-		return okResult, nil
+		return c.doAddLabel(ctx, a.IssueNumber, a.Label)
 	}))
 
 	add(functiontool.New(functiontool.Config{
 		Name:        "remove_label_from_issue",
 		Description: "Removes the specified label from the issue.",
 	}, func(ctx agent.Context, a labelArg) (actionResult, error) {
-		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
-			return errResult("%s", msg), nil
-		}
-		if !c.isManagedLabel(a.Label) {
-			return errResult("label %q is not managed by this bot", a.Label), nil
-		}
-		if err := c.RemoveLabel(ctx, a.IssueNumber, a.Label); err != nil {
-			return actionResult{}, err
-		}
-		return okResult, nil
+		return c.doRemoveLabel(ctx, a.IssueNumber, a.Label)
 	}))
 
 	add(functiontool.New(functiontool.Config{
 		Name:        "add_stale_label_and_comment",
 		Description: "Marks the issue as stale by adding the stale label and posting an explanatory comment.",
 	}, func(ctx agent.Context, a issueArg) (actionResult, error) {
-		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
-			return errResult("%s", msg), nil
-		}
-		comment := fmt.Sprintf(
-			"This issue has been automatically marked as stale because it has not had recent "+
-				"activity for %s days after a maintainer requested clarification. It will be "+
-				"closed if no further activity occurs within %s days.",
-			formatDays(c.cfg.StaleAfter), formatDays(c.cfg.CloseAfter),
-		)
-		if err := c.MarkStale(ctx, a.IssueNumber, comment); err != nil {
-			return actionResult{}, err
-		}
-		return okResult, nil
+		return c.doMarkStale(ctx, a.IssueNumber)
 	}))
 
 	add(functiontool.New(functiontool.Config{
 		Name:        "alert_maintainer_of_edit",
 		Description: "Posts a comment alerting maintainers that the author silently edited the issue description.",
 	}, func(ctx agent.Context, a issueArg) (actionResult, error) {
-		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
-			return errResult("%s", msg), nil
-		}
-		// The body must start with botAlertSignature so the bot recognizes its
-		// own alert on future runs and avoids spamming.
-		if err := c.Comment(ctx, a.IssueNumber, botAlertSignature+". Maintainers, please review."); err != nil {
-			return actionResult{}, err
-		}
-		return okResult, nil
+		return c.doAlertEdit(ctx, a.IssueNumber)
 	}))
 
 	add(functiontool.New(functiontool.Config{
 		Name:        "close_as_stale",
 		Description: "Closes the issue as not planned after it has remained stale past the close threshold.",
 	}, func(ctx agent.Context, a issueArg) (actionResult, error) {
-		if msg, ok := authorizeIssue(ctx, a.IssueNumber); !ok {
-			return errResult("%s", msg), nil
-		}
-		comment := fmt.Sprintf(
-			"This has been automatically closed because it has been marked as stale for over %s days.",
-			formatDays(c.cfg.CloseAfter),
-		)
-		if err := c.CloseAsStale(ctx, a.IssueNumber, comment); err != nil {
-			return actionResult{}, err
-		}
-		return okResult, nil
+		return c.doClose(ctx, a.IssueNumber)
 	}))
 
 	if len(errs) > 0 {

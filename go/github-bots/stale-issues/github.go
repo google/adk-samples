@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/go-github/v66/github"
@@ -36,6 +37,27 @@ type GitHubClient struct {
 	cfg       *Config
 	selfLogin string
 	log       *slog.Logger
+
+	// toolErrored records whether any tool hit an infrastructure error during
+	// the run. Tool errors are also handed back to the model as data, so without
+	// this flag the process could exit 0 despite a failed mutation; run() checks
+	// it to fail loudly. Guarded by mu because audits run concurrently.
+	mu          sync.Mutex
+	toolErrored bool
+}
+
+// recordToolError flags that a tool hit an infrastructure error this run.
+func (c *GitHubClient) recordToolError() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.toolErrored = true
+}
+
+// hadToolError reports whether any tool hit an infrastructure error this run.
+func (c *GitHubClient) hadToolError() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.toolErrored
 }
 
 // NewGitHubClient builds a client authenticated with the configured token and

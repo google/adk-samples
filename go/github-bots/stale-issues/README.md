@@ -36,8 +36,8 @@ comment) and the bot recognizes its own prior comments to avoid spam.
 
 ## Running locally
 
-Requires **Go 1.23+**. Copy `.env.example` to `.env` and fill it in (note
-`MAINTAINERS` is required), then:
+Requires **Go 1.25+** (see `go.mod`). Copy `.env.example` to `.env` and fill it
+in (set `MAINTAINERS` — without it the bot will never mark issues stale), then:
 
 ```bash
 # Dry-run the whole backlog (no writes; logs intended actions).
@@ -59,10 +59,10 @@ go run .
 | --- | --- | --- |
 | `GITHUB_TOKEN` | — (required) | Token with `issues: write`. |
 | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | — | Gemini API key (or use Vertex AI). |
-| `MAINTAINERS` | — (required) | Comma-separated maintainer logins (the token can't list collaborators). |
-| `OWNER` | `google` | Repository owner. |
-| `REPO` | `adk-go` | Repository name. |
-| `LLM_MODEL_NAME` | `gemini-3.5-flash` | Model to use. |
+| `MAINTAINERS` | — | Comma-separated maintainer logins (the token can't list collaborators). Without it, no comment counts as maintainer activity, so nothing is ever marked stale. |
+| `OWNER` | — (required) | Repository owner. |
+| `REPO` | — (required) | Repository name. |
+| `LLM_MODEL_NAME` | `gemini-flash-latest` | Model to use. |
 | `STALE_HOURS_THRESHOLD` | `336` (14d) | Time waiting on the author before warning. |
 | `CLOSE_HOURS_AFTER_STALE_THRESHOLD` | `168` (7d) | Time stale before closing. |
 | `STALE_LABEL_NAME` | `stale` | Label applied when marking stale. |
@@ -98,6 +98,10 @@ jobs:
       issue_number: ${{ inputs.issue }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
       maintainers: 'login1,login2,login3'
+      # Pin the bot CODE to the same commit as the workflow above. Omitting this
+      # runs adk-samples@main, so a pinned `uses:` would still execute unpinned
+      # code — set both to the same <commit-sha> for a reproducible run.
+      samples_ref: <commit-sha>
     secrets:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 ```

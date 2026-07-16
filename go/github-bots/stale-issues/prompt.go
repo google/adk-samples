@@ -33,16 +33,26 @@ var promptTemplate string
 // resolve every placeholder here, leaving no stray braces, so the rendered
 // string is safe to pass as a plain Instruction.
 func renderPrompt(cfg *Config) string {
+	// Strip braces from config-derived values: llmagent treats { and } as
+	// session-state references, so a brace arriving via a label or OWNER/REPO
+	// (e.g. a label like "needs_{info}") would otherwise inject an unknown state
+	// key and fail every run.
 	r := strings.NewReplacer(
-		"{OWNER}", cfg.Owner,
-		"{REPO}", cfg.Repo,
-		"{STALE_LABEL_NAME}", cfg.StaleLabel,
-		"{REQUEST_CLARIFICATION_LABEL}", cfg.RequestClarificationLabel,
+		"{OWNER}", stripBraces(cfg.Owner),
+		"{REPO}", stripBraces(cfg.Repo),
+		"{STALE_LABEL_NAME}", stripBraces(cfg.StaleLabel),
+		"{REQUEST_CLARIFICATION_LABEL}", stripBraces(cfg.RequestClarificationLabel),
 		"{stale_threshold_days}", formatDays(cfg.StaleAfter),
 		"{close_threshold_days}", formatDays(cfg.CloseAfter),
 	)
 	return r.Replace(promptTemplate)
 }
+
+var braceStripper = strings.NewReplacer("{", "", "}", "")
+
+// stripBraces removes brace characters so a substituted value cannot be parsed
+// as an llmagent session-state placeholder.
+func stripBraces(s string) string { return braceStripper.Replace(s) }
 
 // formatDays renders a duration as a clean day count: whole numbers without a
 // decimal (e.g. "7"), fractional values with one decimal place (e.g. "0.5").

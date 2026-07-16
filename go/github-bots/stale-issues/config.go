@@ -88,11 +88,14 @@ func loadConfig(args []string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Owner:                     getenv("OWNER", "google"),
-		Repo:                      getenv("REPO", "adk-go"),
+		// OWNER/REPO have no default on purpose: a default would silently target a
+		// concrete repository if a caller forgot to set them (validate() rejects an
+		// empty value instead, so misconfiguration fails loudly).
+		Owner:                     os.Getenv("OWNER"),
+		Repo:                      os.Getenv("REPO"),
 		GitHubToken:               os.Getenv("GITHUB_TOKEN"),
 		GeminiAPIKey:              firstNonEmpty(os.Getenv("GEMINI_API_KEY"), os.Getenv("GOOGLE_API_KEY")),
-		Model:                     getenv("LLM_MODEL_NAME", "gemini-3.5-flash"),
+		Model:                     getenv("LLM_MODEL_NAME", "gemini-flash-latest"),
 		StaleAfter:                envHours("STALE_HOURS_THRESHOLD", 14*24*time.Hour),
 		CloseAfter:                envHours("CLOSE_HOURS_AFTER_STALE_THRESHOLD", 7*24*time.Hour),
 		StaleLabel:                getenv("STALE_LABEL_NAME", "stale"),

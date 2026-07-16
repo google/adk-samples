@@ -26,8 +26,11 @@ func setRequiredCreds(t *testing.T) {
 	t.Helper()
 	t.Setenv("GITHUB_TOKEN", "tok")
 	t.Setenv("GEMINI_API_KEY", "key")
+	// OWNER/REPO are required (no default), so they are part of the minimum.
+	t.Setenv("OWNER", "google")
+	t.Setenv("REPO", "adk-go")
 	for _, k := range []string{
-		"OWNER", "REPO", "GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI", "LLM_MODEL_NAME",
+		"GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI", "LLM_MODEL_NAME",
 		"STALE_HOURS_THRESHOLD", "CLOSE_HOURS_AFTER_STALE_THRESHOLD",
 		"STALE_LABEL_NAME", "REQUEST_CLARIFICATION_LABEL", "MAINTAINERS",
 		"CONCURRENCY_LIMIT", "ISSUE_TIMEOUT", "DRY_RUN",
@@ -42,8 +45,8 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadConfig: %v", err)
 	}
-	if cfg.Model != "gemini-3.5-flash" {
-		t.Errorf("Model = %q, want gemini-3.5-flash", cfg.Model)
+	if cfg.Model != "gemini-flash-latest" {
+		t.Errorf("Model = %q, want gemini-flash-latest", cfg.Model)
 	}
 	if cfg.Owner != "google" || cfg.Repo != "adk-go" {
 		t.Errorf("Owner/Repo = %q/%q, want google/adk-go", cfg.Owner, cfg.Repo)
@@ -95,5 +98,17 @@ func TestLoadConfig_MissingCredentials(t *testing.T) {
 	t.Setenv("GOOGLE_API_KEY", "")
 	if _, err := loadConfig(nil); err == nil {
 		t.Fatal("expected error when GITHUB_TOKEN and GEMINI_API_KEY are missing")
+	}
+}
+
+func TestLoadConfig_MissingOwnerRepo(t *testing.T) {
+	for _, unset := range []string{"OWNER", "REPO"} {
+		t.Run(unset, func(t *testing.T) {
+			setRequiredCreds(t)
+			t.Setenv(unset, "")
+			if _, err := loadConfig(nil); err == nil {
+				t.Fatalf("loadConfig() with empty %s = nil error, want error (no silent default)", unset)
+			}
+		})
 	}
 }

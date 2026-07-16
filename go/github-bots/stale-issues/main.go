@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
 )
 
 const (
@@ -91,6 +93,15 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 		Tools:       tools,
 		// Temperature 0 keeps the classification deterministic across runs.
 		GenerateContentConfig: &genai.GenerateContentConfig{Temperature: genai.Ptr[float32](0)},
+		// Observe-only: log a tool failure but don't replace the result, so the
+		// model still sees the error and can react. The tool itself records the
+		// failure (hadToolError) so the run can also exit non-zero.
+		OnToolErrorCallbacks: []llmagent.OnToolErrorCallback{
+			func(_ agent.Context, t tool.Tool, args map[string]any, err error) (map[string]any, error) {
+				log.Error("tool call failed", "tool", t.Name(), "args", args, "error", err)
+				return nil, nil
+			},
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("create agent: %w", err)
@@ -116,7 +127,17 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 	}
 	log.Info("auditing issues", "count", len(issues))
 
-	auditAll(ctx, r, sessionService, cfg, log, issues)
+	// Fail loud: surface both agent-run failures (returned by auditAll) and tool
+	// infrastructure errors (handed back to the model as data, tracked on the
+	// client) so a scheduled/CI run exits non-zero instead of silently reporting
+	// success when nothing worked.
+	auditErr := auditAll(ctx, r, sessionService, cfg, log, issues)
+	if auditErr != nil {
+		return fmt.Errorf("one or more audits failed: %w", auditErr)
+	}
+	if gh.hadToolError() {
+		return errors.New("one or more tool calls failed; see logs above")
+	}
 	return nil
 }
 
@@ -140,25 +161,26 @@ func candidateIssues(ctx context.Context, gh *GitHubClient, cfg *Config) ([]int,
 }
 
 // auditAll audits the issues with bounded concurrency. A failure on one issue is
-// logged but never aborts the batch.
-func auditAll(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Config, log *slog.Logger, issues []int) {
+// logged and does not abort the batch (a plain errgroup does not cancel on
+// error), but it is returned so the whole run can exit non-zero.
+func auditAll(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Config, log *slog.Logger, issues []int) error {
 	g := new(errgroup.Group)
 	g.SetLimit(cfg.Concurrency)
 	for _, n := range issues {
 		g.Go(func() error {
-			auditIssue(ctx, r, ss, cfg, log, n)
-			return nil
+			return auditIssue(ctx, r, ss, cfg, log, n)
 		})
 	}
-	_ = g.Wait()
+	err := g.Wait()
 	log.Info("audit finished", "processed", len(issues))
+	return err
 }
 
 // auditIssue runs the agent against a single issue in its own fresh session. A
 // per-issue session isolates each audit's conversation (its tool calls and the
 // model's reasoning) so issues never bleed into each other's context, which also
 // lets the bounded-concurrency workers in auditAll run safely in parallel.
-func auditIssue(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Config, log *slog.Logger, number int) {
+func auditIssue(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Config, log *slog.Logger, number int) error {
 	ictx, cancel := context.WithTimeout(ctx, cfg.IssueTimeout)
 	defer cancel()
 	// Scope this session to the audited issue so injected instructions in the
@@ -170,7 +192,7 @@ func auditIssue(ctx context.Context, r *runner.Runner, ss session.Service, cfg *
 	resp, err := ss.Create(ictx, &session.CreateRequest{AppName: appName, UserID: userID})
 	if err != nil {
 		l.Error("create session", "error", err)
-		return
+		return fmt.Errorf("issue #%d: create session: %w", number, err)
 	}
 
 	// The issue number reaches the tools *through the model*: this message names
@@ -184,10 +206,19 @@ func auditIssue(ctx context.Context, r *runner.Runner, ss session.Service, cfg *
 	// decision, so we keep the text of the last content-bearing event.
 	// StreamingModeNone is used because this is a headless batch run with no UI
 	// to update token-by-token (cf. StreamingModeSSE in the interactive examples).
-	var decision string
+	var (
+		decision string
+		runErr   error
+	)
 	for event, err := range r.Run(ictx, userID, resp.Session.ID(), msg, agent.RunConfig{StreamingMode: agent.StreamingModeNone}) {
 		if err != nil {
 			l.Error("agent run", "error", err)
+			runErr = errors.Join(runErr, err)
+			continue
+		}
+		if event.ErrorCode != "" {
+			l.Error("model error", "code", event.ErrorCode, "message", event.ErrorMessage)
+			runErr = errors.Join(runErr, fmt.Errorf("model error %s: %s", event.ErrorCode, event.ErrorMessage))
 			continue
 		}
 		if event.Content == nil {
@@ -203,6 +234,10 @@ func auditIssue(ctx context.Context, r *runner.Runner, ss session.Service, cfg *
 	}
 
 	l.Info("audited", "duration", time.Since(start).Round(time.Millisecond), "decision", summarize(decision))
+	if runErr != nil {
+		return fmt.Errorf("issue #%d: %w", number, runErr)
+	}
+	return nil
 }
 
 // summarize collapses the agent's final text into a single short log line.

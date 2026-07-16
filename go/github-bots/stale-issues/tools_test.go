@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"testing"
 )
 
@@ -32,6 +34,64 @@ func TestAuthorizeIssue(t *testing.T) {
 	// The defense against prompt injection: a different issue must be refused.
 	if msg, ok := authorizeIssue(ctx, 8); ok {
 		t.Errorf("authorizeIssue(8) on a session scoped to 7 = ok, want rejected (msg=%q)", msg)
+	}
+}
+
+func TestDoGetIssueStateRejectsUnauthorizedRead(t *testing.T) {
+	// The read tool is authorized like the mutating tools: untrusted content must
+	// not make the model pull an out-of-scope issue's data into context.
+	var calls int
+	c := testClient(t, baseCfg(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	ctx := withAuditedIssue(context.Background(), 7)
+	st, err := c.doGetIssueState(ctx, 8)
+	if err != nil {
+		t.Fatalf("doGetIssueState(8) unexpected Go error = %v", err)
+	}
+	if st.Status == "success" {
+		t.Error("doGetIssueState(8) on a session scoped to 7 = success, want error status")
+	}
+	if calls != 0 {
+		t.Errorf("doGetIssueState(8) made %d HTTP calls for an unauthorized read, want 0", calls)
+	}
+}
+
+func TestDoAddLabelRejectsUnauthorized(t *testing.T) {
+	var calls int
+	c := testClient(t, baseCfg(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+	}))
+	ctx := withAuditedIssue(context.Background(), 7)
+	res, err := c.doAddLabel(ctx, 8, "stale")
+	if err != nil {
+		t.Fatalf("doAddLabel(8) unexpected Go error = %v", err)
+	}
+	if res.Status != "error" {
+		t.Errorf("doAddLabel(8) on a session scoped to 7 = %q, want error", res.Status)
+	}
+	if calls != 0 {
+		t.Errorf("doAddLabel(8) made %d HTTP calls for an unauthorized issue, want 0", calls)
+	}
+}
+
+func TestDoAddLabelRecordsToolError(t *testing.T) {
+	// An infrastructure failure must be recorded so the run can exit non-zero
+	// (fail loud), even though the error is also handed back to the model.
+	c := testClient(t, baseCfg(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, `{"message":"boom"}`)
+	}))
+	ctx := withAuditedIssue(context.Background(), 7)
+	if c.hadToolError() {
+		t.Fatal("hadToolError() should start false")
+	}
+	if _, err := c.doAddLabel(ctx, 7, "stale"); err == nil {
+		t.Fatal("doAddLabel(7) on HTTP 500 = nil error, want error")
+	}
+	if !c.hadToolError() {
+		t.Error("doAddLabel did not record the infrastructure error (run would not fail loud)")
 	}
 }
 

@@ -50,6 +50,16 @@ func TestRenderPrompt_NoStrayBraces(t *testing.T) {
 	}
 }
 
+func TestRenderPrompt_StripsBracesFromConfig(t *testing.T) {
+	// A brace arriving via a config value (e.g. an odd label name) must not leak
+	// into the instruction, where llmagent would treat it as a missing state key.
+	cfg := promptCfg()
+	cfg.StaleLabel = "needs_{info}"
+	if out := renderPrompt(cfg); strings.ContainsAny(out, "{}") {
+		t.Errorf("renderPrompt() with a braced label left stray brace(s):\n%s", out)
+	}
+}
+
 func TestRenderPrompt_SubstitutesPlaceholders(t *testing.T) {
 	out := renderPrompt(promptCfg())
 	for _, want := range []string{"google/adk-go", "'stale'", "'request clarification'", "7 days"} {
