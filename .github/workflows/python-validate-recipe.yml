@@ -61,11 +61,23 @@ jobs:
           #
           # A recipe is Python if:
           #   (a) It lives under core/python/<recipe>/, OR
-          #   (b) Its manifest.yaml contains:  language: "python"
+          #   (b) It lives under contrib/python/<recipe>/, OR
+          #   (c) It lives under contrib/<recipe>/ AND manifest.yaml
+          #       contains:  language: "python"
           #
-          # Layout:
-          #   core/python/<recipe>/...  — always Python (namespace dir)
-          #   contrib/<recipe>/...      — Python only if manifest says so
+          # Layouts recognised:
+          #   core/python/<recipe>/...      — always Python (namespace dir)
+          #   contrib/python/<recipe>/...   — always Python (namespace dir)
+          #   contrib/<recipe>/...          — Python only if manifest says so
+          #
+          # Order matters in the case statement below: the more-specific
+          # `contrib/python/*/*` pattern MUST come before the generic
+          # `contrib/*/*`, or the generic branch will match first and resolve
+          # to `contrib/python` (a namespace dir with no manifest.yaml), which
+          # then silently skips the real recipe at `contrib/python/<recipe>/`.
+          # This was a real bug — recipes at `contrib/python/<name>/` were
+          # never validated (folder-name check, size limits, model-literal
+          # notice, structural pyproject.toml rules — all bypassed).
           # ---------------------------------------------------------------------------
 
           CHANGED_RECIPES=""
@@ -82,6 +94,15 @@ jobs:
                 recipe_name="${without_root%%/*}"              # <recipe>
                 recipe_dir="core/python/${recipe_name}"
                 ;;
+              contrib/python/*/*)
+                # contrib/python/<recipe>/anything → recipe is contrib/python/<recipe>.
+                # MUST match before the generic `contrib/*/*` case below, otherwise
+                # the generic one wins and resolves to `contrib/python` (namespace
+                # dir, no manifest) → silently skipped.
+                without_root="${file#contrib/python/}"
+                recipe_name="${without_root%%/*}"
+                recipe_dir="contrib/python/${recipe_name}"
+                ;;
               contrib/*/*)
                 # contrib/<recipe>/anything → candidate, check manifest later
                 without_root="${file#contrib/}"
@@ -96,8 +117,11 @@ jobs:
             [ -z "$recipe_dir" ] && continue
             [ -d "$recipe_dir" ] || continue   # skip deleted dirs
 
-            # For contrib recipes, only include if manifest.yaml declares language: python
-            if [[ "$recipe_dir" == contrib/* ]]; then
+            # For contrib recipes NOT under a language namespace dir, only
+            # include if manifest.yaml declares language: python. Namespaced
+            # dirs (contrib/python/*, like core/python/*) are Python by
+            # convention and don't need the manifest check.
+            if [[ "$recipe_dir" == contrib/* && "$recipe_dir" != contrib/python/* ]]; then
               manifest="$recipe_dir/manifest.yaml"
               if [ ! -f "$manifest" ]; then
                 continue
@@ -139,7 +163,17 @@ jobs:
             [ -d "$d" ] && ALL="${ALL}${d%/}"$'\n'
           done
 
-          # contrib/* — only if manifest declares python
+          # contrib/python/* — always Python (namespace dir, like core/python/).
+          # Kept as a separate loop from `contrib/*/` below so the language
+          # dir itself (contrib/python/) is never scanned for a manifest.yaml
+          # it doesn't have.
+          for d in contrib/python/*/; do
+            [ -d "$d" ] && ALL="${ALL}${d%/}"$'\n'
+          done
+
+          # contrib/<recipe>/ — only if manifest declares python. Skips
+          # language namespace dirs (contrib/python/, contrib/go/, etc.)
+          # since those have no top-level manifest.yaml.
           for d in contrib/*/; do
             [ -d "$d" ] || continue
             manifest="${d}manifest.yaml"

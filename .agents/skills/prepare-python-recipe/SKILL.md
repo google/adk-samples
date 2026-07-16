@@ -240,6 +240,8 @@ uv run ruff check --fix <RECIPE_DIR>
 - **Exit 1** — genuine violations ruff can't auto-fix (typically `C901` complex-structure, `PLR0912/0915` too-many-branches/statements). Do NOT stop the pipeline — note them in the summary as a Manual TODO so the user can refactor or add per-file `# noqa` markers after review.
 - **Exit 2** — ruff itself errored (invalid config, a file-system problem, or a bug in ruff), NOT a violation count. Phase 4 effectively did not run, so treat this as a hard error under rule 7: stop the pipeline and surface the message. Do not mistake it for "violations remain" and continue.
 
+Note on `E402` and `__init__.py`: Phase 2 (env-var extraction) already suppresses `E402` on any trailing relative import (`from . import agent`) in the recipe's package `__init__.py` — the canonical ADK-recipe pattern where env-bootstrap side effects (`load_dotenv()`, `os.environ.setdefault(...)`) intentionally precede a `from . import ...` line so env vars are populated before agent submodules load. If you see `E402` on an `__init__.py` in Phase 4's output, something went wrong upstream (Phase 2 didn't detect the pattern, or a new file appeared between Phases 2 and 4). Note that in the progress line so it isn't quietly buried.
+
 Progress line: `Phase 4 (lint): <N> file(s) formatted, <M> issue(s) auto-fixed, <K> unfixable issue(s) left.`
 
 ### Phase 5 — recipe `uv lock`
@@ -247,10 +249,12 @@ Progress line: `Phase 4 (lint): <N> file(s) formatted, <M> issue(s) auto-fixed, 
 Now that `pyproject.toml` is stable (Phase 3 aligned it, Phase 4 didn't touch it), regenerate the lockfile so it matches:
 
 ```bash
-uv lock
+uv lock --python 3.11
 ```
 
 Run this WITH `workdir = <RECIPE_DIR>` (do not `cd` — pass the working directory via the tool call).
+
+**Why `--python 3.11` explicitly?** CI's `.github/workflows/python-dependency-policy.yml` pins Python 3.11 when it runs `uv lock --check` on every recipe. If we lock here with whatever interpreter the user happens to have installed (typically 3.12 or newer on modern machines), the recipe locks cleanly locally but the CI check fails on the PR with a confusing `The requested interpreter resolved to Python 3.11.15, which is incompatible with the project's Python requirement: >=3.12` — mis-reported by the workflow as "lockfile is out of date". Forcing 3.11 here surfaces the same incompatibility at pipeline time, when the user can fix it or push back, rather than at PR time. Phase 3's `python-version-floor` check should have already caught this and rewritten `requires-python`, so the lock should succeed — but pinning defends against edge cases where the check was too permissive or the recipe had a compatible-release ceiling the rewrite couldn't lower.
 
 **Why `uv lock` and not `uv sync`?** The pipeline's job is to prepare the recipe, not to install and validate its runtime environment. `uv lock` resolves dependencies against the aligned `pyproject.toml` and writes `uv.lock` — that's the artefact CI and downstream consumers need. `uv sync` would additionally download every wheel into `.venv/`, which:
 - Is slow (minutes of network I/O).
@@ -259,9 +263,9 @@ Run this WITH `workdir = <RECIPE_DIR>` (do not `cd` — pass the working directo
 
 The user gets a real `.venv/` by running `uv sync` themselves after reviewing the diff — see the "Next steps" block at the end of the summary.
 
-If `uv lock` fails (dependency conflict, unresolvable version, invalid `pyproject.toml`), stop and surface the error.
+If `uv lock --python 3.11` fails, halt and surface the error verbatim (rule 7). The most common cause is a `requires-python` specifier that excludes 3.11 (`>=3.12`, `~=3.12`, etc.) that Phase 3 could not rewrite — the fix is to either lower the recipe's floor to `>=3.11` or, if the recipe genuinely needs newer features, raise the issue with the repo maintainers to update CI's pinned interpreter.
 
-Progress line: `Phase 5 (recipe lock): uv lock completed.`
+Progress line: `Phase 5 (recipe lock): uv lock --python 3.11 completed.`
 
 ### Phase 6 — runnability test
 

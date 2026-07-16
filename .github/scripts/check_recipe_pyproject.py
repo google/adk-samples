@@ -5,8 +5,10 @@ Rules enforced (see .github/workflows/python-validate-recipe.yml):
 
   - project-name-matches-folder: [project].name must equal the recipe
     folder basename.
-  - python-version-floor: [project].requires-python must not permit any
-    Python version below 3.11 (per AGENTS.md).
+  - python-version-floor: [project].requires-python must ACCEPT Python
+    3.11 exactly — it must neither permit anything below (loose floor) nor
+    exclude 3.11 by requiring higher (e.g. `>=3.12`). CI pins Python 3.11
+    and any recipe that can't lock under 3.11 breaks the lockfile check.
   - description-matches-manifest: if [project].description is set, it must
     equal manifest.description from the recipe's manifest.yaml (after
     .strip(), exact match). Optional; skipped when absent.
@@ -113,12 +115,23 @@ def check_name(project: dict, pyproject_path: Path, folder: str) -> None:
 
 
 def check_requires_python(project: dict, pyproject_path: Path) -> None:
-    """B1: [project].requires-python must not permit Python < MIN_PYTHON.
+    """B1: [project].requires-python must ACCEPT Python == MIN_PYTHON.
 
-    Interpretation A: the repo standard is a FLOOR. A recipe that requires
-    Python 3.12+ (e.g. `>=3.12`) is fine — the recipe author has legitimately
-    chosen a stricter minimum. A recipe that PERMITS versions below 3.11
-    (e.g. `>=3.10`, `~=3.10`, `!=3.11`, `<=3.12`, unpinned) is a violation.
+    Interpretation B: every recipe must be lockable/runnable under the
+    version CI pins in .github/workflows/python-dependency-policy.yml (3.11).
+    Two failure modes:
+
+      * ``permits_older`` — spec accepts a Python below MIN_PYTHON (e.g.
+        ``>=3.10``, ``~=3.10``, ``!=3.11``, ``<=3.12``, unpinned).
+      * ``excludes_min`` — spec rejects MIN_PYTHON by requiring higher
+        (e.g. ``>=3.12``, ``>=3.12,<3.14``, ``~=3.12``). This used to be
+        permitted under a "floor is 3.11 but higher is fine" reading, but
+        it makes CI fail with a confusing "lockfile is out of date" error
+        whose real cause is that uv can't resolve a 3.11 interpreter
+        against a >=3.12 requirement. Recipes that genuinely need 3.12+
+        features must instead update CI's pinned interpreter (or add a
+        per-recipe override) — silently allowing them here just moves the
+        failure to PR-time.
 
     Uses packaging.specifiers.SpecifierSet (the PEP 440 reference
     implementation) so every legal operator (>=, >, ~=, ==, !=, <, <=, and
@@ -130,7 +143,8 @@ def check_requires_python(project: dict, pyproject_path: Path) -> None:
             "FAIL",
             pyproject_path,
             f"[project].requires-python is missing; it must declare a "
-            f"lower bound of >= {MIN_PYTHON_STR} (per AGENTS.md).",
+            f"specifier that accepts Python {MIN_PYTHON_STR} and rejects "
+            "anything below (per AGENTS.md).",
         )
         return
 
@@ -145,9 +159,9 @@ def check_requires_python(project: dict, pyproject_path: Path) -> None:
         )
         return
 
-    # If any pre-MIN_PYTHON version satisfies the spec, the lower bound is
-    # too loose (e.g. '>=3.10', '~=3.10', '!=3.11', '<=3.12', unpinned).
     permits_older = [v for v in BELOW_MIN if v in spec]
+    excludes_min = Version(MIN_PYTHON_STR) not in spec
+
     if permits_older:
         # Only surface a real witness version, never a synthetic `.9999`
         # probe (which is the only match for a micro floor like `>=3.10.5`).
@@ -162,10 +176,23 @@ def check_requires_python(project: dict, pyproject_path: Path) -> None:
         )
         return
 
+    if excludes_min:
+        emit(
+            "FAIL",
+            pyproject_path,
+            f"[project].requires-python = '{requires_python}' excludes Python "
+            f"{MIN_PYTHON_STR}; the specifier must accept {MIN_PYTHON_STR} so "
+            "CI (which pins Python 3.11) can lock and run this recipe. Lower "
+            f"the floor to '>={MIN_PYTHON_STR}' (preserving any upper bound), "
+            "or if the recipe genuinely needs newer features, raise the "
+            "issue with the repo maintainers to update CI's pinned interpreter.",
+        )
+        return
+
     emit(
         "PASS",
         pyproject_path,
-        f"[project].requires-python lower bound is >= {MIN_PYTHON_STR} "
+        f"[project].requires-python admits Python {MIN_PYTHON_STR} "
         f"('{requires_python}').",
     )
 

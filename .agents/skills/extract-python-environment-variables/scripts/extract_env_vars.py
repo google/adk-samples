@@ -408,23 +408,72 @@ def _imports_os(tree: ast.AST) -> bool:
     return False
 
 
-_RELATIVE_IMPORT_RE = re.compile(r"^\s*from\s+\.")
 _NOQA_E402_SUFFIX = "  # noqa: E402 -- must come after load_dotenv()"
 
 
-def _maybe_suppress_e402(line: str) -> str:
-    """Append a `# noqa: E402` suffix to a relative-import line if absent.
+def _suppress_e402_on_late_relative_imports(
+    tree: ast.Module | None, lines: list[str]
+) -> tuple[list[str], int]:
+    """Append `# noqa: E402` to top-level `from .x import y` statements that
+    sit AFTER a non-import module-level statement — those are the only ones
+    Ruff actually flags as E402. A relative import at the top of the module
+    (before any non-import) is fine and left alone.
 
-    A no-op for anything that isn't a relative import (``from .x import ...``)
-    or that already carries an E402 noqa comment.
+    Returns ``(new_lines, count_of_lines_newly_marked)``. Idempotent: a line
+    that already carries an E402 noqa comment is not touched again.
     """
-    if not _RELATIVE_IMPORT_RE.match(line):
-        return line
-    if "noqa" in line and "E402" in line:
-        return line
-    stripped = line.rstrip("\n")
-    newline = line[len(stripped) :]  # preserve original line ending
-    return stripped + _NOQA_E402_SUFFIX + newline
+    if tree is None:
+        return lines, 0
+
+    # 1. Find the line of the first non-import module-level statement.
+    #    A module docstring (bare string expression at the top) is allowed
+    #    to precede imports and does NOT count as a non-import.
+    first_non_import_line: int | None = None
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            continue
+        if (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        ):
+            continue
+        first_non_import_line = stmt.lineno
+        break
+
+    if first_non_import_line is None:
+        return lines, 0  # No non-imports → no E402 possible.
+
+    # 2. Collect line numbers of trailing relative imports (level > 0) that
+    #    fall past that first-non-import boundary.
+    late_lines: set[int] = set()
+    for stmt in tree.body:
+        if (
+            isinstance(stmt, ast.ImportFrom)
+            and stmt.level > 0
+            and stmt.lineno > first_non_import_line
+        ):
+            for lineno in range(
+                stmt.lineno, (stmt.end_lineno or stmt.lineno) + 1
+            ):
+                late_lines.add(lineno)
+
+    if not late_lines:
+        return lines, 0
+
+    new_lines: list[str] = []
+    marked = 0
+    for i, line in enumerate(lines, start=1):
+        if i in late_lines and not (
+            "noqa" in line and "E402" in line
+        ):
+            stripped = line.rstrip("\n")
+            newline = line[len(stripped) :]
+            new_lines.append(stripped + _NOQA_E402_SUFFIX + newline)
+            marked += 1
+        else:
+            new_lines.append(line)
+    return new_lines, marked
 
 
 def _has_load_dotenv(tree: ast.AST) -> bool:
@@ -493,13 +542,36 @@ def _last_top_level_absolute_import_line(tree: ast.Module) -> int:
     return last
 
 
-def inject_load_dotenv(init_py: Path, dry_run: bool = False) -> bool:
+def inject_load_dotenv(
+    init_py: Path, dry_run: bool = False
+) -> tuple[bool, int]:
     """
-    Ensure load_dotenv import + bootstrap snippet exist in __init__.py.
-    Returns True if the file was (or would be) modified.
+    Ensure ``__init__.py`` bootstraps env-var loading correctly.
 
-    When dry_run is True, no file is written; the return value still reports
-    whether the snippet would be injected.
+    Does two things, in order:
+
+      1. Injects the ``from dotenv import load_dotenv`` + ``load_dotenv()``
+         bootstrap block if not already present. Insertion goes AFTER the
+         last top-level absolute import so env vars are populated before any
+         downstream package code runs.
+
+      2. Appends ``# noqa: E402`` to any trailing relative import
+         (``from .x import y``) that comes AFTER a non-import statement.
+         Runs BOTH when we just injected AND when the recipe author already
+         wrote a bootstrap (``load_dotenv()`` + ``os.environ.setdefault(...)``)
+         with trailing relative imports that were never marked — Ruff would
+         otherwise flag those as E402. The ordering is deliberate (env must
+         be populated before importing agent submodules), so suppression is
+         the correct fix, not reordering.
+
+    Returns ``(injected, noqa_added)``:
+      * ``injected``  — True if the bootstrap block was added.
+      * ``noqa_added`` — Number of trailing relative import lines newly
+        marked with ``# noqa: E402``.
+
+    Both operations are idempotent — calling again on the same file returns
+    ``(False, 0)``. When ``dry_run`` is True, the file is NOT written but
+    the return value still reports what would happen.
     """
     content = init_py.read_text(encoding="utf-8")
 
@@ -513,40 +585,53 @@ def inject_load_dotenv(init_py: Path, dry_run: bool = False) -> bool:
     else:
         # Fall back to a conservative substring check on unparseable files.
         already_present = "load_dotenv" in content
-    if already_present:
-        return False  # Already present — nothing to do
-
-    if dry_run:
-        return True  # Would inject the bootstrap snippet.
 
     lines = content.splitlines(keepends=True)
+    injected = False
 
-    # Build the block to inject (import + blank line + snippet + blank line)
-    inject_block = f"\n{LOAD_DOTENV_IMPORT}\n\n{LOAD_DOTENV_SNIPPET}\n"
+    if not already_present:
+        # Build the block to inject (import + blank line + snippet + blank line)
+        inject_block = f"\n{LOAD_DOTENV_IMPORT}\n\n{LOAD_DOTENV_SNIPPET}\n"
 
-    # Insert AFTER the last top-level absolute import (AST-based, so imports
-    # inside docstrings/functions/conditionals are never mistaken for one).
-    # Relative imports (from .something) must come AFTER load_dotenv() so the
-    # env is populated before any package module-level code runs.
-    last_import_line = (
-        _last_top_level_absolute_import_line(tree) if tree is not None else 0
-    )
+        # Insert AFTER the last top-level absolute import (AST-based, so imports
+        # inside docstrings/functions/conditionals are never mistaken for one).
+        # Relative imports (from .something) must come AFTER load_dotenv() so
+        # the env is populated before any package module-level code runs.
+        last_import_line = (
+            _last_top_level_absolute_import_line(tree)
+            if tree is not None
+            else 0
+        )
 
-    if last_import_line > 0:
-        # end_lineno is 1-based; index == end_lineno inserts on the next line.
-        lines.insert(last_import_line, inject_block)
-    else:
-        # No top-level imports — insert after license header + docstring.
-        lines.insert(_post_header_index(lines), inject_block)
+        if last_import_line > 0:
+            # end_lineno is 1-based; index == end_lineno inserts on the next
+            # line.
+            lines.insert(last_import_line, inject_block)
+        else:
+            # No top-level imports — insert after license header + docstring.
+            lines.insert(_post_header_index(lines), inject_block)
+        injected = True
 
-    # Any relative imports (`from .x import ...`) now sit AFTER the injected
-    # load_dotenv() call, which would trigger Ruff E402 ("module-level import
-    # not at top of file"). Suppress that warning per-line, since the ordering
-    # is intentional — env must be populated before agent module-level code.
-    lines = [_maybe_suppress_e402(ln) for ln in lines]
+        # Re-split so each list element is exactly one physical line — the
+        # noqa pass below indexes by 1-based line number and inject_block
+        # spans multiple lines, so leaving it as one element would misalign
+        # indices with AST line numbers. AND re-parse so the AST reflects the
+        # post-injection state (line numbers of trailing imports shift).
+        joined = "".join(lines)
+        lines = joined.splitlines(keepends=True)
+        try:
+            tree = ast.parse(joined)
+        except SyntaxError:
+            tree = None
 
-    init_py.write_text("".join(lines), encoding="utf-8")
-    return True
+    # Suppress E402 on any trailing relative import that comes after a
+    # non-import statement — see docstring for the two cases this covers.
+    lines, noqa_added = _suppress_e402_on_late_relative_imports(tree, lines)
+
+    if (injected or noqa_added > 0) and not dry_run:
+        init_py.write_text("".join(lines), encoding="utf-8")
+
+    return injected, noqa_added
 
 
 # ---------------------------------------------------------------------------
@@ -989,7 +1074,10 @@ def run_step_env_vars(
 
 
 def run_step_load_dotenv(recipe_dir: Path, dry_run: bool = False) -> None:
-    """Step 4: inject load_dotenv() bootstrap into the package __init__.py."""
+    """Step 4: inject load_dotenv() bootstrap into the package __init__.py,
+    and suppress Ruff E402 on any trailing relative imports that come after
+    non-import statements (whether we just injected them or the author had
+    already written a bootstrap by hand)."""
     init_py = find_package_init(recipe_dir)
     if not init_py:
         print(
@@ -998,11 +1086,21 @@ def run_step_load_dotenv(recipe_dir: Path, dry_run: bool = False) -> None:
         )
         return
     rel = init_py.relative_to(recipe_dir)
-    if inject_load_dotenv(init_py, dry_run=dry_run):
+    injected, noqa_added = inject_load_dotenv(init_py, dry_run=dry_run)
+    if injected:
         verb = "Would inject" if dry_run else "Injected"
         print(f"[{_tag(dry_run)}] {verb} load_dotenv() bootstrap into {rel}")
     else:
         print(f"[PASS] load_dotenv() already present in {rel} — skipped.")
+    if noqa_added > 0:
+        verb = "Would add" if dry_run else "Added"
+        print(
+            f"[{_tag(dry_run)}] {verb} '# noqa: E402' to {noqa_added} "
+            f"trailing relative import(s) in {rel} — they come after "
+            "load_dotenv()/env-bootstrap and would otherwise trigger Ruff "
+            "E402 in Phase 4 (ordering is intentional: env must be "
+            "populated before importing agent submodules)."
+        )
 
 
 def run_step_pyproject(recipe_dir: Path, dry_run: bool = False) -> None:

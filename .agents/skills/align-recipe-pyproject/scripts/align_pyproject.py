@@ -21,15 +21,23 @@ mirror it there (and vice versa).
         (Standalone ruff.toml / .ruff.toml files are also forbidden but are
         outside this skill's scope — see the workflow's Check 7.)
   - python-version-floor
-        [project].requires-python must not permit any Python version below
-        3.11 (per AGENTS.md "Minimum python version: 3.11"). Recipes that
-        require Python 3.12+ are the author's choice and are left alone.
-        Auto-fix: raise the lower bound to >=3.11 while preserving every
-        upper bound, exclusion, compatible-release ceiling, and pin (only the
-        pure lower-bound operators >= and > are dropped). If the rewrite
-        would produce a self-contradictory result — because the recipe's own
-        ceiling/pin/exclusion excludes 3.11 (e.g. `>=3.10,!=3.11` or
-        `==3.10.*`) — refuse to apply and return NEEDS_INPUT.
+        [project].requires-python must ACCEPT Python 3.11 exactly — it must
+        neither permit anything below (loose floor like >=3.10) nor exclude
+        3.11 by requiring higher (>=3.12 etc.). Per AGENTS.md "Minimum python
+        version: 3.11" and CI in .github/workflows/python-dependency-policy.yml,
+        which pins Python 3.11 and would otherwise emit a confusing "lockfile
+        is out of date" error whose real cause is the interpreter mismatch.
+        Auto-fix: rewrite the specifier so its lower bound is >=3.11 while
+        preserving every upper bound, exclusion, compatible-release ceiling,
+        and pin (only the pure lower-bound operators >= and > are dropped
+        or replaced). Applies to BOTH failure modes — loose floors (>=3.10)
+        and higher-than-min floors (>=3.12). If the rewrite would produce a
+        self-contradictory result — because the recipe's own ceiling/pin/
+        exclusion still excludes 3.11 after lowering (e.g. `>=3.10,!=3.11`,
+        `==3.10.*`, or `~=3.12` where the compatible-release ceiling shuts
+        out 3.11) — refuse to apply and return NEEDS_INPUT for a human to
+        resolve (typically: relax the ceiling, or raise the recipe with
+        the maintainers to update CI's pinned interpreter).
   - project-name-matches-folder
         [project].name must equal the recipe folder basename.
         Auto-fix: set it.
@@ -211,7 +219,7 @@ def _enumerate_ruff_subtables(
     return names
 
 
-# ---------- python-version-floor: requires-python floor must be >= 3.11 ----
+# ---------- python-version-floor: requires-python must accept exactly 3.11 -
 
 
 def _add_missing_python_floor(
@@ -239,14 +247,22 @@ def _validate_and_apply_python_floor_rewrite(
     spec: SpecifierSet,
     permits_older: list[Version],
     apply: bool,
+    excludes_min: bool = False,
 ) -> Check:
-    """Rewrite requires-python, validating the result is not degenerate."""
+    """Rewrite requires-python, validating the result is not degenerate.
+
+    Two failure modes route here:
+      * ``permits_older``: the spec accepts a Python below MIN_PYTHON.
+      * ``excludes_min``: the spec rejects MIN_PYTHON by requiring higher
+        (e.g. ``>=3.12``). The rewrite lowers the floor to MIN_PYTHON.
+    """
     target = _rewrite_requires_python(spec)
 
     # If the mechanical result no longer admits MIN_PYTHON (e.g.
-    # `>=3.10,!=3.11` -> `>=3.11,!=3.11`), the recipe author's exclusion
-    # collides with our required floor. Refuse to apply rather than emit a
-    # self-contradictory specifier.
+    # `>=3.10,!=3.11` -> `>=3.11,!=3.11`, or `~=3.12` -> `>=3.11,~=3.12`
+    # which normalizes back to `>=3.12,<4`), the recipe author's exclusion
+    # or ceiling collides with our required floor. Refuse to apply rather
+    # than emit a self-contradictory or ineffective specifier.
     try:
         new_spec = SpecifierSet(target)
     except InvalidSpecifier as e:
@@ -258,26 +274,41 @@ def _validate_and_apply_python_floor_rewrite(
             {"current": current, "attempted_rewrite": target},
         )
     if Version(MIN_PYTHON_STR) not in new_spec:
+        # Build a message that names the specific reason we're stuck.
+        if excludes_min and not permits_older:
+            explain = (
+                f"the recipe's compatible-release ceiling or pin "
+                f"(e.g. ~=, ==) still shuts out {MIN_PYTHON_STR} after "
+                "lowering the pure lower bound"
+            )
+        else:
+            explain = (
+                "the recipe's own upper bound, pin, or exclusion "
+                "contradicts the required floor"
+            )
         return Check(
             "python-version-floor",
             NEEDS_INPUT,
-            f"[project].requires-python = '{current}' permits Python "
-            f"versions below {MIN_PYTHON_STR}, but a mechanical rewrite "
-            f"would produce '{target}' which excludes {MIN_PYTHON_STR} "
-            f"itself (the recipe's own upper bound, pin, or exclusion "
-            f"contradicts the required floor). Fix by hand.",
+            f"[project].requires-python = '{current}' is incompatible "
+            f"with Python {MIN_PYTHON_STR}, but a mechanical rewrite "
+            f"would produce '{target}' which still excludes "
+            f"{MIN_PYTHON_STR} itself ({explain}). Fix by hand.",
             {"current": current, "attempted_rewrite": target},
         )
 
-    # Prefer a real witness version for the message; fall back to a generic
-    # phrase rather than surfacing a synthetic `.9999` probe (which would only
-    # appear for a micro-version floor like `>=3.10.5`).
-    real = [v for v in permits_older if v.micro != _PROBE_MICRO]
-    reason = (
-        f"permits Python {real[0]}"
-        if real
-        else f"permits Python below {MIN_PYTHON_STR}"
-    )
+    # Build the "reason this violated" phrase for the log message.
+    if excludes_min and not permits_older:
+        reason = f"excludes Python {MIN_PYTHON_STR}"
+    else:
+        # Prefer a real witness version; fall back to a generic phrase rather
+        # than surfacing a synthetic `.9999` probe (which would only appear
+        # for a micro-version floor like `>=3.10.5`).
+        real = [v for v in permits_older if v.micro != _PROBE_MICRO]
+        reason = (
+            f"permits Python {real[0]}"
+            if real
+            else f"permits Python below {MIN_PYTHON_STR}"
+        )
     verb = "Rewrote" if apply else "Would rewrite"
     if apply:
         project["requires-python"] = target
@@ -293,14 +324,31 @@ def _validate_and_apply_python_floor_rewrite(
 def check_python_version_floor(
     pyproject_path: Path, doc: tomlkit.TOMLDocument, apply: bool
 ) -> Check:
-    """Ensure [project].requires-python does not permit versions < MIN_PYTHON.
+    """Ensure [project].requires-python is compatible with MIN_PYTHON.
 
-    Interpretation A (per AGENTS.md discussion): the repo standard is a FLOOR.
-    A recipe that requires Python 3.12+ is fine and is left untouched.
-    A recipe that permits Python < 3.11 is rewritten so its lower bound
-    becomes >=3.11 (upper bounds and exclusions preserved). If the rewrite
-    would produce a self-contradictory result (e.g. `>=3.10,!=3.11`), the
-    script refuses to apply and returns NEEDS_INPUT.
+    Interpretation B (aligned with CI in .github/workflows/
+    python-dependency-policy.yml, which pins Python 3.11 and runs
+    `uv lock --check` against every recipe): every recipe MUST accept
+    MIN_PYTHON (3.11) as a valid interpreter. Two failure modes are rewritten:
+
+      1. **Permits versions below MIN_PYTHON** (e.g. `>=3.10`, `~=3.10`,
+         unpinned): floor raised to MIN_PYTHON while preserving upper
+         bounds/exclusions.
+      2. **Excludes MIN_PYTHON by requiring higher** (e.g. `>=3.12`,
+         `>=3.12,<3.14`, `~=3.12`): floor lowered to MIN_PYTHON while
+         preserving upper bounds. Previously (Interpretation A) this was
+         treated as "author's choice, leave alone" — that stance conflicts
+         with CI, which hardcodes Python 3.11 and produces a confusing
+         "lockfile is out of date" error whose real cause is the interpreter
+         version mismatch.
+
+    In either case, if the rewrite would produce a self-contradictory
+    specifier that excludes MIN_PYTHON itself (e.g. `>=3.10,!=3.11` or
+    `~=3.12` where the compatible-release ceiling still shuts out 3.11),
+    the script refuses to apply and returns NEEDS_INPUT for the human to
+    resolve. Recipes that genuinely need Python 3.12+ features must be
+    reported to the repo maintainer so CI can be updated in tandem — the
+    align skill will not silently allow a floor above MIN_PYTHON.
     """
     project = doc.get("project")
     current = None if project is None else project.get("requires-python")
@@ -324,20 +372,20 @@ def check_python_version_floor(
         )
 
     permits_older = [v for v in BELOW_MIN if v in spec]
+    excludes_min = Version(MIN_PYTHON_STR) not in spec
 
-    # Interpretation A: only rewrite when the spec permits versions below
-    # MIN_PYTHON. Higher lower bounds (e.g. `>=3.12`) are the recipe author's
-    # deliberate choice and are left alone.
-    if not permits_older:
+    # OK only when both invariants hold: 3.11 is accepted AND nothing below
+    # 3.11 is accepted.
+    if not permits_older and not excludes_min:
         return Check(
             "python-version-floor",
             OK,
-            f"[project].requires-python lower bound is >= {MIN_PYTHON_STR} "
-            f"('{current}').",
+            f"[project].requires-python admits Python {MIN_PYTHON_STR} "
+            f"and rejects everything below it ('{current}').",
         )
 
     return _validate_and_apply_python_floor_rewrite(
-        project, current, spec, permits_older, apply
+        project, current, spec, permits_older, apply, excludes_min
     )
 
 

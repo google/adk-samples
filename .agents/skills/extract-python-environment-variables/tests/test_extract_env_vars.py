@@ -320,7 +320,8 @@ def test_inject_load_dotenv_noop_if_present(tmp_path):
     )
     before = init.read_text(encoding="utf-8")
 
-    assert m.inject_load_dotenv(init) is False
+    # Nothing to inject and no trailing relative imports → (False, 0).
+    assert m.inject_load_dotenv(init) == (False, 0)
     assert init.read_text(encoding="utf-8") == before
 
 
@@ -330,7 +331,11 @@ def test_inject_load_dotenv_after_absolute_import_before_relative(tmp_path):
         '"""Package."""\n\nimport os\n\nfrom .agent import root_agent\n',
     )
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    # The trailing `from .agent` shifts below the injected load_dotenv() call,
+    # so it also picks up a noqa: E402 marker.
+    assert noqa_added == 1
 
     content = init.read_text(encoding="utf-8")
     ast.parse(content)  # result must be valid Python
@@ -344,7 +349,9 @@ def test_inject_load_dotenv_after_absolute_import_before_relative(tmp_path):
 def test_inject_load_dotenv_no_imports_goes_after_docstring(tmp_path):
     init = _write(tmp_path / "__init__.py", '"""Package docstring."""\n')
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    assert noqa_added == 0  # no trailing relative imports at all
 
     content = init.read_text(encoding="utf-8")
     ast.parse(content)  # result must be valid Python
@@ -362,7 +369,9 @@ def test_inject_load_dotenv_adds_noqa_to_trailing_relative_imports(tmp_path):
         "import os\nfrom .agent import root_agent\n",
     )
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    assert noqa_added == 1
 
     content = init.read_text(encoding="utf-8")
     ast.parse(content)  # result must be valid Python
@@ -371,7 +380,7 @@ def test_inject_load_dotenv_adds_noqa_to_trailing_relative_imports(tmp_path):
     )
     assert "noqa: E402" in rel_line
     # Idempotent: a second run must not duplicate the suffix.
-    m.inject_load_dotenv(init)
+    assert m.inject_load_dotenv(init) == (False, 0)
     assert init.read_text(encoding="utf-8").count("noqa: E402") == 1
 
 
@@ -383,7 +392,9 @@ def test_inject_load_dotenv_ignores_docstring_mention(tmp_path):
         '"""We will load_dotenv somewhere."""\nimport os\n',
     )
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    assert noqa_added == 0  # no trailing relative imports
 
     content = init.read_text(encoding="utf-8")
     ast.parse(content)  # result must be valid Python
@@ -395,7 +406,9 @@ def test_inject_load_dotenv_dry_run_reports_but_does_not_write(tmp_path):
     init = _write(tmp_path / "__init__.py", original)
 
     # Reports that it would inject ...
-    assert m.inject_load_dotenv(init, dry_run=True) is True
+    injected, noqa_added = m.inject_load_dotenv(init, dry_run=True)
+    assert injected is True
+    assert noqa_added == 0
     # ... but leaves the file untouched.
     assert init.read_text(encoding="utf-8") == original
 
@@ -415,7 +428,11 @@ def test_inject_load_dotenv_not_placed_inside_docstring(tmp_path):
         "from .agent import root_agent\n",
     )
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    # The pre-existing `from .agent import root_agent` shifts below the
+    # injected load_dotenv() call, so it picks up a noqa: E402 marker.
+    assert noqa_added == 1
 
     content = init.read_text(encoding="utf-8")
     tree = ast.parse(content)  # (b) result is valid Python
@@ -443,13 +460,106 @@ def test_inject_load_dotenv_ignores_import_inside_conditional(tmp_path):
         "import os\nif True:\n    import pdb\n    x = 1\n",
     )
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    assert noqa_added == 0  # no trailing relative imports
 
     content = init.read_text(encoding="utf-8")
     ast.parse(content)  # must remain valid Python (no IndentationError)
     # load_dotenv lands after the real top-level import, before the block.
     assert content.index("import os") < content.index("load_dotenv")
     assert content.index("load_dotenv") < content.index("if True:")
+
+
+def test_inject_load_dotenv_marks_late_relative_import_when_already_bootstrapped(
+    tmp_path,
+):
+    # Regression: some recipe authors hand-write the env-bootstrap pattern
+    # (load_dotenv + os.environ.setdefault + trailing `from .agent`) without
+    # a noqa marker on the relative import. When we run against such a file
+    # we must NOT inject anything (load_dotenv is already there) but MUST
+    # still add `# noqa: E402` to the trailing relative import — otherwise
+    # ruff (Phase 4 in prepare-python-recipe) flags E402 for a pattern the
+    # skill is aware of and could have suppressed.
+    init = _write(
+        tmp_path / "__init__.py",
+        "import os\n"
+        "from dotenv import load_dotenv\n"
+        "\n"
+        "load_dotenv()\n"
+        "os.environ.setdefault('FOO', 'bar')\n"
+        "\n"
+        "from . import agent\n",
+    )
+
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is False  # load_dotenv was already present
+    assert noqa_added == 1  # ... but the trailing relative import was marked
+
+    content = init.read_text(encoding="utf-8")
+    rel_line = next(
+        ln for ln in content.splitlines() if ln.startswith("from . import")
+    )
+    assert "noqa: E402" in rel_line
+
+    # Idempotent on a second run — nothing more to do.
+    assert m.inject_load_dotenv(init) == (False, 0)
+    assert init.read_text(encoding="utf-8").count("noqa: E402") == 1
+
+
+def test_inject_load_dotenv_leaves_early_relative_import_alone(tmp_path):
+    # Precision check: a relative import at the TOP of __init__.py (before
+    # any non-import statement) does NOT trigger Ruff E402. The suppression
+    # pass must be precise — the previous implementation blindly marked
+    # every relative import, which produced meaningless noqa comments on
+    # perfectly-fine lines.
+    init = _write(
+        tmp_path / "__init__.py",
+        "from . import agent\n"
+        "from dotenv import load_dotenv\n"
+        "\n"
+        "load_dotenv()\n",
+    )
+
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is False
+    assert noqa_added == 0
+
+    content = init.read_text(encoding="utf-8")
+    rel_line = next(
+        ln for ln in content.splitlines() if ln.startswith("from . import")
+    )
+    assert "noqa" not in rel_line
+
+
+def test_inject_load_dotenv_ignores_docstring_before_late_relative_import(
+    tmp_path,
+):
+    # A module docstring at the top of the file must NOT count as "the first
+    # non-import statement" — otherwise every relative import in a module with
+    # a docstring would be treated as late and get spuriously marked.
+    init = _write(
+        tmp_path / "__init__.py",
+        '"""My package."""\n'
+        "\n"
+        "from dotenv import load_dotenv\n"
+        "\n"
+        "load_dotenv()\n"
+        "\n"
+        "from . import agent\n",
+    )
+
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is False  # already bootstrapped
+    # The trailing `from . import agent` DOES come after load_dotenv() (not
+    # after the docstring), so it IS late and should be marked.
+    assert noqa_added == 1
+
+    content = init.read_text(encoding="utf-8")
+    rel_line = next(
+        ln for ln in content.splitlines() if ln.startswith("from . import")
+    )
+    assert "noqa: E402" in rel_line
 
 
 # ---------------------------------------------------------------------------

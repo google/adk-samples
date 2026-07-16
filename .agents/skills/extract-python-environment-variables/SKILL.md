@@ -17,7 +17,9 @@ description: >
   bootstrap lines. Pre-existing `os.environ.setdefault(...)` or
   `os.getenv("VAR", "default")` calls that the recipe author wrote by
   hand are LEFT UNTOUCHED — the skill is additive-only for Python files
-  (adds `load_dotenv()` bootstrap; replaces hardcoded model literals).
+  (adds `load_dotenv()` bootstrap; replaces hardcoded model literals;
+  appends `# noqa: E402` to trailing relative imports in `__init__.py`
+  when they'd otherwise trip Ruff after an env-bootstrap block).
   Use when the user wants to "extract env vars", "update .env.example",
   "add load_dotenv", "replace hardcoded model names", or "fix environment
   variables" in a Python recipe.
@@ -70,7 +72,28 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
    load_dotenv()
    ```
 
-   If `load_dotenv` is already present the file is left unchanged.
+   If `load_dotenv` is already present the injection is skipped.
+
+   **Additionally — always, regardless of whether we injected** — appends
+   `# noqa: E402 -- must come after load_dotenv()` to any top-level relative
+   import (`from .x import y`) that sits AFTER a non-import module-level
+   statement. Two cases this covers:
+
+   - **Fresh injection.** The injected `load_dotenv()` call pushes
+     pre-existing trailing relative imports below a non-import statement, so
+     they'd trigger Ruff `E402` ("module-level import not at top of file")
+     when Phase 4 (ruff) of `prepare-python-recipe` runs.
+
+   - **Author-written bootstrap.** The recipe author already wrote
+     `load_dotenv()` + `os.environ.setdefault(...)` calls followed by a
+     trailing `from . import agent`, but never marked the trailing import.
+     The skill did NOT inject anything (load_dotenv was already present) but
+     still adds the noqa suffix so the file is lint-clean on the pipeline's
+     next ruff pass.
+
+   The suppression pass is precise — a relative import at the very TOP of
+   the file (before any non-import statement) is fine and left untouched.
+   Idempotent: a line that already carries `# noqa: E402` is skipped.
 
 4. **Replaces hardcoded model names** in source (e.g. `model="gemini-3.5-flash"`
    in `agent.py`) with **bare `os.getenv("MODEL_NAME")`** — no default argument.
