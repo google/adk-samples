@@ -155,7 +155,7 @@ def generate_and_store_knowledge(
         """
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-pro", contents=prompt
+                model=os.getenv("MODEL_NAME_GEMINI_2_5_PRO"), contents=prompt
             )
             json_str = (
                 response.text.strip().replace("```json", "").replace("```", "")

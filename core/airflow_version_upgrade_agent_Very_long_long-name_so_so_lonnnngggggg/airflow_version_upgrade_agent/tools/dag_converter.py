@@ -121,7 +121,7 @@ def convert_dags(
 
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model=os.getenv("MODEL_NAME_GEMINI_2_5_FLASH"),
                     contents=prompt,
                     config=GenerateContentConfig(
                         tools=[
