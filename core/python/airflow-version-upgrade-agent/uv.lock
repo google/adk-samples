@@ -103,7 +103,7 @@ wheels = [
 ]
 
 [[package]]
-name = "airflow-version-upgrade-agent-very-long-long-name-so-so-lonnnngggggg"
+name = "airflow-version-upgrade-agent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

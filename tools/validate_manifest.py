@@ -57,7 +57,9 @@ def is_recipe_dir(path: Path) -> bool:
     if path.name in LANGUAGE_NAMESPACE_DIRS:
         return False
     children = [
-        p for p in path.iterdir() if not p.name.startswith(".") and p.name != "README.md"
+        p
+        for p in path.iterdir()
+        if not p.name.startswith(".") and p.name != "README.md"
     ]
     if not children:
         return False
