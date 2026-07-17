@@ -20,7 +20,7 @@ dependencies = [
     "spacy>=3.8.2",
     "thefuzz>=0.22.1",
     "gym==0.26.2",
-    "torch>=2.5.1",
+    "torch>=2.13.0",
     "torchvision>=0.20.1",
     "gdown>=5.2.0",
     "pytest>=8.3.5",
