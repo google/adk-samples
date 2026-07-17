@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+import os
+
 from google.adk.agents import LlmAgent
 from google.adk.models import Gemini
 
@@ -22,7 +24,7 @@ from .tools import dag_converter, knowledge_builder
 # Agent for the knowledge base update workflow
 knowledge_base_agent = LlmAgent(
     name="knowledge_base_updater",
-    model=Gemini(model="gemini-2.5-pro"),
+    model=Gemini(model=os.getenv("MODEL_NAME_GEMINI_2_5_PRO")),
     description="A workflow to update the RAG knowledge base for Airflow migrations",
     instruction=prompts.KNOWLEDGE_BASE_AGENT_PROMPT,
     tools=[knowledge_builder.run_pipeline],
@@ -33,7 +35,7 @@ root_agent = LlmAgent(
     name="airflow_migration_assistant",
     description="An assistant to help migrate Airflow DAGs between versions. Use tools and agents provided to accomplish this.",
     instruction=prompts.MIGRATION_ASSISTANT_PROMPT,
-    model=Gemini(model="gemini-2.5-pro"),
+    model=Gemini(model=os.getenv("MODEL_NAME_GEMINI_2_5_PRO")),
     sub_agents=[knowledge_base_agent],
     tools=[dag_converter.convert_dags],
 )

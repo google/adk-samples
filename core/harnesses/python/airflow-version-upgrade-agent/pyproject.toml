@@ -36,27 +36,6 @@ dev = [
     "types-requests>=2.32.0.20240914",
 ]
 
-[tool.ruff]
-# Point back to the Master template in the root
-extend = "../../../pyproject.toml"
-exclude = ["Makefile"]
-
-[tool.ruff.lint]
-# Ignores function complication rule throughout sample
-ignore = ["C901", "PLR0915", "PLR2004"]
-
-[tool.ruff.lint.per-file-ignores]
-# ignores unused import rule exclusively for this sample’s __init__.py files
-"__init__.py" = ["F401"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-
-[tool.ruff.lint.isort]
-# Categorizes the local package for correct import sorting
-known-first-party = ["airflow_version_upgrade_agent"]
-
 [tool.mypy]
 disallow_untyped_calls = true
 disallow_untyped_defs = true
@@ -100,3 +79,7 @@ agent_directory = "airflow_version_upgrade_agent"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true
