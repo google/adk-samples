@@ -411,7 +411,7 @@ def _imports_os(tree: ast.AST) -> bool:
 _NOQA_E402_SUFFIX = "  # noqa: E402 -- must come after load_dotenv()"
 
 
-def _suppress_e402_on_late_relative_imports(
+def _suppress_e402_on_late_relative_imports(  # noqa: C901
     tree: ast.Module | None, lines: list[str]
 ) -> tuple[list[str], int]:
     """Append `# noqa: E402` to top-level `from .x import y` statements that
@@ -611,7 +611,7 @@ def inject_load_dotenv(
         injected = True
 
         # Re-split so each list element is exactly one physical line — the
-        # noqa pass below indexes by 1-based line number and inject_block
+
         # spans multiple lines, so leaving it as one element would misalign
         # indices with AST line numbers. AND re-parse so the AST reflects the
         # post-injection state (line numbers of trailing imports shift).
