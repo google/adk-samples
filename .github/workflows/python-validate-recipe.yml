@@ -437,20 +437,35 @@ jobs:
               # ------------------------------------------------------------------
               # Check 5: Required keys in .env.example
               # ------------------------------------------------------------------
+              # Keys that cause a hard FAIL if missing.
               REQUIRED_ENV_KEYS=(
-                "GOOGLE_CLOUD_PROJECT"
                 "GOOGLE_CLOUD_LOCATION"
                 "MODEL_NAME"
+              )
+              # Keys that emit a notice (::notice) but do not fail the check.
+              # GOOGLE_CLOUD_PROJECT is set automatically by many GCP runtimes
+              # and ADK internals, so its absence from .env.example is common
+              # and not necessarily an error.
+              NOTICE_ENV_KEYS=(
+                "GOOGLE_CLOUD_PROJECT"
               )
 
               if [ -f "$recipe/.env.example" ]; then
                 for key in "${REQUIRED_ENV_KEYS[@]}"; do
                   if ! grep -qE "^(export\s+)?${key}(_[A-Z0-9_]*)?\s*=" "$recipe/.env.example"; then
-                    echo "::error file=$recipe/.env.example::No environment variable starting with '${key}' found in .env.example. All recipes must declare at least one variable prefixed with GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, and MODEL_NAME in their .env.example file."
+                    echo "::error file=$recipe/.env.example::No environment variable starting with '${key}' found in .env.example. All recipes must declare at least one variable prefixed with GOOGLE_CLOUD_LOCATION and MODEL_NAME in their .env.example file."
                     echo "[FAIL] No env key with prefix '$key' found in .env.example."
                     RECIPE_FAILED=1
                   else
                     echo "[PASS] Found required env key in .env.example: $key"
+                  fi
+                done
+                for key in "${NOTICE_ENV_KEYS[@]}"; do
+                  if ! grep -qE "^(export\s+)?${key}(_[A-Z0-9_]*)?\s*=" "$recipe/.env.example"; then
+                    echo "::notice file=$recipe/.env.example::No environment variable starting with '${key}' found in .env.example. Consider adding one if your recipe needs an explicit project ID."
+                    echo "[NOTICE] No env key with prefix '$key' in .env.example (not required)."
+                  else
+                    echo "[PASS] Found env key in .env.example: $key"
                   fi
                 done
               fi

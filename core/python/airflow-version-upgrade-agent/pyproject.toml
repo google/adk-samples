@@ -1,5 +1,5 @@
 [project]
-name = "airflow_version_upgrade_agent_Very_long_long-name_so_so_lonnnngggggg"
+name = "airflow-version-upgrade-agent"
 version = "0.1.0"
 description = "This project provides an intelligent, two-stage agentic system built with the Google Cloud Agent Development Kit (ADK) to automate the migration of Apache Airflow DAGs from a source version to a target version. The system leverages Gemini models, Vertex AI Search for Retrieval-Augmented Generation (RAG), and a custom-built knowledge base in BigQuery to provide accurate, context-aware code conversions."
 authors = [
