@@ -3,13 +3,14 @@ name: Validate Python Recipe
 on:
   pull_request:
     paths:
-      - 'core/python/**'
+      - 'core/**'
       - 'contrib/**'
       - '.github/workflows/python-validate-recipe.yml'
       - '.github/policy.yml'
       - '.github/scripts/load_policy.py'
       - '.github/scripts/check_env_vars.py'
       - '.github/scripts/check_recipe_pyproject.py'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -34,9 +35,25 @@ jobs:
       - name: Detect affected Python recipe directories
         id: affected
         env:
+          # Pass GitHub-controlled values through env vars rather than
+          # interpolating them directly into the script body (security
+          # hardening — see GitHub Actions security hardening guide).
+          EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
+
+          # workflow_dispatch: manual trigger has no PR base ref, so PR-diff
+          # detection can't run. Validate every Python recipe instead — that's
+          # the intent of a manual dispatch (mirrors the run_all=true path of
+          # python-tests.yml). Without this short-circuit, the diff commands
+          # below silently produce an empty CHANGED_FILES and the workflow
+          # no-ops, which is worse than doing nothing openly.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "workflow_dispatch — validating all Python recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           git fetch origin "$BASE_REF"
           CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
@@ -516,12 +533,13 @@ jobs:
               # copy would still override the root config for files below it.
               # ------------------------------------------------------------------
               pyproject="$recipe/pyproject.toml"
-              check7_failed=0
+              check7_passed=1
 
               if [ -f "$pyproject" ] && grep -qE '^\s*\[tool\.ruff(\.|\])' "$pyproject"; then
                 echo "::error file=$pyproject::Recipe pyproject.toml must not declare a [tool.ruff*] block. Ruff configuration is centralized in the repo root pyproject.toml (see [tool.ruff] there). Remove all [tool.ruff*] tables from this file."
                 echo "[FAIL] pyproject.toml contains a [tool.ruff*] block — remove it (see root pyproject.toml)."
-                check7_failed=1
+                RECIPE_FAILED=1
+                check7_passed=0
               fi
 
               # Find any standalone ruff config files anywhere under the recipe.
@@ -533,12 +551,11 @@ jobs:
                   echo "::error file=$ruff_cfg::Recipe must not contain a standalone ruff.toml or .ruff.toml. Ruff configuration is centralized in the repo root pyproject.toml. Delete this file."
                   echo "[FAIL] Standalone Ruff config found: $ruff_cfg — delete it (see root pyproject.toml)."
                 done <<< "$standalone_ruff_configs"
-                check7_failed=1
+                RECIPE_FAILED=1
+                check7_passed=0
               fi
 
-              if [ "$check7_failed" -eq 1 ]; then
-                RECIPE_FAILED=1
-              else
+              if [ "$check7_passed" -eq 1 ]; then
                 echo "[PASS] Recipe carries no local Ruff configuration."
               fi
 
@@ -604,13 +621,11 @@ jobs:
               while IFS= read -r pyfile; do
                 matches=$(grep -onE "['\"]($MODEL_PREFIXES)[^ '\"]{1,35}['\"]" "$pyfile" || true)
                 [ -z "$matches" ] && continue
-                filtered=$(echo "$matches" | grep -v '^\s*#' || true)
-                [ -z "$filtered" ] && continue
                 while IFS=: read -r lineno match; do
                   [ -z "$lineno" ] && continue
                   echo "::notice file=$pyfile,line=$lineno::Possible hardcoded model name $match detected. If this is a model identifier, consider using an environment variable instead."
                   echo "[NOTICE] $pyfile:$lineno — possible hardcoded model name: $match"
-                done <<< "$filtered"
+                done <<< "$matches"
               done < <(find "$recipe" -type f -name "*.py" ! -path "*/tests/*")
 
               if [ "$RECIPE_FAILED" -eq 1 ]; then

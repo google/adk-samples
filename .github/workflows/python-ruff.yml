@@ -104,7 +104,7 @@ jobs:
           # Pinned rather than `latest` — see ruff-format job for rationale.
           reviewdog_version: v0.21.0
 
-      - name: Post Lint Auto-Fix Suggestions
+      - name: Run Ruff Lint Suggestions & Fail on Violations
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -118,7 +118,7 @@ jobs:
           mapfile -t CHANGED_FILES < <(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" | grep '\.py$' || true)
 
           if [ ${#CHANGED_FILES[@]} -eq 0 ]; then
-            echo "No Python files were modified in this pull request. Skipping auto-fixes."
+            echo "No Python files were modified in this pull request. Skipping lint."
             exit 0
           fi
 
@@ -129,42 +129,23 @@ jobs:
           #    we WANT the diff to survive so reviewdog can suggest it.
           uvx ruff check --force-exclude --fix "${CHANGED_FILES[@]}" || true
 
-          # 4. Post auto-fix suggestion comments strictly targeting modified files
+          # 4. Post auto-fix suggestion comments strictly targeting modified files.
           git diff --no-color "${CHANGED_FILES[@]}" | reviewdog -f=diff \
                                                                 -name="ruff-linter-suggestions" \
                                                                 -reporter=github-pr-review \
                                                                 -filter-mode=added \
                                                                 -fail-on-error=false
 
-      # Restore files so we can find non-fixable errors on the original user commits
-      - name: Restore files to original state
-        run: git checkout -- .
+          # 5. Restore files so we can check non-fixable violations on the
+          #    original user commits (not the auto-fixed versions).
+          git checkout -- .
 
-      - name: Run Ruff Linter & Fail on Violations
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-        run: |
-          set -euo pipefail
-
-          # 1. Fetch the target branch reference commits
-          git fetch origin "$BASE_REF"
-
-          # 2. Resolve Python files modified in this PR diff
-          mapfile -t CHANGED_FILES < <(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" | grep '\.py$' || true)
-
-          if [ ${#CHANGED_FILES[@]} -eq 0 ]; then
-            echo "No Python files were modified in this pull request. Skipping diagnostics check."
-            exit 0
-          fi
-
-          echo "Running diagnostics linter on: ${CHANGED_FILES[*]}"
-
-          # 3. Run strict diagnostic linter in RDJSON format on only the modified python files.
-          #    --exit-zero tells ruff to exit 0 on lint VIOLATIONS (so reviewdog gets
-          #    the full JSON and can annotate them). set -o pipefail still catches
-          #    a ruff CRASH (bad file, missing dep) — that path exits non-zero and
-          #    would otherwise be swallowed by reviewdog's success exit.
+          # 6. Run strict diagnostic linter in RDJSON format on only the modified
+          #    python files. --exit-zero tells ruff to exit 0 on lint VIOLATIONS
+          #    (so reviewdog gets the full JSON and can annotate them).
+          #    set -o pipefail still catches a ruff CRASH (bad file, missing dep)
+          #    — that path exits non-zero and would otherwise be swallowed by
+          #    reviewdog's success exit.
           uvx ruff check \
             --force-exclude \
             --output-format=rdjson \

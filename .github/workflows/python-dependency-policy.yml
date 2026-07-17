@@ -5,9 +5,9 @@ on:
     paths:
       - 'uv.lock'
       - 'pyproject.toml'
-      - 'core/**/*.lock'
+      - 'core/**/uv.lock'
       - 'core/**/pyproject.toml'
-      - 'contrib/**/*.lock'
+      - 'contrib/**/uv.lock'
       - 'contrib/**/pyproject.toml'
       - '.github/workflows/python-dependency-policy.yml'
       - '.github/scripts/check_lockfile_hashes.py'
@@ -17,9 +17,9 @@ on:
     paths:
       - 'uv.lock'
       - 'pyproject.toml'
-      - 'core/**/*.lock'
+      - 'core/**/uv.lock'
       - 'core/**/pyproject.toml'
-      - 'contrib/**/*.lock'
+      - 'contrib/**/uv.lock'
       - 'contrib/**/pyproject.toml'
       - '.github/workflows/python-dependency-policy.yml'
       - '.github/scripts/check_lockfile_hashes.py'
@@ -394,6 +394,7 @@ jobs:
 
             dir=$(dirname "$pyproject")
             if [ ! -f "$dir/uv.lock" ]; then
+              echo "::error file=$pyproject::$pyproject has no sibling uv.lock. Run 'uv lock' in $dir to generate it."
               echo "[FAIL] $pyproject has no sibling uv.lock — run 'uv lock' in $dir"
               FAILED=1
             fi

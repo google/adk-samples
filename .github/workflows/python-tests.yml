@@ -46,15 +46,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install uv
-        # enable-cache: false — detect-recipes only uses shell utilities and
-        # never invokes uv, so caching would be pure overhead here. The
-        # run-tests job leaves the default (true) to benefit from wheel reuse.
-        uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.11"
-          enable-cache: false
-
       - name: Detect Python recipes to test
         id: detect
         env:
@@ -156,12 +147,9 @@ jobs:
               fi
             done <<< "$CHANGED_FILES"
 
-            # Deduplicate
-            RECIPES=$(echo "$RECIPES" | sort -u)
+            # Deduplicate and strip blank lines produced by trailing newlines
+            RECIPES=$(echo "$RECIPES" | sort -u | sed '/^[[:space:]]*$/d')
           fi
-
-          # Strip trailing whitespace / blank lines
-          RECIPES=$(echo "$RECIPES" | sed '/^[[:space:]]*$/d')
 
           if [ -z "$RECIPES" ]; then
             echo "No Python recipes to test."
