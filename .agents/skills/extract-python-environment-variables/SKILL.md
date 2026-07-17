@@ -97,6 +97,9 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
 
 4. **Replaces hardcoded model names** in source (e.g. `model="gemini-3.5-flash"`
    in `agent.py`) with **bare `os.getenv("MODEL_NAME")`** — no default argument.
+   When multiple distinct model strings are found, they become `MODEL_NAME_1`,
+   `MODEL_NAME_2`, etc. (sorted alphabetically for determinism). The model
+   string itself is intentionally not embedded in the var name.
 
 5. **Updates `pyproject.toml`** — adds `python-dotenv>=1.0.0` to `[project]`
    dependencies if it is not already there.

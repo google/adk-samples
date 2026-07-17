@@ -49,6 +49,7 @@ import argparse
 import ast
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 if sys.version_info < (3, 11):
@@ -90,6 +91,40 @@ LOAD_DOTENV_SNIPPET = """\
 # already populated by the platform (Cloud Run, GKE, etc.), so a missing
 # .env is expected and not an error.
 load_dotenv()"""
+
+
+# ---------------------------------------------------------------------------
+# Safe I/O helpers
+# ---------------------------------------------------------------------------
+
+
+def _write_text_atomic(path: Path, content: str, encoding: str = "utf-8") -> None:
+    """Write *content* to *path* atomically via a sibling temp file.
+
+    Writes to a temporary file in the same directory as *path*, then renames
+    it over the target.  Because the rename is atomic on POSIX (same
+    filesystem), a crash or disk-full error mid-write leaves the original
+    file untouched — the worst outcome is an orphaned ``.tmp`` file.
+
+    Raises ``OSError`` on any I/O failure; callers are responsible for
+    catching and reporting it.
+    """
+    dir_ = path.parent
+    tmp_path: Path | None = None
+    try:
+        fd, tmp_name = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+        tmp_path = Path(tmp_name)
+        with open(fd, "w", encoding=encoding) as fh:
+            fh.write(content)
+        tmp_path.replace(path)
+    except Exception:
+        # Best-effort cleanup of the temp file before re-raising.
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +347,64 @@ def update_env_example(
         # an `os.getenv("VAR", "some_default")` fallback.
         block += f"{var}={PLACEHOLDER}\n"
 
-    env_example.write_text(current + block, encoding="utf-8")
+    try:
+        _write_text_atomic(env_example, current + block)
+    except OSError as exc:
+        print(
+            f"[ERROR] Could not write {env_example}: {exc} — "
+            ".env.example was NOT modified.",
+            file=sys.stderr,
+        )
+        return []
+    return sorted(to_add.keys())
+
+
+def write_model_vars_to_env_example(
+    env_example: Path,
+    var_to_model: dict[str, str],
+    dry_run: bool = False,
+) -> list[str]:
+    """
+    Append generated model variable entries to .env.example, skipping any
+    already declared. Unlike update_env_example, writes the actual model
+    string as the value — it was hardcoded in source so it is the known
+    correct value, not an inferred default. Adds a comment reminding the
+    maintainer to rename the auto-generated variable names.
+
+    Returns the list of variable names that were (or would be) added.
+    """
+    existing = read_defined_vars(env_example)
+    to_add = {k: v for k, v in var_to_model.items() if k not in existing}
+
+    if not to_add:
+        return []
+
+    if dry_run:
+        return sorted(to_add.keys())
+
+    if env_example.exists():
+        current = env_example.read_text(encoding="utf-8")
+        if not current.endswith("\n"):
+            current += "\n"
+    else:
+        current = ""
+
+    block = (
+        "\n# Renamed from hardcoded string in source."
+        " Rename the variable if needed.\n"
+    )
+    for var in sorted(to_add):
+        block += f"{var}={to_add[var]}\n"
+
+    try:
+        _write_text_atomic(env_example, current + block)
+    except OSError as exc:
+        print(
+            f"[ERROR] Could not write {env_example}: {exc} — "
+            ".env.example was NOT modified.",
+            file=sys.stderr,
+        )
+        return []
     return sorted(to_add.keys())
 
 
@@ -627,7 +719,15 @@ def inject_load_dotenv(
     lines, noqa_added = _suppress_e402_on_late_relative_imports(tree, lines)
 
     if (injected or noqa_added > 0) and not dry_run:
-        init_py.write_text("".join(lines), encoding="utf-8")
+        try:
+            _write_text_atomic(init_py, "".join(lines))
+        except OSError as exc:
+            print(
+                f"[ERROR] Could not write {init_py}: {exc} — "
+                "the file was NOT modified.",
+                file=sys.stderr,
+            )
+            return False, 0
 
     return injected, noqa_added
 
@@ -812,7 +912,15 @@ def ensure_python_dotenv_dependency(
     if _dependencies_has_python_dotenv(new_content) is not True:
         return False
     if not dry_run:
-        pyproject.write_text(new_content, encoding="utf-8")
+        try:
+            _write_text_atomic(pyproject, new_content)
+        except OSError as exc:
+            print(
+                f"[ERROR] Could not write {pyproject}: {exc} — "
+                "pyproject.toml was NOT modified.",
+                file=sys.stderr,
+            )
+            return False
     return True
 
 
@@ -858,59 +966,51 @@ def extract_hardcoded_models(
     return hits
 
 
-def _model_str_to_suffix(model_str: str) -> str:
-    """
-    Derive a human-readable env var suffix from a model string.
-
-    Strategy:
-      1. Uppercase the model string.
-      2. Replace any character that is not A-Z or 0-9 with an underscore.
-      3. Collapse consecutive underscores into one.
-      4. Strip leading/trailing underscores.
-
-    Examples:
-      "gemini-3.5-flash"      → "GEMINI_3_5_FLASH"
-      "gemini-embedding-001"  → "GEMINI_EMBEDDING_001"
-      "claude-3-sonnet"       → "CLAUDE_3_SONNET"
-      "llama-3.1-70b"         → "LLAMA_3_1_70B"
-    """
-    suffix = re.sub(r"[^A-Z0-9]+", "_", model_str.upper())
-    return suffix.strip("_")
-
-
-def assign_model_var_names(model_strings: set[str]) -> dict[str, str]:
+def assign_model_var_names(
+    model_strings: set[str],
+    existing_vars: set[str] | None = None,
+) -> dict[str, str]:
     """
     Assign a standardised MODEL_NAME_* env var name to each unique model string.
 
     Rules (applied to the sorted list for determinism):
-      - If there is only one model → MODEL_NAME (no suffix).
-      - Otherwise derive a suffix from the model string itself using
-        _model_str_to_suffix().
-        E.g., "gemini-3.5-flash" → MODEL_NAME_GEMINI_3_5_FLASH.
-      - If two different model strings produce the same derived suffix
-        (collision), append _2, _3, … to disambiguate.
+      - If there is only one model → MODEL_NAME (no suffix), unless MODEL_NAME
+        is already taken, in which case the counter scheme below is used.
+      - Otherwise → MODEL_NAME_GENERATED_1, MODEL_NAME_GENERATED_2, … skipping
+        any index whose name is already present in existing_vars (e.g. from a
+        prior run or a manually added entry in .env.example).
+        The model string itself is intentionally NOT embedded in the var name —
+        model identifiers and version numbers change over time, so encoding them
+        in the variable name would require renaming the var (and every reference
+        to it) whenever the model is upgraded. The _GENERATED_ infix signals to
+        the maintainer that this name was auto-assigned and should be renamed to
+        something meaningful before the recipe ships.
+
+    Args:
+      model_strings: the set of unique hardcoded model strings found in source.
+      existing_vars: names already declared in .env.example (or anywhere else
+        that should be treated as taken). Defaults to empty set.
 
     Returns:
       {model_string: env_var_name}
     """
+    taken = set(existing_vars) if existing_vars else set()
     sorted_strings = sorted(model_strings)
 
-    # Single model — plain MODEL_NAME, no suffix needed.
     if len(sorted_strings) == 1:
-        return {sorted_strings[0]: "MODEL_NAME"}
+        if "MODEL_NAME" not in taken:
+            return {sorted_strings[0]: "MODEL_NAME"}
+        # Fall through to the counter scheme if MODEL_NAME is already taken.
 
     mapping: dict[str, str] = {}
-    seen_suffixes: dict[str, int] = {}  # suffix → count of times used so far
-
+    counter = 1
     for model_str in sorted_strings:
-        base_suffix = _model_str_to_suffix(model_str)
-        count = seen_suffixes.get(base_suffix, 0)
-        seen_suffixes[base_suffix] = count + 1
-        if count == 0:
-            var_name = f"MODEL_NAME_{base_suffix}"
-        else:
-            var_name = f"MODEL_NAME_{base_suffix}_{count + 1}"
+        while f"MODEL_NAME_GENERATED_{counter}" in taken:
+            counter += 1
+        var_name = f"MODEL_NAME_GENERATED_{counter}"
         mapping[model_str] = var_name
+        taken.add(var_name)  # Reserve it for subsequent iterations.
+        counter += 1
 
     return mapping
 
@@ -1026,7 +1126,29 @@ def replace_hardcoded_models(
             mod_lines.insert(idx, f"import os\n{suffix}")
             modified = "".join(mod_lines)
 
-        py_file.write_text(modified, encoding="utf-8")
+        # Syntax check before writing — refuse to write if the modified
+        # source no longer parses. This catches edge cases like a model
+        # string used as a constant inside an f-string expression, where
+        # the replacement can produce mismatched quotes and invalid Python.
+        try:
+            ast.parse(modified)
+        except SyntaxError as exc:
+            print(
+                f"[ERROR] Replacement would produce invalid Python in "
+                f"{py_file} ({exc}) — skipping this file. "
+                "Replace the hardcoded model string manually.",
+                file=sys.stderr,
+            )
+            continue
+
+        try:
+            _write_text_atomic(py_file, modified)
+        except OSError as exc:
+            print(
+                f"[ERROR] Could not write {py_file}: {exc} — "
+                "the file was NOT modified.",
+                file=sys.stderr,
+            )
 
     return substituted
 
@@ -1148,7 +1270,8 @@ def run_step_model_names(
         for file_hits in model_hits.values()
         for _lineno, model_str in file_hits
     }
-    name_map = assign_model_var_names(all_model_strings)
+    existing_vars = read_defined_vars(env_example)
+    name_map = assign_model_var_names(all_model_strings, existing_vars)
 
     print("\n[INFO] Detected hardcoded model name(s):")
     for py_file, file_hits in model_hits.items():
@@ -1164,17 +1287,12 @@ def run_step_model_names(
     if not substituted:
         return
 
-    # update_env_example never persists an inferred default (it always writes
-    # the PLACEHOLDER), so pass None as each value to make that explicit —
-    # passing the model string here was misleading, implying it becomes the
-    # default. Keep the var -> model_str mapping separately, purely to tell
-    # the maintainer in the log below what value each new var replaced.
     var_to_model = {
         var_name: model_str for model_str, var_name in substituted.items()
     }
-    added_models = update_env_example(
+    added_models = write_model_vars_to_env_example(
         env_example,
-        dict.fromkeys(var_to_model),
+        var_to_model,
         dry_run=dry_run,
     )
 
@@ -1187,16 +1305,9 @@ def run_step_model_names(
     if added_models:
         add_verb = "Would add" if dry_run else "Added"
         for var in added_models:
-            # The `.env.example` line is written with PLACEHOLDER as the value
-            # (see update_env_example — this skill NEVER writes inferred
-            # defaults into .env.example, even when replacing a hardcoded
-            # value). We surface the original hardcoded string here in the
-            # log ONLY so the maintainer knows what value to fill in — the
-            # string is NOT persisted in .env.example.
             print(
-                f"[{_tag(dry_run)}] {add_verb} {var} to .env.example "
-                f"with placeholder value (the replaced hardcoded value was "
-                f'"{var_to_model[var]}" — fill it in manually).'
+                f"[{_tag(dry_run)}] {add_verb} {var}={var_to_model[var]}"
+                f" to .env.example (rename the variable if needed)."
             )
     else:
         print("[PASS] All MODEL_NAME_* vars already in .env.example — skipped.")
