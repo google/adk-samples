@@ -256,15 +256,7 @@ def main(scope: str | None = None) -> int:
             "\nFix the manifest.yaml file(s) listed above, then push again."
             "\n"
             "\nReference:"
-            "\n  Schema:  .github/schemas/manifest-schema.json"
-            "\n  Example: core/rag-agent-search/manifest.yaml"
-            "\n"
-            "\nCommon mistakes:"
-            "\n  - Missing required fields (type, status, language, "
-            "description, ownership)"
-            "\n  - ownership.team or ownership.poc left as placeholder values"
-            "\n  - Invalid enum value for 'type', 'status', or 'language'"
-        )
+            "\n  Schema:  .github/schemas/manifest-schema.json"        )
         return 1
 
     checked = len(recipe_dirs)
