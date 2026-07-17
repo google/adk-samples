@@ -1,0 +1,102 @@
+[project]
+name = "airflow-version-upgrade-agent"
+version = "0.1.0"
+description = "This project provides an intelligent, two-stage agentic system built with the Google Cloud Agent Development Kit (ADK) to automate the migration of Apache Airflow DAGs from a source version to a target version. The system leverages Gemini models, Vertex AI Search for Retrieval-Augmented Generation (RAG), and a custom-built knowledge base in BigQuery to provide accurate, context-aware code conversions."
+authors = [
+    { name = "Paras Chavda", email = "paraschavda@google.com" },
+    { name = "Gaurav Pilay", email = "gauravpilay@google.com" }
+]
+license = { text = "Apache License 2.0" }
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+
+dependencies = [
+    "google-adk==1.28.0",
+    "mcp>=1.26.0",
+    "google-cloud-aiplatform>=1.144.0",
+    "google-cloud-storage>=3.10.0",
+    "google-cloud-bigquery>=3.38.0",
+    "google-genai>=1.50.0",
+    "requests>=2.32.5",
+    "beautifulsoup4>=4.14.2",
+    "python-dotenv>=1.2.2",
+    "google-cloud-discoveryengine>=0.13.12"
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.3",
+    "pytest-mock>=3.14.0",
+    "pytest-asyncio>=0.26.0",
+    "agent-starter-pack>=0.14.1",
+    "ruff==0.15.8",
+    "mypy>=1.15.0",
+    "codespell>=2.2.0",
+    "types-pyyaml>=6.0.12.20240917",
+    "types-requests>=2.32.0.20240914",
+]
+
+[tool.ruff]
+# Point back to the Master template in the root
+extend = "../../../pyproject.toml"
+exclude = ["Makefile"]
+
+[tool.ruff.lint]
+# Ignores function complication rule throughout sample
+ignore = ["C901", "PLR0915", "PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+# ignores unused import rule exclusively for this sample’s __init__.py files
+"__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint.isort]
+# Categorizes the local package for correct import sorting
+known-first-party = ["airflow_version_upgrade_agent"]
+
+[tool.mypy]
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_subclassing_any = true
+warn_incomplete_stub = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+follow_imports = "silent"
+ignore_missing_imports = true
+explicit_package_bases = true
+disable_error_code = ["misc", "no-untyped-call", "no-any-return"]
+exclude = [".venv"]
+
+[tool.hatch.build.targets.wheel]
+# Ensures Hatchling finds the package folder correctly (Resolves uv sync issues with flat layouts)
+packages = ["airflow_version_upgrade_agent"]
+
+[tool.pytest.ini_options]
+console_output_style = "progress"
+addopts = "-vv -s"
+testpaths = ["tests/"]
+log_level = "DEBUG"
+log_cli = true
+log_auto_indent = true
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+log_cli_format = "[%(asctime)s] %(levelname)s (%(funcName)s) \t [%(pathname)s:%(lineno)d] %(message)s"
+filterwarnings = [
+    "ignore::UserWarning",
+]
+
+[tool.agent-starter-pack]
+example_question = "Help me migrate airflow"
+
+[tool.agent-starter-pack.settings]
+agent_directory = "airflow_version_upgrade_agent"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
