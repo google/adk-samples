@@ -32,8 +32,9 @@ def test_scaffold_creates_tree_and_replaces_placeholders(tmp_path):
     assert target.is_dir()
 
     # A representative slice of the template tree was copied — covering the
-    # top-level files, the app/ package, and the tests/ tree — so an
-    # accidental deletion or rename of any of these is caught.
+    # top-level files, the app/ package (including app_utils/), and the
+    # tests/ tree — so an accidental deletion or rename of any of these
+    # is caught.
     expected_files = [
         "README.md",
         "pyproject.toml",
@@ -42,8 +43,12 @@ def test_scaffold_creates_tree_and_replaces_placeholders(tmp_path):
         "app/__init__.py",
         "app/agent.py",
         "app/fast_api_app.py",
+        "app/app_utils/__init__.py",
+        "app/app_utils/telemetry.py",
+        "app/app_utils/typing.py",
         "tests/test_runnability.py",
         "tests/unit/test_tools.py",
+        "tests/integration/test_agent.py",
     ]
     for rel in expected_files:
         assert (target / rel).is_file(), f"missing scaffolded file: {rel}"

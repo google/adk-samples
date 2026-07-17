@@ -57,7 +57,9 @@ import argparse
 import ast
 import json
 import os
+import subprocess
 import sys
+import textwrap
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -471,8 +473,6 @@ def _ruff_format_if_available(source: str) -> str:
     still "emit valid Python" — this is a nicety that removes the need for
     the user to run `ruff format` on the generated file separately.
     """
-    import subprocess
-
     try:
         result = subprocess.run(
             ["ruff", "format", "--stdin-filename=test_runnability.py", "-"],
@@ -634,8 +634,6 @@ def _build_setup_comment(detections: Detections) -> list[str]:
             "their mock path"
         )
     prose = ", and ".join(bits) if bits else "Import-time setup"
-
-    import textwrap
 
     wrapped = textwrap.wrap(
         f"{prose} — the setup must happen before the import.",

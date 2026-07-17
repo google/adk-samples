@@ -739,14 +739,6 @@ def test_ensure_dotenv_dry_run_reports_but_does_not_write(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_model_str_to_suffix():
-    assert m._model_str_to_suffix("gemini-3.5-flash") == "GEMINI_3_5_FLASH"
-    assert (
-        m._model_str_to_suffix("gemini-embedding-001") == "GEMINI_EMBEDDING_001"
-    )
-    assert m._model_str_to_suffix("claude-3-sonnet") == "CLAUDE_3_SONNET"
-
-
 def test_assign_model_var_names_single():
     assert m.assign_model_var_names({"gemini-3.5-flash"}) == {
         "gemini-3.5-flash": "MODEL_NAME"
@@ -754,19 +746,23 @@ def test_assign_model_var_names_single():
 
 
 def test_assign_model_var_names_multiple():
+    # Multiple models get MODEL_NAME_GENERATED_N (sorted for determinism).
+    # Sorted order: "claude-3-sonnet" < "gemini-3.5-flash".
     result = m.assign_model_var_names({"gemini-3.5-flash", "claude-3-sonnet"})
     assert result == {
-        "gemini-3.5-flash": "MODEL_NAME_GEMINI_3_5_FLASH",
-        "claude-3-sonnet": "MODEL_NAME_CLAUDE_3_SONNET",
+        "claude-3-sonnet": "MODEL_NAME_GENERATED_1",
+        "gemini-3.5-flash": "MODEL_NAME_GENERATED_2",
     }
 
 
-def test_assign_model_var_names_collision_disambiguated():
-    # Both strings normalise to the same suffix; sorted order decides which
-    # keeps the base name and which gets the _2 suffix.
-    result = m.assign_model_var_names({"gemini-3.5-flash", "gemini-3-5-flash"})
-    assert result["gemini-3-5-flash"] == "MODEL_NAME_GEMINI_3_5_FLASH"
-    assert result["gemini-3.5-flash"] == "MODEL_NAME_GEMINI_3_5_FLASH_2"
+def test_assign_model_var_names_skips_taken_counters():
+    # When MODEL_NAME is already taken, the counter scheme is used.
+    # If MODEL_NAME_GENERATED_1 is also taken, the first available slot is _2.
+    result = m.assign_model_var_names(
+        {"gemini-3.5-flash"},
+        existing_vars={"MODEL_NAME", "MODEL_NAME_GENERATED_1"},
+    )
+    assert result == {"gemini-3.5-flash": "MODEL_NAME_GENERATED_2"}
 
 
 # ---------------------------------------------------------------------------
@@ -868,9 +864,10 @@ def test_replace_hardcoded_models_multiple_occurrences(tmp_path):
     content = py.read_text(encoding="utf-8")
     assert "gemini-3.5-flash" not in content
     assert "claude-3-sonnet" not in content
-    # Both duplicate occurrences map to the same env var.
-    assert content.count('os.getenv("MODEL_NAME_GEMINI_3_5_FLASH")') == 2
-    assert content.count('os.getenv("MODEL_NAME_CLAUDE_3_SONNET")') == 1
+    # Sorted: "claude-3-sonnet" → GENERATED_1, "gemini-3.5-flash" → GENERATED_2.
+    # Both duplicate occurrences of gemini-3.5-flash map to the same env var.
+    assert content.count('os.getenv("MODEL_NAME_GENERATED_2")') == 2
+    assert content.count('os.getenv("MODEL_NAME_GENERATED_1")') == 1
     ast.parse(content)
 
 

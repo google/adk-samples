@@ -205,10 +205,11 @@ The script:
 - Appends any newly-discovered env vars to `.env.example`
 - Injects `load_dotenv()` into the package `__init__.py` if missing
 - Adds `python-dotenv>=1.0.0` to `[project].dependencies` if missing
+- Replaces hardcoded model name strings (e.g. `"gemini-3.5-flash"`) in source files with bare `os.getenv(...)` calls and records the substitution in `.env.example`
 
-Read the script's stdout (structured `[INFO]` / `[PASS]` / `[WARN]` log lines, not a table). Extract the counts: how many vars added, whether `load_dotenv` was injected, whether `python-dotenv` was added.
+Read the script's stdout (structured `[INFO]` / `[PASS]` / `[WARN]` log lines, not a table). Extract the counts: how many vars added, whether `load_dotenv` was injected, whether `python-dotenv` was added, and how many hardcoded model names were replaced (if any).
 
-Progress line: `Phase 2 (env vars): <N> vars added to .env.example, load_dotenv <injected|already present>, python-dotenv <added|already present>.`
+Progress line: `Phase 2 (env vars): <N> vars added to .env.example, load_dotenv <injected|already present>, python-dotenv <added|already present>[, <M> hardcoded model name(s) replaced in source].`
 
 ### Phase 3 — align pyproject.toml
 

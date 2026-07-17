@@ -171,7 +171,7 @@ class Report:
 
 
 def check_no_local_ruff_config(
-    pyproject_path: Path, doc: tomlkit.TOMLDocument, apply: bool
+    doc: tomlkit.TOMLDocument, apply: bool
 ) -> Check:
     """Remove any [tool.ruff*] table from pyproject.toml.
 
@@ -322,7 +322,7 @@ def _validate_and_apply_python_floor_rewrite(
 
 
 def check_python_version_floor(
-    pyproject_path: Path, doc: tomlkit.TOMLDocument, apply: bool
+    doc: tomlkit.TOMLDocument, apply: bool
 ) -> Check:
     """Ensure [project].requires-python is compatible with MIN_PYTHON.
 
@@ -422,7 +422,6 @@ def _rewrite_requires_python(spec: SpecifierSet) -> str:
 
 def check_project_name_matches_folder(
     recipe_dir: Path,
-    pyproject_path: Path,
     doc: tomlkit.TOMLDocument,
     apply: bool,
 ) -> Check:
@@ -590,7 +589,6 @@ def _load_manifest_description(
 
 def check_description_matches_manifest(
     recipe_dir: Path,
-    pyproject_path: Path,
     doc: tomlkit.TOMLDocument,
     description_source: str | None,
     apply: bool,
@@ -1070,20 +1068,20 @@ def run(
     report.add(
         _run_check(
             "no-local-ruff-config",
-            lambda: check_no_local_ruff_config(pyproject_path, doc, apply),
+            lambda: check_no_local_ruff_config(doc, apply),
         )
     )
     report.add(
         _run_check(
             "python-version-floor",
-            lambda: check_python_version_floor(pyproject_path, doc, apply),
+            lambda: check_python_version_floor(doc, apply),
         )
     )
     report.add(
         _run_check(
             "project-name-matches-folder",
             lambda: check_project_name_matches_folder(
-                recipe_dir, pyproject_path, doc, apply
+                recipe_dir, doc, apply
             ),
         )
     )
@@ -1092,7 +1090,6 @@ def run(
             "description-matches-manifest",
             lambda: check_description_matches_manifest(
                 recipe_dir,
-                pyproject_path,
                 doc,
                 description_source,
                 apply,
