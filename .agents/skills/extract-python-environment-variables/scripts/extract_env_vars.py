@@ -25,12 +25,14 @@ Scans a Python recipe directory and:
 
 Two hard rules the script NEVER breaks:
 
-  (1) NO INFERRED DEFAULTS ANYWHERE. Every new .env.example entry is
-      written with the TODO placeholder as its value, regardless of any
-      `os.getenv("VAR", "some_default")` fallback the source code may
-      have. The model-replacement path likewise emits bare
-      os.getenv("MODEL_NAME") — no second argument, even though the
-      original hardcoded model string is known.
+  (1) NO INFERRED DEFAULTS FOR REGULAR ENV VARS. Every new .env.example
+      entry for a variable read via os.getenv/os.environ is written with
+      the TODO placeholder, regardless of any os.getenv("VAR", "fallback")
+      the source may have. Exception: hardcoded model strings that are
+      replaced in source ARE written as their actual value in .env.example
+      (e.g. MODEL_NAME_GENERATED_1=gemini-3.5-flash) because the value is
+      known and correct, not inferred. The source replacement always emits
+      bare os.getenv("VAR") with no default argument.
 
   (2) ADDITIVE-ONLY FOR PYTHON FILES. The script never writes new
       os.environ.setdefault(...) bootstrap lines into any Python file.
@@ -117,7 +119,7 @@ def _write_text_atomic(path: Path, content: str, encoding: str = "utf-8") -> Non
         with open(fd, "w", encoding=encoding) as fh:
             fh.write(content)
         tmp_path.replace(path)
-    except Exception:
+    except OSError:
         # Best-effort cleanup of the temp file before re-raising.
         if tmp_path is not None:
             try:
@@ -702,11 +704,11 @@ def inject_load_dotenv(
             lines.insert(_post_header_index(lines), inject_block)
         injected = True
 
-        # Re-split so each list element is exactly one physical line — the
-
-        # spans multiple lines, so leaving it as one element would misalign
-        # indices with AST line numbers. AND re-parse so the AST reflects the
-        # post-injection state (line numbers of trailing imports shift).
+        # Re-split so each list element is exactly one physical line —
+        # inject_block spans multiple lines, so leaving it as one element
+        # would misalign indices with AST line numbers. Re-parse so the AST
+        # reflects the post-injection state (line numbers of trailing imports
+        # shift).
         joined = "".join(lines)
         lines = joined.splitlines(keepends=True)
         try:
@@ -1082,8 +1084,13 @@ def replace_hardcoded_models(
         docstring_ids = _docstring_node_ids(tree)
         lines = source.splitlines(keepends=True)
 
-        # Collect (start_offset, end_offset, replacement_text) for each hit
+        # Collect (start_offset, end_offset, replacement_text) for each hit.
+        # Track per-file substitutions separately — they are only merged into
+        # `substituted` after a confirmed successful write, so a syntax-check
+        # failure or OSError never causes .env.example to be updated for a
+        # file whose source was not actually modified.
         replacements: list[tuple[int, int, str]] = []
+        file_substituted: dict[str, str] = {}
         for node in ast.walk(tree):
             replacement = _model_replacement(
                 node, docstring_ids, name_map, lines
@@ -1092,13 +1099,15 @@ def replace_hardcoded_models(
                 continue
             start, end, new_text, model_str, var_name = replacement
             replacements.append((start, end, new_text))
-            substituted[model_str] = var_name
+            file_substituted[model_str] = var_name
 
         if not replacements:
             continue
 
         if dry_run:
-            continue  # Detection recorded in `substituted`; skip writing.
+            # In dry-run, report what would be substituted without writing.
+            substituted.update(file_substituted)
+            continue
 
         # Apply in reverse order so earlier offsets stay valid
         replacements.sort(key=lambda x: x[0], reverse=True)
@@ -1139,7 +1148,7 @@ def replace_hardcoded_models(
                 "Replace the hardcoded model string manually.",
                 file=sys.stderr,
             )
-            continue
+            continue  # Do NOT merge file_substituted — source not modified.
 
         try:
             _write_text_atomic(py_file, modified)
@@ -1149,6 +1158,10 @@ def replace_hardcoded_models(
                 "the file was NOT modified.",
                 file=sys.stderr,
             )
+            continue  # Do NOT merge file_substituted — source not modified.
+
+        # Write succeeded — now it is safe to record these substitutions.
+        substituted.update(file_substituted)
 
     return substituted
 
@@ -1165,8 +1178,11 @@ def _tag(dry_run: bool) -> str:
 
 def run_step_env_vars(
     recipe_dir: Path, py_files: list[Path], dry_run: bool = False
-) -> tuple[Path, dict[str, str | None]]:
-    """Steps 2 + 3: extract env var reads and update .env.example."""
+) -> Path:
+    """Steps 2 + 3: extract env var reads and update .env.example.
+
+    Returns the path to .env.example (created or pre-existing).
+    """
     env_vars = extract_env_vars(py_files)
     if env_vars:
         print(f"\n[INFO] Detected {len(env_vars)} environment variable(s):")
@@ -1190,7 +1206,7 @@ def run_step_env_vars(
             "\n[PASS] .env.example is already up to date — no variables added."
         )
 
-    return env_example, env_vars
+    return env_example
 
 
 def run_step_load_dotenv(recipe_dir: Path, dry_run: bool = False) -> None:
@@ -1358,7 +1374,7 @@ def main() -> None:
     for f in py_files:
         print(f"       {f.relative_to(recipe_dir)}")
 
-    env_example, _ = run_step_env_vars(recipe_dir, py_files, dry_run=dry_run)
+    env_example = run_step_env_vars(recipe_dir, py_files, dry_run=dry_run)
     run_step_load_dotenv(recipe_dir, dry_run=dry_run)
     run_step_pyproject(recipe_dir, dry_run=dry_run)
     run_step_model_names(recipe_dir, py_files, env_example, dry_run=dry_run)

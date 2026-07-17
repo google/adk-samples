@@ -4,13 +4,19 @@ description: >
   Scans a Python recipe to find every place an environment variable is read,
   then ensures all variables are declared in .env.example, that load_dotenv()
   is bootstrapped in the package __init__.py, and that python-dotenv>=1.0.0
-  is listed in pyproject.toml. Also detects hardcoded model-name string
-  literals in the recipe's source (e.g. "gemini-3-flash-preview" in
-  agent.py) and rewrites them to bare os.getenv("MODEL_NAME") calls (NO
-  fallback default), adding MODEL_NAME to .env.example with a TODO
-  placeholder — this modifies source files, not just configuration.
-  IMPORTANT — two hard rules the skill NEVER breaks:
-  (1) `.env.example` gets ONLY TODO placeholders, never inferred defaults.
+  is listed in pyproject.toml.   Also detects hardcoded model-name string literals in the recipe's source
+  (e.g. "gemini-3.5-flash" in agent.py) and rewrites them to bare
+  os.getenv("MODEL_NAME") calls (single model) or
+  os.getenv("MODEL_NAME_GENERATED_1") / os.getenv("MODEL_NAME_GENERATED_2")
+  etc. (multiple models) — NO fallback default in source. The actual model
+  string is written as the value in .env.example (e.g.
+  MODEL_NAME_GENERATED_1=gemini-3.5-flash) with a comment reminding the
+  maintainer to rename the variable — this modifies source files, not just
+  configuration. IMPORTANT — two hard rules the skill NEVER breaks:
+  (1) Regular env vars in `.env.example` get ONLY TODO placeholders, never
+  inferred defaults. Hardcoded model strings are the exception: their known
+  value IS written to .env.example because it is not inferred — it was
+  literally in the source.
   (2) Python source files get NO default values written by the skill —
   the model-replacement path emits `os.getenv("VAR")` with no second
   argument, and the skill never emits `os.environ.setdefault(...)`
@@ -96,10 +102,13 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
    Idempotent: a line that already carries `# noqa: E402` is skipped.
 
 4. **Replaces hardcoded model names** in source (e.g. `model="gemini-3.5-flash"`
-   in `agent.py`) with **bare `os.getenv("MODEL_NAME")`** — no default argument.
-   When multiple distinct model strings are found, they become `MODEL_NAME_1`,
-   `MODEL_NAME_2`, etc. (sorted alphabetically for determinism). The model
-   string itself is intentionally not embedded in the var name.
+   in `agent.py`) with **bare `os.getenv(...)`** — no default argument:
+   - Single model → `os.getenv("MODEL_NAME")`
+   - Multiple models → `os.getenv("MODEL_NAME_GENERATED_1")`, `os.getenv("MODEL_NAME_GENERATED_2")`, … (sorted alphabetically for determinism)
+
+   The actual model string is written as the value in `.env.example` (e.g.
+   `MODEL_NAME_GENERATED_1=gemini-3.5-flash`) with a comment prompting the
+   maintainer to rename the variable to something meaningful before shipping.
 
 5. **Updates `pyproject.toml`** — adds `python-dotenv>=1.0.0` to `[project]`
    dependencies if it is not already there.
@@ -108,14 +117,14 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
 
 ## Hard rules the skill NEVER breaks
 
-**Rule 1 — No inferred defaults anywhere.** The skill never persists a
-concrete default value it inferred from source code. Applies to:
-- `.env.example` — every new entry gets `<TODO: update-this-value>`,
-  even when the source has `os.getenv("VAR", "some-fallback")`.
-- Python files — the model-replacement path emits
-  `os.getenv("MODEL_NAME")` with **no second argument**. It does NOT emit
-  `os.getenv("MODEL_NAME", "the-original-hardcoded-value")` even though
-  that would be trivially "safer."
+**Rule 1 — No inferred defaults for regular env vars.** For variables read
+via `os.getenv`/`os.environ`, `.env.example` always gets `<TODO: update-this-value>`,
+even when the source has an `os.getenv("VAR", "some-fallback")`. Exception:
+hardcoded model strings replaced in source ARE written with their actual value
+in `.env.example` (e.g. `MODEL_NAME_GENERATED_1=gemini-3.5-flash`) — this is
+not an inferred default, it is the known value that was literally in the source.
+The source replacement always emits bare `os.getenv("VAR")` with **no second
+argument** in both cases.
 
 **Rule 2 — Additive-only for Python files.** The skill never writes new
 `os.environ.setdefault(...)` bootstrap lines into any Python file.
