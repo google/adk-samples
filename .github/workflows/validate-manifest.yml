@@ -92,15 +92,35 @@ jobs:
             # LANGUAGE_NAMESPACE_DIRS in tools/validate_manifest.py).
             LANG_NAMESPACES="python java go typescript kotlin"
 
+            # Container directories that are not recipes themselves but may
+            # contain a language namespace layer underneath them
+            # (e.g. core/harnesses/python/<recipe>/).
+            CONTAINER_DIRS="harnesses"
+
             recipe_dir_for() {
               local file="$1"
               # Strip to: <root>/<part1>/<part2>/...
-              local root part1 part2
+              local root part1 part2 part3
               root="${file%%/*}"          # core or contrib
               rest="${file#*/}"           # everything after root/
               part1="${rest%%/*}"         # first component under root
               rest2="${rest#*/}"          # everything after part1/
-              part2="${rest2%%/*}"        # second component (may equal rest2 if no slash)
+              part2="${rest2%%/*}"        # second component
+              rest3="${rest2#*/}"         # everything after part2/
+              part3="${rest3%%/*}"        # third component
+
+              # Check if part1 is a container dir with a language namespace
+              # layer inside (e.g. core/harnesses/python/<recipe>).
+              for cd in $CONTAINER_DIRS; do
+                if [ "$part1" = "$cd" ] && [ -n "$part2" ] && [ -n "$part3" ] && [ "$part3" != "$rest3" ]; then
+                  for ns in $LANG_NAMESPACES; do
+                    if [ "$part2" = "$ns" ]; then
+                      echo "${root}/${part1}/${part2}/${part3}"
+                      return
+                    fi
+                  done
+                fi
+              done
 
               # Check if part1 is a language namespace and part2 is a real component
               for ns in $LANG_NAMESPACES; do
