@@ -23,7 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "google-cloud-aiplatform[adk,agent-engines,evaluation]>=1.132.0",
-    "pytest>=8.3.5",
+    "pytest>=9.1.1",
     "pytest-asyncio>=0.26.0",
     "google-adk[eval]>=1.31.0"
 ]
