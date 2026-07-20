@@ -1,0 +1,163 @@
+name: Validate Recipe Structure
+
+# Language-agnostic structural check for every recipe under core/, contrib/,
+# and (once it exists) skills/. Runs five checks per recipe, in order:
+#
+#   1. manifest.yaml is present
+#   2. manifest.yaml passes the JSON schema
+#   3. folder name matches ^[a-z][a-z-]*$ and stays within the length limit
+#   4. folder size + file count are within the tier caps in policy.yml
+#   5. required files present — the UNION of policy.required_files.always,
+#      by_root[<root>], and by_language[<manifest.language>]
+#
+# Language detection uses manifest.language as the single source of truth.
+# Anything language-specific (Python's [project] rules, env-var extraction,
+# ruff-config rejection, model-name notice) stays in the per-language
+# workflows and is NOT re-run here.
+#
+# For now this workflow is additive — it runs alongside validate-manifest.yml
+# and python-validate-recipe.yml. Step 3 of the migration will remove the
+# overlap (see the strategy discussion in tools/README.md if added there).
+
+on:
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'contrib/**'
+      - 'skills/**'
+      - '.github/schemas/manifest-schema.json'
+      - '.github/policy.yml'
+      - '.github/workflows/validate-recipe-structure.yml'
+      - 'tools/validate.py'
+      - 'tools/validate_manifest.py'
+      - 'tools/validate_structure.py'
+      - 'tools/affected_recipes.py'
+      - 'pyproject.toml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'core/**'
+      - 'contrib/**'
+      - 'skills/**'
+      - '.github/schemas/manifest-schema.json'
+      - '.github/policy.yml'
+      - '.github/workflows/validate-recipe-structure.yml'
+      - 'tools/validate.py'
+      - 'tools/validate_manifest.py'
+      - 'tools/validate_structure.py'
+      - 'tools/affected_recipes.py'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-structure:
+    name: Check recipe structure (files, size, naming, manifest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install validation dependencies
+        # tools/validate_structure.py and its helpers depend on PyYAML and
+        # jsonschema (declared in the repo-root pyproject.toml). `uv sync`
+        # is the same install step validate-manifest.yml already uses.
+        run: uv sync
+
+      - name: Detect affected recipe directories
+        id: affected
+        env:
+          # Route every GitHub-controlled value through env vars rather
+          # than direct expression interpolation, same as the sibling
+          # workflows — mitigates expression injection.
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          # workflow_dispatch, or a first push to a new branch (BEFORE is
+          # all-zeros), has no base to diff against — validate everything.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$BASE_REF"
+            CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+          elif [ "$EVENT_NAME" = "push" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            CHANGED_FILES=$(git diff --name-only "$BEFORE" HEAD)
+          else
+            echo "No base to diff against — will validate all recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # If any infra file that controls this workflow's behaviour
+          # changed, validate ALL recipes so the new config applies across
+          # the board (mirrors validate-manifest.yml's approach).
+          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/(schemas/manifest-schema\.json|policy\.yml|workflows/validate-recipe-structure\.yml)|tools/(validate|validate_manifest|validate_structure|affected_recipes)\.py|pyproject\.toml)$" || true)
+          if [ -n "$INFRA_CHANGED" ]; then
+            echo "Schema, policy, workflow, or tool changed — will validate all recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Map changed files → affected recipe directories via the shared
+          # helper (also unit-tested in tools/tests/test_affected_recipes.py).
+          CHANGED_RECIPES=$(echo "$CHANGED_FILES" | uv run --no-project python tools/affected_recipes.py)
+
+          echo "Affected recipes:"
+          echo "$CHANGED_RECIPES"
+
+          {
+            echo "changed_recipes<<RECIPES_EOF"
+            echo "$CHANGED_RECIPES"
+            echo "RECIPES_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "validate_all=false" >> "$GITHUB_OUTPUT"
+
+      - name: Validate affected recipes
+        env:
+          VALIDATE_ALL: ${{ steps.affected.outputs.validate_all }}
+          CHANGED_RECIPES: ${{ steps.affected.outputs.changed_recipes }}
+        run: |
+          set -euo pipefail
+
+          if [ "$VALIDATE_ALL" = "true" ]; then
+            # `uv run validate structure` (no scope) walks core/, contrib/,
+            # and skills/ and reports every failing recipe in one pass.
+            uv run validate structure
+            exit 0
+          fi
+
+          if [ -z "$CHANGED_RECIPES" ]; then
+            echo "[INFO] No recipe directories to validate."
+            exit 0
+          fi
+
+          # Per-recipe invocation: keeps annotations scoped to the recipe
+          # under review and lets one broken recipe not short-circuit
+          # validation of the others in the same PR.
+          FAILED=0
+          while IFS= read -r recipe; do
+            [ -z "$recipe" ] && continue
+            uv run validate structure "$recipe" || FAILED=1
+          done <<< "$CHANGED_RECIPES"
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  One or more recipes failed structural validation."
+            echo "  See errors above for details."
+            echo "========================================"
+            exit 1
+          fi

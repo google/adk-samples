@@ -141,3 +141,48 @@ excluded_paths:
       - .parcel-cache
       - .cache
       - coverage        # test coverage output
+
+# --------------------------------------------------------------------------
+# Required files — enforced by the (upcoming) validate-recipe-structure
+# workflow via tools/validate_structure.py.
+#
+# The required-file list applied to a recipe is the UNION of three sources,
+# resolved from the recipe's on-disk location and its manifest.language:
+#   1. `always`               — every recipe, regardless of anything
+#   2. `by_root[<root>]`      — where <root> is core / contrib / skills
+#                               (the top-level directory the recipe lives in)
+#   3. `by_language[<lang>]`  — where <lang> is the value of manifest.language
+#
+# Adding a new language, or a new folder-based rule (e.g. skills/*), is a
+# YAML edit here — no code change is required. Paths are recipe-relative
+# and may include subdirectories (e.g. tests/test_runnability.py).
+#
+# NOTE: manifest.yaml is intentionally NOT listed here. Its presence is a
+# hard prerequisite for every other check (schema validation, language
+# detection, `by_language[…]` lookup) and is reported by a dedicated
+# fail-fast step in validate_structure.py — adding it to `always` would
+# only produce a duplicate error for the same file.
+# --------------------------------------------------------------------------
+required_files:
+  always:
+    - README.md
+
+  by_root:
+    core:
+      - AGENTS.md
+    contrib: []
+    skills:
+      - SKILL.md
+
+  by_language:
+    python:
+      - pyproject.toml
+      - uv.lock
+      - .env.example
+      - tests/test_runnability.py
+    # Placeholders for languages that don't have recipes yet. Filling these
+    # in later requires no workflow change.
+    java: []
+    go: []
+    kotlin: []
+    typescript: []

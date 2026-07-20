@@ -39,7 +39,12 @@ import yaml
 REPO_ROOT = Path(__file__).parent.parent
 SCHEMA_PATH = REPO_ROOT / ".github" / "schemas" / "manifest-schema.json"
 MANIFEST_FILENAME = "manifest.yaml"
-RECIPE_ROOTS = ["core", "contrib"]
+# Top-level directories that may hold recipes. `skills/` is scaffolded ahead
+# of that folder actually existing on disk — _collect_root() prints a
+# harmless [SKIP] line when the directory is missing, so listing it here is
+# safe today and lets the validation tooling pick up skills the moment they
+# land without another code change.
+RECIPE_ROOTS = ["core", "contrib", "skills"]
 
 OWNERSHIP_TEAM_PLACEHOLDER = "TODO: Replace with your team name"
 OWNERSHIP_POC_PLACEHOLDER = "TODO: Replace with your GitHub user ID"

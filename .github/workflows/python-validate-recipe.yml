@@ -1,15 +1,36 @@
 name: Validate Python Recipe
 
+# Python-specific validation for each affected Python recipe.
+#
+# Everything language-agnostic (manifest presence + schema, required files,
+# folder name, folder size + file count) is handled by
+# validate-recipe-structure.yml. This workflow only runs checks that are
+# meaningful for Python recipes:
+#
+#   - Notice env keys missing from .env.example
+#     (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, MODEL_NAME[_…])
+#   - Env vars used in Python source but not declared in .env.example
+#     (delegated to .github/scripts/check_env_vars.py; AST-based)
+#   - Recipe must not carry its own Ruff config
+#     ([tool.ruff*] block in pyproject.toml, or ruff.toml / .ruff.toml)
+#   - [project] metadata rules
+#     (delegated to .github/scripts/check_recipe_pyproject.py:
+#      project-name-matches-folder, python-version-floor,
+#      description-matches-manifest)
+#   - Notice on possible hardcoded model names in .py files
+#     (regex match on well-known model prefixes)
+
 on:
   pull_request:
     paths:
       - 'core/**'
       - 'contrib/**'
       - '.github/workflows/python-validate-recipe.yml'
-      - '.github/policy.yml'
-      - '.github/scripts/load_policy.py'
       - '.github/scripts/check_env_vars.py'
       - '.github/scripts/check_recipe_pyproject.py'
+      - 'tools/affected_recipes.py'
+      - 'tools/validate_manifest.py'
+      - 'pyproject.toml'
   workflow_dispatch:
 
 permissions:
@@ -17,7 +38,7 @@ permissions:
 
 jobs:
   validate-python-recipes:
-    name: Check Python recipe structure and constraints
+    name: Check Python-specific recipe constraints
     runs-on: ubuntu-latest
 
     steps:
@@ -32,23 +53,27 @@ jobs:
           python-version: "3.11"
           enable-cache: false
 
+      - name: Install validation dependencies
+        # affected_recipes.py imports validate_manifest and needs PyYAML;
+        # `uv sync` installs both (same install step the sibling workflow
+        # validate-recipe-structure.yml uses).
+        run: uv sync
+
       - name: Detect affected Python recipe directories
         id: affected
         env:
           # Pass GitHub-controlled values through env vars rather than
-          # interpolating them directly into the script body (security
+          # interpolating them into the shell body (expression injection
           # hardening — see GitHub Actions security hardening guide).
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
 
-          # workflow_dispatch: manual trigger has no PR base ref, so PR-diff
-          # detection can't run. Validate every Python recipe instead — that's
-          # the intent of a manual dispatch (mirrors the run_all=true path of
-          # python-tests.yml). Without this short-circuit, the diff commands
-          # below silently produce an empty CHANGED_FILES and the workflow
-          # no-ops, which is worse than doing nothing openly.
+          # workflow_dispatch has no PR base ref, so the diff-based
+          # detection can't run. Validate every Python recipe instead
+          # (mirrors the run_all path in python-tests.yml). Without this
+          # short-circuit, `git diff` below would fail loudly.
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "workflow_dispatch — validating all Python recipes."
             echo "validate_all=true" >> "$GITHUB_OUTPUT"
@@ -61,117 +86,27 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # If any infrastructure file that controls this workflow's behaviour
-          # changed (the workflow itself, the policy limits, or any checker
-          # script), validate ALL Python recipes so the new configuration is
-          # applied across the board rather than only to the recipes touched
-          # in the same PR.
-          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/workflows/python-validate-recipe\.yml|\.github/policy\.yml|\.github/scripts/(load_policy|check_env_vars|check_recipe_pyproject)\.py)$" || true)
+          # If any infrastructure file that controls this workflow's
+          # behaviour changed (the workflow itself, a checker script, or
+          # a shared tool), validate ALL Python recipes so the new
+          # configuration is applied everywhere and not only to recipes
+          # touched by the same PR.
+          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/(workflows/python-validate-recipe\.yml|scripts/(check_env_vars|check_recipe_pyproject)\.py)|tools/(affected_recipes|validate_manifest)\.py|pyproject\.toml)$" || true)
           if [ -n "$INFRA_CHANGED" ]; then
-            echo "Workflow, policy, or checker script changed — validating all Python recipes."
+            echo "Workflow or Python-specific tool changed — validating all Python recipes."
             echo "validate_all=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # ---------------------------------------------------------------------------
-          # Determine which recipe directories are Python recipes.
-          #
-          # A recipe is Python if:
-          #   (a) It lives under core/python/<recipe>/, OR
-          #   (b) It lives under contrib/python/<recipe>/, OR
-          #   (c) It lives under contrib/<recipe>/ AND manifest.yaml
-          #       contains:  language: "python"
-          #
-          # Layouts recognised:
-          #   core/python/<recipe>/...      — always Python (namespace dir)
-          #   contrib/python/<recipe>/...   — always Python (namespace dir)
-          #   contrib/<recipe>/...          — Python only if manifest says so
-          #
-          # Order matters in the case statement below: the more-specific
-          # `contrib/python/*/*` pattern MUST come before the generic
-          # `contrib/*/*`, or the generic branch will match first and resolve
-          # to `contrib/python` (a namespace dir with no manifest.yaml), which
-          # then silently skips the real recipe at `contrib/python/<recipe>/`.
-          # This was a real bug — recipes at `contrib/python/<name>/` were
-          # never validated (folder-name check, size limits, model-literal
-          # notice, structural pyproject.toml rules — all bypassed).
-          # ---------------------------------------------------------------------------
+          # Otherwise, translate the file diff into the set of Python
+          # recipes it touched via the shared helper (tested by
+          # tools/tests/test_affected_recipes.py — table-driven, so this
+          # workflow doesn't reimplement the layout matrix in bash).
+          CHANGED_RECIPES=$(echo "$CHANGED_FILES" | uv run --no-project python tools/affected_recipes.py --language python)
 
-          CHANGED_RECIPES=""
-
-          while IFS= read -r file; do
-            [ -z "$file" ] && continue
-
-            recipe_dir=""
-
-            case "$file" in
-              core/python/*/*)
-                # core/python/<recipe>/anything → recipe is core/python/<recipe>
-                without_root="${file#core/python/}"            # <recipe>/rest
-                recipe_name="${without_root%%/*}"              # <recipe>
-                recipe_dir="core/python/${recipe_name}"
-                ;;
-              contrib/python/*/*)
-                # contrib/python/<recipe>/anything → recipe is contrib/python/<recipe>.
-                # MUST match before the generic `contrib/*/*` case below, otherwise
-                # the generic one wins and resolves to `contrib/python` (namespace
-                # dir, no manifest) → silently skipped.
-                without_root="${file#contrib/python/}"
-                recipe_name="${without_root%%/*}"
-                recipe_dir="contrib/python/${recipe_name}"
-                ;;
-              contrib/*/*)
-                # contrib/<recipe>/anything → candidate, check manifest later
-                without_root="${file#contrib/}"
-                recipe_name="${without_root%%/*}"
-                recipe_dir="contrib/${recipe_name}"
-                ;;
-              core/*/*)
-                # core/<recipe>/anything (flat, non-namespaced) → candidate,
-                # check manifest for language: python later.
-                without_root="${file#core/}"
-                recipe_name="${without_root%%/*}"
-                # Skip the language namespace dir itself (core/python, core/go…)
-                case "$recipe_name" in
-                  python|java|go|typescript|kotlin) continue ;;
-                esac
-                recipe_dir="core/${recipe_name}"
-                ;;
-              *)
-                continue
-                ;;
-            esac
-
-            [ -z "$recipe_dir" ] && continue
-            [ -d "$recipe_dir" ] || continue   # skip deleted dirs
-
-            # For recipes NOT under a language namespace dir (flat core/<recipe>/
-            # or contrib/<recipe>/), only include if manifest.yaml declares
-            # language: python. Namespaced dirs (core/python/*, contrib/python/*)
-            # are Python by convention and don't need the manifest check.
-            if [[ "$recipe_dir" == contrib/* && "$recipe_dir" != contrib/python/* ]] || \
-               [[ "$recipe_dir" == core/* && "$recipe_dir" != core/python/* ]]; then
-              manifest="$recipe_dir/manifest.yaml"
-              if [ ! -f "$manifest" ]; then
-                continue
-              fi
-              # Match:  language: python  or  language: "python"  or  language: 'python'
-              # Trailing YAML comments (e.g. `language: python  # note`) are permitted.
-              if ! grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*(#.*)?$' "$manifest"; then
-                continue
-              fi
-            fi
-
-            CHANGED_RECIPES="${CHANGED_RECIPES}${recipe_dir}"$'\n'
-          done <<< "$CHANGED_FILES"
-
-          # Deduplicate
-          CHANGED_RECIPES=$(echo "$CHANGED_RECIPES" | sort -u | grep -v '^$' || true)
-
-          echo "Python recipe directories to validate:"
+          echo "Python recipes to validate:"
           echo "$CHANGED_RECIPES"
 
-          # Store as newline-delimited multiline output to avoid word-splitting on spaces
           {
             echo "changed_recipes<<RECIPES_EOF"
             echo "$CHANGED_RECIPES"
@@ -179,112 +114,35 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "validate_all=false" >> "$GITHUB_OUTPUT"
 
-      - name: Collect all Python recipe directories (workflow changed)
+      - name: Collect all Python recipe directories (workflow_dispatch or infra changed)
         id: all_recipes
         if: steps.affected.outputs.validate_all == 'true'
         run: |
           set -euo pipefail
 
-          ALL=""
+          # Full-repo enumeration: list every path under core/ and contrib/
+          # (any depth), then feed it through the same helper the diff
+          # step uses — with --language python. This keeps one source of
+          # truth for the layout matrix (path → recipe → language) instead
+          # of re-implementing it in shell.
+          ALL=$(find core contrib -type f 2>/dev/null | uv run --no-project python tools/affected_recipes.py --language python)
 
-          # core/python/* — always Python
-          for d in core/python/*/; do
-            [ -d "$d" ] && ALL="${ALL}${d%/}"$'\n'
-          done
+          echo "All Python recipes:"
+          echo "$ALL"
 
-          # core/<recipe>/ (flat, non-namespaced) — only if manifest declares python.
-          # Skips language namespace dirs (core/python/, core/go/, etc.).
-          for d in core/*/; do
-            [ -d "$d" ] || continue
-            recipe_name="$(basename "${d%/}")"
-            case "$recipe_name" in
-              python|java|go|typescript|kotlin) continue ;;
-            esac
-            manifest="${d}manifest.yaml"
-            [ -f "$manifest" ] || continue
-            if grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*(#.*)?$' "$manifest"; then
-              ALL="${ALL}${d%/}"$'\n'
-            fi
-          done
-
-          # contrib/python/* — always Python (namespace dir, like core/python/).
-          # Kept as a separate loop from `contrib/*/` below so the language
-          # dir itself (contrib/python/) is never scanned for a manifest.yaml
-          # it doesn't have.
-          for d in contrib/python/*/; do
-            [ -d "$d" ] && ALL="${ALL}${d%/}"$'\n'
-          done
-
-          # contrib/<recipe>/ — only if manifest declares python. Skips
-          # language namespace dirs (contrib/python/, contrib/go/, etc.)
-          # since those have no top-level manifest.yaml.
-          for d in contrib/*/; do
-            [ -d "$d" ] || continue
-            manifest="${d}manifest.yaml"
-            [ -f "$manifest" ] || continue
-            # Trailing YAML comments (e.g. `language: python  # note`) are permitted.
-            if grep -qE '^\s*language\s*:\s*["'"'"']?python["'"'"']?\s*(#.*)?$' "$manifest"; then
-              ALL="${ALL}${d%/}"$'\n'
-            fi
-          done
-
-          ALL=$(echo "$ALL" | sort -u | grep -v '^$' || true)
-
-          # Store as newline-delimited multiline output to avoid word-splitting on spaces
           {
             echo "all_recipes<<RECIPES_EOF"
             echo "$ALL"
             echo "RECIPES_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Validate Python recipe structure
+      - name: Run Python-specific checks per recipe
         env:
           VALIDATE_ALL: ${{ steps.affected.outputs.validate_all }}
           ALL_RECIPES: ${{ steps.all_recipes.outputs.all_recipes }}
           CHANGED_RECIPES: ${{ steps.affected.outputs.changed_recipes }}
         run: |
           set -euo pipefail
-
-          # ==================================================================
-          # Load configurable limits from .github/policy.yml (single source of
-          # truth for repo-wide constants). Every value below is looked up by
-          # dotted key path; to change a limit, edit policy.yml.
-          # ==================================================================
-          POLICY=(uv run --no-project --with pyyaml python3 .github/scripts/load_policy.py)
-
-          MAX_FOLDER_NAME_LENGTH=$("${POLICY[@]}" recipe_naming.max_folder_name_length)
-
-          CORE_MAX_FILES=$("${POLICY[@]}" recipe_size_limits.core.default.max_files)
-          CORE_MAX_SIZE_MB=$("${POLICY[@]}" recipe_size_limits.core.default.max_size_mb)
-          CORE_LARGE_MAX_FILES=$("${POLICY[@]}" recipe_size_limits.core.large.max_files)
-          CORE_LARGE_MAX_SIZE_MB=$("${POLICY[@]}" recipe_size_limits.core.large.max_size_mb)
-
-          CONTRIB_MAX_FILES=$("${POLICY[@]}" recipe_size_limits.contrib.default.max_files)
-          CONTRIB_MAX_SIZE_MB=$("${POLICY[@]}" recipe_size_limits.contrib.default.max_size_mb)
-          CONTRIB_LARGE_MAX_FILES=$("${POLICY[@]}" recipe_size_limits.contrib.large.max_files)
-          CONTRIB_LARGE_MAX_SIZE_MB=$("${POLICY[@]}" recipe_size_limits.contrib.large.max_size_mb)
-
-          # Excluded paths — union across every language section in policy.yml
-          # so the check is consistent regardless of the recipe's declared
-          # language. New languages: add a section under `excluded_paths:` in
-          # policy.yml; no workflow change needed.
-          EXCLUDED_DIRS=()
-          EXCLUDED_FILES=()
-          for section in common python java kotlin go typescript; do
-            while IFS= read -r d; do
-              [ -n "$d" ] && EXCLUDED_DIRS+=("$d")
-            done < <("${POLICY[@]}" "excluded_paths.$section.dirs")
-            while IFS= read -r f; do
-              [ -n "$f" ] && EXCLUDED_FILES+=("$f")
-            done < <("${POLICY[@]}" "excluded_paths.$section.files")
-          done
-
-          echo "[INFO] Policy loaded from .github/policy.yml"
-          echo "[INFO]   core:    default=${CORE_MAX_FILES} files / ${CORE_MAX_SIZE_MB} MB, large=${CORE_LARGE_MAX_FILES} files / ${CORE_LARGE_MAX_SIZE_MB} MB"
-          echo "[INFO]   contrib: default=${CONTRIB_MAX_FILES} files / ${CONTRIB_MAX_SIZE_MB} MB, large=${CONTRIB_LARGE_MAX_FILES} files / ${CONTRIB_LARGE_MAX_SIZE_MB} MB"
-          echo "[INFO]   folder name max length: ${MAX_FOLDER_NAME_LENGTH}"
-          echo "[INFO]   excluded dirs (${#EXCLUDED_DIRS[@]}): ${EXCLUDED_DIRS[*]}"
-          echo "[INFO]   excluded files (${#EXCLUDED_FILES[@]}): ${EXCLUDED_FILES[*]}"
 
           if [ "$VALIDATE_ALL" = "true" ]; then
             RECIPES="$ALL_RECIPES"
@@ -299,10 +157,10 @@ jobs:
 
           FAILED=0
 
-          # Each recipe is validated in a subshell so that set -e failures
-          # (e.g. a transient `du` or `find` error) only abort that recipe's
-          # checks, not the entire loop.  The subshell exits 1 if any check
-          # fails; `|| FAILED=1` records the aggregate result in the parent.
+          # Each recipe is validated in a subshell so a transient failure
+          # inside one recipe (e.g. a `find` error) aborts only that
+          # recipe's checks, not the whole loop. The subshell exits 1
+          # when any check fails; `|| FAILED=1` records the aggregate.
           while IFS= read -r recipe; do
             [ -z "$recipe" ] && continue
             echo ""
@@ -312,168 +170,14 @@ jobs:
             (
               RECIPE_FAILED=0
 
-              # ------------------------------------------------------------------
-              # Check 1: Folder name — only lowercase letters and hyphens allowed
-              # ------------------------------------------------------------------
-              folder_name="$(basename "$recipe")"
-              if ! echo "$folder_name" | grep -qE '^[a-z][a-z-]*$'; then
-                echo "::error file=$recipe::Folder name '$folder_name' is invalid. Only lowercase letters and hyphens are allowed (must start with a letter, no underscores, digits, or uppercase)."
-                echo "[FAIL] Folder name: '$folder_name' — only lowercase letters and hyphens allowed."
-                RECIPE_FAILED=1
-              elif [ "${#folder_name}" -gt "$MAX_FOLDER_NAME_LENGTH" ]; then
-                echo "::error file=$recipe::Folder name '$folder_name' is ${#folder_name} characters long. Maximum allowed is ${MAX_FOLDER_NAME_LENGTH} characters."
-                echo "[FAIL] Folder name: '$folder_name' — exceeds 30 character limit."
-                RECIPE_FAILED=1
-              else
-                echo "[PASS] Folder name: '$folder_name'"
-              fi
-
-              # ------------------------------------------------------------------
-              # Check 2: Folder size  /  Check 3: File count
+              # ------------------------------------------------------------
+              # Check: .env.example — notice keys
               #
-              # Which limit applies is chosen by:
-              #   1. Top-level ancestor of the recipe path (core vs contrib).
-              #   2. `large:` field in manifest.yaml (default: false → default
-              #      tier; true → relaxed tier).
-              #
-              # Files and directories listed under excluded_paths in
-              # .github/policy.yml never count toward either the size or the
-              # file count. Applied as a union across all language sections.
-              # ------------------------------------------------------------------
-
-              # Pick the tier limits based on core vs contrib ancestor.
-              case "$recipe" in
-                core/*)
-                  TIER_ROOT="core"
-                  DEFAULT_MAX_FILES="$CORE_MAX_FILES"
-                  DEFAULT_MAX_SIZE_MB="$CORE_MAX_SIZE_MB"
-                  LARGE_MAX_FILES="$CORE_LARGE_MAX_FILES"
-                  LARGE_MAX_SIZE_MB="$CORE_LARGE_MAX_SIZE_MB"
-                  ;;
-                contrib/*)
-                  TIER_ROOT="contrib"
-                  DEFAULT_MAX_FILES="$CONTRIB_MAX_FILES"
-                  DEFAULT_MAX_SIZE_MB="$CONTRIB_MAX_SIZE_MB"
-                  LARGE_MAX_FILES="$CONTRIB_LARGE_MAX_FILES"
-                  LARGE_MAX_SIZE_MB="$CONTRIB_LARGE_MAX_SIZE_MB"
-                  ;;
-                *)
-                  echo "::error file=$recipe::Recipe path must live under core/ or contrib/, got '$recipe'"
-                  echo "[FAIL] Unrecognised recipe root."
-                  exit 1
-                  ;;
-              esac
-
-              manifest="$recipe/manifest.yaml"
-              # Trailing YAML comments (e.g. `large: true  # rationale`) are permitted.
-              if [ -f "$manifest" ] && grep -qiE '^\s*large\s*:\s*true\s*(#.*)?$' "$manifest"; then
-                EFFECTIVE_MAX_FILES="$LARGE_MAX_FILES"
-                EFFECTIVE_MAX_SIZE_MB="$LARGE_MAX_SIZE_MB"
-                echo "[INFO] Tier: $TIER_ROOT / large — limits ${EFFECTIVE_MAX_SIZE_MB} MB / ${EFFECTIVE_MAX_FILES} files."
-              else
-                EFFECTIVE_MAX_FILES="$DEFAULT_MAX_FILES"
-                EFFECTIVE_MAX_SIZE_MB="$DEFAULT_MAX_SIZE_MB"
-                echo "[INFO] Tier: $TIER_ROOT / default — limits ${EFFECTIVE_MAX_SIZE_MB} MB / ${EFFECTIVE_MAX_FILES} files."
-              fi
-              EFFECTIVE_MAX_SIZE_BYTES=$(( EFFECTIVE_MAX_SIZE_MB * 1024 * 1024 ))
-
-              # Build a find expression that prunes excluded directories (fast
-              # — find won't descend into them) and skips excluded file names.
-              # Directory pruning uses -name (basename match), so e.g. a
-              # `build/` anywhere in the recipe tree is excluded.
-              FIND_CMD=(find "$recipe")
-              if [ ${#EXCLUDED_DIRS[@]} -gt 0 ]; then
-                FIND_CMD+=('(' -type d '(')
-                for i in "${!EXCLUDED_DIRS[@]}"; do
-                  [ "$i" -gt 0 ] && FIND_CMD+=(-o)
-                  FIND_CMD+=(-name "${EXCLUDED_DIRS[$i]}")
-                done
-                FIND_CMD+=(')' -prune ')' -o)
-              fi
-              FIND_CMD+=('(' -type f)
-              for file in "${EXCLUDED_FILES[@]}"; do
-                FIND_CMD+=(-not -name "$file")
-              done
-              FIND_CMD+=(-print ')')
-
-              # Enumerate the counted file list once, then derive both the
-              # count and the total size from it — cheaper than two tree walks
-              # and guarantees the two numbers stay consistent.
-              mapfile -t COUNTED_FILES < <("${FIND_CMD[@]}")
-              file_count=${#COUNTED_FILES[@]}
-
-              if [ "$file_count" -eq 0 ]; then
-                folder_size_bytes=0
-              else
-                # printf | xargs handles arbitrarily large file lists safely
-                # (bypasses ARG_MAX on the command line).
-                folder_size_bytes=$(printf '%s\0' "${COUNTED_FILES[@]}" \
-                  | xargs -0 du -sb 2>/dev/null \
-                  | awk '{s+=$1} END {print s+0}')
-              fi
-              folder_size_kb=$(( folder_size_bytes / 1024 ))
-
-              if [ "$folder_size_bytes" -gt "$EFFECTIVE_MAX_SIZE_BYTES" ]; then
-                echo "::error file=$recipe::Recipe folder exceeds ${EFFECTIVE_MAX_SIZE_MB} MB (${folder_size_kb} KB, excluding paths listed in .github/policy.yml). Remove large files or binaries."
-                echo "[FAIL] Folder size: ${folder_size_kb} KB — exceeds ${EFFECTIVE_MAX_SIZE_MB} MB limit."
-                RECIPE_FAILED=1
-              else
-                echo "[PASS] Folder size: ${folder_size_kb} KB"
-              fi
-
-              if [ "$file_count" -gt "$EFFECTIVE_MAX_FILES" ]; then
-                echo "::error file=$recipe::Recipe folder contains $file_count files, exceeding the limit of ${EFFECTIVE_MAX_FILES}."
-                echo "[FAIL] File count: $file_count — exceeds ${EFFECTIVE_MAX_FILES} file limit."
-                RECIPE_FAILED=1
-              else
-                echo "[PASS] File count: $file_count"
-              fi
-
-              # ------------------------------------------------------------------
-              # Check 4: Required files presence
-              # ------------------------------------------------------------------
-              REQUIRED_FILES=(
-                "README.md"
-                "pyproject.toml"
-                "uv.lock"
-                "manifest.yaml"
-                ".env.example"
-                "tests/test_runnability.py"
-              )
-
-              for required in "${REQUIRED_FILES[@]}"; do
-                if [ ! -f "$recipe/$required" ]; then
-                  echo "::error file=$recipe/$required::Required file '$required' is missing from recipe '$recipe'."
-                  echo "[FAIL] Missing required file: $required"
-                  RECIPE_FAILED=1
-                else
-                  echo "[PASS] Found required file: $required"
-                fi
-              done
-
-              # Required files for core/python/ recipes only.
-              if [[ "$recipe" == core/python/* ]]; then
-                CORE_REQUIRED_FILES=(
-                  "AGENTS.md"
-                )
-
-                for required in "${CORE_REQUIRED_FILES[@]}"; do
-                  if [ ! -f "$recipe/$required" ]; then
-                    echo "::error file=$recipe/$required::Required file '$required' is missing from core/python recipe '$recipe'."
-                    echo "[FAIL] Missing required file: $required (required for core/python recipes)"
-                    RECIPE_FAILED=1
-                  else
-                    echo "[PASS] Found required file: $required"
-                  fi
-                done
-              fi
-
-              # ------------------------------------------------------------------
-              # Check 5: Required keys in .env.example
-              # ------------------------------------------------------------------
-              # Keys that emit a ::notice if missing but do not fail the check.
-              # These are commonly set by GCP runtimes or ADK internals and
-              # their absence from .env.example is not necessarily an error.
+              # Emits ::notice (never fail) when a common configuration
+              # key is not declared. These are conventionally used by GCP
+              # runtimes or ADK internals and their absence isn't always
+              # an error, so this is advisory only.
+              # ------------------------------------------------------------
               NOTICE_ENV_KEYS=(
                 "GOOGLE_CLOUD_PROJECT"
                 "GOOGLE_CLOUD_LOCATION"
@@ -491,15 +195,14 @@ jobs:
                 done
               fi
 
-              # ------------------------------------------------------------------
-              # Check 6: Environment variables used in Python files but missing
-              #           from .env.example.  Delegated to
-              #          .github/scripts/check_env_vars.py, which AST-parses
-              #          the recipe's Python source — handles multi-line calls,
-              #          import aliases (from os import getenv), and suppresses
-              #          false positives for OS/CI variables (HOME, PATH,
-              #          GITHUB_*, INTEGRATION_TEST, …).
-              # ------------------------------------------------------------------
+              # ------------------------------------------------------------
+              # Check: env vars used in Python source but missing from
+              # .env.example. Delegated to check_env_vars.py, which
+              # AST-parses the recipe's Python source — handles multi-line
+              # calls, import aliases (from os import getenv), and
+              # suppresses false positives for OS/CI variables
+              # (HOME, PATH, GITHUB_*, INTEGRATION_TEST, …).
+              # ------------------------------------------------------------
               if [ -f "$recipe/.env.example" ]; then
                 set +e
                 env_vars_result=$(uv run --no-project \
@@ -535,31 +238,32 @@ jobs:
                 done <<< "$env_vars_result"
               fi
 
-              # ------------------------------------------------------------------
-              # Check 7: recipe must not carry its own Ruff configuration.
-              #          Ruff config is centralized in the repo root pyproject.toml.
+              # ------------------------------------------------------------
+              # Check: recipe must not carry its own Ruff configuration.
+              # Ruff configuration is centralized in the repo root
+              # pyproject.toml.
               #
-              # Ruff discovers configuration from three sources (whichever is
-              # nearest walking up from a target file):
+              # Ruff discovers configuration from three sources (whichever
+              # is nearest walking up from a target file):
               #   1. `[tool.ruff*]` tables in pyproject.toml
               #   2. a `ruff.toml`   file
               #   3. a `.ruff.toml`  file
-              # All three must be blocked in recipe directories, or centralization
-              # has a hole. `ruff.toml` and `.ruff.toml` are searched over the
-              # whole recipe subtree because ruff walks up per-file, so a nested
-              # copy would still override the root config for files below it.
-              # ------------------------------------------------------------------
+              # All three must be blocked in recipe directories, or
+              # centralisation has a hole. `ruff.toml` and `.ruff.toml`
+              # are searched over the whole recipe subtree because ruff
+              # walks up per-file, so a nested copy would still override
+              # the root config for files below it.
+              # ------------------------------------------------------------
               pyproject="$recipe/pyproject.toml"
-              check7_passed=1
+              ruff_check_passed=1
 
               if [ -f "$pyproject" ] && grep -qE '^\s*\[tool\.ruff(\.|\])' "$pyproject"; then
                 echo "::error file=$pyproject::Recipe pyproject.toml must not declare a [tool.ruff*] block. Ruff configuration is centralized in the repo root pyproject.toml (see [tool.ruff] there). Remove all [tool.ruff*] tables from this file."
                 echo "[FAIL] pyproject.toml contains a [tool.ruff*] block — remove it (see root pyproject.toml)."
                 RECIPE_FAILED=1
-                check7_passed=0
+                ruff_check_passed=0
               fi
 
-              # Find any standalone ruff config files anywhere under the recipe.
               standalone_ruff_configs=$(find "$recipe" -type f \
                 \( -name 'ruff.toml' -o -name '.ruff.toml' \) 2>/dev/null || true)
               if [ -n "$standalone_ruff_configs" ]; then
@@ -569,29 +273,30 @@ jobs:
                   echo "[FAIL] Standalone Ruff config found: $ruff_cfg — delete it (see root pyproject.toml)."
                 done <<< "$standalone_ruff_configs"
                 RECIPE_FAILED=1
-                check7_passed=0
+                ruff_check_passed=0
               fi
 
-              if [ "$check7_passed" -eq 1 ]; then
+              if [ "$ruff_check_passed" -eq 1 ]; then
                 echo "[PASS] Recipe carries no local Ruff configuration."
               fi
 
-              # ------------------------------------------------------------------
-              # Check 8: [project] metadata rules. Delegated to
-              #          .github/scripts/check_recipe_pyproject.py:
-              #    - project-name-matches-folder: [project].name must equal the
-              #      recipe folder basename.
-              #    - python-version-floor: [project].requires-python must not
-              #      permit Python versions below 3.11.
-              #    - description-matches-manifest: if [project].description is
-              #      set, it must equal manifest.description (after .strip(),
-              #      exact match).
-              # ------------------------------------------------------------------
+              # ------------------------------------------------------------
+              # Check: [project] metadata rules. Delegated to
+              # check_recipe_pyproject.py:
+              #   - project-name-matches-folder: [project].name must
+              #     equal the recipe folder basename.
+              #   - python-version-floor: [project].requires-python must
+              #     not permit Python versions below 3.11.
+              #   - description-matches-manifest: if [project].description
+              #     is set, it must equal manifest.description (after
+              #     .strip(), exact match).
+              # ------------------------------------------------------------
               if [ -f "$pyproject" ]; then
-                # tomllib is stdlib on Python >= 3.11 (setup-uv installs 3.11);
-                # pyyaml + packaging are pulled into an ephemeral env via
-                # `uv run --with`. `packaging` is used for PEP 440 version
-                # specifier parsing (see check_requires_python).
+                # tomllib is stdlib on Python >= 3.11 (setup-uv installs
+                # 3.11); pyyaml + packaging are pulled into an ephemeral
+                # env via `uv run --with`. `packaging` is used for PEP
+                # 440 version specifier parsing (see
+                # check_requires_python in the checker).
                 set +e
                 pyproject_result=$(uv run --no-project --with pyyaml --with packaging \
                   python .github/scripts/check_recipe_pyproject.py "$recipe")
@@ -620,21 +325,21 @@ jobs:
                       RECIPE_FAILED=1
                       ;;
                     *)
-                      # Unrecognized line — surface it so it isn't silently lost.
+                      # Unrecognized line — surface it so it isn't
+                      # silently lost.
                       echo "$line"
                       ;;
                   esac
                 done <<< "$pyproject_result"
               fi
 
-              # ------------------------------------------------------------------
-              # Notice: Possible hardcoded model names in Python files
-              # ------------------------------------------------------------------
+              # ------------------------------------------------------------
+              # Notice: Possible hardcoded model names in Python files.
+              # Emits ::notice (never fail) when a string literal in a
+              # non-test .py file matches a well-known model prefix.
+              # ------------------------------------------------------------
               MODEL_PREFIXES="gemini-|gemini-exp-|imagen-|claude-|llama-|meta/llama-|mistral-|codestral-|phi-|grok-|command-|jamba-"
 
-              # Use process substitution to avoid pipefail propagating through
-              # find|while. Capture each grep result to a variable so non-zero
-              # exit codes from grep (no matches) are handled safely with || true.
               while IFS= read -r pyfile; do
                 matches=$(grep -onE "['\"]($MODEL_PREFIXES)[^ '\"]{1,35}['\"]" "$pyfile" || true)
                 [ -z "$matches" ] && continue
@@ -649,7 +354,7 @@ jobs:
                 exit 1
               fi
               echo ""
-              echo "[PASS] All checks passed for: $recipe"
+              echo "[PASS] All Python-specific checks passed for: $recipe"
             ) || FAILED=1
           done <<< "$RECIPES"
 
@@ -663,4 +368,4 @@ jobs:
           fi
 
           echo ""
-          echo "[PASS] All Python recipes passed validation."
+          echo "[PASS] All Python recipes passed Python-specific validation."
