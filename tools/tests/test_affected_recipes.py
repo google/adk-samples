@@ -14,7 +14,6 @@ from pathlib import Path
 import affected_recipes as m
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # recipe_dir_for — pure string mapping, no filesystem access
 # ---------------------------------------------------------------------------
@@ -408,9 +407,7 @@ def test_language_filter_via_cli(tmp_path, monkeypatch, capsys):
 
     import io
 
-    stdin = io.StringIO(
-        "core/flat-py/agent.py\ncore/flat-java/Main.java\n"
-    )
+    stdin = io.StringIO("core/flat-py/agent.py\ncore/flat-java/Main.java\n")
     monkeypatch.setattr("sys.stdin", stdin)
     monkeypatch.setattr(
         "sys.argv",

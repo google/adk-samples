@@ -49,12 +49,11 @@ import argparse
 import fnmatch
 import re
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
-
-import yaml
 
 import validate_manifest as vm
+import yaml
 
 REPO_ROOT = Path(__file__).parent.parent
 POLICY_PATH = REPO_ROOT / ".github" / "policy.yml"

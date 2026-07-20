@@ -22,11 +22,12 @@ def test_agent_runnability() -> None:
     # provide a dummy GCP project and patch google.auth.default() so import-time
     # credential lookups don't need ADC — the setup must happen before the import.
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test-project")
+    os.environ.setdefault("MODEL_NAME", "gemini-3.5-flash")
 
     with patch(
         "google.auth.default", return_value=(MagicMock(), "test-project")
     ):
-        import adk_ae_oauth.agent
+        import app.agent
 
-    assert adk_ae_oauth.agent.root_agent is not None
-    assert adk_ae_oauth.agent.app is not None
+    assert app.agent.root_agent is not None
+    assert app.agent.app is not None

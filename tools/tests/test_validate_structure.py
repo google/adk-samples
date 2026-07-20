@@ -297,9 +297,7 @@ def test_check_required_files_directory_does_not_satisfy(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _size_policy(
-    max_files: int = 10, max_size_mb: int = 1
-) -> dict:
+def _size_policy(max_files: int = 10, max_size_mb: int = 1) -> dict:
     """Minimal policy with tight limits so tests can trip them with
     just a few files."""
     return {
@@ -321,7 +319,9 @@ def _size_policy(
 def test_check_size_and_count_under_limits(tmp_path):
     recipe = _make_python_recipe(tmp_path, "core/foo", include_agents=True)
     manifest = recipe / "manifest.yaml"
-    assert m.check_size_and_count(recipe, "core", _size_policy(), manifest) == []
+    assert (
+        m.check_size_and_count(recipe, "core", _size_policy(), manifest) == []
+    )
 
 
 def test_check_size_and_count_exceeds_file_count(tmp_path):
@@ -348,7 +348,9 @@ def test_check_size_and_count_excludes_uv_lock(tmp_path):
     manifest = recipe / "manifest.yaml"
     # Write a 2 MiB uv.lock (excluded) — should NOT trip the size limit.
     _write(recipe / "uv.lock", "y" * (2 * 1024 * 1024))
-    assert m.check_size_and_count(recipe, "core", _size_policy(), manifest) == []
+    assert (
+        m.check_size_and_count(recipe, "core", _size_policy(), manifest) == []
+    )
 
 
 def test_check_size_and_count_excludes_pycache_dir(tmp_path):
@@ -357,7 +359,9 @@ def test_check_size_and_count_excludes_pycache_dir(tmp_path):
     # A pruned dir with many files must not count toward the file limit.
     for i in range(50):
         _write(recipe / "app" / "__pycache__" / f"m_{i}.pyc", "x")
-    assert m.check_size_and_count(recipe, "core", _size_policy(), manifest) == []
+    assert (
+        m.check_size_and_count(recipe, "core", _size_policy(), manifest) == []
+    )
 
 
 def test_check_size_and_count_large_tier_relaxes(tmp_path):
@@ -372,14 +376,18 @@ def test_check_size_and_count_large_tier_relaxes(tmp_path):
     manifest = recipe / "manifest.yaml"
     for i in range(50):
         _write(recipe / f"extra_{i}.py", "x")
-    assert m.check_size_and_count(recipe, "core", _size_policy(), manifest) == []
+    assert (
+        m.check_size_and_count(recipe, "core", _size_policy(), manifest) == []
+    )
 
 
 def test_check_size_and_count_root_without_limits_skips(tmp_path):
     # No `skills` section in recipe_size_limits → nothing to enforce.
     recipe = _make_python_recipe(tmp_path, "skills/foo", include_agents=False)
     manifest = recipe / "manifest.yaml"
-    assert m.check_size_and_count(recipe, "skills", _size_policy(), manifest) == []
+    assert (
+        m.check_size_and_count(recipe, "skills", _size_policy(), manifest) == []
+    )
 
 
 def test_check_size_and_count_missing_large_tier_fails(tmp_path):
@@ -544,9 +552,7 @@ def fake_repo(tmp_path, monkeypatch):
     # Write a policy.yml matching _full_policy() for main() to load.
     import yaml as _yaml
 
-    _write(
-        tmp_path / ".github" / "policy.yml", _yaml.safe_dump(_full_policy())
-    )
+    _write(tmp_path / ".github" / "policy.yml", _yaml.safe_dump(_full_policy()))
     return tmp_path
 
 

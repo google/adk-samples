@@ -14,7 +14,7 @@
 
 from unittest.mock import patch
 
-from adk_ae_oauth.agent import root_agent
+from app.agent import root_agent
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -46,7 +46,7 @@ def test_agent_stream_no_auth() -> None:
     # Mock negotiate_creds to simulate "no OAuth token available"
     # so the test doesn't need real OAuth credentials
     with patch(
-        "adk_ae_oauth.tools.negotiate_creds",
+        "app.tools.negotiate_creds",
         return_value={
             "pending": True,
             "message": "Awaiting user authentication",

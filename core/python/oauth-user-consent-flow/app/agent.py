@@ -21,7 +21,7 @@ from google.adk.apps import App
 from google.adk.models import Gemini
 from google.genai import types
 
-from adk_ae_oauth.tools import read_drive_file
+from app.tools import read_drive_file
 
 _, project_id = google.auth.default()
 os.environ["GOOGLE_CLOUD_PROJECT"] = project_id

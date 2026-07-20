@@ -70,6 +70,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
+module-name = "app"
 
 [tool.pytest.ini_options]
 pythonpath = "."
@@ -82,7 +83,7 @@ asyncio_default_fixture_loop_scope = "function"
 example_question = "Read the file with ID 12345"
 
 [tool.agent-starter-pack.settings]
-agent_directory = "adk_ae_oauth"
+agent_directory = "app"
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple/"

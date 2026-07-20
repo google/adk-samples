@@ -15,7 +15,7 @@
 import logging
 
 import pytest
-from adk_ae_oauth.agent_engine_app import AgentEngineApp
+from app.agent_engine_app import AgentEngineApp
 from google.adk.events.event import Event
 
 
@@ -25,7 +25,7 @@ def agent_app(monkeypatch: pytest.MonkeyPatch) -> AgentEngineApp:
     # Set integration test flag to mock external services
     monkeypatch.setenv("INTEGRATION_TEST", "TRUE")
 
-    from adk_ae_oauth.agent_engine_app import agent_engine
+    from app.agent_engine_app import agent_engine
 
     agent_engine.set_up()
     return agent_engine

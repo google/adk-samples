@@ -39,9 +39,8 @@ import argparse
 import sys
 from pathlib import Path
 
-import yaml
-
 import validate_manifest as vm
+import yaml
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -124,9 +123,7 @@ def _flat_recipe_manifest_language(
     return lang.strip().lower() or None
 
 
-def _matches_language(
-    recipe_dir: str, language: str, repo_root: Path
-) -> bool:
+def _matches_language(recipe_dir: str, language: str, repo_root: Path) -> bool:
     """Path-first language match, mirroring the current
     python-validate-recipe.yml semantics:
       - Namespaced recipe (<root>/<lang>/…): path IS authoritative; the
