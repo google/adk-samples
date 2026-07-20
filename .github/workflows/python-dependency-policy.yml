@@ -1,5 +1,9 @@
 name: Python Dependency Policy
 
+# For every changed `uv.lock` / `pyproject.toml` (repo root and each
+# recipe): runs `uv lock --check` to enforce lockfile-pyproject sync,
+# plus hash-integrity checks on the resolved wheels.
+
 on:
   pull_request:
     paths:

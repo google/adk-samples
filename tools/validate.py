@@ -7,7 +7,8 @@ Usage:
 
 Both arguments are optional:
 
-  subcommand  — which check(s) to run; one of: manifest, all (default: all)
+  subcommand  — which check(s) to run; one of: manifest, structure, all
+                (default: all)
   scope       — what to validate; one of:
                   all            (default) validate core/ and contrib/
                   core           validate core/ only
@@ -19,11 +20,12 @@ is a known root ('core', 'contrib'), it is treated as the scope and all
 checks are run.
 
 Examples:
-  uv run validate core/rag-agent-search   # run all checks on one recipe
-  uv run validate core                    # run all checks on core/ only
-  uv run validate manifest                # run manifest check on everything
-  uv run validate manifest core           # run manifest check on core/ only
-  uv run validate manifest core/rag-agent-search
+  uv run validate core/rag-agent-search    # run all checks on one recipe
+  uv run validate core                     # run all checks on core/ only
+  uv run validate manifest                 # run manifest check on everything
+  uv run validate manifest core            # run manifest check on core/ only
+  uv run validate structure                # run structural check on everything
+  uv run validate structure core/rag-agent-search
 
 Exit codes:
   0 — all checks passed
@@ -33,9 +35,11 @@ Exit codes:
 import sys
 
 import validate_manifest
+import validate_structure
 
 SUBCOMMANDS = {
     "manifest": ("Manifest validation", validate_manifest.main),
+    "structure": ("Structure validation", validate_structure.main),
     # Register future tools here, e.g.:
     # "lint": ("Lint check", validate_lint.main),
 }

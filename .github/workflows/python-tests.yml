@@ -1,5 +1,9 @@
 name: 🐍 Python Tests
 
+# Runs `pytest` for each Python recipe affected by a PR (or every recipe
+# on `workflow_dispatch --run-all`). Uses a matrix job so one recipe
+# failing doesn't cancel the others.
+
 on:
   pull_request:
     paths:

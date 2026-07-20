@@ -1,5 +1,9 @@
 name: '🔒 AI PR Review — Security'
 
+# Delegates to `_ai-pr-review-core.yml` to run an AI security review on
+# every PR — injection risks, secret leaks, unsafe deserialisation —
+# and posts findings as inline review comments.
+
 on:
   pull_request:
     types:

@@ -1,5 +1,9 @@
 name: 🐍 Ruff PR Checks
 
+# Runs Ruff format on changed Python files and posts diff-style
+# suggestion comments via reviewdog. Ruff config lives in the root
+# `pyproject.toml` — never overridden on the CLI here.
+
 on:
   pull_request:
     paths:

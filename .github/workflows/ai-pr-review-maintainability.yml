@@ -1,5 +1,9 @@
 name: '🧹 AI PR Review — Maintainability'
 
+# Delegates to `_ai-pr-review-core.yml` to run an AI maintainability
+# review on every PR — naming, structure, readability, dead code —
+# and posts findings as inline review comments.
+
 on:
   pull_request:
     types:

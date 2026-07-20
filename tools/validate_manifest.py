@@ -39,7 +39,12 @@ import yaml
 REPO_ROOT = Path(__file__).parent.parent
 SCHEMA_PATH = REPO_ROOT / ".github" / "schemas" / "manifest-schema.json"
 MANIFEST_FILENAME = "manifest.yaml"
-RECIPE_ROOTS = ["core", "contrib"]
+# Top-level directories that may hold recipes. `skills/` is scaffolded ahead
+# of that folder actually existing on disk — _collect_root() prints a
+# harmless [SKIP] line when the directory is missing, so listing it here is
+# safe today and lets the validation tooling pick up skills the moment they
+# land without another code change.
+RECIPE_ROOTS = ["core", "contrib", "skills"]
 
 OWNERSHIP_TEAM_PLACEHOLDER = "TODO: Replace with your team name"
 OWNERSHIP_POC_PLACEHOLDER = "TODO: Replace with your GitHub user ID"
@@ -63,8 +68,12 @@ def is_recipe_dir(path: Path) -> bool:
     ]
     if not children:
         return False
-    # A directory whose non-hidden children are exclusively language namespace
-    # dirs is itself a container (e.g. core/harnesses/), not a recipe.
+    # Defence-in-depth: a directory whose non-hidden, non-README children are
+    # ALL language namespace dirs (`python/`, `java/`, …) is treated as an
+    # organisational container, not a recipe. A real recipe always has at
+    # least one file (manifest.yaml, README.md, agent code) at its root, so
+    # this exclusion never fires for a valid recipe — it only guards against
+    # accidental structures being promoted to recipes.
     if all(p.is_dir() and p.name in LANGUAGE_NAMESPACE_DIRS for p in children):
         return False
     return True
@@ -155,7 +164,11 @@ def _collect_scoped_path(scope: str) -> list[Path]:
 def _collect_root(root_name: str) -> list[Path]:
     """Return the recipe directories directly under a top-level root.
 
-    Language namespace folders (e.g. core/python/) are recursed one level.
+    Recognised layouts:
+        <root>/<recipe>              — flat
+        <root>/<language>/<recipe>   — language-namespaced
+
+    where <language> ∈ LANGUAGE_NAMESPACE_DIRS.
     """
     root_path = REPO_ROOT / root_name
     if not root_path.exists():
@@ -164,11 +177,15 @@ def _collect_root(root_name: str) -> list[Path]:
 
     recipe_dirs: list[Path] = []
     for p in sorted(root_path.iterdir()):
-        if p.is_dir() and p.name in LANGUAGE_NAMESPACE_DIRS:
+        if not p.is_dir():
+            continue
+        if p.name in LANGUAGE_NAMESPACE_DIRS:
+            # <root>/<language>/<recipe>
             recipe_dirs.extend(
                 sorted(c for c in p.iterdir() if is_recipe_dir(c))
             )
         elif is_recipe_dir(p):
+            # <root>/<recipe> (flat)
             recipe_dirs.append(p)
 
     if not recipe_dirs:
