@@ -1,23 +1,8 @@
 name: Validate Recipe Structure
 
-# Language-agnostic structural check for every recipe under core/, contrib/,
-# and (once it exists) skills/. Runs five checks per recipe, in order:
-#
-#   1. manifest.yaml is present
-#   2. manifest.yaml passes the JSON schema
-#   3. folder name matches ^[a-z][a-z-]*$ and stays within the length limit
-#   4. folder size + file count are within the tier caps in policy.yml
-#   5. required files present — the UNION of policy.required_files.always,
-#      by_root[<root>], and by_language[<manifest.language>]
-#
-# Language detection uses manifest.language as the single source of truth.
-# Anything language-specific (Python's [project] rules, env-var extraction,
-# ruff-config rejection, model-name notice) stays in the per-language
-# workflows (python-validate-recipe.yml today; future
-# {java,go,typescript,kotlin}-validate-recipe.yml) and is NOT re-run here.
-# There is no overlap with any other structural workflow — this one is the
-# sole enforcer of manifest presence/schema, folder name, size, file
-# count, and required files.
+# Language-agnostic structural validation for every recipe under `core/`,
+# `contrib/`, and `skills/`: manifest presence + schema, folder name,
+# size, file count, and required files (matrix from `.github/policy.yml`).
 
 on:
   pull_request:

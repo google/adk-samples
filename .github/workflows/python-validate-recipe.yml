@@ -1,24 +1,10 @@
 name: Validate Python Recipe
 
-# Python-specific validation for each affected Python recipe.
-#
-# Everything language-agnostic (manifest presence + schema, required files,
-# folder name, folder size + file count) is handled by
-# validate-recipe-structure.yml. This workflow only runs checks that are
-# meaningful for Python recipes:
-#
-#   - Notice env keys missing from .env.example
-#     (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, MODEL_NAME[_…])
-#   - Env vars used in Python source but not declared in .env.example
-#     (delegated to .github/scripts/check_env_vars.py; AST-based)
-#   - Recipe must not carry its own Ruff config
-#     ([tool.ruff*] block in pyproject.toml, or ruff.toml / .ruff.toml)
-#   - [project] metadata rules
-#     (delegated to .github/scripts/check_recipe_pyproject.py:
-#      project-name-matches-folder, python-version-floor,
-#      description-matches-manifest)
-#   - Notice on possible hardcoded model names in .py files
-#     (regex match on well-known model prefixes)
+# Python-specific validation for each affected Python recipe:
+# `.env.example` env-key notice, AST-based env-var extraction check,
+# no-local-Ruff-config, `[project]` metadata rules, and a
+# hardcoded-model-name notice. Structural checks live in
+# `validate-recipe-structure.yml`.
 
 on:
   pull_request:

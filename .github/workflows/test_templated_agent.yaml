@@ -1,5 +1,9 @@
 name: 🧩⚙️ checks
 
+# Discovers changed agent-starter-pack-templated agents under
+# `python/agents/**`, then builds, deploys, and smoke-tests each one
+# against real GCP (Agent Engine or Cloud Run).
+
 on:
   pull_request:
 

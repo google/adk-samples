@@ -1,5 +1,9 @@
 name: '✨ AI Automated Issue Triage'
 
+# Automatically triages newly opened or reopened issues (plus manual
+# dispatch) with the Gemini CLI: applies labels and posts a short
+# triage summary comment on the issue.
+
 on:
   issues:
     types:

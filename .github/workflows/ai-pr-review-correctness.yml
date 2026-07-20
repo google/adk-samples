@@ -1,5 +1,9 @@
 name: '🔍 AI PR Review — Correctness'
 
+# Delegates to `_ai-pr-review-core.yml` to run an AI correctness review
+# on every PR — logic bugs, wrong return values, missing edge cases —
+# and posts findings as inline review comments.
+
 on:
   pull_request:
     types:
