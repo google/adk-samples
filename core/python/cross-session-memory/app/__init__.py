@@ -15,6 +15,7 @@
 import os
 
 import google.auth
+import google.auth.exceptions
 from dotenv import load_dotenv
 
 # Load variables from .env if present. In production the environment is
@@ -22,8 +23,16 @@ from dotenv import load_dotenv
 # .env is expected and not an error.
 load_dotenv()
 
-_, project_id = google.auth.default()
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
+# Attempt to resolve the GCP project from ADC. This succeeds on Cloud Run,
+# GKE, and developer workstations with ADC configured. In unit-test
+# environments without credentials (e.g. CI without a service account) we
+# skip gracefully — tests that need a real project set GOOGLE_CLOUD_PROJECT
+# themselves or mock google.auth.default.
+try:
+    _, project_id = google.auth.default()
+    os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
+except google.auth.exceptions.DefaultCredentialsError:
+    pass
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
