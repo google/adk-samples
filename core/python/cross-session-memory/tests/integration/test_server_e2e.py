@@ -49,7 +49,9 @@ def start_server() -> subprocess.Popen[str]:
         sys.executable,
         "-m",
         "uvicorn",
-        "app.fast_api_app:app",
+        # _e2e_bootstrap patches Gemini with a mock before importing the app
+        # so the subprocess never makes real Vertex AI calls.
+        "_e2e_bootstrap:app",
         "--host",
         "0.0.0.0",
         "--port",
@@ -59,6 +61,18 @@ def start_server() -> subprocess.Popen[str]:
     env["INTEGRATION_TEST"] = "TRUE"
     # Use in-memory session for local E2E tests instead of creating Agent Engine
     env["USE_IN_MEMORY_SESSION"] = "true"
+    # Clear bucket name so load_dotenv() placeholder doesn't trigger GCS
+    env["LOGS_BUCKET_NAME"] = ""
+    # Set required vars explicitly so the server doesn't depend on .env
+    env.setdefault("MODEL_NAME", "gemini-3.5-flash")
+    env.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
+    # Make the _e2e_bootstrap module importable by uvicorn in the subprocess
+    bootstrap_dir = os.path.dirname(os.path.abspath(__file__))
+    env["PYTHONPATH"] = (
+        f"{bootstrap_dir}{os.pathsep}{env.get('PYTHONPATH', '')}".rstrip(
+            os.pathsep
+        )
+    )
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,

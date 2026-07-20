@@ -30,8 +30,24 @@ from app.app_utils.typing import Feedback
 
 setup_telemetry()
 _, project_id = google.auth.default()
-logging_client = google_cloud_logging.Client()
-logger = logging_client.logger(__name__)
+if os.environ.get("INTEGRATION_TEST"):
+    import logging as _std_logging
+
+    _cloud_logger = None
+    _std_logger = _std_logging.getLogger(__name__)
+else:
+    logging_client = google_cloud_logging.Client()
+    _cloud_logger = logging_client.logger(__name__)
+    _std_logger = None
+
+
+def _log_struct(data: dict) -> None:
+    if _cloud_logger:
+        _cloud_logger.log_struct(data, severity="INFO")
+    else:
+        import logging as _lg
+
+        _lg.info("Struct log: %s", data)
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",")
     if os.getenv("ALLOW_ORIGINS")
@@ -97,7 +113,11 @@ else:
     # generate_memories_callback defined in agent.py.
     memory_service_uri = session_service_uri
 
-artifact_service_uri = f"gs://{logs_bucket_name}" if logs_bucket_name else None
+artifact_service_uri = (
+    f"gs://{logs_bucket_name}"
+    if logs_bucket_name and not use_in_memory_session
+    else None
+)
 
 app: FastAPI = get_fast_api_app(
     agents_dir=AGENT_DIR,
@@ -123,7 +143,7 @@ def collect_feedback(feedback: Feedback) -> dict[str, str]:
     Returns:
         Success message
     """
-    logger.log_struct(feedback.model_dump(), severity="INFO")
+    _log_struct(feedback.model_dump())
     return {"status": "success"}
 
 

@@ -36,15 +36,23 @@ class AgentEngineApp(AdkApp):
         setup_telemetry()
         super().set_up()
         logging.basicConfig(level=logging.INFO)
-        logging_client = google_cloud_logging.Client()
-        self.logger = logging_client.logger(__name__)
+        if os.environ.get("INTEGRATION_TEST"):
+            self._cloud_logger = None
+        else:
+            logging_client = google_cloud_logging.Client()
+            self._cloud_logger = logging_client.logger(__name__)
         if gemini_location:
             os.environ["GOOGLE_CLOUD_LOCATION"] = gemini_location
 
     def register_feedback(self, feedback: dict[str, Any]) -> None:
         """Collect and log feedback."""
         feedback_obj = Feedback.model_validate(feedback)
-        self.logger.log_struct(feedback_obj.model_dump(), severity="INFO")
+        if self._cloud_logger:
+            self._cloud_logger.log_struct(
+                feedback_obj.model_dump(), severity="INFO"
+            )
+        else:
+            logging.info("Feedback: %s", feedback_obj.model_dump())
 
     def register_operations(self) -> dict[str, list[str]]:
         """Registers the operations of the Agent."""
@@ -54,12 +62,14 @@ class AgentEngineApp(AdkApp):
 
 
 gemini_location = os.environ.get("GOOGLE_CLOUD_LOCATION")
-logs_bucket_name = os.environ.get("LOGS_BUCKET_NAME")
 agent_engine = AgentEngineApp(
     app=adk_app,
     artifact_service_builder=lambda: (
-        GcsArtifactService(bucket_name=logs_bucket_name)
-        if logs_bucket_name
+        GcsArtifactService(
+            bucket_name=os.environ.get("LOGS_BUCKET_NAME")
+        )
+        if os.environ.get("LOGS_BUCKET_NAME")
+        and not os.environ.get("INTEGRATION_TEST")
         else InMemoryArtifactService()
     ),
 )
