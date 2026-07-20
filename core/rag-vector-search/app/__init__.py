@@ -12,6 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .agent import app
+from dotenv import load_dotenv
+
+# Load variables from .env if present. In production the environment is
+# already populated by the platform (Cloud Run, GKE, etc.), so a missing
+# .env is expected and not an error.
+load_dotenv()
+
+from .agent import app  # noqa: E402 -- must come after load_dotenv()
 
 __all__ = ["app"]

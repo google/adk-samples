@@ -1,7 +1,5 @@
 # RAG Agent — Agent Platform Vector Search
 
-> ℹ️ **Moving:** this sample is relocating to [`core/python/rag-vector-search`](../python/rag-vector-search/). This copy stays temporarily and will be removed after the transition — please use the new location.
-
 A starter RAG agent that answers questions grounded on documents indexed in
 **Agent Platform Vector Search** (Vector Search 2.0). A Kubeflow Pipelines (KFP)
 ingestion pipeline loads, chunks, and imports your documents into a Vector

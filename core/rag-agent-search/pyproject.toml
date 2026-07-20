@@ -22,23 +22,17 @@ dev = [
 eval = ["google-adk[eval]>=2.0.0,<3.0.0"]
 lint = ["ruff>=0.4.6", "codespell>=2.2.0"]
 
-[tool.ruff]
-line-length = 80
-target-version = "py311"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "C", "B", "UP", "RUF"]
-ignore = ["C901", "B006"]
-
-[tool.ruff.lint.isort]
-known-first-party = ["app"]
-
 [tool.pytest.ini_options]
 pythonpath = "."
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Use public PyPI as the default index for this recipe.
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

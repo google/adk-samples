@@ -1,7 +1,5 @@
 # RAG Agent — Agent Platform Search
 
-> ℹ️ **Moving:** this sample is relocating to [`core/python/rag-agent-search`](../python/rag-agent-search/). This copy stays temporarily and will be removed after the transition — please use the new location.
-
 A starter RAG agent that answers questions grounded on documents indexed in
 **Agent Platform Search** (Discovery Engine). Documents land in a GCS bucket and
 are ingested automatically by a GCS Data Connector — no separate ingestion

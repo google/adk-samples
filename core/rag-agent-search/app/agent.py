@@ -31,7 +31,7 @@ load_dotenv()
 
 LLM_LOCATION = "global"
 LOCATION = "us-east1"
-LLM = "gemini-flash-latest"
+LLM = os.getenv("MODEL_NAME")
 
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", LLM_LOCATION)
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
