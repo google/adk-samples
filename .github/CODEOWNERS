@@ -61,3 +61,6 @@
 
 # GenMedia for Commerce
 /python/agents/genmedia-for-commerce/ @lspataroG @giuliosalierno
+
+# Intelligent Document Generation
+/python/agents/intelligent-document-generation-agent/ @amjac1

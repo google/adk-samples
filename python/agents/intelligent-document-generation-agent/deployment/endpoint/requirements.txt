@@ -1,0 +1,5 @@
+google-cloud-storage
+markdown
+weasyprint
+jinja2
+functions-framework
