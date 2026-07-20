@@ -66,12 +66,14 @@ def start_server() -> subprocess.Popen[str]:
     # Set required vars explicitly so the server doesn't depend on .env
     env.setdefault("MODEL_NAME", "gemini-3.5-flash")
     env.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
-    # Make the _e2e_bootstrap module importable by uvicorn in the subprocess
+    # Make _e2e_bootstrap AND its sibling tests/_env_stubs.py importable
+    # by uvicorn in the subprocess. Both directories go on PYTHONPATH so
+    # the subprocess can find `_e2e_bootstrap` and `_env_stubs` by bare
+    # module name.
     bootstrap_dir = os.path.dirname(os.path.abspath(__file__))
-    env["PYTHONPATH"] = (
-        f"{bootstrap_dir}{os.pathsep}{env.get('PYTHONPATH', '')}".rstrip(
-            os.pathsep
-        )
+    tests_dir = os.path.dirname(bootstrap_dir)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (bootstrap_dir, tests_dir, env.get("PYTHONPATH", "")) if p
     )
     process = subprocess.Popen(
         command,

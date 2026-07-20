@@ -12,9 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
+"""Test-wide setup. Runs before pytest collects any test module so mocks
+are in place before app.* is imported (some app modules do real GCP work
+at import time).
+"""
 
-# Set required env vars at module load time, before any app module is imported
-# during pytest collection. Tests must not rely on a .env file being present.
-os.environ.setdefault("MODEL_NAME", "gemini-3.5-flash")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
+import sys
+from pathlib import Path
+
+# Make sibling `_env_stubs.py` importable without needing tests/ to be a
+# proper package (which would collide with pytest's importlib mode).
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _env_stubs import install as _install_test_stubs  # noqa: E402
+
+_install_test_stubs()

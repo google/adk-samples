@@ -14,17 +14,32 @@
 
 """Test-only ASGI entrypoint for the e2e server subprocess.
 
-Patches the Gemini LLM with a canned response before importing the app so
-the subprocess never makes a real Vertex AI call. Uvicorn imports this
-module as `_e2e_bootstrap:app` (the subprocess PYTHONPATH is extended by
-test_server_e2e.py to include this directory).
+The subprocess uvicorn server does NOT load pytest conftest.py, so the
+same test stubs applied there must be reapplied here BEFORE any app.*
+module is imported. Also patches Gemini so no real Vertex AI call is
+made from inside the subprocess.
+
+Uvicorn imports this module as `_e2e_bootstrap:app`. test_server_e2e.py
+extends the subprocess PYTHONPATH so both this file and the sibling
+tests/_env_stubs.py are importable.
 """
 
+import sys
+from pathlib import Path
 from unittest.mock import patch
 
-from google.adk.models.google_llm import Gemini
-from google.adk.models.llm_response import LlmResponse
-from google.genai import types
+# Make sibling `tests/_env_stubs.py` importable in the subprocess.
+_THIS_DIR = Path(__file__).parent
+sys.path.insert(0, str(_THIS_DIR.parent))
+
+from _env_stubs import install as _install_test_stubs  # noqa: E402
+
+_install_test_stubs()
+
+# Only NOW is it safe to import ADK models (they might touch env at import).
+from google.adk.models.google_llm import Gemini  # noqa: E402
+from google.adk.models.llm_response import LlmResponse  # noqa: E402
+from google.genai import types  # noqa: E402
 
 
 async def _fake_generate_content(self, llm_request, stream=False):
