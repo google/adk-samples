@@ -31,13 +31,13 @@ playground:
 # Usage: make deploy [AGENT_IDENTITY=true] [SECRETS="KEY=SECRET_ID,..."] - Set AGENT_IDENTITY=true to enable per-agent IAM identity (Preview)
 deploy:
 	# Export dependencies to requirements file using uv export.
-	(uv export --no-hashes --no-header --no-dev --no-emit-project --no-annotate > adk_ae_oauth/app_utils/.requirements.txt 2>/dev/null || \
-	uv export --no-hashes --no-header --no-dev --no-emit-project > adk_ae_oauth/app_utils/.requirements.txt) && \
-	uv run -m adk_ae_oauth.app_utils.deploy \
-		--source-packages=./adk_ae_oauth \
-		--entrypoint-module=adk_ae_oauth.agent_engine_app \
+	(uv export --no-hashes --no-header --no-dev --no-emit-project --no-annotate > app/app_utils/.requirements.txt 2>/dev/null || \
+	uv export --no-hashes --no-header --no-dev --no-emit-project > app/app_utils/.requirements.txt) && \
+	uv run -m app.app_utils.deploy \
+		--source-packages=./app \
+		--entrypoint-module=app.agent_engine_app \
 		--entrypoint-object=agent_engine \
-		--requirements-file=adk_ae_oauth/app_utils/.requirements.txt \
+		--requirements-file=app/app_utils/.requirements.txt \
 		$(if $(AGENT_IDENTITY),--agent-identity) \
 		$(if $(filter command line,$(origin SECRETS)),--set-secrets="$(SECRETS)")
 
@@ -64,7 +64,7 @@ eval:
 	@echo "| Running Agent Evaluation                                                    |"
 	@echo "==============================================================================="
 	uv sync --dev --extra eval
-	uv run adk eval ./adk_ae_oauth $${EVALSET:-tests/eval/evalsets/basic.evalset.json} \
+	uv run adk eval ./app $${EVALSET:-tests/eval/evalsets/basic.evalset.json} \
 		$(if $(EVAL_CONFIG),--config_file_path=$(EVAL_CONFIG),$(if $(wildcard tests/eval/eval_config.json),--config_file_path=tests/eval/eval_config.json,))
 
 # Run evaluation with all evalsets
