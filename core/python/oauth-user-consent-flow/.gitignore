@@ -1,0 +1,55 @@
+# Recipe-specific ignores.
+#
+# Standard Python, IDE (.idea, .vscode), system-file (.DS_Store, Thumbs.db),
+# env-file (.env, .venv), coverage, mypy, pyre, terraform, node, and ADK
+# ignores live in the repo-root .gitignore — don't duplicate them here.
+
+# Distribution / packaging (not covered by root)
+pip-wheel-metadata/     # legacy pip wheel-metadata dir
+
+# Temporary / build output not covered by root
+/tmp
+tmp*
+/out-tsc                # TypeScript build output
+/bazel-out              # Bazel build output
+
+# pyenv — pin the interpreter version if this file exists
+.python-version
+
+# pipenv — ignore artifacts if they ever appear (this recipe uses uv)
+Pipfile
+Pipfile.lock
+
+# ty (Astral's type checker)
+.ty/
+
+# IDEs / editors beyond .idea and .vscode (already in root)
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.history/*
+
+# Angular / TypeScript build artifacts
+**/.angular/*
+/.angular/cache
+.sass-cache/
+/connect.lock
+/coverage
+/libpeerconnection.log
+testem.log
+/typings
+
+# Recipe / starter-pack specific
+.persist_vector_store
+tests/load_test/.results/*.html
+tests/load_test/.results/*.csv
+.locust_env
+my_env.tfvars
+.saved_chats
+.requirements.txt
+
+# A2A Inspector — cloned into tools/ locally, not part of the recipe
+tools/a2a-inspector/
