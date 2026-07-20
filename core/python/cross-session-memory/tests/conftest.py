@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dotenv import load_dotenv
+"""Test-wide setup. Runs before pytest collects any test module so mocks
+are in place before app.* is imported (some app modules do real GCP work
+at import time).
+"""
 
-# Load variables from .env if present. In production the environment is
-# already populated by the platform (Cloud Run, GKE, etc.), so a missing
-# .env is expected and not an error.
-load_dotenv()
+import sys
+from pathlib import Path
 
-from .agent import app  # noqa: E402 -- must come after load_dotenv()
+# Make sibling `_env_stubs.py` importable without needing tests/ to be a
+# proper package (which would collide with pytest's importlib mode).
+sys.path.insert(0, str(Path(__file__).parent))
 
-__all__ = ["app"]
+from _env_stubs import install as _install_test_stubs
+
+_install_test_stubs()

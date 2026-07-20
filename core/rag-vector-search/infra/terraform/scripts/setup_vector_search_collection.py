@@ -30,6 +30,7 @@ The collection is configured with:
     (gemini-embedding-001, 3072 dims, task_type=RETRIEVAL_DOCUMENT)
 """
 
+import os
 import sys
 
 import click
@@ -80,7 +81,7 @@ def main(project_id: str, location: str, collection_id: str) -> None:
                     "dense_vector": {
                         "dimensions": 3072,
                         "vertex_embedding_config": {
-                            "model_id": "gemini-embedding-001",
+                            "model_id": os.getenv("MODEL_NAME_EMBEDDING"),
                             "text_template": "{text_chunk}",
                             "task_type": "RETRIEVAL_DOCUMENT",
                         },

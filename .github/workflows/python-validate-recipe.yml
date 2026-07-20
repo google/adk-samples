@@ -451,6 +451,23 @@ jobs:
                 fi
               done
 
+              # Required files for core/python/ recipes only.
+              if [[ "$recipe" == core/python/* ]]; then
+                CORE_REQUIRED_FILES=(
+                  "AGENTS.md"
+                )
+
+                for required in "${CORE_REQUIRED_FILES[@]}"; do
+                  if [ ! -f "$recipe/$required" ]; then
+                    echo "::error file=$recipe/$required::Required file '$required' is missing from core/python recipe '$recipe'."
+                    echo "[FAIL] Missing required file: $required (required for core/python recipes)"
+                    RECIPE_FAILED=1
+                  else
+                    echo "[PASS] Found required file: $required"
+                  fi
+                done
+              fi
+
               # ------------------------------------------------------------------
               # Check 5: Required keys in .env.example
               # ------------------------------------------------------------------
