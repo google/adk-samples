@@ -13,7 +13,8 @@
 # Add new sections here rather than hardcoding constants in workflow files.
 
 # --------------------------------------------------------------------------
-# Recipe size limits — enforced by .github/workflows/python-validate-recipe.yml
+# Recipe size limits — enforced by
+# .github/workflows/validate-recipe-structure.yml (language-agnostic).
 #
 # Recipes live under core/<language>/<recipe> or contrib/<language>/<recipe>
 # (e.g. core/python/rag-agent-search, contrib/java/hello-agent).
@@ -46,11 +47,13 @@ recipe_size_limits:
       max_size_mb: 10
 
 # --------------------------------------------------------------------------
-# Recipe naming — enforced by .github/workflows/python-validate-recipe.yml
+# Recipe naming — enforced by
+# .github/workflows/validate-recipe-structure.yml (language-agnostic).
 #
 # In addition to the length limit, folder names must match ^[a-z][a-z-]*$
 # (lowercase letters and hyphens only; must start with a letter). The regex
-# lives in the workflow because it's shape-based, not a tunable number.
+# is shape-based and lives in tools/validate_structure.py rather than in
+# this policy file.
 # --------------------------------------------------------------------------
 recipe_naming:
   max_folder_name_length: 30
@@ -143,8 +146,9 @@ excluded_paths:
       - coverage        # test coverage output
 
 # --------------------------------------------------------------------------
-# Required files — enforced by the (upcoming) validate-recipe-structure
-# workflow via tools/validate_structure.py.
+# Required files — enforced by
+# .github/workflows/validate-recipe-structure.yml via
+# tools/validate_structure.py.
 #
 # The required-file list applied to a recipe is the UNION of three sources,
 # resolved from the recipe's on-disk location and its manifest.language:

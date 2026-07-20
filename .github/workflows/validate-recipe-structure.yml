@@ -13,11 +13,11 @@ name: Validate Recipe Structure
 # Language detection uses manifest.language as the single source of truth.
 # Anything language-specific (Python's [project] rules, env-var extraction,
 # ruff-config rejection, model-name notice) stays in the per-language
-# workflows and is NOT re-run here.
-#
-# For now this workflow is additive — it runs alongside validate-manifest.yml
-# and python-validate-recipe.yml. Step 3 of the migration will remove the
-# overlap (see the strategy discussion in tools/README.md if added there).
+# workflows (python-validate-recipe.yml today; future
+# {java,go,typescript,kotlin}-validate-recipe.yml) and is NOT re-run here.
+# There is no overlap with any other structural workflow — this one is the
+# sole enforcer of manifest presence/schema, folder name, size, file
+# count, and required files.
 
 on:
   pull_request:
@@ -66,11 +66,18 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
+        with:
+          # Pin explicitly for reproducibility and to match the sibling
+          # python-validate-recipe.yml step. Structure checks only need
+          # stdlib + PyYAML + jsonschema, so any 3.11+ interpreter works;
+          # 3.11 is the repo-wide minimum (see [project].requires-python
+          # in the root pyproject.toml).
+          python-version: "3.11"
+          enable-cache: false
 
       - name: Install validation dependencies
         # tools/validate_structure.py and its helpers depend on PyYAML and
-        # jsonschema (declared in the repo-root pyproject.toml). `uv sync`
-        # is the same install step validate-manifest.yml already uses.
+        # jsonschema, both declared in the repo-root pyproject.toml.
         run: uv sync
 
       - name: Detect affected recipe directories
@@ -103,7 +110,7 @@ jobs:
 
           # If any infra file that controls this workflow's behaviour
           # changed, validate ALL recipes so the new config applies across
-          # the board (mirrors validate-manifest.yml's approach).
+          # the board.
           INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/(schemas/manifest-schema\.json|policy\.yml|workflows/validate-recipe-structure\.yml)|tools/(validate|validate_manifest|validate_structure|affected_recipes)\.py|pyproject\.toml)$" || true)
           if [ -n "$INFRA_CHANGED" ]; then
             echo "Schema, policy, workflow, or tool changed — will validate all recipes."

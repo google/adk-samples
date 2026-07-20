@@ -50,15 +50,13 @@ import validate_manifest as vm
 REPO_ROOT = Path(__file__).parent.parent
 
 # Kept aligned with validate_manifest so all consumers of the recipe
-# taxonomy agree on which folders are namespaces vs recipes. If either
-# set grows, only that one line changes.
+# taxonomy — path→recipe mapping here, full-tree collection there —
+# agree on which folders are recipe roots, language namespaces, and
+# containers. If any set grows, only the corresponding line in
+# validate_manifest.py needs to change.
 RECIPE_ROOTS = vm.RECIPE_ROOTS
 LANGUAGE_NAMESPACE_DIRS = vm.LANGUAGE_NAMESPACE_DIRS
-
-# Directories that group recipes without being recipes themselves — the
-# layer immediately below them is still a language namespace.
-# E.g. `core/harnesses/python/<recipe>/…`.
-CONTAINER_DIRS: frozenset[str] = frozenset({"harnesses"})
+CONTAINER_DIRS = vm.CONTAINER_DIRS
 
 
 def recipe_dir_for(path: str) -> str | None:
