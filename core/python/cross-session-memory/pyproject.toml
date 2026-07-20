@@ -21,7 +21,7 @@ requires-python = ">=3.11,<3.14"
 dev = [
     "google-adk[eval]>=1.15.0,<2.0.0",
     "agent-starter-pack>=0.14.1",
-    "pytest>=8.3.2",
+    "pytest>=9.1.1",
     "pytest-asyncio>=0.23.7",
 ]
 

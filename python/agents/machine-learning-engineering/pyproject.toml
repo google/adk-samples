@@ -23,12 +23,12 @@ dependencies = [
     "scikit-learn>=1.7.1",
     # Note: If using uv or pip, use --extra-index-url https://download.pytorch.org/whl/cpu 
     # to ensure the CPU version of torch is prioritized.
-    "torch>=2.7.1",
+    "torch>=2.13.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.3",
+    "pytest>=9.1.1",
     "pytest-asyncio>=0.26.0",
     "google-adk[eval]>=1.5.0",
     "google-cloud-aiplatform[evaluation]>=1.93.0",
