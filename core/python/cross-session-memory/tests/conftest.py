@@ -24,6 +24,6 @@ from pathlib import Path
 # proper package (which would collide with pytest's importlib mode).
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _env_stubs import install as _install_test_stubs  # noqa: E402
+from _env_stubs import install as _install_test_stubs
 
 _install_test_stubs()
