@@ -113,21 +113,8 @@ def find_sorted_output_audio_files(artifacts_dir: str) -> list:
     return audio_files
 
 
-def convert_artifacts_to_wav(  # noqa: C901, PLR0912, PLR0915
-    artifacts_dir: str = "./artifacts",
-    output_filename: str | None = None,
-    session_id: str | None = None,
-):
-    """Scans artifacts_dir for PCM audio files, merges, resamples, and saves them to output_filename."""
-    if output_filename is None:
-        if session_id:
-            output_filename = f"./{session_id}.wav"
-        else:
-            output_filename = "./session.wav"
-
+def _resolve_artifacts_root(artifacts_dir: str) -> Path | None:
     artifacts_root = Path(artifacts_dir)
-
-    # Smart Fallbacks for ADK Web Framework directories
     if not artifacts_root.exists() or not any(artifacts_root.rglob("*.pcm")):
         fallbacks = [
             Path("./.adk/artifacts"),
@@ -140,14 +127,11 @@ def convert_artifacts_to_wav(  # noqa: C901, PLR0912, PLR0915
                 print(
                     f"Found active artifacts directory at: {artifacts_root.resolve()}"
                 )
-                break
+                return artifacts_root
+    return artifacts_root if artifacts_root.exists() else None
 
-    if not artifacts_root.exists():
-        print(
-            "Artifacts directory not found. Please speak to the agent via the Web UI first to generate audio blobs!"
-        )
-        return False
 
+def _gather_sessions(artifacts_root: Path) -> dict:
     sessions = {}
     for pcm_file in artifacts_root.rglob("*"):
         if (
@@ -161,13 +145,12 @@ def convert_artifacts_to_wav(  # noqa: C901, PLR0912, PLR0915
             continue
 
         session_dir = _find_session_dir(pcm_file, artifacts_root)
-
         if not session_dir:
             continue
 
-        session_id = session_dir.name
-        if session_id not in sessions:
-            sessions[session_id] = []
+        current_session_id = session_dir.name
+        if current_session_id not in sessions:
+            sessions[current_session_id] = []
 
         sample_rate = 16000
         if "output_audio" in pcm_file.name:
@@ -176,21 +159,21 @@ def convert_artifacts_to_wav(  # noqa: C901, PLR0912, PLR0915
             sample_rate = 16000
 
         timestamp = extract_timestamp(pcm_file.name)
-        sessions[session_id].append((timestamp, pcm_file, sample_rate))
+        sessions[current_session_id].append((timestamp, pcm_file, sample_rate))
+    return sessions
 
-    target_sr = 16000
+
+def _merge_audio_sessions(
+    sessions: dict, session_id: str | None, target_sr: int
+) -> list:
     all_resampled_audio = []
-
-    # Merge all sessions and all chunks found
     for sid, artifacts in sessions.items():
         if session_id and sid != session_id:
             continue
         if not artifacts:
             continue
 
-        # Sort by timestamp to preserve conversation order
         artifacts.sort(key=lambda x: x[0])
-
         for _ts, path, sr in artifacts:
             with open(path, "rb") as f:
                 data = np.frombuffer(f.read(), dtype=np.int16)
@@ -200,6 +183,53 @@ def convert_artifacts_to_wav(  # noqa: C901, PLR0912, PLR0915
 
             resampled = resample_audio(data, sr, target_sr)
             all_resampled_audio.append(resampled)
+    return all_resampled_audio
+
+
+def _upload_to_gcs(output_path: Path):
+    gcs_bucket_name = os.environ.get("GCS_BUCKET_NAME")
+    if not gcs_bucket_name:
+        return
+
+    try:
+        from google.cloud import storage
+
+        client = storage.Client()
+        bucket = client.bucket(gcs_bucket_name)
+        blob = bucket.blob(output_path.name)
+        print(
+            f"Uploading {output_path.name} to GCS bucket {gcs_bucket_name}..."
+        )
+        blob.upload_from_filename(str(output_path))
+        print(
+            f"Successfully uploaded to gs://{gcs_bucket_name}/{output_path.name}"
+        )
+    except Exception as e:
+        print(f"Failed to upload to GCS: {e}")
+
+
+def convert_artifacts_to_wav(
+    artifacts_dir: str = "./artifacts",
+    output_filename: str | None = None,
+    session_id: str | None = None,
+):
+    """Scans artifacts_dir for PCM audio files, merges, resamples, and saves them to output_filename."""
+    if output_filename is None:
+        if session_id:
+            output_filename = f"./{session_id}.wav"
+        else:
+            output_filename = "./session.wav"
+
+    artifacts_root = _resolve_artifacts_root(artifacts_dir)
+    if not artifacts_root:
+        print(
+            "Artifacts directory not found. Please speak to the agent via the Web UI first to generate audio blobs!"
+        )
+        return False
+
+    sessions = _gather_sessions(artifacts_root)
+    target_sr = 16000
+    all_resampled_audio = _merge_audio_sessions(sessions, session_id, target_sr)
 
     if not all_resampled_audio:
         print("No audio artifacts found to convert.")
@@ -215,24 +245,5 @@ def convert_artifacts_to_wav(  # noqa: C901, PLR0912, PLR0915
         wav_file.writeframes(merged_data.tobytes())
 
     print(f"Success! Converted conversation saved to: {output_path}")
-
-    # Upload to GCS if configured
-    gcs_bucket_name = os.environ.get("GCS_BUCKET_NAME")
-    if gcs_bucket_name:
-        try:
-            from google.cloud import storage
-
-            client = storage.Client()
-            bucket = client.bucket(gcs_bucket_name)
-            blob = bucket.blob(output_path.name)
-            print(
-                f"Uploading {output_path.name} to GCS bucket {gcs_bucket_name}..."
-            )
-            blob.upload_from_filename(str(output_path))
-            print(
-                f"Successfully uploaded to gs://{gcs_bucket_name}/{output_path.name}"
-            )
-        except Exception as e:
-            print(f"Failed to upload to GCS: {e}")
-
+    _upload_to_gcs(output_path)
     return True

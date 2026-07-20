@@ -31,12 +31,12 @@ uv sync
 source .venv/bin/activate
 ```
 
-### 3. Environment Variables
+### 2. Environment Variables
 Copy the provided `.env.example` file to `.env` in the agent directory (`./info_gather_agent/.env`) containing your Google Cloud project configuration:
 ```env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_LOCATION=global
+GOOGLE_CLOUD_LOCATION=us-central1
 GCS_BUCKET_NAME=your-gcs-bucket-name
 ```
 
