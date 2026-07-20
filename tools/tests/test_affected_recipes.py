@@ -3,8 +3,7 @@
 
 Two layers of tests:
   - `recipe_dir_for` is pure string logic; a table of path → expected
-    covers the layout matrix (flat / namespaced / container-namespaced
-    / not-a-recipe).
+    covers the layout matrix (flat / language-namespaced / not-a-recipe).
   - `compute_affected_recipes` composes the mapping with an on-disk
     existence filter and deduplication, exercised against a temporary
     fake repo tree.
@@ -33,15 +32,6 @@ import pytest
         ("contrib/python/bar/pyproject.toml", "contrib/python/bar"),
         ("core/java/hello/pom.xml", "core/java/hello"),
         ("contrib/go/example/main.go", "contrib/go/example"),
-        # Container + language: core/harnesses/python/<recipe>/…
-        (
-            "core/harnesses/python/perf/run.py",
-            "core/harnesses/python/perf",
-        ),
-        (
-            "contrib/harnesses/typescript/bench/index.ts",
-            "contrib/harnesses/typescript/bench",
-        ),
         # Skills root (already listed in RECIPE_ROOTS even though the
         # directory may not exist yet).
         ("skills/foo/SKILL.md", "skills/foo"),
@@ -51,14 +41,6 @@ import pytest
         ("tools/validate.py", None),
         # Root-only path (no recipe component) — nothing to map to.
         ("core/", "core/"),  # slash-trailing paths degenerate to a bare root
-        # A container dir without a language layer beneath is NOT a
-        # container match; falls back to the flat rule (harnesses is
-        # treated as the recipe name, filtered later by --filter-existing).
-        ("core/harnesses/README.md", "core/harnesses"),
-        # A container path missing the recipe component (only 3 parts)
-        # falls through to the flat rule and yields the container as the
-        # candidate — filesystem filter drops it in real use.
-        ("core/harnesses/python/", "core/harnesses"),
     ],
 )
 def test_recipe_dir_for_table(path, expected):
@@ -165,14 +147,6 @@ def test_compute_skips_blank_and_whitespace_lines(tmp_path):
     ]
 
 
-def test_compute_handles_container_namespaced_recipe(tmp_path):
-    _make_recipe(tmp_path, "core/harnesses/python/perf")
-    changed = ["core/harnesses/python/perf/run.py"]
-    assert m.compute_affected_recipes(changed, repo_root=tmp_path) == [
-        "core/harnesses/python/perf",
-    ]
-
-
 def test_compute_handles_skills_root(tmp_path):
     _make_recipe(tmp_path, "skills/example")
     changed = ["skills/example/SKILL.md"]
@@ -248,12 +222,7 @@ def test_main_no_filter_flag(tmp_path, monkeypatch, capsys):
         ("core/python/foo", "python"),
         ("contrib/java/bar", "java"),
         ("contrib/typescript/x", "typescript"),
-        # Container + language namespace layer.
-        ("core/harnesses/python/perf", "python"),
-        ("contrib/harnesses/go/bench", "go"),
-        # A container without a language layer is NOT a language ns.
-        ("core/harnesses/foo", None),
-        # A directory named like a language, but at the wrong depth,
+        # A directory named like a language but at the wrong depth
         # doesn't count.
         ("core", None),
         ("core/", None),
@@ -384,16 +353,6 @@ def test_language_filter_case_insensitive_argument(tmp_path):
     assert m.compute_affected_recipes(
         changed, language="Python", repo_root=tmp_path
     ) == ["core/flat-py"]
-
-
-def test_language_filter_container_namespaced(tmp_path):
-    _make_recipe_with_manifest(
-        tmp_path, "core/harnesses/python/perf", manifest=None
-    )
-    changed = ["core/harnesses/python/perf/run.py"]
-    assert m.compute_affected_recipes(
-        changed, language="python", repo_root=tmp_path
-    ) == ["core/harnesses/python/perf"]
 
 
 def test_language_filter_mixes_flat_and_namespaced(tmp_path):

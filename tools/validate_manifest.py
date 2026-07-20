@@ -51,14 +51,6 @@ OWNERSHIP_POC_PLACEHOLDER = "TODO: Replace with your GitHub user ID"
 
 LANGUAGE_NAMESPACE_DIRS = {"python", "java", "go", "typescript", "kotlin"}
 
-# Directories that group recipes without being recipes themselves — the
-# layer immediately below them is still a language namespace, and its
-# children are the actual recipes. E.g. `core/harnesses/python/perf/…`.
-# Kept here (rather than in affected_recipes.py) so both the collector
-# and the affected-recipe helper share one source of truth for the layout
-# taxonomy; affected_recipes.py imports this set.
-CONTAINER_DIRS = {"harnesses"}
-
 
 def is_recipe_dir(path: Path) -> bool:
     """A recipe directory is any immediate subdirectory that contains
@@ -76,8 +68,12 @@ def is_recipe_dir(path: Path) -> bool:
     ]
     if not children:
         return False
-    # A directory whose non-hidden children are exclusively language namespace
-    # dirs is itself a container (e.g. core/harnesses/), not a recipe.
+    # Defence-in-depth: a directory whose non-hidden, non-README children are
+    # ALL language namespace dirs (`python/`, `java/`, …) is treated as an
+    # organisational container, not a recipe. A real recipe always has at
+    # least one file (manifest.yaml, README.md, agent code) at its root, so
+    # this exclusion never fires for a valid recipe — it only guards against
+    # accidental structures being promoted to recipes.
     if all(p.is_dir() and p.name in LANGUAGE_NAMESPACE_DIRS for p in children):
         return False
     return True
@@ -168,14 +164,11 @@ def _collect_scoped_path(scope: str) -> list[Path]:
 def _collect_root(root_name: str) -> list[Path]:
     """Return the recipe directories directly under a top-level root.
 
-    Recognised layouts, all reachable from one call:
-        <root>/<recipe>                          — flat
-        <root>/<language>/<recipe>               — language-namespaced
-        <root>/<container>/<language>/<recipe>   — container-namespaced
-                                                   (e.g. core/harnesses/python/perf)
+    Recognised layouts:
+        <root>/<recipe>              — flat
+        <root>/<language>/<recipe>   — language-namespaced
 
-    where <language> ∈ LANGUAGE_NAMESPACE_DIRS and
-          <container> ∈ CONTAINER_DIRS.
+    where <language> ∈ LANGUAGE_NAMESPACE_DIRS.
     """
     root_path = REPO_ROOT / root_name
     if not root_path.exists():
@@ -191,22 +184,6 @@ def _collect_root(root_name: str) -> list[Path]:
             recipe_dirs.extend(
                 sorted(c for c in p.iterdir() if is_recipe_dir(c))
             )
-        elif p.name in CONTAINER_DIRS:
-            # <root>/<container>/<language>/<recipe>. Recurse one more
-            # level: each container child must itself be a language
-            # namespace, and its children are the recipes. Anything
-            # else under the container is ignored (matches the same
-            # layout rule affected_recipes.py enforces).
-            for lang_dir in sorted(p.iterdir()):
-                if (
-                    lang_dir.is_dir()
-                    and lang_dir.name in LANGUAGE_NAMESPACE_DIRS
-                ):
-                    recipe_dirs.extend(
-                        sorted(
-                            c for c in lang_dir.iterdir() if is_recipe_dir(c)
-                        )
-                    )
         elif is_recipe_dir(p):
             # <root>/<recipe> (flat)
             recipe_dirs.append(p)

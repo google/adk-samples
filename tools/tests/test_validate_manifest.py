@@ -208,42 +208,6 @@ def test_collect_single_namespaced_recipe(fake_repo):
     assert _rel(dirs, fake_repo) == {"core/python/recipe-b"}
 
 
-def test_collect_root_descends_into_container_namespaced_recipes(
-    tmp_path, monkeypatch
-):
-    # Regression guard: before the fix, _collect_root only recursed two
-    # levels (root → optional-namespace → recipe) so any recipe under a
-    # container directory (e.g. core/harnesses/python/<recipe>) was
-    # silently dropped by the full-repo scan even though the layout is
-    # supported by affected_recipes.py and the per-recipe scope path.
-    _make_recipe(tmp_path, "core/harnesses/python/perf")
-    _make_recipe(tmp_path, "core/harnesses/go/bench")
-    # And a flat one to prove nothing regressed.
-    _make_recipe(tmp_path, "core/flat")
-    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
-
-    dirs = m.collect_recipe_dirs("core")
-    assert _rel(dirs, tmp_path) == {
-        "core/flat",
-        "core/harnesses/go/bench",
-        "core/harnesses/python/perf",
-    }
-
-
-def test_collect_root_ignores_non_language_children_of_container(
-    tmp_path, monkeypatch
-):
-    # A stray non-language directory inside a container (e.g. a `docs/`
-    # subdirectory the maintainer added) must not be treated as a recipe.
-    (tmp_path / "core" / "harnesses" / "docs").mkdir(parents=True)
-    _write(tmp_path / "core" / "harnesses" / "docs" / "README.md", "# docs")
-    _make_recipe(tmp_path, "core/harnesses/python/perf")
-    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
-
-    dirs = m.collect_recipe_dirs("core")
-    assert _rel(dirs, tmp_path) == {"core/harnesses/python/perf"}
-
-
 def test_collect_nonexistent_scope_exits(fake_repo):
     with pytest.raises(SystemExit):
         m.collect_recipe_dirs("core/does-not-exist")

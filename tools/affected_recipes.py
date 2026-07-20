@@ -8,16 +8,12 @@ Called by CI workflows to translate a `git diff --name-only` result into
 the set of recipes that need re-validation.
 
 Layout rules (kept in sync with tools/validate_manifest.py):
-    <root>/<recipe>/…                    flat
-    <root>/<language>/<recipe>/…         language-namespaced
-    <root>/<container>/<language>/<recipe>/…
-                                         container + language-namespaced
-                                         (e.g. core/harnesses/python/foo/)
+    <root>/<recipe>/…              flat
+    <root>/<language>/<recipe>/…   language-namespaced
 
 where:
-    <root>       ∈ RECIPE_ROOTS               (core / contrib / skills)
-    <language>   ∈ LANGUAGE_NAMESPACE_DIRS    (python / java / go / …)
-    <container>  ∈ CONTAINER_DIRS             (harnesses)
+    <root>      ∈ RECIPE_ROOTS               (core / contrib / skills)
+    <language>  ∈ LANGUAGE_NAMESPACE_DIRS    (python / java / go / …)
 
 A path whose <recipe> component doesn't correspond to a real directory
 on disk is dropped by default — this filters out top-level files like
@@ -51,12 +47,11 @@ REPO_ROOT = Path(__file__).parent.parent
 
 # Kept aligned with validate_manifest so all consumers of the recipe
 # taxonomy — path→recipe mapping here, full-tree collection there —
-# agree on which folders are recipe roots, language namespaces, and
-# containers. If any set grows, only the corresponding line in
-# validate_manifest.py needs to change.
+# agree on which folders are recipe roots and language namespaces.
+# If either set grows, only the corresponding line in validate_manifest.py
+# needs to change.
 RECIPE_ROOTS = vm.RECIPE_ROOTS
 LANGUAGE_NAMESPACE_DIRS = vm.LANGUAGE_NAMESPACE_DIRS
-CONTAINER_DIRS = vm.CONTAINER_DIRS
 
 
 def recipe_dir_for(path: str) -> str | None:
@@ -75,13 +70,6 @@ def recipe_dir_for(path: str) -> str | None:
 
     part1 = parts[1] if len(parts) > 1 else ""
     part2 = parts[2] if len(parts) > 2 else ""
-    part3 = parts[3] if len(parts) > 3 else ""
-
-    # Container + language-namespaced: root/container/language/recipe/…
-    # Requires all four components to be present; a shorter path here
-    # (e.g. core/harnesses/python/) doesn't identify a recipe.
-    if part1 in CONTAINER_DIRS and part2 in LANGUAGE_NAMESPACE_DIRS and part3:
-        return f"{root}/{part1}/{part2}/{part3}"
 
     # Language-namespaced: root/language/recipe/…
     if part1 in LANGUAGE_NAMESPACE_DIRS and part2:
@@ -97,19 +85,12 @@ def recipe_language_namespace(recipe_dir: str) -> str | None:
     string-based, no filesystem access.
 
     Layouts:
-        <root>/<language>/<recipe>          → returns <language>
-        <root>/<container>/<language>/<recipe> → returns <language>
-        <root>/<recipe>                     → returns None (flat)
+        <root>/<language>/<recipe>   → returns <language>
+        <root>/<recipe>              → returns None (flat)
     """
     parts = recipe_dir.split("/")
     if len(parts) >= 3 and parts[1] in LANGUAGE_NAMESPACE_DIRS:
         return parts[1]
-    if (
-        len(parts) >= 4
-        and parts[1] in CONTAINER_DIRS
-        and parts[2] in LANGUAGE_NAMESPACE_DIRS
-    ):
-        return parts[2]
     return None
 
 
@@ -141,8 +122,8 @@ def _matches_language(
 ) -> bool:
     """Path-first language match, mirroring the current
     python-validate-recipe.yml semantics:
-      - Namespaced recipe (<root>/<lang>/… or <root>/<container>/<lang>/…):
-        path IS authoritative; the manifest is not consulted.
+      - Namespaced recipe (<root>/<lang>/…): path IS authoritative; the
+        manifest is not consulted.
       - Flat recipe (<root>/<recipe>): match on manifest.language.
         Missing/malformed manifest → excluded (nothing to match against)."""
     ns = recipe_language_namespace(recipe_dir)
