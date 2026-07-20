@@ -12,13 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dotenv import load_dotenv
+FROM python:3.11-slim
 
-# Load variables from .env if present. In production the environment is
-# already populated by the platform (Cloud Run, GKE, etc.), so a missing
-# .env is expected and not an error.
-load_dotenv()
+RUN pip install --no-cache-dir uv==0.8.13
 
-from .agent import app  # noqa: E402 -- must come after load_dotenv()
+WORKDIR /code
 
-__all__ = ["app"]
+COPY ./pyproject.toml ./README.md ./uv.lock* ./
+
+COPY ./app ./app
+
+RUN uv sync
+
+ARG COMMIT_SHA=""
+ENV COMMIT_SHA=${COMMIT_SHA}
+
+ARG AGENT_VERSION=0.0.0
+ENV AGENT_VERSION=${AGENT_VERSION}
+
+EXPOSE 8080
+
+CMD ["uv", "run", "uvicorn", "app.fast_api_app:app", "--host", "0.0.0.0", "--port", "8080"]

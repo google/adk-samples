@@ -17,7 +17,7 @@ gcloud config set project YOUR_PROJECT_ID
 
 ## Getting Started
 
-Run both steps from the sample root (`core/rag-vector-search`).
+Run both steps from the sample root (`core/python/rag-vector-search`).
 
 1.  **Provision the collection:** Create the Vector Search 2.0 Collection (and pipeline bucket) and enable required APIs.
 
