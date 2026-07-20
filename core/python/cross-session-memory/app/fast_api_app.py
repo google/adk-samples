@@ -48,6 +48,8 @@ def _log_struct(data: dict) -> None:
         import logging as _lg
 
         _lg.info("Struct log: %s", data)
+
+
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",")
     if os.getenv("ALLOW_ORIGINS")

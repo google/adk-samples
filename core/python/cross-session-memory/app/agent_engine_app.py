@@ -65,9 +65,7 @@ gemini_location = os.environ.get("GOOGLE_CLOUD_LOCATION")
 agent_engine = AgentEngineApp(
     app=adk_app,
     artifact_service_builder=lambda: (
-        GcsArtifactService(
-            bucket_name=os.environ.get("LOGS_BUCKET_NAME")
-        )
+        GcsArtifactService(bucket_name=os.environ.get("LOGS_BUCKET_NAME"))
         if os.environ.get("LOGS_BUCKET_NAME")
         and not os.environ.get("INTEGRATION_TEST")
         else InMemoryArtifactService()
