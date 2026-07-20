@@ -28,7 +28,7 @@
     "large": {
       "type": "boolean",
       "default": false,
-      "description": "Whether the recipe is considered large in size. false (default): under 1MB, 50 files max. true: under 10MB, 200 files max."
+      "description": "Whether the recipe opts into the relaxed size tier. false (default): the standard tier applies. true: the recipe may exceed the default limits, up to the tier's relaxed cap. Exact numeric limits depend on whether the recipe lives under core/ or contrib/ and are defined in .github/policy.yml (see recipe_size_limits)."
     },
     "status": {
       "type": "string",

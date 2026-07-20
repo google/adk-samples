@@ -1,4 +1,4 @@
-name: '🏷️ Gemini Automated Issue Triage'
+name: '✨ AI Automated Issue Triage'
 
 on:
   issues:
@@ -55,7 +55,7 @@ jobs:
           app-id: '${{ vars.APP_ID }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
 
-      - name: 'Run Gemini Issue Triage'
+      - name: 'Run AI Issue Triage'
         uses: 'google-github-actions/run-gemini-cli@v0'
         id: 'gemini_issue_triage'
         env:
@@ -64,6 +64,11 @@ jobs:
           ISSUE_BODY: '${{ github.event.issue.body }}'
           ISSUE_NUMBER: '${{ github.event.issue.number }}'
           REPOSITORY: '${{ github.repository }}'
+          # Required for Gemini CLI 0.51.0+ to execute tool calls (untrusted
+          # workspaces block tool execution entirely). Safe here because this
+          # workflow only ever checks out `main` — never PR-author code — so
+          # there is no fork-supplied .gemini/ config to worry about.
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
         with:
           gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
           gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'

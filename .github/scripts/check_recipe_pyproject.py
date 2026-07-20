@@ -1,12 +1,14 @@
 """
 Validates a recipe's pyproject.toml against the repo's metadata rules.
 
-Rules enforced (see .github/workflows/validate-python-recipe.yml):
+Rules enforced (see .github/workflows/python-validate-recipe.yml):
 
   - project-name-matches-folder: [project].name must equal the recipe
     folder basename.
-  - python-version-floor: [project].requires-python must not permit any
-    Python version below 3.11 (per AGENTS.md).
+  - python-version-floor: [project].requires-python must ACCEPT Python
+    3.11 exactly — it must neither permit anything below (loose floor) nor
+    exclude 3.11 by requiring higher (e.g. `>=3.12`). CI pins Python 3.11
+    and any recipe that can't lock under 3.11 breaks the lockfile check.
   - description-matches-manifest: if [project].description is set, it must
     equal manifest.description from the recipe's manifest.yaml (after
     .strip(), exact match). Optional; skipped when absent.
@@ -18,6 +20,14 @@ Rules enforced (see .github/workflows/validate-python-recipe.yml):
 
 Note: no-local-ruff-config (forbid [tool.ruff*] blocks in recipe
 pyproject.toml) is enforced by a grep in the workflow itself, not here.
+
+MAINTENANCE NOTE — keep in sync with the align skill. These four rules are
+also implemented (as auto-fixes) by
+.agents/skills/align-recipe-pyproject/scripts/align_pyproject.py. This script
+only READS/validates (stdlib tomllib + pyyaml); that one REWRITES
+(comment-preserving tomlkit + ruamel.yaml). They are intentionally separate
+but MUST stay semantically in sync — if you change a rule's meaning here,
+mirror it there (and vice versa).
 
 Usage: python check_recipe_pyproject.py <recipe-dir>
 
@@ -39,12 +49,28 @@ from packaging.version import Version
 
 MIN_PYTHON = (3, 11)
 MIN_PYTHON_STR = f"{MIN_PYTHON[0]}.{MIN_PYTHON[1]}"
-# Any Python release that predates MIN_PYTHON. If the recipe's specifier
-# permits any of these, its lower bound is too low.
-BELOW_MIN = [
-    Version(f"{MIN_PYTHON[0]}.{minor}")
-    for minor in range(MIN_PYTHON[1])  # 3.0, 3.1, ..., 3.(min-1)
-] + [Version(f"{MIN_PYTHON[0] - 1}.99")]  # e.g. 2.99, catches Python 2.x
+# Representative Python versions strictly below MIN_PYTHON, used to probe
+# whether a requires-python specifier admits anything under the floor. For
+# each minor series below MIN_PYTHON we include BOTH the .0 release and a
+# very-high micro (`.9999`): the .0 catches plain floors like `>=3.10`, while
+# the high micro catches micro-version floors like `>=3.10.5` / `~=3.10.2`
+# whose lower bound sits above X.Y.0 — a single `.0` probe would sail past
+# them and wrongly report OK. The trailing 2.99 catches Python 2.x.
+# Known residual: an exact micro pin (e.g. `==3.10.5`) is not detected, since
+# no finite probe set can hit an arbitrary pinned micro; such pins are
+# effectively nonexistent in real requires-python declarations.
+# NOTE: mirrored in .agents/skills/align-recipe-pyproject/scripts/
+# align_pyproject.py — keep in sync.
+_PROBE_MICRO = 9999  # synthetic "very high" micro (see note above)
+_BELOW_MIN_MINORS = range(MIN_PYTHON[1])  # 3.0, 3.1, ..., 3.(min-1)
+BELOW_MIN = (
+    [Version(f"{MIN_PYTHON[0]}.{m}") for m in _BELOW_MIN_MINORS]
+    + [
+        Version(f"{MIN_PYTHON[0]}.{m}.{_PROBE_MICRO}")
+        for m in _BELOW_MIN_MINORS
+    ]
+    + [Version(f"{MIN_PYTHON[0] - 1}.99")]
+)
 
 # Acceptable URLs for the required default `[[tool.uv.index]]` entry.
 # Both trailing-slash and non-trailing-slash forms are legal.
@@ -89,12 +115,23 @@ def check_name(project: dict, pyproject_path: Path, folder: str) -> None:
 
 
 def check_requires_python(project: dict, pyproject_path: Path) -> None:
-    """B1: [project].requires-python must not permit Python < MIN_PYTHON.
+    """B1: [project].requires-python must ACCEPT Python == MIN_PYTHON.
 
-    Interpretation A: the repo standard is a FLOOR. A recipe that requires
-    Python 3.12+ (e.g. `>=3.12`) is fine — the recipe author has legitimately
-    chosen a stricter minimum. A recipe that PERMITS versions below 3.11
-    (e.g. `>=3.10`, `~=3.10`, `!=3.11`, `<=3.12`, unpinned) is a violation.
+    Interpretation B: every recipe must be lockable/runnable under the
+    version CI pins in .github/workflows/python-dependency-policy.yml (3.11).
+    Two failure modes:
+
+      * ``permits_older`` — spec accepts a Python below MIN_PYTHON (e.g.
+        ``>=3.10``, ``~=3.10``, ``!=3.11``, ``<=3.12``, unpinned).
+      * ``excludes_min`` — spec rejects MIN_PYTHON by requiring higher
+        (e.g. ``>=3.12``, ``>=3.12,<3.14``, ``~=3.12``). This used to be
+        permitted under a "floor is 3.11 but higher is fine" reading, but
+        it makes CI fail with a confusing "lockfile is out of date" error
+        whose real cause is that uv can't resolve a 3.11 interpreter
+        against a >=3.12 requirement. Recipes that genuinely need 3.12+
+        features must instead update CI's pinned interpreter (or add a
+        per-recipe override) — silently allowing them here just moves the
+        failure to PR-time.
 
     Uses packaging.specifiers.SpecifierSet (the PEP 440 reference
     implementation) so every legal operator (>=, >, ~=, ==, !=, <, <=, and
@@ -106,7 +143,8 @@ def check_requires_python(project: dict, pyproject_path: Path) -> None:
             "FAIL",
             pyproject_path,
             f"[project].requires-python is missing; it must declare a "
-            f"lower bound of >= {MIN_PYTHON_STR} (per AGENTS.md).",
+            f"specifier that accepts Python {MIN_PYTHON_STR} and rejects "
+            "anything below (per AGENTS.md).",
         )
         return
 
@@ -121,23 +159,40 @@ def check_requires_python(project: dict, pyproject_path: Path) -> None:
         )
         return
 
-    # If any pre-MIN_PYTHON version satisfies the spec, the lower bound is
-    # too loose (e.g. '>=3.10', '~=3.10', '!=3.11', '<=3.12', unpinned).
     permits_older = [v for v in BELOW_MIN if v in spec]
+    excludes_min = Version(MIN_PYTHON_STR) not in spec
+
     if permits_older:
+        # Only surface a real witness version, never a synthetic `.9999`
+        # probe (which is the only match for a micro floor like `>=3.10.5`).
+        real = [v for v in permits_older if v.micro != _PROBE_MICRO]
+        example = f" (e.g. {real[0]})" if real else ""
         emit(
             "FAIL",
             pyproject_path,
             f"[project].requires-python = '{requires_python}' permits Python "
-            f"versions below {MIN_PYTHON_STR} (e.g. {permits_older[0]}); "
-            f"lower bound must be >= {MIN_PYTHON_STR} (per AGENTS.md).",
+            f"versions below {MIN_PYTHON_STR}{example}; lower bound must be "
+            f">= {MIN_PYTHON_STR} (per AGENTS.md).",
+        )
+        return
+
+    if excludes_min:
+        emit(
+            "FAIL",
+            pyproject_path,
+            f"[project].requires-python = '{requires_python}' excludes Python "
+            f"{MIN_PYTHON_STR}; the specifier must accept {MIN_PYTHON_STR} so "
+            "CI (which pins Python 3.11) can lock and run this recipe. Lower "
+            f"the floor to '>={MIN_PYTHON_STR}' (preserving any upper bound), "
+            "or if the recipe genuinely needs newer features, raise the "
+            "issue with the repo maintainers to update CI's pinned interpreter.",
         )
         return
 
     emit(
         "PASS",
         pyproject_path,
-        f"[project].requires-python lower bound is >= {MIN_PYTHON_STR} "
+        f"[project].requires-python admits Python {MIN_PYTHON_STR} "
         f"('{requires_python}').",
     )
 

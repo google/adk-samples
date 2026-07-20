@@ -31,18 +31,47 @@ def test_scaffold_creates_tree_and_replaces_placeholders(tmp_path):
     target = tmp_path / name
     assert target.is_dir()
 
-    # Template files were copied.
-    readme = target / "README.md"
-    pyproject = target / "pyproject.toml"
-    assert readme.is_file()
-    assert pyproject.is_file()
+    # A representative slice of the template tree was copied — covering the
+    # top-level files, the app/ package (including app_utils/), and the
+    # tests/ tree — so an accidental deletion or rename of any of these
+    # is caught.
+    expected_files = [
+        "README.md",
+        "pyproject.toml",
+        "manifest.yaml",
+        ".env.example",
+        "app/__init__.py",
+        "app/agent.py",
+        "app/fast_api_app.py",
+        "app/app_utils/__init__.py",
+        "app/app_utils/telemetry.py",
+        "app/app_utils/typing.py",
+        "tests/test_runnability.py",
+        "tests/unit/test_tools.py",
+        "tests/integration/test_agent.py",
+    ]
+    for rel in expected_files:
+        assert (target / rel).is_file(), f"missing scaffolded file: {rel}"
 
     # Placeholders were resolved.
+    readme = target / "README.md"
+    pyproject = target / "pyproject.toml"
     readme_text = readme.read_text(encoding="utf-8")
     assert f"# {name}" in readme_text
     assert "<RECIPE_NAME>" not in readme_text
     assert "<OUTPUT_DIRECTORY>" not in readme_text
     assert f'name = "{name}"' in pyproject.read_text(encoding="utf-8")
+
+    # No unresolved <PLACEHOLDER> tokens leaked into any scaffolded file.
+    for path in target.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        assert "<RECIPE_NAME>" not in text, f"unresolved token in {path}"
+        assert "<OUTPUT_DIRECTORY>" not in text, f"unresolved token in {path}"
 
 
 def test_scaffold_refuses_existing_target(tmp_path):
@@ -81,6 +110,72 @@ def test_scaffold_rejects_path_traversal(tmp_path):
     assert ok is False
     # Crucially: nothing was written outside the intended output directory.
     assert not (tmp_path / "evil").exists()
+
+
+# ---------------------------------------------------------------------------
+# recipe_name_error / documented naming rules enforced by the script itself
+# ---------------------------------------------------------------------------
+
+
+def test_recipe_name_error_accepts_valid_names():
+    for good in ("my-recipe", "a", "rag-agent-search", "a" * 30):
+        assert m.recipe_name_error(good) is None, good
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",  # empty
+        "My-Recipe",  # uppercase
+        "recipe_with_underscores",  # underscore
+        "recipe_123",  # underscore + digits
+        "recipe 123",  # space
+        "-starts-with-hyphen",  # leading hyphen
+        "ends-with-hyphen-",  # trailing hyphen
+        "a" * 31,  # too long (> 30)
+        "with/slash",  # path separator
+    ],
+)
+def test_recipe_name_error_rejects_invalid_names(bad):
+    assert m.recipe_name_error(bad) is not None, bad
+
+
+def test_scaffold_rejects_invalid_name_before_writing(tmp_path):
+    # A name that is "path-safe" but violates the documented rules (underscore)
+    # must still be refused, and nothing should be written.
+    ok = m.scaffold(name="bad_name", output_dir=str(tmp_path))
+
+    assert ok is False
+    assert not (tmp_path / "bad_name").exists()
+
+
+# ---------------------------------------------------------------------------
+# is_safe_output_dir / output_dir traversal guard
+# ---------------------------------------------------------------------------
+
+
+def test_is_safe_output_dir():
+    assert m.is_safe_output_dir("contrib") is True
+    assert m.is_safe_output_dir("core/python") is True
+    # Absolute destinations are allowed at the function level (see docstring).
+    assert m.is_safe_output_dir("/abs/tmp/dir") is True
+    # Relative traversal is refused.
+    assert m.is_safe_output_dir("../../other-repo") is False
+    assert m.is_safe_output_dir("a/../b") is False
+    assert m.is_safe_output_dir("a\\..\\b") is False
+
+
+def test_scaffold_rejects_output_dir_traversal(tmp_path):
+    # An output_dir with a '..' segment must be refused before any copy, so a
+    # recipe can't be dropped outside the intended tree.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    traversal = str(tmp_path / "inside" / ".." / "outside")
+
+    ok = m.scaffold(name="ok-name", output_dir=traversal)
+
+    assert ok is False
+    assert not (outside / "ok-name").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -56,8 +56,18 @@ def is_recipe_dir(path: Path) -> bool:
     # they are containers whose children are the actual recipes.
     if path.name in LANGUAGE_NAMESPACE_DIRS:
         return False
-    children = [p for p in path.iterdir() if p.name != "README.md"]
-    return len(children) > 0
+    children = [
+        p
+        for p in path.iterdir()
+        if not p.name.startswith(".") and p.name != "README.md"
+    ]
+    if not children:
+        return False
+    # A directory whose non-hidden children are exclusively language namespace
+    # dirs is itself a container (e.g. core/harnesses/), not a recipe.
+    if all(p.is_dir() and p.name in LANGUAGE_NAMESPACE_DIRS for p in children):
+        return False
+    return True
 
 
 def load_schema() -> dict:
@@ -99,6 +109,21 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
                     f'"{OWNERSHIP_POC_PLACEHOLDER}". '
                     "Please replace it with a real GitHub ID."
                 )
+
+        # A description left as a "TODO ..." placeholder (e.g. the scaffold
+        # template's default) is long enough to satisfy the schema's
+        # minLength, so it would otherwise slip through. Guard it explicitly,
+        # mirroring the ownership checks above. A prefix match (rather than an
+        # exact string) keeps this robust to wording changes and catches any
+        # hand-written "TODO ..." description too.
+        description = data.get("description")
+        if isinstance(
+            description, str
+        ) and description.strip().upper().startswith("TODO"):
+            errors.append(
+                "  [description] is still a TODO placeholder. Please replace "
+                "it with a real description of what the recipe demonstrates."
+            )
 
     return errors
 
@@ -231,15 +256,7 @@ def main(scope: str | None = None) -> int:
             "\nFix the manifest.yaml file(s) listed above, then push again."
             "\n"
             "\nReference:"
-            "\n  Schema:  .github/schemas/manifest-schema.json"
-            "\n  Example: core/rag-agent-search/manifest.yaml"
-            "\n"
-            "\nCommon mistakes:"
-            "\n  - Missing required fields (type, status, language, "
-            "description, ownership)"
-            "\n  - ownership.team or ownership.poc left as placeholder values"
-            "\n  - Invalid enum value for 'type', 'status', or 'language'"
-        )
+            "\n  Schema:  .github/schemas/manifest-schema.json"        )
         return 1
 
     checked = len(recipe_dirs)

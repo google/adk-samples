@@ -1,4 +1,4 @@
-name: 'Gemini PR Review — Core (reusable)'
+name: 'AI PR Review — Core (reusable)'
 
 on:
   workflow_call:
@@ -78,14 +78,14 @@ jobs:
           ${{ inputs.event_name == 'pull_request' }}
         uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1 # PR diff and metadata come from the gh API; git history is not needed.
 
       - name: 'Checkout PR code (workflow_dispatch)'
         if: |-
           ${{ inputs.event_name == 'workflow_dispatch' }}
         uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: 'refs/pull/${{ inputs.pr_number_dispatch }}/head'
 
       - name: 'Checkout PR code (issue_comment)'
@@ -93,7 +93,7 @@ jobs:
           ${{ inputs.event_name == 'issue_comment' }}
         uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: 'refs/pull/${{ inputs.pr_number_issue }}/head'
 
       - name: 'Checkout PR code (pull_request_review & pull_request_review_comment)'
@@ -101,8 +101,23 @@ jobs:
           ${{ inputs.event_name == 'pull_request_review' || inputs.event_name == 'pull_request_review_comment' }}
         uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: 'refs/pull/${{ inputs.pr_number_review }}/head'
+
+      # SECURITY: strip any PR-author-supplied .gemini/ directory from the
+      # workspace before we trust it. The Run AI PR Review step below sets
+      # GEMINI_CLI_TRUST_WORKSPACE=true (required for the CLI to execute any
+      # tool calls at all in 0.51.0+), and a trusted workspace would otherwise
+      # let a fork's .gemini/settings.json broaden the tool allowlist or
+      # register additional MCP servers. Removing it here means the caller-
+      # supplied `settings:` block is the only configuration source.
+      - name: 'Sanitize workspace of Gemini config'
+        run: |
+          set -euo pipefail
+          if [ -e .gemini ]; then
+            echo "::warning::Removing PR-author-supplied .gemini/ from the checked-out workspace"
+            rm -rf .gemini
+          fi
 
       - name: 'Generate GitHub App Token'
         id: 'generate_token'
@@ -139,19 +154,24 @@ jobs:
           echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
           echo "additional_instructions=" >> "${GITHUB_OUTPUT}"
 
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
-          {
-            echo "pr_data<<EOF"
-            echo "${PR_DATA}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
+          # Use a UUID-derived delimiter so PR titles or file paths that happen
+          # to contain a bare "EOF" on their own line cannot escape the heredoc
+          # and inject additional key=value pairs into $GITHUB_OUTPUT.
+          DELIM="EOF_$(uuidgen)"
 
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
-          {
-            echo "changed_files<<EOF"
-            echo "${CHANGED_FILES}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
+          for attempt in 1 2 3; do
+            PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)" && break
+            echo "::warning::gh pr view failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
+          { echo "pr_data<<${DELIM}"; echo "${PR_DATA}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
+
+          for attempt in 1 2 3; do
+            CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)" && break
+            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
+          { echo "changed_files<<${DELIM}"; echo "${CHANGED_FILES}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
       - name: 'Get PR details (issue_comment)'
         id: 'get_pr_comment'
@@ -169,21 +189,25 @@ jobs:
           ADDITIONAL_INSTRUCTIONS="$(
             echo "${COMMENT_BODY}" | sed 's/.*@gemini-cli \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
           )"
-          echo "additional_instructions=${ADDITIONAL_INSTRUCTIONS}" >> "${GITHUB_OUTPUT}"
+          # Use a UUID-derived delimiter so a multi-line comment body, PR title,
+          # or file path containing a bare "EOF" on its own line cannot escape
+          # the heredoc and inject additional key=value pairs into $GITHUB_OUTPUT.
+          DELIM="EOF_$(uuidgen)"
+          { echo "additional_instructions<<${DELIM}"; echo "${ADDITIONAL_INSTRUCTIONS}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
-          {
-            echo "pr_data<<EOF"
-            echo "${PR_DATA}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
+          for attempt in 1 2 3; do
+            PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)" && break
+            echo "::warning::gh pr view failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
+          { echo "pr_data<<${DELIM}"; echo "${PR_DATA}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
-          {
-            echo "changed_files<<EOF"
-            echo "${CHANGED_FILES}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
+          for attempt in 1 2 3; do
+            CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)" && break
+            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
+          { echo "changed_files<<${DELIM}"; echo "${CHANGED_FILES}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
       - name: 'Get PR details (pull_request_review & pull_request_review_comment)'
         id: 'get_pr_review'
@@ -209,28 +233,39 @@ jobs:
           ADDITIONAL_INSTRUCTIONS="$(
             echo "${TRIGGER_BODY}" | sed 's/.*@gemini-cli \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
           )"
-          echo "additional_instructions=${ADDITIONAL_INSTRUCTIONS}" >> "${GITHUB_OUTPUT}"
+          # Same UUID-delimited heredoc as the issue_comment path above —
+          # applies to all multi-line outputs, not just additional_instructions.
+          DELIM="EOF_$(uuidgen)"
+          { echo "additional_instructions<<${DELIM}"; echo "${ADDITIONAL_INSTRUCTIONS}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
-          PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)"
-          {
-            echo "pr_data<<EOF"
-            echo "${PR_DATA}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
+          for attempt in 1 2 3; do
+            PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)" && break
+            echo "::warning::gh pr view failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
+          { echo "pr_data<<${DELIM}"; echo "${PR_DATA}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
-          CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)"
-          {
-            echo "changed_files<<EOF"
-            echo "${CHANGED_FILES}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
+          for attempt in 1 2 3; do
+            CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)" && break
+            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
+          { echo "changed_files<<${DELIM}"; echo "${CHANGED_FILES}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
-      - name: 'Run Gemini PR Review'
+      - name: 'Run AI PR Review'
         uses: 'google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489' # ratchet:google-github-actions/run-gemini-cli@v0
         id: 'gemini_pr_review'
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           GITHUB_PERSONAL_ACCESS_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          # Safe to trust because the "Sanitize workspace of Gemini config" step
+          # above deleted any PR-author-supplied .gemini/ directory from the
+          # checked-out workspace before this step runs. The caller-supplied
+          # `settings:` block below is therefore the authoritative sandbox with
+          # no risk of a fork's .gemini/settings.json widening the tool allowlist.
+          # (Setting this to 'false' is not viable — Gemini CLI 0.51.0+ refuses
+          # to run any tool calls in an untrusted workspace, which blocks the
+          # entire review.)
           GEMINI_CLI_TRUST_WORKSPACE: 'true'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
           PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'

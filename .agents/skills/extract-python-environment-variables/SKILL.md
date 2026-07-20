@@ -4,20 +4,28 @@ description: >
   Scans a Python recipe to find every place an environment variable is read,
   then ensures all variables are declared in .env.example, that load_dotenv()
   is bootstrapped in the package __init__.py, and that python-dotenv>=1.0.0
-  is listed in pyproject.toml. Also detects hardcoded model-name string
-  literals in the recipe's source (e.g. "gemini-3-flash-preview" in
-  agent.py) and rewrites them to bare os.getenv("MODEL_NAME") calls (NO
-  fallback default), adding MODEL_NAME to .env.example with a TODO
-  placeholder — this modifies source files, not just configuration.
-  IMPORTANT — two hard rules the skill NEVER breaks:
-  (1) `.env.example` gets ONLY TODO placeholders, never inferred defaults.
+  is listed in pyproject.toml.   Also detects hardcoded model-name string literals in the recipe's source
+  (e.g. "gemini-3.5-flash" in agent.py) and rewrites them to bare
+  os.getenv("MODEL_NAME") calls (single model) or
+  os.getenv("MODEL_NAME_GENERATED_1") / os.getenv("MODEL_NAME_GENERATED_2")
+  etc. (multiple models) — NO fallback default in source. The actual model
+  string is written as the value in .env.example (e.g.
+  MODEL_NAME_GENERATED_1=gemini-3.5-flash) with a comment reminding the
+  maintainer to rename the variable — this modifies source files, not just
+  configuration. IMPORTANT — two hard rules the skill NEVER breaks:
+  (1) Regular env vars in `.env.example` get ONLY TODO placeholders, never
+  inferred defaults. Hardcoded model strings are the exception: their known
+  value IS written to .env.example because it is not inferred — it was
+  literally in the source.
   (2) Python source files get NO default values written by the skill —
   the model-replacement path emits `os.getenv("VAR")` with no second
   argument, and the skill never emits `os.environ.setdefault(...)`
   bootstrap lines. Pre-existing `os.environ.setdefault(...)` or
   `os.getenv("VAR", "default")` calls that the recipe author wrote by
   hand are LEFT UNTOUCHED — the skill is additive-only for Python files
-  (adds `load_dotenv()` bootstrap; replaces hardcoded model literals).
+  (adds `load_dotenv()` bootstrap; replaces hardcoded model literals;
+  appends `# noqa: E402` to trailing relative imports in `__init__.py`
+  when they'd otherwise trip Ruff after an env-bootstrap block).
   Use when the user wants to "extract env vars", "update .env.example",
   "add load_dotenv", "replace hardcoded model names", or "fix environment
   variables" in a Python recipe.
@@ -43,6 +51,11 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
    - `os.environ.get("VAR")` / `os.environ.get("VAR", "default")`
    - `os.getenv("VAR")` / `os.getenv("VAR", "default")`
 
+   Only names matching `^[A-Z_][A-Z0-9_]*$` (UPPER_SNAKE_CASE) are captured;
+   a lowercase name like `os.getenv("my_api_key")` is **skipped** and a
+   `[WARN]` line lists any that were dropped. Rename such vars to uppercase
+   in source, or add them to `.env.example` by hand.
+
 2. **Updates `.env.example`** — appends any variables not already declared.
    - **Every value is the placeholder `<TODO: update-this-value>`.** The
      skill never writes inferred defaults into `.env.example`, even when
@@ -65,10 +78,37 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
    load_dotenv()
    ```
 
-   If `load_dotenv` is already present the file is left unchanged.
+   If `load_dotenv` is already present the injection is skipped.
+
+   **Additionally — always, regardless of whether we injected** — appends
+   `# noqa: E402 -- must come after load_dotenv()` to any top-level relative
+   import (`from .x import y`) that sits AFTER a non-import module-level
+   statement. Two cases this covers:
+
+   - **Fresh injection.** The injected `load_dotenv()` call pushes
+     pre-existing trailing relative imports below a non-import statement, so
+     they'd trigger Ruff `E402` ("module-level import not at top of file")
+     when Phase 4 (ruff) of `prepare-python-recipe` runs.
+
+   - **Author-written bootstrap.** The recipe author already wrote
+     `load_dotenv()` + `os.environ.setdefault(...)` calls followed by a
+     trailing `from . import agent`, but never marked the trailing import.
+     The skill did NOT inject anything (load_dotenv was already present) but
+     still adds the noqa suffix so the file is lint-clean on the pipeline's
+     next ruff pass.
+
+   The suppression pass is precise — a relative import at the very TOP of
+   the file (before any non-import statement) is fine and left untouched.
+   Idempotent: a line that already carries `# noqa: E402` is skipped.
 
 4. **Replaces hardcoded model names** in source (e.g. `model="gemini-3.5-flash"`
-   in `agent.py`) with **bare `os.getenv("MODEL_NAME")`** — no default argument.
+   in `agent.py`) with **bare `os.getenv(...)`** — no default argument:
+   - Single model → `os.getenv("MODEL_NAME")`
+   - Multiple models → `os.getenv("MODEL_NAME_GENERATED_1")`, `os.getenv("MODEL_NAME_GENERATED_2")`, … (sorted alphabetically for determinism)
+
+   The actual model string is written as the value in `.env.example` (e.g.
+   `MODEL_NAME_GENERATED_1=gemini-3.5-flash`) with a comment prompting the
+   maintainer to rename the variable to something meaningful before shipping.
 
 5. **Updates `pyproject.toml`** — adds `python-dotenv>=1.0.0` to `[project]`
    dependencies if it is not already there.
@@ -77,14 +117,14 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
 
 ## Hard rules the skill NEVER breaks
 
-**Rule 1 — No inferred defaults anywhere.** The skill never persists a
-concrete default value it inferred from source code. Applies to:
-- `.env.example` — every new entry gets `<TODO: update-this-value>`,
-  even when the source has `os.getenv("VAR", "some-fallback")`.
-- Python files — the model-replacement path emits
-  `os.getenv("MODEL_NAME")` with **no second argument**. It does NOT emit
-  `os.getenv("MODEL_NAME", "the-original-hardcoded-value")` even though
-  that would be trivially "safer."
+**Rule 1 — No inferred defaults for regular env vars.** For variables read
+via `os.getenv`/`os.environ`, `.env.example` always gets `<TODO: update-this-value>`,
+even when the source has an `os.getenv("VAR", "some-fallback")`. Exception:
+hardcoded model strings replaced in source ARE written with their actual value
+in `.env.example` (e.g. `MODEL_NAME_GENERATED_1=gemini-3.5-flash`) — this is
+not an inferred default, it is the known value that was literally in the source.
+The source replacement always emits bare `os.getenv("VAR")` with **no second
+argument** in both cases.
 
 **Rule 2 — Additive-only for Python files.** The skill never writes new
 `os.environ.setdefault(...)` bootstrap lines into any Python file.
@@ -128,8 +168,14 @@ If the user has not specified the recipe directory, ask for it before proceeding
 
 ## Run
 
+Run it through `uv` so it always executes on a Python 3.11+ interpreter — the
+script uses the stdlib `tomllib`, which only exists from 3.11 onward. A bare
+`python3` that resolves to 3.9/3.10 fails with `ModuleNotFoundError: tomllib`.
+No `--with` packages are needed (the script is stdlib-only).
+
 ```bash
-python3 .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
+uv run --no-project python3 \
+  .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
   --recipe-dir <RECIPE_DIR>
 ```
 
@@ -140,7 +186,8 @@ files. Nothing is written to `.env.example`, `__init__.py`, `pyproject.toml`, or
 any source file. Useful for inspecting a recipe before committing to the edits:
 
 ```bash
-python3 .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
+uv run --no-project python3 \
+  .agents/skills/extract-python-environment-variables/scripts/extract_env_vars.py \
   --recipe-dir <RECIPE_DIR> --dry-run
 ```
 

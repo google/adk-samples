@@ -21,12 +21,13 @@ These tests are intentionally agnostic to business logic (tools, instructions,
 etc.). Tool-level correctness belongs in test_tools.py.
 """
 
-import app
-import app.agent
 from fastapi import FastAPI
 from google.adk.agents import Agent
 from google.adk.apps import App
 from google.adk.models import Gemini
+
+import app
+import app.agent
 
 
 def test_adk_run_runnability() -> None:

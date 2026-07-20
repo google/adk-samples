@@ -1,0 +1,143 @@
+# Repository-wide configuration constants.
+#
+# Single source of truth for numeric limits, thresholds, and other tunable
+# values that CI workflows enforce and docs/skills reference. When you
+# change a value here, no other file needs updating — workflows load this
+# file directly via .github/scripts/load_policy.py, and docs link to it
+# rather than inlining the numbers.
+#
+# Reader helper: .github/scripts/load_policy.py takes a dotted key path
+# (e.g. `recipe_size_limits.core.default.max_files`) and prints the value.
+# Lists are printed one item per line so callers can `mapfile -t` them.
+#
+# Add new sections here rather than hardcoding constants in workflow files.
+
+# --------------------------------------------------------------------------
+# Recipe size limits — enforced by .github/workflows/python-validate-recipe.yml
+#
+# Recipes live under core/<language>/<recipe> or contrib/<language>/<recipe>
+# (e.g. core/python/rag-agent-search, contrib/java/hello-agent).
+#
+# The applicable tier is chosen by:
+#   1. Top-level ancestor: core → `core` limits;  contrib → `contrib` limits.
+#   2. `large:` field in the recipe's manifest.yaml (default: false):
+#        false / omitted → `default` limits;  true → `large` limits.
+#
+# The `excluded_paths` section below lists files and directories that
+# NEVER count toward either limit, in any tier.
+# --------------------------------------------------------------------------
+recipe_size_limits:
+  core:
+    default:
+      max_files: 500
+      max_size_mb: 50
+    large:
+      # `large: true` in core is effectively an escape hatch — this cap is
+      # a defensive upper bound, not a real constraint. Bump if a legitimate
+      # recipe hits it.
+      max_files: 10000
+      max_size_mb: 10240  # 10 GB
+  contrib:
+    default:
+      max_files: 70
+      max_size_mb: 2
+    large:
+      max_files: 200
+      max_size_mb: 10
+
+# --------------------------------------------------------------------------
+# Recipe naming — enforced by .github/workflows/python-validate-recipe.yml
+#
+# In addition to the length limit, folder names must match ^[a-z][a-z-]*$
+# (lowercase letters and hyphens only; must start with a letter). The regex
+# lives in the workflow because it's shape-based, not a tunable number.
+# --------------------------------------------------------------------------
+recipe_naming:
+  max_folder_name_length: 30
+
+# --------------------------------------------------------------------------
+# Excluded paths — files/directories that never count toward size or file
+# count when validating a recipe.
+#
+# Applied as the UNION of every language section below, regardless of the
+# recipe's declared language. Organised per-language for discoverability:
+# when adding recipes in a new language, add a section here rather than
+# threading language detection through the workflow.
+#
+# Structure: each language section has two sub-lists:
+#   dirs:   directory basenames — pruned wherever they appear in the recipe
+#           tree. Both plain names (`node_modules`) and shell globs
+#           (`*.egg-info`) are supported.
+#   files:  file basenames — excluded wherever they appear. Both plain
+#           names (`uv.lock`) and shell globs (`*.tsbuildinfo`) work.
+#
+# Note: a `dirs:` entry prunes ANY directory with that basename in the
+# recipe tree, so a legitimate `bin/`, `build/`, `dist/`, `coverage/`, etc.
+# would be excluded too. If you commit such a folder as part of a recipe
+# (not as tool output), rename it to avoid the exclusion.
+# --------------------------------------------------------------------------
+excluded_paths:
+  common:
+    files:
+      - .DS_Store       # macOS filesystem metadata
+    dirs:
+      - .idea           # IntelliJ project files (almost always accidental)
+
+  python:
+    files:
+      - uv.lock         # uv lockfile (auto-generated)
+    dirs:
+      - __pycache__     # bytecode cache
+      - .venv           # virtualenv
+      - .pytest_cache
+      - .mypy_cache
+      - .ruff_cache
+      - .tox
+      - "*.egg-info"    # setuptools/pip package metadata
+      - build           # setuptools build output
+      - dist            # setuptools/wheel output
+
+  java:
+    files: []
+    dirs:
+      - target          # Maven build output
+      - build           # Gradle build output (shared with kotlin)
+      - .gradle         # Gradle cache
+      - out             # IntelliJ default output
+      - bin             # Eclipse default output
+
+  kotlin:
+    files: []
+    dirs:
+      - build           # Gradle build output
+      - .gradle
+      - .kotlin         # Kotlin compiler cache
+      - out
+      - bin
+
+  go:
+    files:
+      - go.sum          # Go module checksum file (auto-generated)
+      - "*.test"        # test binaries
+    dirs:
+      - bin
+      - vendor          # vendored deps (sometimes committed intentionally
+                        # — treat as tool output for size-limit purposes)
+
+  typescript:
+    files:
+      - package-lock.json
+      - yarn.lock
+      - pnpm-lock.yaml
+      - bun.lockb       # bun lockfile (binary)
+      - "*.tsbuildinfo" # TypeScript incremental build info
+    dirs:
+      - node_modules
+      - dist
+      - build
+      - .next           # Next.js build output
+      - .nuxt           # Nuxt build output
+      - .turbo          # Turborepo cache
+      - .parcel-cache
+      - .cache
+      - coverage        # test coverage output

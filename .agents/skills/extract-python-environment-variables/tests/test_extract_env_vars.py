@@ -120,6 +120,20 @@ def test_extract_env_vars_ignores_non_uppercase_names(tmp_path):
     assert result == {"OK_NAME": None}
 
 
+def test_extract_env_vars_warns_on_non_uppercase_names(tmp_path, capsys):
+    # Issue 3: lowercase names are dropped, but the drop must be surfaced on
+    # stderr so the maintainer isn't left wondering why the var vanished.
+    src = "import os\nx = os.getenv('lower_case')\ny = os.getenv('OK_NAME')\n"
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    assert result == {"OK_NAME": None}
+    err = capsys.readouterr().err
+    assert "lower_case" in err
+    assert "UPPER_SNAKE_CASE" in err
+
+
 def test_extract_env_vars_non_none_default_wins(tmp_path):
     # Same var appears first without a default, then with one.
     src = "import os\na = os.getenv('DUP')\nb = os.getenv('DUP', 'winner')\n"
@@ -306,7 +320,8 @@ def test_inject_load_dotenv_noop_if_present(tmp_path):
     )
     before = init.read_text(encoding="utf-8")
 
-    assert m.inject_load_dotenv(init) is False
+    # Nothing to inject and no trailing relative imports → (False, 0).
+    assert m.inject_load_dotenv(init) == (False, 0)
     assert init.read_text(encoding="utf-8") == before
 
 
@@ -316,9 +331,14 @@ def test_inject_load_dotenv_after_absolute_import_before_relative(tmp_path):
         '"""Package."""\n\nimport os\n\nfrom .agent import root_agent\n',
     )
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    # The trailing `from .agent` shifts below the injected load_dotenv() call,
+    # so it also picks up a noqa: E402 marker.
+    assert noqa_added == 1
 
     content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert m.LOAD_DOTENV_IMPORT in content
     # load_dotenv must land AFTER the absolute import ...
     assert content.index("import os") < content.index("load_dotenv")
@@ -329,9 +349,12 @@ def test_inject_load_dotenv_after_absolute_import_before_relative(tmp_path):
 def test_inject_load_dotenv_no_imports_goes_after_docstring(tmp_path):
     init = _write(tmp_path / "__init__.py", '"""Package docstring."""\n')
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    assert noqa_added == 0  # no trailing relative imports at all
 
     content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert content.index('"""Package docstring."""') < content.index(
         "load_dotenv"
     )
@@ -346,15 +369,18 @@ def test_inject_load_dotenv_adds_noqa_to_trailing_relative_imports(tmp_path):
         "import os\nfrom .agent import root_agent\n",
     )
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    assert noqa_added == 1
 
     content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     rel_line = next(
         ln for ln in content.splitlines() if ln.startswith("from .agent")
     )
     assert "noqa: E402" in rel_line
     # Idempotent: a second run must not duplicate the suffix.
-    m.inject_load_dotenv(init)
+    assert m.inject_load_dotenv(init) == (False, 0)
     assert init.read_text(encoding="utf-8").count("noqa: E402") == 1
 
 
@@ -366,9 +392,12 @@ def test_inject_load_dotenv_ignores_docstring_mention(tmp_path):
         '"""We will load_dotenv somewhere."""\nimport os\n',
     )
 
-    assert m.inject_load_dotenv(init) is True
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    assert noqa_added == 0  # no trailing relative imports
 
     content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert m.LOAD_DOTENV_IMPORT in content
 
 
@@ -377,9 +406,160 @@ def test_inject_load_dotenv_dry_run_reports_but_does_not_write(tmp_path):
     init = _write(tmp_path / "__init__.py", original)
 
     # Reports that it would inject ...
-    assert m.inject_load_dotenv(init, dry_run=True) is True
+    injected, noqa_added = m.inject_load_dotenv(init, dry_run=True)
+    assert injected is True
+    assert noqa_added == 0
     # ... but leaves the file untouched.
     assert init.read_text(encoding="utf-8") == original
+
+
+def test_inject_load_dotenv_not_placed_inside_docstring(tmp_path):
+    # Regression (Issue 1, failure mode A): an ``import`` line inside the
+    # module docstring must NOT be mistaken for a real import. The old text
+    # scanner inserted the bootstrap inside the triple-quoted string, where
+    # load_dotenv() silently never executed.
+    init = _write(
+        tmp_path / "__init__.py",
+        '"""\n'
+        "Usage example::\n"
+        "    import os\n"
+        '    KEY = os.getenv("API_KEY")\n'
+        '"""\n'
+        "from .agent import root_agent\n",
+    )
+
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    # The pre-existing `from .agent import root_agent` shifts below the
+    # injected load_dotenv() call, so it picks up a noqa: E402 marker.
+    assert noqa_added == 1
+
+    content = init.read_text(encoding="utf-8")
+    tree = ast.parse(content)  # (b) result is valid Python
+    # (a) load_dotenv() is a real top-level statement, not text in a string.
+    top_level_calls = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and getattr(node.value.func, "id", None) == "load_dotenv"
+    ]
+    assert len(top_level_calls) == 1
+    # (c) the docstring value is unchanged (still contains the example import).
+    docstring = ast.get_docstring(tree)
+    assert docstring is not None
+    assert "import os" in docstring
+
+
+def test_inject_load_dotenv_ignores_import_inside_conditional(tmp_path):
+    # Regression (Issue 1, failure mode B): an import nested in an if-block is
+    # not a top-level import. The old text scanner inserted the bootstrap
+    # after it, dedenting into the block and raising IndentationError.
+    init = _write(
+        tmp_path / "__init__.py",
+        "import os\nif True:\n    import pdb\n    x = 1\n",
+    )
+
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is True
+    assert noqa_added == 0  # no trailing relative imports
+
+    content = init.read_text(encoding="utf-8")
+    ast.parse(content)  # must remain valid Python (no IndentationError)
+    # load_dotenv lands after the real top-level import, before the block.
+    assert content.index("import os") < content.index("load_dotenv")
+    assert content.index("load_dotenv") < content.index("if True:")
+
+
+def test_inject_load_dotenv_marks_late_relative_import_when_already_bootstrapped(
+    tmp_path,
+):
+    # Regression: some recipe authors hand-write the env-bootstrap pattern
+    # (load_dotenv + os.environ.setdefault + trailing `from .agent`) without
+    # a noqa marker on the relative import. When we run against such a file
+    # we must NOT inject anything (load_dotenv is already there) but MUST
+    # still add `# noqa: E402` to the trailing relative import — otherwise
+    # ruff (Phase 4 in prepare-python-recipe) flags E402 for a pattern the
+    # skill is aware of and could have suppressed.
+    init = _write(
+        tmp_path / "__init__.py",
+        "import os\n"
+        "from dotenv import load_dotenv\n"
+        "\n"
+        "load_dotenv()\n"
+        "os.environ.setdefault('FOO', 'bar')\n"
+        "\n"
+        "from . import agent\n",
+    )
+
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is False  # load_dotenv was already present
+    assert noqa_added == 1  # ... but the trailing relative import was marked
+
+    content = init.read_text(encoding="utf-8")
+    rel_line = next(
+        ln for ln in content.splitlines() if ln.startswith("from . import")
+    )
+    assert "noqa: E402" in rel_line
+
+    # Idempotent on a second run — nothing more to do.
+    assert m.inject_load_dotenv(init) == (False, 0)
+    assert init.read_text(encoding="utf-8").count("noqa: E402") == 1
+
+
+def test_inject_load_dotenv_leaves_early_relative_import_alone(tmp_path):
+    # Precision check: a relative import at the TOP of __init__.py (before
+    # any non-import statement) does NOT trigger Ruff E402. The suppression
+    # pass must be precise — the previous implementation blindly marked
+    # every relative import, which produced meaningless noqa comments on
+    # perfectly-fine lines.
+    init = _write(
+        tmp_path / "__init__.py",
+        "from . import agent\n"
+        "from dotenv import load_dotenv\n"
+        "\n"
+        "load_dotenv()\n",
+    )
+
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is False
+    assert noqa_added == 0
+
+    content = init.read_text(encoding="utf-8")
+    rel_line = next(
+        ln for ln in content.splitlines() if ln.startswith("from . import")
+    )
+    assert "noqa" not in rel_line
+
+
+def test_inject_load_dotenv_ignores_docstring_before_late_relative_import(
+    tmp_path,
+):
+    # A module docstring at the top of the file must NOT count as "the first
+    # non-import statement" — otherwise every relative import in a module with
+    # a docstring would be treated as late and get spuriously marked.
+    init = _write(
+        tmp_path / "__init__.py",
+        '"""My package."""\n'
+        "\n"
+        "from dotenv import load_dotenv\n"
+        "\n"
+        "load_dotenv()\n"
+        "\n"
+        "from . import agent\n",
+    )
+
+    injected, noqa_added = m.inject_load_dotenv(init)
+    assert injected is False  # already bootstrapped
+    # The trailing `from . import agent` DOES come after load_dotenv() (not
+    # after the docstring), so it IS late and should be marked.
+    assert noqa_added == 1
+
+    content = init.read_text(encoding="utf-8")
+    rel_line = next(
+        ln for ln in content.splitlines() if ln.startswith("from . import")
+    )
+    assert "noqa: E402" in rel_line
 
 
 # ---------------------------------------------------------------------------
@@ -559,14 +739,6 @@ def test_ensure_dotenv_dry_run_reports_but_does_not_write(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_model_str_to_suffix():
-    assert m._model_str_to_suffix("gemini-3.5-flash") == "GEMINI_3_5_FLASH"
-    assert (
-        m._model_str_to_suffix("gemini-embedding-001") == "GEMINI_EMBEDDING_001"
-    )
-    assert m._model_str_to_suffix("claude-3-sonnet") == "CLAUDE_3_SONNET"
-
-
 def test_assign_model_var_names_single():
     assert m.assign_model_var_names({"gemini-3.5-flash"}) == {
         "gemini-3.5-flash": "MODEL_NAME"
@@ -574,19 +746,23 @@ def test_assign_model_var_names_single():
 
 
 def test_assign_model_var_names_multiple():
+    # Multiple models get MODEL_NAME_GENERATED_N (sorted for determinism).
+    # Sorted order: "claude-3-sonnet" < "gemini-3.5-flash".
     result = m.assign_model_var_names({"gemini-3.5-flash", "claude-3-sonnet"})
     assert result == {
-        "gemini-3.5-flash": "MODEL_NAME_GEMINI_3_5_FLASH",
-        "claude-3-sonnet": "MODEL_NAME_CLAUDE_3_SONNET",
+        "claude-3-sonnet": "MODEL_NAME_GENERATED_1",
+        "gemini-3.5-flash": "MODEL_NAME_GENERATED_2",
     }
 
 
-def test_assign_model_var_names_collision_disambiguated():
-    # Both strings normalise to the same suffix; sorted order decides which
-    # keeps the base name and which gets the _2 suffix.
-    result = m.assign_model_var_names({"gemini-3.5-flash", "gemini-3-5-flash"})
-    assert result["gemini-3-5-flash"] == "MODEL_NAME_GEMINI_3_5_FLASH"
-    assert result["gemini-3.5-flash"] == "MODEL_NAME_GEMINI_3_5_FLASH_2"
+def test_assign_model_var_names_skips_taken_counters():
+    # When MODEL_NAME is already taken, the counter scheme is used.
+    # If MODEL_NAME_GENERATED_1 is also taken, the first available slot is _2.
+    result = m.assign_model_var_names(
+        {"gemini-3.5-flash"},
+        existing_vars={"MODEL_NAME", "MODEL_NAME_GENERATED_1"},
+    )
+    assert result == {"gemini-3.5-flash": "MODEL_NAME_GENERATED_2"}
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +801,7 @@ def test_replace_hardcoded_models_replaces_and_adds_import_os(tmp_path):
 
     assert substituted == {"gemini-3.5-flash": "MODEL_NAME"}
     content = py.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert 'os.getenv("MODEL_NAME")' in content
     assert "import os" in content
     assert "gemini-3.5-flash" not in content
@@ -640,6 +817,7 @@ def test_replace_hardcoded_models_handles_single_quotes(tmp_path):
     m.replace_hardcoded_models([py], hits, name_map)
 
     content = py.read_text(encoding="utf-8")
+    ast.parse(content)  # result must be valid Python
     assert 'os.getenv("MODEL_NAME")' in content
     assert "gemini-3.5-flash" not in content
 
@@ -686,9 +864,10 @@ def test_replace_hardcoded_models_multiple_occurrences(tmp_path):
     content = py.read_text(encoding="utf-8")
     assert "gemini-3.5-flash" not in content
     assert "claude-3-sonnet" not in content
-    # Both duplicate occurrences map to the same env var.
-    assert content.count('os.getenv("MODEL_NAME_GEMINI_3_5_FLASH")') == 2
-    assert content.count('os.getenv("MODEL_NAME_CLAUDE_3_SONNET")') == 1
+    # Sorted: "claude-3-sonnet" → GENERATED_1, "gemini-3.5-flash" → GENERATED_2.
+    # Both duplicate occurrences of gemini-3.5-flash map to the same env var.
+    assert content.count('os.getenv("MODEL_NAME_GENERATED_2")') == 2
+    assert content.count('os.getenv("MODEL_NAME_GENERATED_1")') == 1
     ast.parse(content)
 
 
@@ -752,6 +931,36 @@ def test_flat_offset():
     assert m._flat_offset(lines, 2, 0) == 4
     # Line 2, col 2 → 4 + 2 == 6
     assert m._flat_offset(lines, 2, 2) == 6
+
+
+# ---------------------------------------------------------------------------
+# run_step_pyproject messaging (Issue 4)
+# ---------------------------------------------------------------------------
+
+
+def test_run_step_pyproject_warns_when_insertion_not_possible(tmp_path, capsys):
+    # Issue 4: python-dotenv is genuinely absent and cannot be inserted (no
+    # [project] table). The step must WARN "add by hand" rather than falsely
+    # printing "[PASS] already includes".
+    _write(tmp_path / "pyproject.toml", "[tool.foo]\nx = 1\n")
+
+    m.run_step_pyproject(tmp_path)
+
+    out = capsys.readouterr().out
+    assert "[WARN] Could not safely add python-dotenv" in out
+    assert "already includes" not in out
+
+
+def test_run_step_pyproject_pass_when_already_present(tmp_path, capsys):
+    _write(
+        tmp_path / "pyproject.toml",
+        '[project]\ndependencies = [\n    "python-dotenv>=1.0.0",\n]\n',
+    )
+
+    m.run_step_pyproject(tmp_path)
+
+    out = capsys.readouterr().out
+    assert "[PASS] pyproject.toml already includes python-dotenv" in out
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +1031,8 @@ def test_main_real_run_applies_changes(tmp_path, monkeypatch):
     assert "load_dotenv" in init_py.read_text(encoding="utf-8")
     assert "python-dotenv" in pyproject.read_text(encoding="utf-8")
     agent_text = agent_py.read_text(encoding="utf-8")
-    # Replacement preserves the original model string as an inline default.
+    # Hard rule: the replacement is BARE os.getenv("MODEL_NAME") — no inferred
+    # default is written, even though the original model string is known.
     assert 'os.getenv("MODEL_NAME")' in agent_text
+    assert 'os.getenv("MODEL_NAME", ' not in agent_text
     assert "gemini-3.5-flash" not in agent_text

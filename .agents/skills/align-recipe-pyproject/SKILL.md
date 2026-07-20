@@ -2,7 +2,7 @@
 name: align-recipe-pyproject
 description: >
   Aligns a Python recipe's pyproject.toml with the repo's standards enforced
-  by .github/workflows/validate-python-recipe.yml, plus one critical
+  by .github/workflows/python-validate-recipe.yml, plus one critical
   [build-system] presence check. Scope is pyproject.toml only — standalone
   ruff.toml / .ruff.toml files (also forbidden in recipes) are caught by the
   CI workflow instead, not by this skill. Runs in two modes: a read-only
@@ -20,9 +20,9 @@ metadata:
 
 # Align Recipe pyproject.toml
 
-Use this skill to bring a Python recipe's `pyproject.toml` (and, when it disagrees, its `manifest.yaml` description) into conformance with the repo standard enforced by `.github/workflows/validate-python-recipe.yml`.
+Use this skill to bring a Python recipe's `pyproject.toml` (and, when it disagrees, its `manifest.yaml` description) into conformance with the repo standard enforced by `.github/workflows/python-validate-recipe.yml`.
 
-Scope: **`pyproject.toml` only**. Standalone `ruff.toml` / `.ruff.toml` files are also forbidden in recipes but are enforced by the CI workflow (Check 7 in `validate-python-recipe.yml`) — outside this skill's concern.
+Scope: **`pyproject.toml` only**. Standalone `ruff.toml` / `.ruff.toml` files are also forbidden in recipes but are enforced by the CI workflow (Check 7 in `python-validate-recipe.yml`) — outside this skill's concern.
 
 ---
 
@@ -33,7 +33,7 @@ Runs `scripts/align_pyproject.py` against a recipe directory. Six rules:
 | Rule ID | What it checks | Auto-fix |
 |---|---|---|
 | `no-local-ruff-config` | Recipe `pyproject.toml` must not declare any `[tool.ruff*]` table. Ruff config is centralized in the root `pyproject.toml`. | Yes — removes the tables. |
-| `python-version-floor` | `[project].requires-python` must not permit any Python version below 3.11 (per `AGENTS.md`). A recipe that requires Python 3.12+ is the author's choice and is left alone. | Yes — rewrites the specifier, preserving any upper bound / exclusion. If the rewrite would produce a self-contradictory result (e.g. `>=3.10,!=3.11`), refuses to apply and returns `needs_input`. |
+| `python-version-floor` | `[project].requires-python` must **accept Python 3.11 exactly** — it must neither permit anything below (loose floors like `>=3.10`) nor exclude 3.11 by requiring higher (`>=3.12`, `~=3.12`, etc.). Per `AGENTS.md` "Minimum python version: 3.11" and CI in `.github/workflows/python-dependency-policy.yml`, which pins Python 3.11 and would otherwise emit a misleading "lockfile is out of date" error whose real cause is the interpreter mismatch. | Yes — rewrites the specifier so its lower bound is `>=3.11` while preserving every upper bound, exclusion, compatible-release (`~=`) ceiling, and pin (only pure `>=`/`>` are dropped or replaced). Applies to BOTH failure modes (loose floors AND higher-than-min floors). If the result would still exclude 3.11 (e.g. `>=3.10,!=3.11` → `>=3.11,!=3.11`, or `~=3.12` → `>=3.11,~=3.12` == `>=3.12,<4`), refuses to apply and returns `needs_input` for a human to resolve (typically: relax the ceiling, or raise the recipe with the maintainers to update CI's pinned interpreter). |
 | `project-name-matches-folder` | `[project].name` must equal the recipe folder basename. | Yes — sets it. |
 | `description-matches-manifest` | If `[project].description` is set, it must equal `manifest.description`. Field is optional; skipped when absent. | Only with `--description-source={pyproject,manifest,delete}`. Refuses to touch description otherwise. |
 | `build-system-present` | `[build-system]` must have both `requires` and `build-backend`. Without it, `uv build` and `pip install .` fail. | **No** — backend choice is editorial. Reported for the human to fix. |
@@ -120,6 +120,20 @@ Fixes everything the script can safely fix. Exits `0` if nothing is left unresol
 uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
   python .agents/skills/align-recipe-pyproject/scripts/align_pyproject.py \
   --recipe-dir <RECIPE_DIR> --description-source={pyproject|manifest|delete}
+```
+
+### Preview a description resolution (dry-run + `--description-source`)
+
+`--description-source` combines with `--dry-run`: the script reports the
+`would_fix` outcome of the chosen resolution **without writing any files**.
+Use this to show the user exactly what a given choice will do before you
+apply it — the two flags are not mutually exclusive.
+
+```bash
+uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
+  python .agents/skills/align-recipe-pyproject/scripts/align_pyproject.py \
+  --recipe-dir <RECIPE_DIR> --dry-run \
+  --description-source={pyproject|manifest|delete}
 ```
 
 ---

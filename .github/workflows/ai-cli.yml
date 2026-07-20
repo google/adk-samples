@@ -1,4 +1,4 @@
-name: '♊️ Gemini CLI'
+name: '✨ AI CLI'
 
 on:
   pull_request_review_comment:
@@ -132,6 +132,22 @@ jobs:
           repository: '${{ github.repository }}'
           fetch-depth: 0
 
+      # SECURITY: strip any PR-author-supplied .gemini/ directory from the
+      # workspace before we trust it. The Run AI step below sets
+      # GEMINI_CLI_TRUST_WORKSPACE=true (required for the CLI to execute any
+      # tool calls at all in 0.51.0+), and a trusted workspace would otherwise
+      # let a fork's .gemini/settings.json broaden the tool allowlist or
+      # register additional MCP servers. Only strictly needed on the
+      # is_pr == 'true' path, but running unconditionally is cheap and prevents
+      # regression if the checkout logic ever changes.
+      - name: 'Sanitize workspace of Gemini config'
+        run: |
+          set -euo pipefail
+          if [ -e .gemini ]; then
+            echo "::warning::Removing PR-author-supplied .gemini/ from the checked-out workspace"
+            rm -rf .gemini
+          fi
+
       - name: 'Acknowledge request'
         env:
           GITHUB_ACTOR: '${{ github.actor }}'
@@ -186,7 +202,7 @@ jobs:
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: 'Run Gemini'
+      - name: 'Run AI'
         id: 'run_gemini'
         uses: 'google-github-actions/run-gemini-cli@v0'
         env:
@@ -195,6 +211,11 @@ jobs:
           USER_REQUEST: '${{ steps.get_context.outputs.user_request }}'
           ISSUE_NUMBER: '${{ steps.get_context.outputs.issue_number }}'
           IS_PR: '${{ steps.get_context.outputs.is_pr }}'
+          # Safe to trust because the "Sanitize workspace of Gemini config"
+          # step above deleted any PR-author-supplied .gemini/ from the
+          # workspace. Required for the CLI to execute any tool calls at all
+          # in 0.51.0+ (untrusted workspaces block tool execution entirely).
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
         with:
           gemini_api_key: '${{ secrets.GEMINI_API_KEY }}'
           gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
