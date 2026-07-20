@@ -220,7 +220,7 @@ def convert_artifacts_to_wav(  # noqa: C901, PLR0912, PLR0915
     gcs_bucket_name = os.environ.get("GCS_BUCKET_NAME")
     if gcs_bucket_name:
         try:
-            from google.cloud import storage  # noqa: PLC0415
+            from google.cloud import storage
 
             client = storage.Client()
             bucket = client.bucket(gcs_bucket_name)
