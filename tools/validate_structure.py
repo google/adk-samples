@@ -250,8 +250,28 @@ def check_size_and_count(
         # No configured size limits for this root — nothing to enforce.
         return []
 
-    tier = "large" if is_large_recipe(manifest_path) else "default"
-    tier_limits = root_limits.get(tier) or root_limits.get("default") or {}
+    is_large = is_large_recipe(manifest_path)
+    tier = "large" if is_large else "default"
+    tier_limits = root_limits.get(tier)
+
+    # Fail loudly when `large: true` is set but the requested tier is not
+    # defined for this root. Previously the code silently fell back to
+    # `default` via a boolean chain, so the recipe author got no signal
+    # that their opt-in was being ignored. Either add a `large:` block
+    # under `recipe_size_limits.<root>` in policy.yml or drop `large:
+    # true` from the manifest — the current combination is a bug.
+    if tier_limits is None:
+        if tier != "default":
+            return [
+                f"manifest.large=true, but recipe_size_limits.{root} in "
+                ".github/policy.yml does not define a 'large' tier. Add a "
+                f"'{root}.large' block in policy.yml with max_files / "
+                "max_size_mb, or remove 'large: true' from the manifest."
+            ]
+        # No `default` tier and no `large` tier requested — nothing to
+        # enforce, matches the no-root-limits case.
+        return []
+
     max_files = tier_limits.get("max_files")
     max_size_mb = tier_limits.get("max_size_mb")
 

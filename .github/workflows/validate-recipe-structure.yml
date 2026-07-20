@@ -120,7 +120,10 @@ jobs:
 
           # Map changed files → affected recipe directories via the shared
           # helper (also unit-tested in tools/tests/test_affected_recipes.py).
-          CHANGED_RECIPES=$(echo "$CHANGED_FILES" | uv run --no-project python tools/affected_recipes.py)
+          # Runs against the project venv (created by `uv sync` above) —
+          # NOT `--no-project`: affected_recipes.py imports PyYAML and the
+          # `validate_manifest` package, both provided by that venv.
+          CHANGED_RECIPES=$(echo "$CHANGED_FILES" | uv run python tools/affected_recipes.py)
 
           echo "Affected recipes:"
           echo "$CHANGED_RECIPES"

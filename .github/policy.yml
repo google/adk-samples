@@ -172,9 +172,21 @@ required_files:
     - README.md
 
   by_root:
+    # AGENTS.md is required for EVERY recipe under core/, regardless of
+    # language. This is a broadening of the previous rule (which enforced
+    # AGENTS.md only for core/python/*) and is intentional: any core/
+    # recipe should carry maintainer-facing context in a canonical file,
+    # whether it happens to be Python, Java, Go, TypeScript, or Kotlin.
+    # A future `core/java/foo/` without AGENTS.md will fail structural
+    # validation — the fix is to add the file, not to loosen the policy.
     core:
       - AGENTS.md
     contrib: []
+    # skills/ is a planned recipe root. SKILL.md is confirmed; other
+    # requirements are TBD and will be added here as they're defined.
+    # No entry under recipe_size_limits: the structure checker treats a
+    # root with no configured size limits as "size checks skipped" — safe
+    # for a root whose expected shape we don't yet want to constrain.
     skills:
       - SKILL.md
 

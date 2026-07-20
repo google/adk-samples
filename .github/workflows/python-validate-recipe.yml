@@ -102,7 +102,10 @@ jobs:
           # recipes it touched via the shared helper (tested by
           # tools/tests/test_affected_recipes.py — table-driven, so this
           # workflow doesn't reimplement the layout matrix in bash).
-          CHANGED_RECIPES=$(echo "$CHANGED_FILES" | uv run --no-project python tools/affected_recipes.py --language python)
+          # NOT `--no-project`: affected_recipes.py imports PyYAML and the
+          # `validate_manifest` package, both provided by the project venv
+          # created by `uv sync` above.
+          CHANGED_RECIPES=$(echo "$CHANGED_FILES" | uv run python tools/affected_recipes.py --language python)
 
           echo "Python recipes to validate:"
           echo "$CHANGED_RECIPES"
@@ -120,12 +123,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Full-repo enumeration: list every path under core/ and contrib/
-          # (any depth), then feed it through the same helper the diff
-          # step uses — with --language python. This keeps one source of
-          # truth for the layout matrix (path → recipe → language) instead
-          # of re-implementing it in shell.
-          ALL=$(find core contrib -type f 2>/dev/null | uv run --no-project python tools/affected_recipes.py --language python)
+          # Full-repo enumeration: list every path under core/, contrib/,
+          # and skills/ (any depth), then feed it through the same helper
+          # the diff step uses — with --language python. This keeps one
+          # source of truth for the layout matrix (path → recipe →
+          # language) instead of re-implementing it in shell. `skills/`
+          # is included so that a Python recipe under skills/python/…
+          # (or a flat skills/<recipe>/ with language: python in its
+          # manifest) is picked up by the full scan; missing roots are
+          # tolerated silently via 2>/dev/null.
+          # NOT `--no-project`: see the notes on the sibling invocation
+          # above.
+          ALL=$(find core contrib skills -type f 2>/dev/null | uv run python tools/affected_recipes.py --language python)
 
           echo "All Python recipes:"
           echo "$ALL"

@@ -382,6 +382,42 @@ def test_check_size_and_count_root_without_limits_skips(tmp_path):
     assert m.check_size_and_count(recipe, "skills", _size_policy(), manifest) == []
 
 
+def test_check_size_and_count_missing_large_tier_fails(tmp_path):
+    # If a recipe opts into `large: true` but the root has no `large` tier
+    # in policy.yml, the check must FAIL with a clear message (previously
+    # it silently fell back to `default`, leaving the author unaware).
+    recipe = _make_python_recipe(
+        tmp_path,
+        "core/foo",
+        manifest=VALID_MANIFEST + "large: true\n",
+        include_agents=True,
+    )
+    manifest = recipe / "manifest.yaml"
+    # Policy with `default` but no `large` tier for core.
+    policy = {
+        "recipe_size_limits": {
+            "core": {"default": {"max_files": 50, "max_size_mb": 5}}
+        }
+    }
+    errs = m.check_size_and_count(recipe, "core", policy, manifest)
+    assert errs
+    assert any(
+        "manifest.large=true" in e and "does not define a 'large' tier" in e
+        for e in errs
+    )
+
+
+def test_check_size_and_count_missing_both_tiers_is_a_noop(tmp_path):
+    # Edge case: root_limits exists but has neither `default` nor `large`.
+    # A `large: true` request without a matching tier still fails; a
+    # default (no manifest.large) request finds nothing to enforce and
+    # returns [] — same shape as "no root_limits at all".
+    recipe = _make_python_recipe(tmp_path, "core/foo", include_agents=True)
+    manifest = recipe / "manifest.yaml"
+    policy = {"recipe_size_limits": {"core": {}}}
+    assert m.check_size_and_count(recipe, "core", policy, manifest) == []
+
+
 # ---------------------------------------------------------------------------
 # validate_recipe (end-to-end orchestration on a fake tree)
 # ---------------------------------------------------------------------------

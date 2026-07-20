@@ -35,12 +35,21 @@ import pytest
         # Skills root (already listed in RECIPE_ROOTS even though the
         # directory may not exist yet).
         ("skills/foo/SKILL.md", "skills/foo"),
+        # A language-namespaced recipe under skills/ (e.g. skills/python/foo)
+        # is recognised too — matches the layout affected_recipes.py accepts
+        # for core/ and contrib/, and the python-validate-recipe.yml
+        # full-scan step (which enumerates core, contrib, and skills).
+        ("skills/python/foo/agent.py", "skills/python/foo"),
         # Paths that don't sit under a recipe root.
         ("README.md", None),
         (".github/workflows/x.yml", None),
         ("tools/validate.py", None),
-        # Root-only path (no recipe component) — nothing to map to.
-        ("core/", "core/"),  # slash-trailing paths degenerate to a bare root
+        # A root followed by nothing else (empty basename after the slash,
+        # from a trailing-slash input like "core/") does NOT identify a
+        # recipe — it must map to None, otherwise the candidate "core/"
+        # slips through the existence filter (core/ IS a real dir) and
+        # gets treated as a recipe.
+        ("core/", None),
     ],
 )
 def test_recipe_dir_for_table(path, expected):
@@ -353,6 +362,20 @@ def test_language_filter_case_insensitive_argument(tmp_path):
     assert m.compute_affected_recipes(
         changed, language="Python", repo_root=tmp_path
     ) == ["core/flat-py"]
+
+
+def test_language_filter_skills_python_namespaced(tmp_path):
+    # A Python recipe under skills/python/ is a namespaced Python recipe
+    # by path convention — the language filter must include it without
+    # having to read the manifest. Guards the invariant that
+    # python-validate-recipe.yml's full-scan step (which now enumerates
+    # skills/ too) will actually see skills/python/<recipe> during
+    # workflow_dispatch or infra-change runs.
+    _make_recipe_with_manifest(tmp_path, "skills/python/foo", manifest=None)
+    changed = ["skills/python/foo/SKILL.md"]
+    assert m.compute_affected_recipes(
+        changed, language="python", repo_root=tmp_path
+    ) == ["skills/python/foo"]
 
 
 def test_language_filter_mixes_flat_and_namespaced(tmp_path):

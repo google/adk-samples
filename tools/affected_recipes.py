@@ -71,6 +71,13 @@ def recipe_dir_for(path: str) -> str | None:
     part1 = parts[1] if len(parts) > 1 else ""
     part2 = parts[2] if len(parts) > 2 else ""
 
+    # A trailing-slash or empty second component (e.g. "core/" splits to
+    # ["core", ""]) doesn't identify a recipe — bail out rather than
+    # returning a bogus candidate like "core/" that the filesystem
+    # existence filter would then accept because `core/` is a real dir.
+    if not part1:
+        return None
+
     # Language-namespaced: root/language/recipe/…
     if part1 in LANGUAGE_NAMESPACE_DIRS and part2:
         return f"{root}/{part1}/{part2}"
