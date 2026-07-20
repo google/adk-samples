@@ -1,5 +1,9 @@
 name: 📦⚡ Dependabot Auto-Merge
 
+# Auto-merges Dependabot PRs once required checks succeed. Watches PR
+# events plus completions of the `checks` workflow and gates on
+# all-checks-green before enabling merge.
+
 on:
   pull_request:
     types:

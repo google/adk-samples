@@ -1,5 +1,9 @@
 name: '✨ AI CLI'
 
+# On-demand AI CLI triggered by PR review comments, review submissions,
+# or issue comments. Runs the Gemini CLI on request against the workspace
+# to answer questions or perform tasks.
+
 on:
   pull_request_review_comment:
     types:

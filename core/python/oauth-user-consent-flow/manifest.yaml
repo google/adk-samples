@@ -1,0 +1,16 @@
+type: "standalone"
+status: "active"
+language: "python"
+description: "ADK agent deployed on Agent Runtime with OAuth 2.0 to read Google Drive files on behalf of users."
+
+deployable: true
+
+architecture:
+  agent: "single"
+  stateful: false
+  datasources:
+    - "external"
+
+ownership:
+  team: "Developer Evangelism & Engineering (DevRel) - Cloud AI"
+  poc: "cszhu"

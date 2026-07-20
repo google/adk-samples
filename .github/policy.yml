@@ -13,7 +13,8 @@
 # Add new sections here rather than hardcoding constants in workflow files.
 
 # --------------------------------------------------------------------------
-# Recipe size limits — enforced by .github/workflows/python-validate-recipe.yml
+# Recipe size limits — enforced by
+# .github/workflows/validate-recipe-structure.yml (language-agnostic).
 #
 # Recipes live under core/<language>/<recipe> or contrib/<language>/<recipe>
 # (e.g. core/python/rag-agent-search, contrib/java/hello-agent).
@@ -46,11 +47,13 @@ recipe_size_limits:
       max_size_mb: 10
 
 # --------------------------------------------------------------------------
-# Recipe naming — enforced by .github/workflows/python-validate-recipe.yml
+# Recipe naming — enforced by
+# .github/workflows/validate-recipe-structure.yml (language-agnostic).
 #
 # In addition to the length limit, folder names must match ^[a-z][a-z-]*$
 # (lowercase letters and hyphens only; must start with a letter). The regex
-# lives in the workflow because it's shape-based, not a tunable number.
+# is shape-based and lives in tools/validate_structure.py rather than in
+# this policy file.
 # --------------------------------------------------------------------------
 recipe_naming:
   max_folder_name_length: 30
@@ -141,3 +144,61 @@ excluded_paths:
       - .parcel-cache
       - .cache
       - coverage        # test coverage output
+
+# --------------------------------------------------------------------------
+# Required files — enforced by
+# .github/workflows/validate-recipe-structure.yml via
+# tools/validate_structure.py.
+#
+# The required-file list applied to a recipe is the UNION of three sources,
+# resolved from the recipe's on-disk location and its manifest.language:
+#   1. `always`               — every recipe, regardless of anything
+#   2. `by_root[<root>]`      — where <root> is core / contrib / skills
+#                               (the top-level directory the recipe lives in)
+#   3. `by_language[<lang>]`  — where <lang> is the value of manifest.language
+#
+# Adding a new language, or a new folder-based rule (e.g. skills/*), is a
+# YAML edit here — no code change is required. Paths are recipe-relative
+# and may include subdirectories (e.g. tests/test_runnability.py).
+#
+# NOTE: manifest.yaml is intentionally NOT listed here. Its presence is a
+# hard prerequisite for every other check (schema validation, language
+# detection, `by_language[…]` lookup) and is reported by a dedicated
+# fail-fast step in validate_structure.py — adding it to `always` would
+# only produce a duplicate error for the same file.
+# --------------------------------------------------------------------------
+required_files:
+  always:
+    - README.md
+
+  by_root:
+    # AGENTS.md is required for EVERY recipe under core/, regardless of
+    # language. This is a broadening of the previous rule (which enforced
+    # AGENTS.md only for core/python/*) and is intentional: any core/
+    # recipe should carry maintainer-facing context in a canonical file,
+    # whether it happens to be Python, Java, Go, TypeScript, or Kotlin.
+    # A future `core/java/foo/` without AGENTS.md will fail structural
+    # validation — the fix is to add the file, not to loosen the policy.
+    core:
+      - AGENTS.md
+    contrib: []
+    # skills/ is a planned recipe root. SKILL.md is confirmed; other
+    # requirements are TBD and will be added here as they're defined.
+    # No entry under recipe_size_limits: the structure checker treats a
+    # root with no configured size limits as "size checks skipped" — safe
+    # for a root whose expected shape we don't yet want to constrain.
+    skills:
+      - SKILL.md
+
+  by_language:
+    python:
+      - pyproject.toml
+      - uv.lock
+      - .env.example
+      - tests/test_runnability.py
+    # Placeholders for languages that don't have recipes yet. Filling these
+    # in later requires no workflow change.
+    java: []
+    go: []
+    kotlin: []
+    typescript: []

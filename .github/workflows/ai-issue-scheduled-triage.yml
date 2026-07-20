@@ -1,5 +1,9 @@
 name: '✨ AI Scheduled Issue Triage'
 
+# Hourly scheduled sweep that re-triages open issues with the Gemini
+# CLI — a safety net for anything that slipped past the on-open
+# automated-triage workflow (e.g. issues opened during CI downtime).
+
 on:
   schedule:
     - cron: '0 * * * *' # Runs every hour

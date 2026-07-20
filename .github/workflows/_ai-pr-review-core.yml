@@ -1,5 +1,9 @@
 name: 'AI PR Review — Core (reusable)'
 
+# Reusable core invoked via `workflow_call` by the three AI PR review
+# workflows (correctness, security, maintainability). Handles PR context
+# extraction, workspace hardening, and Gemini CLI execution.
+
 on:
   workflow_call:
     inputs:
