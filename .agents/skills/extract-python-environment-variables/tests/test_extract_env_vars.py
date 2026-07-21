@@ -84,6 +84,51 @@ def test_find_python_files_skips_venv_and_cache_dirs(tmp_path):
         assert "more.py" != p.name
 
 
+def test_find_python_files_skips_conftest_py_at_any_level(tmp_path):
+    # REGRESSION: pytest's `conftest.py` is a reserved filename used only
+    # for test collection/fixture setup — never for application code.
+    # A common pattern is to put it at the recipe ROOT (not inside a
+    # `tests/` dir) so it applies to the whole project. The tests/ dir
+    # exclusion misses it there, and env vars in conftest.py (e.g.
+    # `INTEGRATION_TEST` guarding integration-test collection) would leak
+    # into .env.example — silently inviting users to set test-mode toggles.
+    _write(tmp_path / "app" / "agent.py")
+    _write(tmp_path / "conftest.py", "import os\nos.environ.get('INTEGRATION_TEST')\n")
+    _write(tmp_path / "app" / "conftest.py", "# also skipped\n")
+    _write(
+        tmp_path / "some_subpkg" / "conftest.py",
+        "import os\nos.environ.get('ANOTHER_TEST_VAR')\n",
+    )
+
+    found = m.find_python_files(tmp_path)
+    names = {p.name for p in found}
+
+    # Only the recipe's actual application source is returned.
+    assert names == {"agent.py"}
+    # Belt-and-braces: no returned file is named conftest.py.
+    assert not any(p.name == "conftest.py" for p in found)
+
+
+def test_extract_env_vars_ignores_conftest_py_content(tmp_path):
+    # End-to-end: env vars declared inside conftest.py never surface in
+    # the aggregated extract_env_vars() result, because the scanner never
+    # opens the file in the first place.
+    _write(
+        tmp_path / "conftest.py",
+        "import os\nX = os.getenv('INTEGRATION_TEST')\n",
+    )
+    _write(
+        tmp_path / "app.py",
+        "import os\nY = os.getenv('REAL_APP_VAR', 'v')\n",
+    )
+
+    py_files = m.find_python_files(tmp_path)
+    result = m.extract_env_vars(py_files)
+
+    assert "INTEGRATION_TEST" not in result  # conftest content excluded
+    assert "REAL_APP_VAR" in result  # app content still scanned
+
+
 # ---------------------------------------------------------------------------
 # extract_env_vars / _extract_var_from_node
 # ---------------------------------------------------------------------------

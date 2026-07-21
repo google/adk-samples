@@ -290,16 +290,34 @@ SKIP_DIRS: frozenset[str] = frozenset(
     }
 )
 
+# Reserved filenames that always represent test / tooling infrastructure,
+# regardless of where they live in the recipe. These are skipped in addition
+# to the ``SKIP_DIRS`` check — needed because pytest's ``conftest.py`` is
+# commonly placed at the repo/recipe ROOT (not inside a ``tests/`` dir), so
+# the directory-based exclusion misses it. Surfacing env vars from
+# ``conftest.py`` (e.g. ``INTEGRATION_TEST`` gating integration-test
+# collection) into ``.env.example`` would silently invite users to set
+# test-mode toggles they should not touch.
+SKIP_FILES: frozenset[str] = frozenset(
+    {
+        "conftest.py",  # pytest reserved name — always test infrastructure
+    }
+)
+
 
 def find_python_files(recipe_dir: Path) -> list[Path]:
     """
-    Return all .py files under recipe_dir, skipping directories that are not
-    part of the recipe's own source (see SKIP_DIRS).
+    Return all .py files under recipe_dir, skipping:
+      * directories that are not part of the recipe's own source (see
+        ``SKIP_DIRS``); and
+      * files whose basename is a reserved test/tooling filename (see
+        ``SKIP_FILES``) regardless of directory.
     """
     return [
         p
         for p in sorted(recipe_dir.rglob("*.py"))
         if not SKIP_DIRS.intersection(p.relative_to(recipe_dir).parts)
+        and p.name not in SKIP_FILES
     ]
 
 
