@@ -1,0 +1,44 @@
+name: Validate Docs Links
+
+# Runs on every PR that touches docs/. Verifies that every internal and
+# external link in the docs resolves, so a renamed file or a moved
+# heading fails CI instead of silently breaking navigation.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-links.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-links.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-docs-links:
+    name: Check every link in docs/ resolves
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check links
+        # Lychee: covers relative filesystem links, anchor links, and
+        # external HTTP(S) URLs. --no-progress keeps CI logs clean.
+        # --exclude on '^https?://github.com/google/adk-samples/(issues|pulls)'
+        # avoids rate-limiting on unauthenticated GitHub API calls when
+        # docs link to the repo's own issues page.
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress
+            --exclude '^https?://github\.com/google/adk-samples/(issues|pulls)'
+            'docs/**/*.md'
+          fail: true
