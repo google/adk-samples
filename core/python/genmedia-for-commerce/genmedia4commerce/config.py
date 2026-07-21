@@ -38,12 +38,17 @@ load_dotenv(dotenv_path=env_path)
 # Authentication
 # ---------------------------------------------------------------------------
 
+# Always resolve project_id up front so downstream references (e.g. the
+# MEDIA_BUCKET below) never NameError, regardless of which auth mode is
+# selected. Both PROJECT_ID (recipe-specific) and GOOGLE_CLOUD_PROJECT
+# (standard GCP env var) are accepted.
+project_id = os.getenv("PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT", "")
+
 if os.getenv("GOOGLE_API_KEY"):
     # AI Studio mode: Use API key authentication
     os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
 else:
-    # Vertex AI mode: Use PROJECT_ID from config.env, fall back to ADC
-    project_id = os.getenv("PROJECT_ID")
+    # Vertex AI mode: Use PROJECT_ID from env, fall back to ADC
     if not project_id:
         try:
             import google.auth
@@ -133,9 +138,15 @@ def pull_assets():
 # ---------------------------------------------------------------------------
 
 
+# Warn (rather than raise) when project_id is missing so tests and offline
+# tooling can still import this module without live GCP credentials.
+# Runtime code paths that actually touch GCS/Vertex will surface a clear
+# error there when a real project is required.
 if not project_id:
-    raise ValueError(
-        "PROJECT_ID is not set. Check config.env or environment variables."
+    logger.warning(
+        "PROJECT_ID is not set; MEDIA_BUCKET will be unusable until it is "
+        "configured via environment variables (PROJECT_ID or "
+        "GOOGLE_CLOUD_PROJECT)."
     )
 MEDIA_BUCKET = f"{project_id}-genmedia-for-commerce-media-payloads"
 
