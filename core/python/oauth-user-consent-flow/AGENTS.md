@@ -24,7 +24,7 @@ that tells Gemini Enterprise which credentials to prompt with.
 
 - **Scenarios Path**: `tests/eval/evalsets/` (config: `tests/eval/eval_config.json`)
 - **Minimum Score**: `rubric_based_final_response_quality_v1` threshold `0.8`
-  (LLM judge `gemini-3-flash-preview`, rubrics: `relevance`, `helpfulness`)
+  (LLM judge `gemini-3.5-flash`, rubrics: `relevance`, `helpfulness`)
 
 Cases in `basic.evalset.json` cover a greeting and a Drive-read request; they
 exercise the agent's response quality, not a live OAuth exchange. Run with
