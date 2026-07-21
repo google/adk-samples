@@ -15,14 +15,6 @@
 [project]
 name = "genmedia-for-commerce"
 version = "0.1.0"
-description = "ADK agent generating retail media (Virtual Try-On videos, 360° product spins) using Gemini and Veo"
-authors = [
-    { name = "Lorenzo Spataro", email = "lspataro@google.com" },
-    { name = "Giulio Salierno", email = "giuliosalierno@google.com" },
-    { name = "Javier Pita", email = "javierpita@google.com" },
-]
-license = { text = "Apache License 2.0" }
-readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     # ADK & Agent infrastructure

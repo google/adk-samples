@@ -1,11 +1,6 @@
 [project]
 name = "ambient-expense-agent"
 version = "0.1.0"
-description = "Ambient agent processing expense reports via Pub/Sub with auto-approval and human-in-the-loop review."
-authors = [
-    {name = "Elia Secchi", email = "eliasecchi@google.com"},
-]
-license = {text = "Apache License 2.0"}
 requires-python = ">=3.11,<3.13"
 
 dependencies = [

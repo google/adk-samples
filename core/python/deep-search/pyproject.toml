@@ -1,16 +1,6 @@
 [project]
 name = "deep-search"
 version = "0.1.0"
-description = "Fullstack research agent using Gemini to strategize, research, and synthesize cited reports with human-in-the-loop"
-authors = [
-    {name = "Amit Dutta", email = "amitdutta@google.com"},
-    {name = "Deepak Moonat", email = "dmoonat@google.com"},
-    {name = "Elia Secchi", email = "eliasecchi@google.com"},
-    {name = "Erwin Huizenga", email = "erwinh@google.com"},
-    {name = "Lavi Nigam", email = "lavinigam@google.com"},
-]
-license = {text = "Apache License 2.0"}
-readme = "README.md"
 requires-python = ">=3.11,<3.13"
 
 dependencies = [
