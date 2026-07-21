@@ -37,6 +37,21 @@ os.environ.setdefault("GOOGLE_API_KEY", "test-key-not-used")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
 os.environ.setdefault("MODEL_NAME", "gemini-3.5-flash")
 
+# ADK 2.0 defaults to SQLite local storage (.adk/ directory), which persists
+# sessions across test runs and causes test pollution. Force in-memory
+# services so every pytest invocation starts with a clean session store.
+os.environ.setdefault("ADK_DISABLE_LOCAL_STORAGE", "1")
+
+# The .env.example ships placeholder values for APP_NAME and
+# PUBSUB_SUBSCRIPTION. The CI workflow copies .env.example → .env and then
+# config.py's load_dotenv() loads those placeholders into the environment
+# BEFORE frontend/main.py captures them as module-level constants. Pre-seed
+# the correct test values here (using setdefault so a real .env with
+# meaningful values still wins) so the frontend queries the right ADK app
+# and user_id when running tests.
+os.environ.setdefault("APP_NAME", "expense_agent")
+os.environ.setdefault("PUBSUB_SUBSCRIPTION", "test-sub")
+
 # --- LLM mock (imports are safe now that env is set) -----------------------
 from collections.abc import AsyncGenerator
 

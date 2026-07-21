@@ -116,6 +116,15 @@ except FileNotFoundError:
     logger.warning(
         "Catalogue files not found — catalog_search will be unavailable"
     )
+except Exception as e:
+    # Covers auth errors (DefaultCredentialsError, GoogleAuthError), network
+    # failures, etc. that can occur when GCP credentials or assets are not
+    # configured (e.g. in unit-test environments without ADC).
+    logger.warning(
+        f"Catalogue could not be loaded at import time "
+        f"({type(e).__name__}: {e}) — catalog_search will be unavailable "
+        "until credentials and assets are configured"
+    )
 
 
 def embed_query(query: str) -> list[float]:
