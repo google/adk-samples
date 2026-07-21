@@ -45,8 +45,9 @@ load_dotenv(dotenv_path=env_path)
 project_id = os.getenv("PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT", "")
 
 if os.getenv("GOOGLE_API_KEY"):
-    # AI Studio mode: Use API key authentication
-    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
+    # AI Studio mode: set explicitly so a stale env value cannot silently
+    # override the detected auth mode.
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "False"
 else:
     # Vertex AI mode: Use PROJECT_ID from env, fall back to ADC
     if not project_id:
@@ -59,7 +60,8 @@ else:
             logger.warning("No PROJECT_ID set and ADC not available")
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
     os.environ["GOOGLE_CLOUD_LOCATION"] = os.getenv("GLOBAL_REGION", "global")
-    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+    # Vertex AI mode: always set explicitly (computed, not user-configurable).
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
 # ---------------------------------------------------------------------------
 # Assets
@@ -196,7 +198,7 @@ class GenMediaConfig:
 
     """
 
-    agent_model: str = os.getenv("MODEL_NAME_GENERATED_1")
+    agent_model: str = os.getenv("MODEL_NAME_GENERATED_1", "gemini-3.5-flash")
     mcp_server_url: str = os.getenv(
         "MCP_SERVER_URL", "http://localhost:8081/sse"
     )

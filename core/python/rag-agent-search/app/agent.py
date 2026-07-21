@@ -34,7 +34,9 @@ LOCATION = "us-east1"
 LLM = os.getenv("MODEL_NAME")
 
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", LLM_LOCATION)
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+# This recipe is Vertex AI only; set explicitly so a stale env value cannot
+# silently override the detected auth mode.
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
 project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
 if not project_id:

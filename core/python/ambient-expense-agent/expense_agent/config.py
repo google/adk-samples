@@ -25,14 +25,17 @@ load_dotenv()
 # If GOOGLE_API_KEY is set, use AI Studio (default).
 # Otherwise, fall back to Vertex AI with Google Cloud credentials.
 if os.getenv("GOOGLE_API_KEY"):
-    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
+    # AI Studio mode: always set explicitly so a stale env value cannot
+    # silently override the detected auth mode.
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "False"
 else:
     import google.auth
 
     _, project_id = google.auth.default()
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
     os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
-    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+    # Vertex AI mode: always set explicitly (computed, not user-configurable).
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
 
 @dataclass

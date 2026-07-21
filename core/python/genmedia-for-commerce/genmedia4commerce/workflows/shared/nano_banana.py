@@ -56,7 +56,7 @@ class NanoTimeoutError(Exception):
 def generate_nano(
     client,
     text_images_pieces,
-    model=os.getenv("MODEL_NAME_GENERATED_5"),  # noqa: B008
+    model=os.getenv("MODEL_NAME_GENERATED_5", "gemini-3.5-flash"),  # noqa: B008
     config=None,
     timeout=NANO_TIMEOUT_SECONDS,
 ):
