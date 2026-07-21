@@ -16,6 +16,7 @@
 
 import io
 import json
+import os
 from unittest.mock import Mock, patch
 
 import pytest
@@ -338,7 +339,9 @@ class TestClassifyShoeClosure:
         )
 
         call_kwargs = mock_generate.call_args.kwargs
-        assert call_kwargs["model"] == "gemini-2.5-flash-lite"
+        assert call_kwargs["model"] == os.getenv(
+            "MODEL_NAME_GENERATED_2", "gemini-3.5-flash"
+        )
 
     @patch("workflows.spinning.r2v.shoes.classify_shoes.generate_gemini")
     def test_uses_custom_model(

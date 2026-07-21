@@ -209,7 +209,9 @@ class TestSearch:
         ):
             results = vs.search("hello", k=7)
             mock_embed.assert_called_once_with("hello")
-            mock_sbv.assert_called_once_with(embedding=fake_embedding, k=7)
+            mock_sbv.assert_called_once_with(
+                embedding=fake_embedding, k=7, filters=None
+            )
             assert results == [{"id": "x"}]
 
 

@@ -25,7 +25,9 @@ load_dotenv()
 _, project_id = google.auth.default()
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+# This recipe is Vertex AI only; set explicitly so a stale env value cannot
+# silently override the detected auth mode.
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
 from .agent import app  # noqa: E402 -- must come after load_dotenv()
 

@@ -82,10 +82,16 @@ from mcp_server.video_vto.clothes.clothes_mcp import (  # noqa: E402
 )
 from mcp_server.video_vto.video_vto_mcp import run_video_vto  # noqa: E402
 
+_mcp_port_str = os.getenv("MCP_SERVER_PORT", "8081")
+try:
+    _mcp_port = int(_mcp_port_str)
+except (ValueError, TypeError):
+    _mcp_port = 8081
+
 server = FastMCP(
     "genmedia-retail",
     host="0.0.0.0",
-    port=int(os.getenv("MCP_SERVER_PORT", "8081")),
+    port=_mcp_port,
 )
 
 

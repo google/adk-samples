@@ -15,8 +15,30 @@
 """Shared pytest fixtures for GenMedia tests."""
 
 import io
+import shutil
+from pathlib import Path
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# Session-level cleanup
+# ---------------------------------------------------------------------------
+_ASSETS_DIR = Path(__file__).parent.parent / "assets"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_downloaded_assets():
+    """Remove the assets/ directory after the test session.
+
+    Running tests (especially integration ones that start a real server)
+    causes vector_search.py and product-fitting presets to pull GCS assets
+    into assets/.  This fixture deletes that directory on teardown so the
+    working tree stays clean regardless of whether the session passed or
+    failed.
+    """
+    yield
+    if _ASSETS_DIR.exists():
+        shutil.rmtree(_ASSETS_DIR, ignore_errors=True)
 from PIL import Image
 
 # PNG magic bytes (minimal valid PNG header)

@@ -1,8 +1,6 @@
 [project]
 name = "oauth-user-consent-flow"
 version = "0.1.0"
-description = "ADK agent deployed on Agent Runtime with OAuth 2.0 to read Google Drive files on behalf of users."
-authors = [{ name = "Christina Zhu", email = "cszhu@google.com" }]
 dependencies = [
     "google-adk==1.31.0",
     "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",

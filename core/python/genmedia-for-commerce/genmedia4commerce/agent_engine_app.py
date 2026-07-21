@@ -31,6 +31,8 @@ from genmedia4commerce.app_utils.typing import Feedback
 # Load environment variables from .env file at runtime
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 
 class AgentEngineApp(AdkApp):
     """Agent Engine application wrapping the ADK app."""
@@ -62,11 +64,23 @@ class AgentEngineApp(AdkApp):
 
 gemini_location = os.environ.get("GOOGLE_CLOUD_LOCATION")
 logs_bucket_name = os.environ.get("LOGS_BUCKET_NAME")
-agent_engine = AgentEngineApp(
-    app=adk_app,
-    artifact_service_builder=lambda: (
-        GcsArtifactService(bucket_name=logs_bucket_name)
-        if logs_bucket_name
-        else InMemoryArtifactService()
-    ),
-)
+try:
+    agent_engine = AgentEngineApp(
+        app=adk_app,
+        artifact_service_builder=lambda: (
+            GcsArtifactService(bucket_name=logs_bucket_name)
+            if logs_bucket_name
+            else InMemoryArtifactService()
+        ),
+    )
+except Exception as e:
+    # vertexai's AdkApp.__init__ always calls google.auth.default() for
+    # credentials; this fails in environments without ADC (e.g. unit-test
+    # runners without service-account keys).  Guard so the module stays
+    # importable — callers that need a real instance (integration tests,
+    # Cloud Run entrypoints) should check for None and obtain credentials first.
+    logger.warning(
+        f"Could not instantiate AgentEngineApp at import time: {e}. "
+        "GCP credentials or project configuration may be missing."
+    )
+    agent_engine = None

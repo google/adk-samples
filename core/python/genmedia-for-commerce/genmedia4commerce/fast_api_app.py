@@ -49,9 +49,15 @@ import logging  # noqa: E402
 logging.basicConfig(level=logging.INFO)
 
 setup_telemetry()
-_, project_id = google.auth.default()
-logging_client = google_cloud_logging.Client()
-logger = logging_client.logger(__name__)
+try:
+    _, project_id = google.auth.default()
+    logging_client = google_cloud_logging.Client()
+    logger = logging_client.logger(__name__)
+except google.auth.exceptions.DefaultCredentialsError:
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    import logging as _std_logging
+
+    logger = _std_logging.getLogger(__name__)  # type: ignore[assignment]
 
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",")
@@ -129,7 +135,17 @@ app.include_router(chat_router)
 @app.post("/feedback")
 def collect_feedback(feedback: Feedback) -> dict[str, str]:
     """Collect and log feedback."""
-    logger.log_struct(feedback.model_dump(), severity="INFO")
+    try:
+        logger.log_struct(feedback.model_dump(), severity="INFO")
+    except Exception as exc:
+        # Cloud Logging may be unavailable (no credentials, wrong project,
+        # insufficient IAM permissions, etc.).  Fall back silently so the
+        # endpoint always returns 200 — feedback is never worth a 500.
+        import logging as _std_logging
+
+        _std_logging.getLogger(__name__).warning(
+            "Cloud Logging write failed (%s); feedback dropped.", exc
+        )
     return {"status": "success"}
 
 
@@ -139,7 +155,10 @@ import threading  # noqa: E402
 
 from mcp_server.server import server as mcp_server  # noqa: E402
 
-_mcp_port = int(os.getenv("MCP_SERVER_PORT", "8081"))
+try:
+    _mcp_port = int(os.getenv("MCP_SERVER_PORT", "8081"))
+except (ValueError, TypeError):
+    _mcp_port = 8081
 
 
 def _run_mcp():

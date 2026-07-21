@@ -20,9 +20,10 @@ architecture:
 
 ownership:
   team: "Forward Deployed Engineering (FDE)"
-  poc: "lspataroG"
-  # contributors: (optional) uncomment and add GitHub IDs of additional contributors
-  #   - "github-id-1"
+  poc: "lspatarog"
+  contributors:
+    - "giuliosalierno"
+    - "javierpitagg"
 
 # tags: (optional) uncomment and replace with meaningful labels
 #   - "rag"               # example — use technology names, patterns, and use-case keywords

@@ -42,12 +42,17 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-_, project_id = google.auth.default()
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
+try:
+    _, project_id = google.auth.default()
+except google.auth.exceptions.DefaultCredentialsError:
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
 os.environ.setdefault(
     "GOOGLE_CLOUD_LOCATION", os.getenv("GLOBAL_REGION", "global")
 )
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+# This agent is Vertex AI only; set explicitly so a stale env value cannot
+# silently override the detected auth mode.
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8081/sse")
 
@@ -354,7 +359,7 @@ async def handle_tool_response(
 
 stylish_agent = Agent(
     name="stylish_agent",
-    model=Gemini(model=os.getenv("MODEL_NAME_GENERATED_4")),
+    model=Gemini(model=os.getenv("MODEL_NAME_GENERATED_4", "gemini-3.5-flash")),
     instruction="""You are the Stylish Agent — a High-Fashion Curator.
 Assemble 3 complete, premium looks from the candidates.
 
@@ -387,7 +392,7 @@ For each look, provide a cohesive presentation using clean spacing:
 
 style_advisor_agent = Agent(
     name="style_advisor",
-    model=Gemini(model=os.getenv("MODEL_NAME_GENERATED_4")),
+    model=Gemini(model=os.getenv("MODEL_NAME_GENERATED_4", "gemini-3.5-flash")),
     instruction="""You are the Style Advisor. Find garments and delegate to the stylist.
 
 ## Workflow

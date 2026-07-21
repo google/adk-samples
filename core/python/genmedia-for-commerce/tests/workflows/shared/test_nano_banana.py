@@ -15,6 +15,7 @@
 """Tests for shared/nano_banana.py - Gemini image generation with mocked client."""
 
 import io
+import os
 from unittest.mock import Mock, patch
 
 import pytest
@@ -165,7 +166,9 @@ class TestGenerateNano:
         call_kwargs = (
             mock_gemini_client.models.generate_content.call_args.kwargs
         )
-        assert call_kwargs["model"] == "gemini-3.1-flash-image-preview"
+        assert call_kwargs["model"] == os.getenv(
+            "MODEL_NAME_GENERATED_5", "gemini-3.5-flash"
+        )
 
     def test_uses_provided_config(
         self, mock_gemini_client, generated_image_bytes

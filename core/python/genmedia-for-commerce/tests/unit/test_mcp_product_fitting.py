@@ -22,20 +22,36 @@ import pytest
 # We test the tool wrapper function, not the full pipeline
 from mcp_server.product_enrichment.product_fitting.product_fitting_mcp import (
     AVAILABLE_PRESETS,
+    MODELS_DIR,
     _load_preset_model_photos,
     run_product_fitting,
 )
+
+# Model preset assets are downloaded from GCS at setup time and are not
+# present in the repository.  Tests that read actual files on disk are skipped
+# when the assets directory is absent.
+_PRESETS_AVAILABLE = MODELS_DIR.exists() and len(AVAILABLE_PRESETS) > 0
+
+_REQUIRES_PRESETS = pytest.mark.skipif(
+    not _PRESETS_AVAILABLE,
+    reason="Model preset assets not available (run 'make pull-assets' first)",
+)
+
+# Minimal fake photo bytes used in mocked tests (valid enough for base64 encode)
+_FAKE_PHOTO_BYTES = b"\x89PNG_fake_model_photo"
 
 
 class TestLoadPresetModelPhotos:
     """Tests for _load_preset_model_photos."""
 
+    @_REQUIRES_PRESETS
     def test_available_presets_discovered(self):
         """Model presets should be discovered at import time."""
         assert len(AVAILABLE_PRESETS) > 0
         assert "european_woman" in AVAILABLE_PRESETS
         assert "european_man" in AVAILABLE_PRESETS
 
+    @_REQUIRES_PRESETS
     def test_load_valid_preset(self):
         """Loading a valid preset should return front_top and front_bottom photos."""
         photos = _load_preset_model_photos("european", "woman")
@@ -44,6 +60,7 @@ class TestLoadPresetModelPhotos:
         assert isinstance(photos["front_top"], bytes)
         assert len(photos["front_top"]) > 0
 
+    @_REQUIRES_PRESETS
     def test_load_with_gender_alias(self):
         """Gender aliases like 'female' should map to 'woman'."""
         photos = _load_preset_model_photos("european", "female")
@@ -115,6 +132,13 @@ class TestRunProductFitting:
             "back": None,
         }
 
+        # _load_preset_model_photos reads real files from disk; mock it so
+        # this unit test does not require downloaded model assets.
+        fake_photos = {
+            "front_top": _FAKE_PHOTO_BYTES,
+            "front_bottom": _FAKE_PHOTO_BYTES,
+        }
+
         with (
             patch(
                 "mcp_server.product_enrichment.product_fitting.product_fitting_mcp.run_fitting_pipeline",
@@ -124,6 +148,10 @@ class TestRunProductFitting:
             patch(
                 "mcp_server.product_enrichment.product_fitting.product_fitting_mcp._get_clients",
                 return_value=(MagicMock(), MagicMock()),
+            ),
+            patch(
+                "mcp_server.product_enrichment.product_fitting.product_fitting_mcp._load_preset_model_photos",
+                return_value=fake_photos,
             ),
         ):
             result = await run_product_fitting(
