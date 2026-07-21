@@ -2053,6 +2053,134 @@ def test_extract_hardcoded_models_detects_and_skips_docstrings(tmp_path):
     assert found_strings == ["gemini-3.5-flash"]  # docstring not included
 
 
+def test_extract_hardcoded_models_skips_getenv_positional_default(tmp_path):
+    # REGRESSION: a string literal serving as the DEFAULT argument of an
+    # existing os.getenv() call must NOT be treated as a "raw hardcoded
+    # literal that needs promotion." The maintainer already made the var
+    # env-configurable and picked this string as the fallback; replacing
+    # it with bare os.getenv("MODEL_NAME") (which returns None) would
+    # silently regress the type from str to str | None and break at
+    # runtime when both env vars are unset.
+    src = (
+        "import os\n"
+        "MODEL = os.getenv('MODEL_NAME_GENERATED_1', 'gemini-3.5-flash')\n"
+    )
+    py = _write(tmp_path / "mod.py", src)
+
+    hits = m.extract_hardcoded_models([py])
+
+    # Nothing to replace — the model literal was already serving as a
+    # getenv default, so it's already env-var-controlled.
+    assert py not in hits
+
+
+def test_extract_hardcoded_models_skips_getenv_kwarg_default(tmp_path):
+    # Same protection for the keyword form: os.getenv("X", default="y").
+    src = (
+        "import os\n"
+        "M = os.getenv('MODEL_NAME_GENERATED_1', default='gemini-3.5-flash')\n"
+    )
+    py = _write(tmp_path / "mod.py", src)
+
+    hits = m.extract_hardcoded_models([py])
+    assert py not in hits
+
+
+def test_extract_hardcoded_models_skips_environ_get_default(tmp_path):
+    # os.environ.get("X", "d") — same protection.
+    src = (
+        "import os\n"
+        "M = os.environ.get('MODEL_NAME', 'gemini-3.5-flash')\n"
+    )
+    py = _write(tmp_path / "mod.py", src)
+
+    hits = m.extract_hardcoded_models([py])
+    assert py not in hits
+
+
+def test_extract_hardcoded_models_skips_environ_setdefault_default(tmp_path):
+    # os.environ.setdefault("X", "d") — same protection.
+    src = (
+        "import os\n"
+        "os.environ.setdefault('MODEL_NAME', 'gemini-3.5-flash')\n"
+    )
+    py = _write(tmp_path / "mod.py", src)
+
+    hits = m.extract_hardcoded_models([py])
+    assert py not in hits
+
+
+def test_extract_hardcoded_models_still_detects_true_hardcoded_kwarg(tmp_path):
+    # Negative: the SECOND arg of a NON-getenv call is fair game. This is
+    # exactly the case the model-replacement path was designed for:
+    #   Agent(name="x", model="gemini-3.5-flash")
+    # The string is truly hardcoded here and SHOULD be extracted.
+    src = 'agent = Agent(name="x", model="gemini-3.5-flash")\n'
+    py = _write(tmp_path / "mod.py", src)
+
+    hits = m.extract_hardcoded_models([py])
+    assert py in hits
+    assert [s for _l, s in hits[py]] == ["gemini-3.5-flash"]
+
+
+def test_extract_hardcoded_models_still_detects_direct_assignment(tmp_path):
+    # Negative: a plain assignment like `MODEL = "gemini-3.5-flash"` is
+    # still a hardcoded literal (not inside any getenv call). Detected.
+    src = 'MODEL = "gemini-3.5-flash"\n'
+    py = _write(tmp_path / "mod.py", src)
+
+    hits = m.extract_hardcoded_models([py])
+    assert py in hits
+    assert [s for _l, s in hits[py]] == ["gemini-3.5-flash"]
+
+
+def test_extract_hardcoded_models_mixed_hardcoded_and_getenv_defaults(tmp_path):
+    # A file with BOTH a true hardcoded literal AND a getenv-default literal.
+    # Only the true hardcoded one is picked up.
+    src = (
+        "import os\n"
+        'HARDCODED = "gemini-3.5-flash"\n'
+        'FROM_ENV = os.getenv("VAR", "gemini-3.5-flash")\n'
+    )
+    py = _write(tmp_path / "mod.py", src)
+
+    hits = m.extract_hardcoded_models([py])
+    # Only ONE hit — the direct assignment. The getenv default is skipped.
+    assert py in hits
+    assert len(hits[py]) == 1
+    _lineno, model_str = hits[py][0]
+    assert model_str == "gemini-3.5-flash"
+
+
+def test_replace_hardcoded_models_does_not_touch_getenv_defaults(tmp_path):
+    # End-to-end regression: the write path must respect the exclusion too,
+    # even if a caller somehow constructed a `hits` dict that included a
+    # getenv-default node. Concretely: run the whole pipeline against a
+    # file that has ONLY getenv-default model literals, and verify the file
+    # is byte-identical after the run.
+    src = (
+        "import os\n"
+        "M1 = os.getenv('MODEL_NAME_GENERATED_1', 'gemini-3.5-flash')\n"
+        'M2 = os.environ.get("MODEL_NAME_GENERATED_2", "gemini-3.5-flash")\n'
+    )
+    py = _write(tmp_path / "mod.py", src)
+    before = py.read_bytes()
+
+    hits = m.extract_hardcoded_models([py])
+    # extract_hardcoded_models returns empty → nothing to substitute →
+    # no name_map entries → no write attempt.
+    assert hits == {}
+    # But if a caller (or a bug) DID try to replace, the replacement path
+    # itself would still skip via the same exclusion. Simulate that here:
+    forced_hits = {py: [(2, "gemini-3.5-flash"), (3, "gemini-3.5-flash")]}
+    name_map = m.assign_model_var_names({"gemini-3.5-flash"})
+    substituted = m.replace_hardcoded_models(py_files=[py], hits=forced_hits, name_map=name_map)
+    # No substitution happened because both hits were getenv defaults.
+    assert substituted == {}
+    # File byte-identical.
+    assert py.read_bytes() == before
+
+
 # ---------------------------------------------------------------------------
 # replace_hardcoded_models
 # ---------------------------------------------------------------------------

@@ -1112,6 +1112,73 @@ def _docstring_node_ids(tree: ast.AST) -> set[int]:
     return ids
 
 
+def _getenv_default_node_ids(tree: ast.AST) -> set[int]:
+    """
+    Return the id() of every ast.Constant that is the DEFAULT argument of
+    an ``os.getenv``, ``os.environ.get``, or ``os.environ.setdefault`` call.
+
+    Excluding these is a correctness requirement for the model-replacement
+    path. A string like ``"gemini-3.5-flash"`` inside
+    ``os.getenv("MODEL_NAME_GENERATED_1", "gemini-3.5-flash")`` is NOT a
+    "raw hardcoded literal that needs promotion" — it's already serving
+    as the default value of an env-var read. Replacing it with a bare
+    ``os.getenv("MODEL_NAME")`` (which returns ``None`` when unset) would:
+
+      * Break the type contract (``str`` becomes ``str | None``).
+      * Cause runtime failures for callers that assume a string
+        (``Gemini(model=None)``, ``.startswith(...)``, etc.).
+      * Add nested-getenv complexity for zero benefit — the var was
+        already environment-configurable.
+
+    Both positional (``getenv("V", "default")``) and keyword
+    (``getenv("V", default="d")``) default forms are recognised, in
+    every function shape our extractor supports.
+    """
+    ids: set[int] = set()
+
+    def _mark_default(call: ast.Call) -> None:
+        """Add the id() of a string-literal default argument, if present."""
+        default_node: ast.expr | None = None
+        if len(call.args) > 1 and isinstance(call.args[1], ast.Constant):
+            default_node = call.args[1]
+        else:
+            for kw in call.keywords:
+                if kw.arg == "default" and isinstance(kw.value, ast.Constant):
+                    default_node = kw.value
+                    break
+        if default_node is not None and isinstance(
+            default_node.value, str
+        ):
+            ids.add(id(default_node))
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        # os.getenv(...)
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "getenv"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "os"
+            and node.args
+        ):
+            _mark_default(node)
+            continue
+        # os.environ.get(...) / os.environ.setdefault(...)
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("get", "setdefault")
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "environ"
+            and isinstance(node.func.value.value, ast.Name)
+            and node.func.value.value.id == "os"
+            and node.args
+        ):
+            _mark_default(node)
+
+    return ids
+
+
 def _flat_offset(lines: list[str], lineno: int, col: int) -> int:
     """Convert a 1-based lineno + 0-based col_offset to a flat char offset."""
     return sum(len(ln) for ln in lines[: lineno - 1]) + col
@@ -1571,7 +1638,17 @@ def extract_hardcoded_models(
 
     Uses AST to walk string constants and checks whether the value starts with
     any known model prefix (same list as python-validate-recipe.yml).
-    Docstring nodes are excluded to avoid false positives from documentation.
+
+    Two classes of nodes are excluded to prevent false positives / incorrect
+    rewrites:
+
+      * Docstrings (see :func:`_docstring_node_ids`) — a model name
+        mentioned in prose must not be replaced with an ``os.getenv`` call.
+      * String literals sitting inside an ``os.getenv``/``os.environ.get``/
+        ``os.environ.setdefault`` call as the DEFAULT argument (see
+        :func:`_getenv_default_node_ids`) — those are already serving as
+        env-var defaults; replacing them would silently regress the type
+        from ``str`` to ``str | None`` and could break at runtime.
 
     Returns:
       {file_path: [(line_number, model_string), ...]}
@@ -1585,12 +1662,12 @@ def extract_hardcoded_models(
         except (SyntaxError, UnicodeDecodeError):
             continue
 
-        docstring_ids = _docstring_node_ids(tree)
+        excluded_ids = _docstring_node_ids(tree) | _getenv_default_node_ids(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant):
                 continue
-            if id(node) in docstring_ids:
+            if id(node) in excluded_ids:
                 continue
             if not isinstance(node.value, str):
                 continue
@@ -1651,17 +1728,22 @@ def assign_model_var_names(
 
 def _model_replacement(
     node: ast.AST,
-    docstring_ids: set[int],
+    excluded_ids: set[int],
     name_map: dict[str, str],
     lines: list[str],
 ) -> tuple[int, int, str, str, str] | None:
     """
     Return (start, end, new_text, model_str, var_name) if node is a
     replaceable hardcoded model string, else None.
+
+    ``excluded_ids`` combines docstring nodes AND string literals that
+    are already serving as ``os.getenv``/``environ.get``/``setdefault``
+    default arguments. The latter must NOT be replaced — see
+    :func:`_getenv_default_node_ids` for the correctness rationale.
     """
     if not isinstance(node, ast.Constant):
         return None
-    if id(node) in docstring_ids:
+    if id(node) in excluded_ids:
         return None
     if not isinstance(node.value, str):
         return None
@@ -1713,7 +1795,13 @@ def replace_hardcoded_models(
         except (SyntaxError, UnicodeDecodeError):
             continue
 
-        docstring_ids = _docstring_node_ids(tree)
+        # Combined exclusion set: docstrings + getenv-default string
+        # literals. Both must never be rewritten by the model-replacement
+        # path (docstrings would corrupt documentation; getenv defaults
+        # would silently regress the return type from str to str | None).
+        excluded_ids = (
+            _docstring_node_ids(tree) | _getenv_default_node_ids(tree)
+        )
         lines = source.splitlines(keepends=True)
 
         # Collect (start_offset, end_offset, replacement_text) for each hit.
@@ -1725,7 +1813,7 @@ def replace_hardcoded_models(
         file_substituted: dict[str, str] = {}
         for node in ast.walk(tree):
             replacement = _model_replacement(
-                node, docstring_ids, name_map, lines
+                node, excluded_ids, name_map, lines
             )
             if replacement is None:
                 continue
