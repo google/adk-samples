@@ -16,8 +16,13 @@
 extract_env_vars.py
 
 Scans a Python recipe directory and:
-  1. Detects all environment variable reads in non-test Python files.
-  2. Creates or updates .env.example with any missing variables.
+  1. Detects all environment variable accesses in non-test Python files
+     — including ``os.environ.setdefault("V", "d")``, whose "d" would
+     otherwise be a hidden default that a user editing .env.example has
+     no way to discover.
+  2. Creates or updates .env.example with any missing variables, writing
+     the extracted default value when the author committed to one and
+     falling back to a TODO placeholder otherwise (see rule below).
   3. Injects the load_dotenv() bootstrap snippet into the package __init__.py.
   4. Ensures python-dotenv>=1.0.0 is listed in pyproject.toml dependencies.
   5. Detects hardcoded model name strings and replaces them with
@@ -25,26 +30,41 @@ Scans a Python recipe directory and:
 
 Two hard rules the script NEVER breaks:
 
-  (1) NO INFERRED DEFAULTS FOR REGULAR ENV VARS. Every new .env.example
-      entry for a variable read via os.getenv/os.environ is written with
-      the TODO placeholder, regardless of any os.getenv("VAR", "fallback")
-      the source may have. Exception: hardcoded model strings that are
-      replaced in source ARE written as their actual value in .env.example
-      (e.g. MODEL_NAME_GENERATED_1=gemini-3.5-flash) because the value is
-      known and correct, not inferred. The source replacement always emits
-      bare os.getenv("VAR") with no default argument.
+  (1) IDEMPOTENCY / USER-EDIT SAFETY FOR .env.example. Existing lines
+      in .env.example are NEVER modified. If a variable is already
+      declared — with any value, whether the skill wrote it on a previous
+      run or the maintainer typed it — the skill skips it. Delete the
+      line to force regeneration. This is what makes re-running the
+      skill safe on a recipe whose maintainer has customised .env.example.
+
+      When ADDING a new line, the writer uses the resolved default
+      extracted from source (setdefault > getenv/environ.get fallback,
+      alphabetical file tie-break). Placeholder-shaped values (e.g.
+      "my-project-id", "changeme", "<...>") are downgraded to the TODO
+      placeholder AND the source string is preserved in the marker
+      comment so the maintainer sees what was in source and can fix it.
+      Every generated line carries a ``# extracted-by:extract-env-vars``
+      marker.
+
+      Hardcoded model strings replaced in source ARE written as their
+      actual value in .env.example (e.g. MODEL_NAME_GENERATED_1=
+      gemini-3.5-flash) — same as before v2.
 
   (2) ADDITIVE-ONLY FOR PYTHON FILES. The script never writes new
       os.environ.setdefault(...) bootstrap lines into any Python file.
       Pre-existing os.environ.setdefault(...) or
       os.getenv("VAR", "default") calls that a recipe author wrote by
       hand are LEFT UNTOUCHED — the script's only writes to Python
-      files are (a) the load_dotenv snippet and (b) the model-literal
-      replacement.
+      files are (a) the load_dotenv snippet, (b) trailing-import E402
+      suppression, and (c) the model-literal replacement.
 
-Rationale: default values are the maintainer's decision, not the
-script's. Persisting inferred defaults or writing new bootstrap
-setdefault() calls would be presumptuous.
+Rationale for the v2 change (extracting setdefault/getenv defaults instead
+of always writing TODO): a value hidden inside a Python file that a user
+must know about but has no reason to look at is, in practice, undocumented.
+.env.example is the documented configuration surface. Surfacing what the
+author already committed to in code makes the configuration discoverable
+without inventing anything new — the value in source WAS the value; we're
+only lifting it into view.
 """
 
 import argparse
@@ -53,6 +73,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 if sys.version_info < (3, 11):
     sys.exit(
@@ -68,6 +89,90 @@ import tomllib
 # ---------------------------------------------------------------------------
 
 PLACEHOLDER = "<TODO: update-this-value>"
+
+# Stable substring embedded in every .env.example line the skill writes.
+# Used by the writer to distinguish skill-authored lines from user-authored
+# ones on subsequent runs. Also useful for maintainers grepping to find
+# "what did the skill do?".
+EXTRACTED_MARKER = "extracted-by:extract-env-vars"
+
+# Kinds of AST-level env var access, in descending order of "how strongly
+# does the author commit to this default value?".
+#
+#   'setdefault' — os.environ.setdefault("V", "x"). Mutates the process
+#      environment; the value becomes visible to every subsequent read.
+#      Strongest signal that the author has chosen this as the canonical
+#      default.
+#   'getenv' / 'environ_get' — os.getenv("V", "x") / os.environ.get(...).
+#      Per-read fallback; does not mutate os.environ. Weaker commitment,
+#      but still an authored value.
+#   'environ_sub' — os.environ["V"]. Never carries a default.
+_KIND_PRIORITY: dict[str, int] = {
+    "setdefault": 0,
+    "getenv": 1,
+    "environ_get": 1,
+    "environ_sub": 2,
+}
+
+
+class Source(NamedTuple):
+    """One AST-level read/write of an env var, with provenance for reporting.
+
+    ``default`` is the string literal passed as the second argument, or None
+    when the call had no default (or the default was not a string literal —
+    non-string defaults cannot be surfaced in ``.env.example``).
+    """
+
+    file: Path
+    kind: str  # one of _KIND_PRIORITY's keys
+    default: str | None
+    line: int
+
+
+# Values that look like placeholders the author never intended as real
+# defaults (e.g. `os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "my-project-id")`
+# used as a "reminder to fill in" bootstrap). When the extracted value matches
+# any of these, the writer downgrades the .env.example entry to the TODO
+# placeholder AND includes the source string in the marker comment so the
+# maintainer sees what was found and can fix the source too.
+#
+# Kept CONSERVATIVE on purpose: false-downgrading a real default is more
+# damaging than letting a placeholder through (the placeholder still ends up
+# in .env.example, just without the shape warning — same as the pre-v2
+# behaviour).
+_PLACEHOLDER_EXACT: frozenset[str] = frozenset(
+    {"changeme", "change-me", "todo", "xxx", "xxxxx", "foo", "bar", "baz"}
+)
+_PLACEHOLDER_PREFIXES: tuple[str, ...] = (
+    "your-",
+    "your_",
+    "my-",
+    "my_",
+)
+# Compiled once; case-insensitive because placeholders often mix casing.
+_ANGLE_WRAPPED_RE = re.compile(r"^<.*>$")
+
+
+def looks_like_placeholder(value: str) -> str | None:
+    """Return a short reason string if ``value`` looks like a placeholder.
+
+    Returns None when the value looks like a real default and should be
+    written to .env.example as-is. See ``_PLACEHOLDER_EXACT`` /
+    ``_PLACEHOLDER_PREFIXES`` for the (deliberately conservative) rule set.
+    """
+    if value == "":
+        return "empty string"
+    lowered = value.lower()
+    if _ANGLE_WRAPPED_RE.match(value):
+        return "angle-wrapped placeholder"
+    if lowered in _PLACEHOLDER_EXACT:
+        return "generic placeholder token"
+    if any(lowered.startswith(p) for p in _PLACEHOLDER_PREFIXES):
+        return "starts with your-/my- (looks like a stub)"
+    if "example.com" in lowered:
+        return "contains example.com"
+    return None
+
 
 # Model name prefixes that indicate a hardcoded model identifier.
 # Kept in sync with python-validate-recipe.yml.
@@ -185,11 +290,22 @@ def find_python_files(recipe_dir: Path) -> list[Path]:
 
 def _extract_var_from_node(
     node: ast.AST,
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None, str | None]:
     """
-    Return (var_name, default) if node is an env-var read, else (None, None).
+    Return ``(var_name, kind, default)`` if node is an env-var access,
+    else ``(None, None, None)``.
 
-    Handles: os.getenv(), os.environ.get(), os.environ[].
+    Handles four forms:
+      * ``os.getenv("V")`` / ``os.getenv("V", "d")``               → kind='getenv'
+      * ``os.environ.get("V")`` / ``os.environ.get("V", "d")``     → kind='environ_get'
+      * ``os.environ["V"]``                                        → kind='environ_sub'
+      * ``os.environ.setdefault("V", "d")``                        → kind='setdefault'
+
+    Note that ``setdefault`` is included even though it MUTATES the process
+    environment rather than reading from it — semantically it declares
+    "if VAR is not set, VAR IS d". That declaration is the author's
+    committed default, and the whole point of surfacing it in .env.example
+    is that a user cannot discover it otherwise.
     """
 
     def _str_const(n: ast.expr) -> str | None:
@@ -210,13 +326,14 @@ def _extract_var_from_node(
     ):
         var_name = _str_const(node.args[0])
         default = _str_const(node.args[1]) if len(node.args) > 1 else None
-        return var_name, default
+        return var_name, "getenv", default
 
     # os.environ.get("VAR") / os.environ.get("VAR", "default")
+    # os.environ.setdefault("VAR", "default")
     if (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "get"
+        and node.func.attr in ("get", "setdefault")
         and isinstance(node.func.value, ast.Attribute)
         and node.func.value.attr == "environ"
         and isinstance(node.func.value.value, ast.Name)
@@ -225,7 +342,8 @@ def _extract_var_from_node(
     ):
         var_name = _str_const(node.args[0])
         default = _str_const(node.args[1]) if len(node.args) > 1 else None
-        return var_name, default
+        kind = "environ_get" if node.func.attr == "get" else "setdefault"
+        return var_name, kind, default
 
     # os.environ["VAR"]
     if (
@@ -235,20 +353,23 @@ def _extract_var_from_node(
         and isinstance(node.value.value, ast.Name)
         and node.value.value.id == "os"
     ):
-        return _str_const(node.slice), None
+        return _str_const(node.slice), "environ_sub", None
 
-    return None, None
+    return None, None, None
 
 
-def extract_env_vars(py_files: list[Path]) -> dict[str, str | None]:
+def extract_env_vars(py_files: list[Path]) -> dict[str, list[Source]]:
     """
-    Walk each file's AST and collect env var names + optional inline defaults.
+    Walk each file's AST and collect every env-var access site.
 
     Returns:
-      {VAR_NAME: default_value_or_None}
-      When a variable appears multiple times, a non-None default wins.
+      {VAR_NAME: [Source(file, kind, default, line), ...]}
+
+    The returned list preserves every occurrence — the resolver
+    (:func:`resolve_default`) is responsible for picking a winning default
+    when a variable has multiple sources with different defaults.
     """
-    found: dict[str, str | None] = {}
+    found: dict[str, list[Source]] = {}
     skipped: set[str] = set()
 
     for py_file in py_files:
@@ -262,12 +383,16 @@ def extract_env_vars(py_files: list[Path]) -> dict[str, str | None]:
             continue
 
         for node in ast.walk(tree):
-            var_name, default = _extract_var_from_node(node)
-            if not var_name:
+            var_name, kind, default = _extract_var_from_node(node)
+            if not var_name or not kind:
                 continue
             if re.match(r"^[A-Z_][A-Z0-9_]*$", var_name):
-                if var_name not in found or found[var_name] is None:
-                    found[var_name] = default
+                lineno = getattr(node, "lineno", 0)
+                found.setdefault(var_name, []).append(
+                    Source(
+                        file=py_file, kind=kind, default=default, line=lineno
+                    )
+                )
             else:
                 # Not UPPER_SNAKE_CASE — dropped, but surfaced so the
                 # maintainer isn't left wondering why it never appeared in
@@ -287,78 +412,545 @@ def extract_env_vars(py_files: list[Path]) -> dict[str, str | None]:
 
 
 # ---------------------------------------------------------------------------
-# Step 3: Create / update .env.example
+# Default resolution + .env.example line formatting
 # ---------------------------------------------------------------------------
 
 
-def read_defined_vars(env_example: Path) -> set[str]:
-    """Return the set of variable names already declared in .env.example."""
-    if not env_example.exists():
-        return set()
+class ResolvedDefault(NamedTuple):
+    """The winning default for an env var, chosen from its Source list.
 
-    defined: set[str] = set()
-    for line in env_example.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+    ``value`` is None when no source supplied a string-literal default;
+    the caller should emit a TODO placeholder in that case.
+
+    ``winner`` is the specific ``Source`` the value came from — used to
+    build the provenance comment in .env.example.
+
+    ``conflict_count`` is the number of OTHER sources that supplied a
+    DIFFERENT string-literal default. Zero means every default agreed
+    (or there was only one default at all). A non-zero conflict count is
+    surfaced in the provenance comment so the maintainer can reconcile.
+    """
+
+    value: str | None
+    winner: Source | None
+    conflict_count: int
+
+
+def resolve_default(sources: list[Source]) -> ResolvedDefault:
+    """Pick the winning default for a variable from all its access sites.
+
+    Priority: ``setdefault`` beats ``getenv`` / ``environ_get`` fallbacks
+    (see the ``_KIND_PRIORITY`` docstring for why). Within a tier, the
+    source whose file sorts first alphabetically wins, then the earliest
+    line within that file — both purely for determinism.
+
+    Sources that have no string-literal default (``environ_sub``, bare
+    ``getenv("V")``, or a non-string default like ``os.getenv("N", 5)``)
+    do not contribute a value but DO count against the total when
+    computing conflicts — actually no, they don't: they didn't propose a
+    default at all, so they cannot conflict with the winner. Only
+    string-literal defaults that DIFFER from the winner are conflicts.
+    """
+    with_defaults = [s for s in sources if s.default is not None]
+    if not with_defaults:
+        return ResolvedDefault(value=None, winner=None, conflict_count=0)
+
+    winner = min(
+        with_defaults,
+        key=lambda s: (_KIND_PRIORITY.get(s.kind, 99), str(s.file), s.line),
+    )
+    conflicts = sum(
+        1 for s in with_defaults if s.default != winner.default
+    )
+    return ResolvedDefault(
+        value=winner.default, winner=winner, conflict_count=conflicts
+    )
+
+
+def _relpath_or_name(path: Path, base: Path | None) -> str:
+    """Return ``path`` relative to ``base`` if possible, else its name.
+
+    Used only for human-readable provenance comments — never for logic.
+    """
+    if base is None:
+        return path.name
+    try:
+        return str(path.relative_to(base))
+    except ValueError:
+        return path.name
+
+
+def format_env_entry(
+    var_name: str,
+    sources: list[Source],
+    recipe_dir: Path | None = None,
+) -> str:
+    """Return one ``.env.example`` line (no trailing newline) for ``var_name``.
+
+    Format:
+      ``VAR=<value>  # <EXTRACTED_MARKER>; <provenance>``
+
+    Where ``<value>`` is one of:
+      * the resolved default, if a source supplied one and it doesn't look
+        like a placeholder;
+      * :data:`PLACEHOLDER` (``<TODO: update-this-value>``) otherwise.
+
+    The provenance section always names the source (file + kind) when a
+    default was found — including the case where we downgraded a
+    placeholder-shaped value to TODO, so the maintainer can find and fix
+    the source too. If multiple sources supplied conflicting defaults, the
+    conflict count is included.
+    """
+    resolved = resolve_default(sources)
+
+    if resolved.value is None:
+        # No string-literal default anywhere — safest to ask the maintainer.
+        return (
+            f"{var_name}={PLACEHOLDER}"
+            f"  # {EXTRACTED_MARKER}; no default in source"
+        )
+
+    assert resolved.winner is not None  # narrow for type-checkers
+    where = _relpath_or_name(resolved.winner.file, recipe_dir)
+    provenance = f"from {resolved.winner.kind} in {where}"
+    if resolved.conflict_count:
+        provenance += (
+            f" (differs from {resolved.conflict_count} other source(s))"
+        )
+
+    reason = looks_like_placeholder(resolved.value)
+    if reason is not None:
+        # Downgrade to TODO but keep the source string visible so the
+        # maintainer can find and fix the source too.
+        return (
+            f"{var_name}={PLACEHOLDER}  # {EXTRACTED_MARKER}; {provenance};"
+            f' source had "{resolved.value}" — {reason}, please fix source too'
+        )
+
+    return f"{var_name}={resolved.value}  # {EXTRACTED_MARKER}; {provenance}"
+
+
+# ---------------------------------------------------------------------------
+# Step 3: Create / update .env.example
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Classification of existing entries in .env.example
+#
+# When re-running the skill against a recipe whose .env.example already has
+# entries, we can't apply a blanket "if present, skip" rule — that would
+# leave v1-era TODO placeholders in place forever, even after source-side
+# defaults become available. But we also can't blanket-overwrite, because
+# any line the maintainer typed by hand is theirs.
+#
+# So every existing entry is classified into one of these buckets. The
+# writer's action table (see `update_env_example`) depends on the bucket
+# AND on what the current source scan produced.
+#
+# Golden rule: fail closed. If we can't confidently prove a line was
+# skill-authored (has our marker) OR is a bare v1 TODO with no user
+# annotations, we treat it as USER_OWNED and leave it alone. The cost
+# of a missed upgrade is small; the cost of clobbering user intent
+# is unrecoverable without a git checkout.
+# ---------------------------------------------------------------------------
+
+
+class EntryClassification:
+    """String tags for the five states an existing .env.example entry can be in."""
+
+    USER_OWNED = "user_owned"  # never touch
+    V1_TODO = "v1_todo"  # unmarked bare TODO from pre-v2 skill; upgradable
+    SKILL_TODO = "skill_todo"  # marker present + value is v2 PLACEHOLDER
+    SKILL_REAL = "skill_real"  # marker present + non-placeholder value
+    # (MISSING is not a state of an existing entry — it's the absence of one.)
+
+
+class ExistingEntry(NamedTuple):
+    """One env-var entry parsed out of an existing .env.example file.
+
+    ``line_index`` is 0-based into the raw ``lines`` list (splitlines with
+    keepends), so the rewriter can address the exact physical line.
+
+    ``raw_line`` is the untouched line as it appeared on disk (including
+    trailing newline), preserved so a refusal-to-rewrite leaves everything
+    byte-identical.
+
+    ``value`` is the value portion (after ``=``, before any inline
+    comment), stripped of surrounding whitespace. Quoted values are
+    returned WITH their quotes so the classifier / rewriter can detect
+    and refuse them.
+    """
+
+    line_index: int
+    raw_line: str
+    value: str
+    classification: str  # one of EntryClassification's constants
+
+
+# Regex for a well-formed bare (unquoted) env line. Multiple things must
+# ALL hold for us to consider a line safely rewritable later:
+#   * Optional `export ` prefix
+#   * VAR name is UPPER_SNAKE_CASE
+#   * Single `=` (the rest of the line goes to the value + optional comment)
+#   * Value up to the first `#` (comment start) or end-of-line
+#
+# Anything that doesn't match this shape is treated as USER_OWNED — the
+# skill only rewrites lines whose structure it understands unambiguously.
+_ENV_LINE_RE = re.compile(
+    r"""
+    ^
+    [ \t]*                                  # optional leading whitespace
+                                            # (python-dotenv permits it;
+                                            # the old parser did too)
+    (?:export[ \t]+)?                       # optional 'export '
+    (?P<name>[A-Z_][A-Z0-9_]*)              # VAR name
+    [ \t]*=[ \t]*
+    (?P<value>[^#\n]*?)                     # value (up to first `#` or EOL)
+    [ \t]*
+    (?P<comment>\#.*)?                      # optional inline comment
+    $
+    """,
+    re.VERBOSE,
+)
+
+
+def _classify_entry(raw_line: str, value: str, comment: str | None) -> str:
+    """Classify one parsed entry.
+
+    ``value`` is the value portion with surrounding whitespace stripped;
+    ``comment`` is the inline comment (including its leading ``#``) or
+    None if the line had no inline comment.
+
+    Fail-closed: anything we can't confidently prove is skill-authored or
+    a bare v1 TODO becomes USER_OWNED.
+    """
+    has_marker = comment is not None and EXTRACTED_MARKER in comment
+
+    if has_marker:
+        # Skill wrote this line; we own it and can rewrite it.
+        return (
+            EntryClassification.SKILL_TODO
+            if value == PLACEHOLDER
+            else EntryClassification.SKILL_REAL
+        )
+
+    # No marker. To qualify as an upgradable v1 TODO the line must be
+    # BOTH the exact PLACEHOLDER value AND have NO inline comment at
+    # all — because a user inline comment (e.g. "# my project is prj-foo,
+    # use gcloud config get project") is real user intent even next to
+    # a TODO literal, and we must respect it.
+    if value == PLACEHOLDER and comment is None:
+        return EntryClassification.V1_TODO
+
+    return EntryClassification.USER_OWNED
+
+
+def _parse_env_content(content: str) -> dict[str, ExistingEntry]:
+    """Parse .env.example content into name -> ExistingEntry.
+
+    Lines that don't look like a well-formed env declaration (blank,
+    comment-only, non-matching, malformed) are skipped and not returned —
+    they'll be preserved as-is when the writer rewrites the file, because
+    the writer touches lines by index, never by text-replace.
+
+    If the same var appears more than once in the file, only the FIRST
+    occurrence is returned. This mirrors dotenv precedence (first wins)
+    and means the writer will only ever attempt to rewrite that first
+    occurrence — safer than trying to handle duplicates.
+    """
+    entries: dict[str, ExistingEntry] = {}
+    lines = content.splitlines(keepends=True)
+    for i, raw in enumerate(lines):
+        stripped_for_match = raw.rstrip("\n").rstrip("\r")
+        m = _ENV_LINE_RE.match(stripped_for_match)
+        if not m:
             continue
-        # Strip optional 'export ' prefix
-        stripped = re.sub(r"^export\s+", "", stripped)
-        m = re.match(r"^([A-Z_][A-Z0-9_]*)\s*=", stripped)
-        if m:
-            defined.add(m.group(1))
-    return defined
+        name = m.group("name")
+        if name in entries:
+            continue  # first-occurrence wins
+        value = m.group("value") or ""
+        comment = m.group("comment")  # includes leading '#' or None
+        classification = _classify_entry(raw, value, comment)
+        entries[name] = ExistingEntry(
+            line_index=i,
+            raw_line=raw,
+            value=value,
+            classification=classification,
+        )
+    return entries
+
+
+def parse_env_example(env_example: Path) -> dict[str, ExistingEntry]:
+    """Parse a .env.example file into name -> ExistingEntry.
+
+    Returns an empty dict if the file does not exist.
+    """
+    if not env_example.exists():
+        return {}
+    return _parse_env_content(env_example.read_text(encoding="utf-8"))
+
+
+def read_defined_vars(env_example: Path) -> set[str]:
+    """Return the set of variable names already declared in .env.example.
+
+    Thin wrapper around :func:`parse_env_example` kept for existing
+    callers that only need names (e.g. ``assign_model_var_names``).
+    """
+    return set(parse_env_example(env_example).keys())
+
+
+def _rewrite_var_line(
+    lines: list[str], var_name: str, new_line_body: str
+) -> bool:
+    """Rewrite the ONE line in ``lines`` that declares ``var_name``.
+
+    ``new_line_body`` is the desired line WITHOUT trailing newline and
+    WITHOUT any leading ``export `` prefix (the rewriter preserves the
+    original prefix if there was one).
+
+    Returns True on success, False on any of the following (fail-closed):
+      * zero or multiple physical lines declare ``var_name``
+      * the matched line has a value that starts with a quote (``"`` or
+        ``'``) — quoted / multi-line values are ambiguous to rewrite
+      * the matched line ends with a backslash continuation
+      * the matched line's structure doesn't parse as a well-formed env
+        line (``_ENV_LINE_RE`` doesn't match)
+
+    These refusals are the golden-rule enforcement — better to leave a
+    stale TODO in place than to rewrite a line whose semantics we don't
+    understand.
+    """
+    # Regex to capture the "left prefix" — everything before the VAR
+    # name (leading whitespace + optional 'export '). We preserve this
+    # verbatim on rewrite so an indented line stays indented and an
+    # `export`-ed line stays exported.
+    left_prefix_re = re.compile(
+        rf"^(?P<prefix>[ \t]*(?:export[ \t]+)?){re.escape(var_name)}[ \t]*="
+    )
+
+    matches: list[tuple[int, str]] = []
+    for i, line in enumerate(lines):
+        stripped = line.rstrip("\n").rstrip("\r")
+        env_m = _ENV_LINE_RE.match(stripped)
+        if not env_m or env_m.group("name") != var_name:
+            continue
+        prefix_m = left_prefix_re.match(stripped)
+        if prefix_m is None:
+            # Line was recognised by the env regex but the more specific
+            # prefix regex can't extract a prefix — refuse rather than
+            # guess. Should be impossible in practice.
+            return False
+        matches.append((i, prefix_m.group("prefix")))
+
+    if len(matches) != 1:
+        return False  # unique-match requirement failed
+    idx, left_prefix = matches[0]
+    original = lines[idx]
+    stripped = original.rstrip("\n").rstrip("\r")
+
+    # Refuse quoted values — the value part might span multiple physical
+    # lines, contain escaped quotes, or otherwise be more nuanced than
+    # our regex handles safely.
+    env_m = _ENV_LINE_RE.match(stripped)
+    if env_m is None:  # defensive; should be impossible given the loop above
+        return False
+    value = env_m.group("value") or ""
+    if value.startswith(('"', "'")):
+        return False
+
+    # Refuse continuation-line values.
+    if stripped.endswith("\\"):
+        return False
+
+    # Preserve the original line's newline (\n, \r\n, or none).
+    if original.endswith("\r\n"):
+        newline = "\r\n"
+    elif original.endswith("\n"):
+        newline = "\n"
+    else:
+        newline = ""
+
+    # left_prefix captures everything before the VAR name (leading
+    # whitespace + optional 'export '); new_line_body is "VAR=value  #
+    # comment". Concatenation preserves the original indentation and
+    # export status while replacing the value + comment.
+    lines[idx] = left_prefix + new_line_body + newline
+    return True
+
+
+def _plan_updates(
+    existing: dict[str, ExistingEntry],
+    env_vars: dict[str, list[Source]],
+    recipe_dir: Path | None,
+) -> tuple[dict[str, str], dict[str, tuple[int, str]]]:
+    """Decide, per var, whether to append or upgrade in place (or skip).
+
+    Returns ``(to_append, to_upgrade)``:
+      * ``to_append``: {var: new_line_body} for missing entries.
+      * ``to_upgrade``: {var: (line_index, new_line_body)} for existing
+        entries that are safely upgradable AND whose upgrade would
+        produce a REAL (non-placeholder) value.
+
+    Anything not returned in either dict is being intentionally skipped
+    (user-owned, or upgrade would just churn TODO → TODO, etc.).
+    """
+    to_append: dict[str, str] = {}
+    to_upgrade: dict[str, tuple[int, str]] = {}
+
+    for var, sources in env_vars.items():
+        new_body = format_env_entry(var, sources, recipe_dir)
+        entry = existing.get(var)
+
+        if entry is None:
+            # Missing → always append.
+            to_append[var] = new_body
+            continue
+
+        if entry.classification == EntryClassification.USER_OWNED:
+            continue  # ironclad: never touch user-authored lines
+        if entry.classification == EntryClassification.SKILL_REAL:
+            continue  # already has a real value; drift handled elsewhere
+
+        # entry is V1_TODO or SKILL_TODO. Only upgrade if the new body
+        # would actually be a real value — otherwise we'd churn TODO to
+        # TODO, changing the comment but not the value. Detect via the
+        # resolver rather than string-matching the new body.
+        resolved = resolve_default(sources)
+        if resolved.value is None:
+            continue  # no default at all
+        if looks_like_placeholder(resolved.value) is not None:
+            continue  # source has a placeholder-shape value; skip
+
+        to_upgrade[var] = (entry.line_index, new_body)
+
+    return to_append, to_upgrade
 
 
 def update_env_example(
     env_example: Path,
-    env_vars: dict[str, str | None],
+    env_vars: dict[str, list[Source]],
     dry_run: bool = False,
-) -> list[str]:
+    recipe_dir: Path | None = None,
+) -> tuple[list[str], list[str]]:
     """
-    Append variables not yet in .env.example.
-    Returns the list of variable names that were (or would be) added.
+    Update .env.example — appending new entries AND upgrading stale TODOs.
 
-    When dry_run is True, no file is written; the return value still reports
-    which variables would be added.
+    Returns ``(added, upgraded)``:
+      * ``added``   — names appended as new entries.
+      * ``upgraded`` — names whose existing TODO line was rewritten in
+        place with a real default from source.
+
+    SAFETY CONTRACT (the golden rule for this function):
+
+      * A line without our ``EXTRACTED_MARKER`` marker AND whose value
+        is not exactly the v1 :data:`PLACEHOLDER` is considered
+        USER_OWNED — NEVER touched.
+      * A line that is a v1 PLACEHOLDER but has an inline comment on
+        it is treated as USER_OWNED (the comment is real user intent).
+      * A skill-authored line whose value is a real (non-placeholder)
+        value is NEVER re-written on drift — the maintainer may have
+        relied on the persisted value.
+      * A TODO line is only upgraded when source can supply a REAL
+        (non-placeholder-shape) default. TODO → TODO would be pure
+        churn.
+      * Before writing, the assembled content is re-parsed and every
+        planned upgrade must appear as ``SKILL_REAL`` in the result.
+        If not, the write is REFUSED and the file is left untouched.
+
+    When ``dry_run`` is True, no file is written; the return value still
+    reports which variables would be added and upgraded.
     """
-    existing = read_defined_vars(env_example)
-    to_add = {k: v for k, v in env_vars.items() if k not in existing}
+    existing = parse_env_example(env_example)
+    to_append, to_upgrade = _plan_updates(existing, env_vars, recipe_dir)
 
-    if not to_add:
-        return []
+    if not to_append and not to_upgrade:
+        return [], []
+
+    added_names = sorted(to_append.keys())
+    upgraded_names = sorted(to_upgrade.keys())
 
     if dry_run:
-        return sorted(to_add.keys())
+        return added_names, upgraded_names
 
+    # Build the new content. Line-by-line rewrites are applied to the
+    # existing content; new entries are appended at the end.
     if env_example.exists():
         current = env_example.read_text(encoding="utf-8")
-        if not current.endswith("\n"):
-            current += "\n"
     else:
         current = ""
+    lines = current.splitlines(keepends=True)
 
-    block = (
-        "\n# Environment variables extracted by"
-        " extract-python-environment-variables\n"
-    )
-    for var in sorted(to_add):
-        # Deliberately do NOT write extracted defaults from source code into
-        # .env.example. .env.example is a template the human maintainer fills
-        # in, not a place to smuggle inferred defaults. Every value written
-        # here is the PLACEHOLDER, regardless of whether the source code has
-        # an `os.getenv("VAR", "some_default")` fallback.
-        block += f"{var}={PLACEHOLDER}\n"
+    # Apply in-place upgrades. Any refusal (fail-closed rewriter) drops
+    # the var from the upgrade list.
+    actually_upgraded: list[str] = []
+    for var in upgraded_names:
+        _line_idx, new_body = to_upgrade[var]
+        if _rewrite_var_line(lines, var, new_body):
+            actually_upgraded.append(var)
+        else:
+            print(
+                f"[WARN] Refused to upgrade {var} in .env.example — "
+                "the existing line's structure was ambiguous (quoted "
+                "value, multiple matches, or line continuation). "
+                "Leaving it as-is. Delete the line and re-run to force "
+                "regeneration.",
+                file=sys.stderr,
+            )
+
+    # Ensure a trailing newline before appending fresh entries.
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] = lines[-1] + "\n"
+
+    if to_append:
+        block_header = (
+            "\n# Environment variables extracted by"
+            " extract-python-environment-variables\n"
+        )
+        lines.append(block_header)
+        for var in added_names:
+            lines.append(to_append[var] + "\n")
+
+    new_content = "".join(lines)
+
+    # Round-trip safety check: re-parse the new content and confirm
+    # every planned upgrade now shows as SKILL_REAL. If any doesn't,
+    # our rewrite produced something we don't understand — refuse to
+    # write and log an ERROR. Belt-and-braces backstop against a
+    # rewriter bug corrupting the file.
+    reparsed = _parse_env_content(new_content)
+    for var in actually_upgraded:
+        entry = reparsed.get(var)
+        if entry is None or entry.classification != EntryClassification.SKILL_REAL:
+            print(
+                f"[ERROR] Round-trip safety check failed for {var} — the "
+                "rewritten line would not re-parse as a skill-authored real "
+                "value. Refusing to write; .env.example was NOT modified.",
+                file=sys.stderr,
+            )
+            return [], []
+    # Also verify every appended entry re-parses. Missing → bug in the
+    # formatter or the append path.
+    for var in added_names:
+        if var not in reparsed:
+            print(
+                f"[ERROR] Round-trip safety check failed for appended {var} "
+                "— entry did not re-parse. Refusing to write; .env.example "
+                "was NOT modified.",
+                file=sys.stderr,
+            )
+            return [], []
 
     try:
-        _write_text_atomic(env_example, current + block)
+        _write_text_atomic(env_example, new_content)
     except OSError as exc:
         print(
             f"[ERROR] Could not write {env_example}: {exc} — "
             ".env.example was NOT modified.",
             file=sys.stderr,
         )
-        return []
-    return sorted(to_add.keys())
+        return [], []
+
+    return added_names, actually_upgraded
 
 
 def write_model_vars_to_env_example(
@@ -1187,23 +1779,65 @@ def run_step_env_vars(
     if env_vars:
         print(f"\n[INFO] Detected {len(env_vars)} environment variable(s):")
         for var in sorted(env_vars):
-            default = env_vars[var]
-            suffix = f"  (default: {default!r})" if default is not None else ""
+            resolved = resolve_default(env_vars[var])
+            if resolved.value is None:
+                suffix = ""
+            else:
+                reason = looks_like_placeholder(resolved.value)
+                assert resolved.winner is not None
+                where = _relpath_or_name(resolved.winner.file, recipe_dir)
+                if reason is None:
+                    suffix = (
+                        f"  (default: {resolved.value!r}"
+                        f" from {resolved.winner.kind} in {where})"
+                    )
+                else:
+                    suffix = (
+                        f"  (default: {resolved.value!r}"
+                        f" from {resolved.winner.kind} in {where}"
+                        f" — downgraded to TODO: {reason})"
+                    )
+                if resolved.conflict_count:
+                    suffix = suffix[:-1] + (
+                        f"; differs from {resolved.conflict_count}"
+                        " other source(s))"
+                    )
             print(f"       {var}{suffix}")
     else:
         print("\n[INFO] No environment variable reads detected.")
 
     env_example = recipe_dir / ".env.example"
-    added = update_env_example(env_example, env_vars, dry_run=dry_run)
+    added, upgraded = update_env_example(
+        env_example, env_vars, dry_run=dry_run, recipe_dir=recipe_dir
+    )
     if added:
         verb = "Would add" if dry_run else "Added"
         print(
             f"\n[{_tag(dry_run)}] {verb} {len(added)} variable(s) to "
             ".env.example: " + ", ".join(added)
         )
-    else:
+    if upgraded:
+        verb = "Would upgrade" if dry_run else "Upgraded"
+        # Show the resolved value + provenance so the maintainer can
+        # eyeball each upgrade — this is a stronger action than an
+        # append and deserves visible detail.
+        lines_out = [
+            f"\n[{_tag(dry_run)}] {verb} {len(upgraded)} stale TODO"
+            " entr(y/ies) with real default(s) from source:"
+        ]
+        for var in upgraded:
+            resolved = resolve_default(env_vars[var])
+            assert resolved.winner is not None  # planner guarantees this
+            where = _relpath_or_name(resolved.winner.file, recipe_dir)
+            lines_out.append(
+                f"       {var} -> {resolved.value!r}"
+                f" (from {resolved.winner.kind} in {where})"
+            )
+        print("\n".join(lines_out))
+    if not added and not upgraded:
         print(
-            "\n[PASS] .env.example is already up to date — no variables added."
+            "\n[PASS] .env.example is already up to date — no variables added"
+            " or upgraded."
         )
 
     return env_example

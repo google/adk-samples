@@ -1,4 +1,4 @@
-name: 🐍 Ruff PR Checks
+name: 🐍 Python Format PR Checks
 
 # Runs Ruff format on changed Python files and posts diff-style
 # suggestion comments via reviewdog. Ruff config lives in the root

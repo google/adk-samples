@@ -89,6 +89,15 @@ def test_find_python_files_skips_venv_and_cache_dirs(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+# Helper to compress the new richer return type down to something tests
+# can assert against concisely. Each var maps to a list of (kind, default)
+# tuples — the fields that matter for correctness — dropping file/line
+# which are always the same in these tests.
+def _kd(result):
+    """Return {var: [(kind, default), ...]} from an extract_env_vars result."""
+    return {v: [(s.kind, s.default) for s in srcs] for v, srcs in result.items()}
+
+
 def test_extract_env_vars_all_forms(tmp_path):
     src = (
         "import os\n"
@@ -97,18 +106,22 @@ def test_extract_env_vars_all_forms(tmp_path):
         "c = os.environ.get('ENVIRON_GET')\n"
         "d = os.environ.get('ENVIRON_GET_DEFAULT', 'x')\n"
         "e = os.environ['ENVIRON_SUBSCRIPT']\n"
+        "os.environ.setdefault('SETDEFAULT_VAR', 'sd_default')\n"
     )
     py = _write(tmp_path / "mod.py", src)
 
     result = m.extract_env_vars([py])
 
-    assert result == {
-        "GETENV_PLAIN": None,
-        "GETENV_DEFAULT": "dflt",
-        "ENVIRON_GET": None,
-        "ENVIRON_GET_DEFAULT": "x",
-        "ENVIRON_SUBSCRIPT": None,
+    assert _kd(result) == {
+        "GETENV_PLAIN": [("getenv", None)],
+        "GETENV_DEFAULT": [("getenv", "dflt")],
+        "ENVIRON_GET": [("environ_get", None)],
+        "ENVIRON_GET_DEFAULT": [("environ_get", "x")],
+        "ENVIRON_SUBSCRIPT": [("environ_sub", None)],
+        "SETDEFAULT_VAR": [("setdefault", "sd_default")],
     }
+    # Every Source records the file it came from.
+    assert all(s.file == py for srcs in result.values() for s in srcs)
 
 
 def test_extract_env_vars_ignores_non_uppercase_names(tmp_path):
@@ -117,7 +130,7 @@ def test_extract_env_vars_ignores_non_uppercase_names(tmp_path):
 
     result = m.extract_env_vars([py])
 
-    assert result == {"OK_NAME": None}
+    assert _kd(result) == {"OK_NAME": [("getenv", None)]}
 
 
 def test_extract_env_vars_warns_on_non_uppercase_names(tmp_path, capsys):
@@ -128,20 +141,24 @@ def test_extract_env_vars_warns_on_non_uppercase_names(tmp_path, capsys):
 
     result = m.extract_env_vars([py])
 
-    assert result == {"OK_NAME": None}
+    assert _kd(result) == {"OK_NAME": [("getenv", None)]}
     err = capsys.readouterr().err
     assert "lower_case" in err
     assert "UPPER_SNAKE_CASE" in err
 
 
-def test_extract_env_vars_non_none_default_wins(tmp_path):
-    # Same var appears first without a default, then with one.
-    src = "import os\na = os.getenv('DUP')\nb = os.getenv('DUP', 'winner')\n"
+def test_extract_env_vars_records_all_occurrences(tmp_path):
+    # v2: extract_env_vars keeps every occurrence rather than collapsing to
+    # a single (var, default). The resolver picks the winner separately.
+    src = "import os\na = os.getenv('DUP')\nb = os.getenv('DUP', 'x')\n"
     py = _write(tmp_path / "mod.py", src)
 
     result = m.extract_env_vars([py])
 
-    assert result == {"DUP": "winner"}
+    # Two sources for the same var: one bare, one with a default.
+    assert len(result["DUP"]) == 2
+    kinds_defaults = {(s.kind, s.default) for s in result["DUP"]}
+    assert kinds_defaults == {("getenv", None), ("getenv", "x")}
 
 
 def test_extract_env_vars_skips_unparseable_file(tmp_path, capsys):
@@ -150,7 +167,7 @@ def test_extract_env_vars_skips_unparseable_file(tmp_path, capsys):
 
     result = m.extract_env_vars([bad, good])
 
-    assert result == {"GOOD": None}
+    assert _kd(result) == {"GOOD": [("getenv", None)]}
     assert "Could not parse" in capsys.readouterr().err
 
 
@@ -164,7 +181,10 @@ def test_extract_env_vars_ignores_non_string_defaults(tmp_path):
 
     result = m.extract_env_vars([py])
 
-    assert result == {"PORT": None, "FLAG": None}
+    assert _kd(result) == {
+        "PORT": [("getenv", None)],
+        "FLAG": [("getenv", None)],
+    }
 
 
 def test_extract_env_vars_ignores_binary_files(tmp_path):
@@ -175,7 +195,38 @@ def test_extract_env_vars_ignores_binary_files(tmp_path):
 
     result = m.extract_env_vars([binary, good])
 
-    assert result == {"GOOD": None}
+    assert _kd(result) == {"GOOD": [("getenv", None)]}
+
+
+def test_extract_env_vars_setdefault_captured_with_default(tmp_path):
+    # v2: os.environ.setdefault("V", "d") is now scanned — the "d" would
+    # otherwise be a hidden default a user editing .env.example has no way
+    # to discover.
+    src = (
+        "import os\n"
+        "os.environ.setdefault('GOOGLE_GENAI_USE_VERTEXAI', 'TRUE')\n"
+        "os.environ.setdefault('NO_DEFAULT_HERE', 'x')\n"
+    )
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    assert result["GOOGLE_GENAI_USE_VERTEXAI"][0].kind == "setdefault"
+    assert result["GOOGLE_GENAI_USE_VERTEXAI"][0].default == "TRUE"
+    assert result["NO_DEFAULT_HERE"][0].kind == "setdefault"
+    assert result["NO_DEFAULT_HERE"][0].default == "x"
+
+
+def test_extract_env_vars_records_line_number(tmp_path):
+    # Provenance line numbers are captured so provenance comments can point
+    # to a specific location if we ever surface them.
+    src = "import os\n\n\nX = os.getenv('LINE_TEST', 'v')\n"
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    # The getenv call is on line 4.
+    assert result["LINE_TEST"][0].line == 4
 
 
 # ---------------------------------------------------------------------------
@@ -206,41 +257,80 @@ def test_read_defined_vars_parses_and_handles_export_and_comments(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _srcs(*items, file=None) -> list:
+    """Build a list[Source] from concise (kind, default) tuples for tests.
+
+    Every Source shares the same synthetic file (defaulting to a fake
+    path — tests that care about file provenance override it).
+    """
+    fake = file if file is not None else Path("agent.py")
+    return [
+        m.Source(file=fake, kind=kind, default=default, line=1)
+        for kind, default in items
+    ]
+
+
 def test_update_env_example_creates_file_when_absent(tmp_path):
+    # v2: when a getenv/setdefault default is available in source, it IS
+    # written to .env.example (with the marker comment). A var with no
+    # source-side default still gets the TODO placeholder.
     env = tmp_path / ".env.example"
 
-    added = m.update_env_example(env, {"NEW_VAR": "val", "NO_DEFAULT": None})
+    added, upgraded = m.update_env_example(
+        env,
+        {
+            "NEW_VAR": _srcs(("getenv", "val")),
+            "NO_DEFAULT": _srcs(("getenv", None)),
+        },
+    )
 
     assert added == ["NEW_VAR", "NO_DEFAULT"]
+    assert upgraded == []
     content = env.read_text(encoding="utf-8")
-    # Hard rule: every entry gets PLACEHOLDER, even when the source-code
-    # default ("val" here) is passed in. See update_env_example's inline
-    # comment for the rationale.
-    assert f"NEW_VAR={m.PLACEHOLDER}" in content
+    # v2: real default extracted, with marker.
+    assert "NEW_VAR=val" in content
+    assert m.EXTRACTED_MARKER in content
+    # No default in source → TODO placeholder with a "no default" note.
     assert f"NO_DEFAULT={m.PLACEHOLDER}" in content
-    assert "NEW_VAR=val" not in content
+    assert "no default in source" in content
 
 
 def test_update_env_example_appends_only_missing(tmp_path):
     env = _write(tmp_path / ".env.example", "EXISTING=1\n")
 
-    added = m.update_env_example(env, {"EXISTING": None, "FRESH": "2"})
+    added, upgraded = m.update_env_example(
+        env,
+        {
+            "EXISTING": _srcs(("getenv", None)),
+            "FRESH": _srcs(("getenv", "2")),
+        },
+    )
 
     assert added == ["FRESH"]
+    # EXISTING is USER_OWNED (no marker, value != v1 PLACEHOLDER) → not
+    # touched, not counted as upgraded.
+    assert upgraded == []
     content = env.read_text(encoding="utf-8")
+    # Idempotency: the pre-existing EXISTING line is left exactly as it
+    # was — NOT re-written, even though the skill now has a source for it.
     assert content.count("EXISTING") == 1
-    # Passed-in "2" is ignored; every entry gets PLACEHOLDER.
-    assert f"FRESH={m.PLACEHOLDER}" in content
-    assert "FRESH=2" not in content
+    assert "EXISTING=1\n" in content
+    # The new FRESH line uses the extracted default (v2 behaviour).
+    assert "FRESH=2" in content
+    assert m.EXTRACTED_MARKER in content
 
 
 def test_update_env_example_noop_when_all_present(tmp_path):
     env = _write(tmp_path / ".env.example", "A=1\nB=2\n")
     before = env.read_text(encoding="utf-8")
 
-    added = m.update_env_example(env, {"A": None, "B": None})
+    added, upgraded = m.update_env_example(
+        env,
+        {"A": _srcs(("getenv", None)), "B": _srcs(("getenv", None))},
+    )
 
     assert added == []
+    assert upgraded == []
     assert env.read_text(encoding="utf-8") == before
 
 
@@ -248,24 +338,671 @@ def test_update_env_example_handles_missing_trailing_newline(tmp_path):
     # No trailing newline on the existing content must not merge lines.
     env = _write(tmp_path / ".env.example", "A=1")
 
-    m.update_env_example(env, {"B": "2"})
+    m.update_env_example(env, {"B": _srcs(("getenv", "2"))})
 
     lines = env.read_text(encoding="utf-8").splitlines()
     assert "A=1" in lines
-    # Passed-in "2" is ignored; every entry gets PLACEHOLDER.
-    assert f"B={m.PLACEHOLDER}" in lines
-    assert "B=2" not in lines
+    # v2: extracted default is written verbatim (with marker comment).
+    assert any(ln.startswith("B=2") for ln in lines)
 
 
 def test_update_env_example_dry_run_reports_but_does_not_write(tmp_path):
     env = tmp_path / ".env.example"
 
-    added = m.update_env_example(env, {"NEW": "1"}, dry_run=True)
+    added, upgraded = m.update_env_example(
+        env, {"NEW": _srcs(("getenv", "1"))}, dry_run=True
+    )
 
     # Reports what it would add ...
     assert added == ["NEW"]
+    assert upgraded == []
     # ... but writes nothing (file not even created).
     assert not env.exists()
+
+
+def test_update_env_example_writes_setdefault_value(tmp_path):
+    # v2: os.environ.setdefault("V", "d") is the strongest form of author
+    # commitment. The value MUST land in .env.example so users can find it.
+    env = tmp_path / ".env.example"
+
+    m.update_env_example(
+        env, {"USE_VERTEX": _srcs(("setdefault", "TRUE"))}
+    )
+
+    content = env.read_text(encoding="utf-8")
+    assert "USE_VERTEX=TRUE" in content
+    # Provenance comment names the kind.
+    assert "setdefault" in content
+    assert m.EXTRACTED_MARKER in content
+
+
+def test_update_env_example_downgrades_placeholder_shaped_defaults(tmp_path):
+    # v2: an obvious stub like "my-project-id" is a common pattern for
+    # setdefault-as-reminder-to-fill-in. Writing it verbatim would give
+    # users a value that runs but is wrong. Downgrade to TODO, but keep
+    # the original string in the provenance comment so the maintainer
+    # sees what was in source and can fix it.
+    env = tmp_path / ".env.example"
+
+    m.update_env_example(
+        env,
+        {"GOOGLE_CLOUD_PROJECT": _srcs(("setdefault", "my-project-id"))},
+    )
+
+    content = env.read_text(encoding="utf-8")
+    # Downgraded to TODO ...
+    assert f"GOOGLE_CLOUD_PROJECT={m.PLACEHOLDER}" in content
+    # ... with the original value preserved in the marker comment.
+    assert '"my-project-id"' in content
+    # ... and no line that would resolve to the placeholder as-if-real.
+    assert "GOOGLE_CLOUD_PROJECT=my-project-id" not in content
+
+
+def test_update_env_example_preserves_user_edits_never_overwrites(tmp_path):
+    # Golden rule: any USER_OWNED line — one without our marker AND a
+    # value that isn't the v1 PLACEHOLDER — is left untouched. This is
+    # what makes re-running the skill safe when a maintainer has typed
+    # real values into .env.example.
+    env = _write(
+        tmp_path / ".env.example",
+        "# hand-tuned by maintainer\n"
+        "GOOGLE_CLOUD_PROJECT=my-real-project\n",
+    )
+    before = env.read_text(encoding="utf-8")
+
+    added, upgraded = m.update_env_example(
+        env,
+        {"GOOGLE_CLOUD_PROJECT": _srcs(("setdefault", "something-else"))},
+    )
+
+    assert added == []
+    assert upgraded == []
+    # File not modified at all.
+    assert env.read_text(encoding="utf-8") == before
+
+
+# ---------------------------------------------------------------------------
+# _classify_entry / parse_env_example — 5-bucket classification
+# ---------------------------------------------------------------------------
+
+
+def _classify(raw_line: str):
+    """Parse one line and return its classification (for concise assertions)."""
+    entries = m._parse_env_content(raw_line)
+    # Every test line here declares exactly one var.
+    assert len(entries) == 1, f"expected one entry, got {list(entries)}"
+    return next(iter(entries.values())).classification
+
+
+def test_classify_bare_v1_todo_is_upgradable():
+    # v1 skill wrote: `VAR=<TODO: update-this-value>` with no inline
+    # comment. Recognisable as v1 by exact value match + no comment.
+    line = f"GOOGLE_CLOUD_PROJECT={m.PLACEHOLDER}\n"
+    assert _classify(line) == m.EntryClassification.V1_TODO
+
+
+def test_classify_v1_todo_with_user_comment_is_user_owned():
+    # Golden rule: even a TODO literal becomes USER_OWNED if the user
+    # attached their own inline comment — that comment is real intent.
+    line = (
+        f"GOOGLE_CLOUD_PROJECT={m.PLACEHOLDER}"
+        "  # my project is prj-foo, use gcloud config get project\n"
+    )
+    assert _classify(line) == m.EntryClassification.USER_OWNED
+
+
+def test_classify_marker_with_placeholder_is_skill_todo():
+    # A line the skill itself wrote with a TODO — marker present, value
+    # is exactly PLACEHOLDER.
+    line = f"VAR={m.PLACEHOLDER}  # {m.EXTRACTED_MARKER}; no default in source\n"
+    assert _classify(line) == m.EntryClassification.SKILL_TODO
+
+
+def test_classify_marker_with_real_value_is_skill_real():
+    line = f"VAR=real-value  # {m.EXTRACTED_MARKER}; from setdefault in x.py\n"
+    assert _classify(line) == m.EntryClassification.SKILL_REAL
+
+
+def test_classify_user_typed_real_value_is_user_owned():
+    line = "GOOGLE_API_KEY=YOUR_AI_STUDIO_API_KEY_HERE\n"
+    assert _classify(line) == m.EntryClassification.USER_OWNED
+
+
+def test_classify_user_typed_value_with_inline_comment_is_user_owned():
+    line = "REGION=us-central1  # our default region\n"
+    assert _classify(line) == m.EntryClassification.USER_OWNED
+
+
+def test_parse_env_example_returns_line_index_for_rewrite(tmp_path):
+    # The parser must record which physical line each entry is on, so
+    # the rewriter can address it precisely.
+    env = _write(
+        tmp_path / ".env.example",
+        "# header\n"
+        "A=1\n"
+        "\n"
+        f"B={m.PLACEHOLDER}\n"
+        "C=3\n",
+    )
+    entries = m.parse_env_example(env)
+    # Zero-based line indices.
+    assert entries["A"].line_index == 1
+    assert entries["B"].line_index == 3
+    assert entries["C"].line_index == 4
+
+
+def test_parse_env_example_first_occurrence_wins(tmp_path):
+    # A malformed .env.example with duplicate declarations of the same
+    # var is common enough to defend against. First occurrence wins —
+    # matches dotenv precedence AND means the rewriter has one
+    # deterministic target.
+    env = _write(
+        tmp_path / ".env.example",
+        f"DUP={m.PLACEHOLDER}\nDUP=second-value\n",
+    )
+    entries = m.parse_env_example(env)
+    assert entries["DUP"].line_index == 0
+    # First occurrence's classification carries — the second is ignored.
+    assert entries["DUP"].classification == m.EntryClassification.V1_TODO
+
+
+# ---------------------------------------------------------------------------
+# _rewrite_var_line — safety-hardened in-place rewriter
+# ---------------------------------------------------------------------------
+
+
+def test_rewriter_replaces_the_matching_line_only():
+    lines = ["A=1\n", "TARGET=old\n", "B=2\n"]
+    ok = m._rewrite_var_line(lines, "TARGET", "TARGET=new  # marker")
+    assert ok is True
+    assert lines[0] == "A=1\n"
+    assert lines[1] == "TARGET=new  # marker\n"
+    assert lines[2] == "B=2\n"
+
+
+def test_rewriter_preserves_export_prefix():
+    # If the original had `export VAR=`, the rewrite keeps the prefix.
+    lines = [f"export FOO={m.PLACEHOLDER}\n"]
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=real")
+    assert ok is True
+    assert lines[0] == "export FOO=real\n"
+
+
+def test_rewriter_preserves_leading_indentation():
+    # Golden rule: an indented line stays indented after rewrite. Some
+    # .env.example files are hand-formatted with leading whitespace on
+    # certain entries; the skill must not silently strip that.
+    lines = [f"  FOO={m.PLACEHOLDER}\n"]
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=real")
+    assert ok is True
+    assert lines[0] == "  FOO=real\n"
+
+
+def test_rewriter_preserves_indent_and_export_together():
+    lines = [f"\texport FOO={m.PLACEHOLDER}\n"]
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=real")
+    assert ok is True
+    assert lines[0] == "\texport FOO=real\n"
+
+
+def test_rewriter_refuses_quoted_value():
+    # Quoted values could span lines / contain escapes / include the
+    # `#` character verbatim — anything the classifier's simple regex
+    # doesn't handle unambiguously. Fail closed.
+    lines = ['FOO="quoted value"\n']
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=new")
+    assert ok is False
+    # File-analog left untouched.
+    assert lines[0] == 'FOO="quoted value"\n'
+
+
+def test_rewriter_refuses_line_continuation():
+    # Backslash-continuation is not standard dotenv but some parsers
+    # accept it. If we see it, we can't safely rewrite one physical line.
+    lines = ["FOO=part_one\\\n", "part_two\n"]
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=new")
+    assert ok is False
+
+
+def test_rewriter_refuses_multiple_matches():
+    # If the file has two lines declaring FOO, we don't know which one
+    # is the "real" declaration. Refuse rather than guess.
+    lines = ["FOO=1\n", "FOO=2\n"]
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=3")
+    assert ok is False
+    # Both original lines untouched.
+    assert lines == ["FOO=1\n", "FOO=2\n"]
+
+
+def test_rewriter_refuses_when_var_absent():
+    lines = ["A=1\n", "B=2\n"]
+    ok = m._rewrite_var_line(lines, "NOT_HERE", "NOT_HERE=x")
+    assert ok is False
+
+
+def test_rewriter_preserves_crlf_newlines():
+    # Windows line endings survive rewriting verbatim.
+    lines = ["FOO=old\r\n"]
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=new")
+    assert ok is True
+    assert lines[0] == "FOO=new\r\n"
+
+
+# ---------------------------------------------------------------------------
+# update_env_example — v2.1 upgrade paths (in-place TODO -> real value)
+# ---------------------------------------------------------------------------
+
+
+def test_upgrade_v1_todo_to_real_setdefault_value(tmp_path):
+    # The headline case: recipe was processed by v1 (line has PLACEHOLDER,
+    # no marker), source now has a setdefault with a real value. The v1
+    # TODO should be rewritten in place to the real value.
+    env = _write(
+        tmp_path / ".env.example",
+        "# Environment variables extracted by extract-python-environment-variables\n"
+        f"USE_VERTEX={m.PLACEHOLDER}\n",
+    )
+
+    added, upgraded = m.update_env_example(
+        env, {"USE_VERTEX": _srcs(("setdefault", "TRUE"))}
+    )
+
+    assert added == []
+    assert upgraded == ["USE_VERTEX"]
+    content = env.read_text(encoding="utf-8")
+    assert "USE_VERTEX=TRUE" in content
+    assert m.EXTRACTED_MARKER in content
+    # v1 header comment is preserved (rewriter touches one line, not the
+    # surrounding block).
+    assert (
+        "Environment variables extracted by extract-python-environment-variables"
+        in content
+    )
+    # No stray TODO for this var left behind.
+    assert f"USE_VERTEX={m.PLACEHOLDER}" not in content
+
+
+def test_upgrade_skill_todo_to_real_value(tmp_path):
+    # v2 skill previously wrote a TODO (because source had no default at
+    # the time). Now source has a real default — upgrade.
+    env = _write(
+        tmp_path / ".env.example",
+        f"USE_VERTEX={m.PLACEHOLDER}  # {m.EXTRACTED_MARKER}; no default in source\n",
+    )
+
+    added, upgraded = m.update_env_example(
+        env, {"USE_VERTEX": _srcs(("setdefault", "TRUE"))}
+    )
+
+    assert added == []
+    assert upgraded == ["USE_VERTEX"]
+    content = env.read_text(encoding="utf-8")
+    assert "USE_VERTEX=TRUE" in content
+
+
+def test_do_not_upgrade_when_source_default_is_placeholder_shape(tmp_path):
+    # Correctness: source has "my-project-id" (placeholder-shaped). Even
+    # though the existing entry is a v1 TODO, upgrading it would produce
+    # another TODO — pure churn. Skip.
+    env = _write(
+        tmp_path / ".env.example",
+        f"GOOGLE_CLOUD_PROJECT={m.PLACEHOLDER}\n",
+    )
+    before = env.read_text(encoding="utf-8")
+
+    added, upgraded = m.update_env_example(
+        env,
+        {"GOOGLE_CLOUD_PROJECT": _srcs(("setdefault", "my-project-id"))},
+    )
+
+    assert added == []
+    assert upgraded == []
+    # File byte-for-byte unchanged.
+    assert env.read_text(encoding="utf-8") == before
+
+
+def test_do_not_upgrade_when_source_has_no_default(tmp_path):
+    # Source only has bare os.getenv("V") — no string default to upgrade
+    # TO. Leave the TODO alone (upgrading to another TODO is churn).
+    env = _write(
+        tmp_path / ".env.example",
+        f"NO_DEFAULT={m.PLACEHOLDER}\n",
+    )
+    before = env.read_text(encoding="utf-8")
+
+    added, upgraded = m.update_env_example(
+        env, {"NO_DEFAULT": _srcs(("getenv", None))}
+    )
+
+    assert added == []
+    assert upgraded == []
+    assert env.read_text(encoding="utf-8") == before
+
+
+def test_do_not_upgrade_v1_todo_with_inline_comment(tmp_path):
+    # Golden rule: an inline comment on a TODO line means the user has
+    # engaged with it. Never touch, even if source has a real default.
+    env = _write(
+        tmp_path / ".env.example",
+        f"GOOGLE_CLOUD_PROJECT={m.PLACEHOLDER}  # my note about this var\n",
+    )
+    before = env.read_text(encoding="utf-8")
+
+    added, upgraded = m.update_env_example(
+        env,
+        {"GOOGLE_CLOUD_PROJECT": _srcs(("setdefault", "real-project"))},
+    )
+
+    assert added == []
+    assert upgraded == []
+    assert env.read_text(encoding="utf-8") == before
+
+
+def test_do_not_upgrade_skill_real_on_source_drift(tmp_path):
+    # Skill previously wrote a real value. Source now says something
+    # different. Skip refresh — the maintainer may have relied on the
+    # persisted value; drift is a separate concern (surface via WARN
+    # elsewhere).
+    env = _write(
+        tmp_path / ".env.example",
+        f"LOG_LEVEL=INFO  # {m.EXTRACTED_MARKER}; from getenv in x.py\n",
+    )
+    before = env.read_text(encoding="utf-8")
+
+    added, upgraded = m.update_env_example(
+        env, {"LOG_LEVEL": _srcs(("getenv", "DEBUG"))}
+    )
+
+    assert added == []
+    assert upgraded == []
+    assert env.read_text(encoding="utf-8") == before
+
+
+def test_upgrade_and_append_can_happen_in_one_pass(tmp_path):
+    # Realistic mixed case: some vars exist as v1 TODOs (upgradable),
+    # some are missing (appendable), some are user-owned (skip).
+    env = _write(
+        tmp_path / ".env.example",
+        f"UPGRADABLE={m.PLACEHOLDER}\n"
+        "USER_OWNED_VAR=my-real-value\n",
+    )
+
+    added, upgraded = m.update_env_example(
+        env,
+        {
+            "UPGRADABLE": _srcs(("setdefault", "TRUE")),
+            "USER_OWNED_VAR": _srcs(("setdefault", "should-not-win")),
+            "APPEND_ME": _srcs(("getenv", "hello")),
+        },
+    )
+
+    assert added == ["APPEND_ME"]
+    assert upgraded == ["UPGRADABLE"]
+    content = env.read_text(encoding="utf-8")
+    assert "UPGRADABLE=TRUE" in content
+    assert "APPEND_ME=hello" in content
+    # User-owned entry untouched.
+    assert "USER_OWNED_VAR=my-real-value" in content
+    assert "should-not-win" not in content
+
+
+def test_upgrade_is_idempotent(tmp_path):
+    # Golden rule: running the skill twice in a row must produce zero
+    # additional changes on the second run.
+    env = _write(
+        tmp_path / ".env.example",
+        f"V={m.PLACEHOLDER}\n",
+    )
+
+    added1, upgraded1 = m.update_env_example(
+        env, {"V": _srcs(("setdefault", "real"))}
+    )
+    content_after_first = env.read_text(encoding="utf-8")
+
+    added2, upgraded2 = m.update_env_example(
+        env, {"V": _srcs(("setdefault", "real"))}
+    )
+    content_after_second = env.read_text(encoding="utf-8")
+
+    assert upgraded1 == ["V"]
+    assert upgraded2 == []  # already upgraded → SKILL_REAL → skip
+    assert added2 == []
+    assert content_after_first == content_after_second
+
+
+def test_upgrade_dry_run_reports_but_does_not_write(tmp_path):
+    env = _write(
+        tmp_path / ".env.example",
+        f"V={m.PLACEHOLDER}\n",
+    )
+    before = env.read_text(encoding="utf-8")
+
+    added, upgraded = m.update_env_example(
+        env, {"V": _srcs(("setdefault", "TRUE"))}, dry_run=True
+    )
+
+    assert upgraded == ["V"]
+    # File left untouched.
+    assert env.read_text(encoding="utf-8") == before
+
+
+def test_upgrade_refuses_ambiguous_line_and_warns(tmp_path, capsys):
+    # Golden rule: an existing entry classified as V1_TODO but whose
+    # line is structurally ambiguous (here: two matching lines for the
+    # same var) must not be rewritten. Instead, warn and leave it alone.
+    env = _write(
+        tmp_path / ".env.example",
+        f"V={m.PLACEHOLDER}\n"
+        f"V={m.PLACEHOLDER}\n",
+    )
+    before = env.read_text(encoding="utf-8")
+
+    # Parser gives us the first V (V1_TODO), so we plan to upgrade.
+    # Rewriter finds two matches, refuses, and warns.
+    added, upgraded = m.update_env_example(
+        env, {"V": _srcs(("setdefault", "TRUE"))}
+    )
+
+    assert upgraded == []
+    err = capsys.readouterr().err
+    assert "Refused to upgrade V" in err
+    # File not clobbered.
+    assert env.read_text(encoding="utf-8") == before
+
+
+def test_upgrade_preserves_ordering_and_surrounding_lines(tmp_path):
+    # Regression guard: rewriting one line must not touch anything else
+    # in the file — blank lines, comment blocks, order.
+    env = _write(
+        tmp_path / ".env.example",
+        "# Section 1\n"
+        "# User's careful comment above the TODO\n"
+        f"UPGRADABLE={m.PLACEHOLDER}\n"
+        "\n"
+        "# Section 2\n"
+        "OTHER=leave-me-alone\n",
+    )
+
+    m.update_env_example(
+        env, {"UPGRADABLE": _srcs(("setdefault", "TRUE"))}
+    )
+
+    content = env.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    # The user's comment above the TODO is preserved verbatim.
+    assert "# User's careful comment above the TODO" in lines
+    # Order of surrounding sections preserved.
+    upgradable_idx = next(
+        i for i, ln in enumerate(lines) if ln.startswith("UPGRADABLE=")
+    )
+    other_idx = next(
+        i for i, ln in enumerate(lines) if ln.startswith("OTHER=")
+    )
+    assert upgradable_idx < other_idx
+    # Other var untouched.
+    assert "OTHER=leave-me-alone" in lines
+
+
+# ---------------------------------------------------------------------------
+# looks_like_placeholder
+# ---------------------------------------------------------------------------
+
+
+def test_looks_like_placeholder_detects_empty_string():
+    assert m.looks_like_placeholder("") is not None
+
+
+def test_looks_like_placeholder_detects_angle_wrapped():
+    assert m.looks_like_placeholder("<TODO>") is not None
+    assert m.looks_like_placeholder("<your-key-here>") is not None
+
+
+def test_looks_like_placeholder_detects_generic_tokens():
+    # Exact-match tokens are always placeholders.
+    for token in ("changeme", "change-me", "TODO", "todo", "xxx", "foo"):
+        assert m.looks_like_placeholder(token) is not None, token
+
+
+def test_looks_like_placeholder_detects_your_and_my_prefixes():
+    assert m.looks_like_placeholder("your-api-key") is not None
+    assert m.looks_like_placeholder("YOUR_PROJECT") is not None
+    assert m.looks_like_placeholder("my-project-id") is not None
+    assert m.looks_like_placeholder("MY_KEY") is not None
+
+
+def test_looks_like_placeholder_detects_example_com():
+    assert m.looks_like_placeholder("https://api.example.com") is not None
+
+
+def test_looks_like_placeholder_passes_real_looking_values():
+    # Values that look like plausible real config MUST NOT be flagged, or
+    # the writer downgrades a real default to TODO — worse than doing
+    # nothing.
+    for value in (
+        "TRUE",
+        "INFO",
+        "us-central1",
+        "gemini-3.5-flash",  # a real model id
+        "1234567890",
+        "https://api.acme.corp/v1",
+        "postgresql://localhost:5432/db",
+    ):
+        assert m.looks_like_placeholder(value) is None, value
+
+
+# ---------------------------------------------------------------------------
+# resolve_default
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_default_returns_none_when_no_string_default():
+    # A var read only via os.environ["V"] / bare os.getenv("V") has no
+    # string default anywhere — resolve should return None to signal
+    # "write TODO".
+    sources = _srcs(("environ_sub", None), ("getenv", None))
+    resolved = m.resolve_default(sources)
+    assert resolved.value is None
+    assert resolved.winner is None
+    assert resolved.conflict_count == 0
+
+
+def test_resolve_default_setdefault_beats_getenv_fallback():
+    # Priority: setdefault (author committed to a process-wide default)
+    # wins over per-read getenv fallback.
+    sources = [
+        m.Source(Path("a.py"), "getenv", "from-getenv", 1),
+        m.Source(Path("b.py"), "setdefault", "from-setdefault", 1),
+    ]
+    resolved = m.resolve_default(sources)
+    assert resolved.value == "from-setdefault"
+    assert resolved.winner is not None
+    assert resolved.winner.kind == "setdefault"
+    # They disagreed, so the getenv default counts as one conflict.
+    assert resolved.conflict_count == 1
+
+
+def test_resolve_default_alphabetical_file_tiebreak_within_tier():
+    # Two setdefault sources with different values: earlier-file wins.
+    sources = [
+        m.Source(Path("zzz.py"), "setdefault", "z-value", 1),
+        m.Source(Path("aaa.py"), "setdefault", "a-value", 1),
+    ]
+    resolved = m.resolve_default(sources)
+    assert resolved.value == "a-value"
+    assert resolved.winner is not None
+    assert resolved.winner.file == Path("aaa.py")
+
+
+def test_resolve_default_conflict_count_ignores_agreeing_sources():
+    # Two sources with the same default are not a conflict.
+    sources = [
+        m.Source(Path("a.py"), "getenv", "shared", 1),
+        m.Source(Path("b.py"), "getenv", "shared", 1),
+    ]
+    resolved = m.resolve_default(sources)
+    assert resolved.value == "shared"
+    assert resolved.conflict_count == 0
+
+
+def test_resolve_default_ignores_sources_without_string_default():
+    # A bare os.getenv("V") alongside an os.getenv("V", "x") should not
+    # be counted as a conflict — it doesn't propose a value.
+    sources = [
+        m.Source(Path("a.py"), "getenv", None, 1),
+        m.Source(Path("b.py"), "getenv", "the-value", 1),
+    ]
+    resolved = m.resolve_default(sources)
+    assert resolved.value == "the-value"
+    assert resolved.conflict_count == 0
+
+
+# ---------------------------------------------------------------------------
+# format_env_entry
+# ---------------------------------------------------------------------------
+
+
+def test_format_env_entry_writes_todo_when_no_default():
+    # No source supplied a string-literal default.
+    line = m.format_env_entry("API_KEY", _srcs(("getenv", None)))
+    assert line.startswith(f"API_KEY={m.PLACEHOLDER}")
+    assert m.EXTRACTED_MARKER in line
+    assert "no default in source" in line
+
+
+def test_format_env_entry_writes_real_value_with_provenance(tmp_path):
+    # Extracted default becomes the value; provenance names the kind and
+    # (relative) file path.
+    src_file = tmp_path / "sub" / "agent.py"
+    sources = [m.Source(src_file, "setdefault", "TRUE", 3)]
+    line = m.format_env_entry("USE_X", sources, recipe_dir=tmp_path)
+    assert line.startswith("USE_X=TRUE")
+    assert "setdefault" in line
+    assert "sub/agent.py" in line
+    assert m.EXTRACTED_MARKER in line
+
+
+def test_format_env_entry_downgrades_placeholder_shaped_value(tmp_path):
+    # A stub-shaped value → TODO with the source string preserved in the
+    # comment so the maintainer can find and fix the source too.
+    src_file = tmp_path / "agent.py"
+    sources = [m.Source(src_file, "setdefault", "my-project-id", 1)]
+    line = m.format_env_entry("PROJECT", sources, recipe_dir=tmp_path)
+    assert line.startswith(f"PROJECT={m.PLACEHOLDER}")
+    assert '"my-project-id"' in line
+    # And there's a hint that says please fix source.
+    assert "fix source" in line
+
+
+def test_format_env_entry_records_conflict_in_comment(tmp_path):
+    # Two conflicting sources → note the conflict so maintainer reconciles.
+    sources = [
+        m.Source(tmp_path / "a.py", "setdefault", "TRUE", 1),
+        m.Source(tmp_path / "b.py", "setdefault", "FALSE", 1),
+    ]
+    line = m.format_env_entry("FLAG", sources, recipe_dir=tmp_path)
+    # Alphabetical tie-break within setdefault tier picks a.py's TRUE.
+    assert line.startswith("FLAG=TRUE")
+    assert "differs from 1 other source" in line
 
 
 # ---------------------------------------------------------------------------
@@ -969,15 +1706,25 @@ def test_run_step_pyproject_pass_when_already_present(tmp_path, capsys):
 
 
 def _make_sample_recipe(root: Path) -> Path:
-    """A minimal recipe: a package that reads an env var and hardcodes a
-    model, plus a pyproject.toml without python-dotenv and no .env.example."""
+    """A minimal recipe exercising all v2 code paths:
+
+      * MY_API_KEY — bare os.getenv, no default → TODO
+      * LOG_LEVEL — getenv with a real fallback → extracted verbatim
+      * USE_VERTEX — setdefault with a real value → extracted verbatim
+      * GOOGLE_CLOUD_PROJECT — setdefault with a stub value → downgraded
+        to TODO with the source string preserved in the comment
+      * MODEL — hardcoded model literal → replaced with os.getenv
+    """
     recipe = root / "my-recipe"
     pkg = recipe / "my_recipe"
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text("", encoding="utf-8")
     (pkg / "agent.py").write_text(
         "import os\n"
+        "os.environ.setdefault('USE_VERTEX', 'TRUE')\n"
+        "os.environ.setdefault('GOOGLE_CLOUD_PROJECT', 'my-project-id')\n"
         'KEY = os.getenv("MY_API_KEY")\n'
+        'LEVEL = os.getenv("LOG_LEVEL", "INFO")\n'
         'MODEL = "gemini-3.5-flash"\n',
         encoding="utf-8",
     )
@@ -1021,18 +1768,57 @@ def test_main_real_run_applies_changes(tmp_path, monkeypatch):
     agent_py = recipe / "my_recipe" / "agent.py"
     pyproject = recipe / "pyproject.toml"
 
+    # Simulate an existing .env.example with:
+    #   * a v1-shape TODO line for USE_VERTEX — should be upgraded to TRUE
+    #     (source has setdefault("USE_VERTEX", "TRUE"))
+    #   * a v1-shape TODO for GOOGLE_CLOUD_PROJECT — should NOT be upgraded
+    #     (source's setdefault value is placeholder-shaped "my-project-id")
+    #   * a user-owned real value for LOG_LEVEL — should NOT be touched
+    #     even though source has getenv("LOG_LEVEL", "INFO")
+    (recipe / ".env.example").write_text(
+        f"USE_VERTEX={m.PLACEHOLDER}\n"
+        f"GOOGLE_CLOUD_PROJECT={m.PLACEHOLDER}\n"
+        "LOG_LEVEL=WARN  # user set this deliberately\n",
+        encoding="utf-8",
+    )
+
     _run_main(monkeypatch, recipe)
 
-    # .env.example created with the detected env var and the extracted model.
     env_text = (recipe / ".env.example").read_text(encoding="utf-8")
-    assert "MY_API_KEY=" in env_text
-    assert "MODEL_NAME=" in env_text
+
+    # v2.1 end-to-end assertions covering the pre-existing entry cases:
+    #
+    # 1. USE_VERTEX was a v1 TODO in .env.example; source has a real
+    #    setdefault value → upgraded in place.
+    assert "USE_VERTEX=TRUE" in env_text
+    assert f"USE_VERTEX={m.PLACEHOLDER}" not in env_text
+    # 2. GOOGLE_CLOUD_PROJECT was a v1 TODO; source has a placeholder-shape
+    #    setdefault value → NOT upgraded (would be TODO → TODO churn).
+    assert f"GOOGLE_CLOUD_PROJECT={m.PLACEHOLDER}" in env_text
+    # 3. LOG_LEVEL had a user-typed real value + comment → USER_OWNED,
+    #    never touched, even though source has getenv("LOG_LEVEL", "INFO").
+    assert "LOG_LEVEL=WARN  # user set this deliberately" in env_text
+    assert "LOG_LEVEL=INFO" not in env_text
+    # 4. Bare os.getenv (no default) for a new var → TODO placeholder
+    #    with the "no default in source" marker comment.
+    assert f"MY_API_KEY={m.PLACEHOLDER}" in env_text
+    # 5. Hardcoded model literal → env var + value written to .env.example.
+    assert "MODEL_NAME=gemini-3.5-flash" in env_text
+
     # load_dotenv injected, python-dotenv added, model string replaced.
     assert "load_dotenv" in init_py.read_text(encoding="utf-8")
     assert "python-dotenv" in pyproject.read_text(encoding="utf-8")
     agent_text = agent_py.read_text(encoding="utf-8")
-    # Hard rule: the replacement is BARE os.getenv("MODEL_NAME") — no inferred
-    # default is written, even though the original model string is known.
+    # Rule 2: the replacement is BARE os.getenv("MODEL_NAME") — no inferred
+    # default is written into Python source, even though the model string
+    # is known and correct.
     assert 'os.getenv("MODEL_NAME")' in agent_text
     assert 'os.getenv("MODEL_NAME", ' not in agent_text
     assert "gemini-3.5-flash" not in agent_text
+    # Rule 2: pre-existing setdefault calls are LEFT UNTOUCHED — we read
+    # them but don't rewrite them.
+    assert "os.environ.setdefault('USE_VERTEX', 'TRUE')" in agent_text
+    assert (
+        "os.environ.setdefault('GOOGLE_CLOUD_PROJECT', 'my-project-id')"
+        in agent_text
+    )
