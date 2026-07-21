@@ -1,12 +1,6 @@
 [project]
 name = "safety-plugins"
 version = "0.1.0"
-description = "Multi-agent ADK system demonstrating global safety guardrails via agent-as-judge and Model Armor plugins"
-authors = [
-    { name = "sammalik-lgtm", email = "sammalik@google.com" }
-]
-license = {text = "Apache License 2.0"}
-readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [

@@ -1,7 +1,6 @@
 [project]
 name = "cross-session-memory"
 version = "0.1.0"
-description = "ADK agent with Memory Bank integration — deployable to Agent Engine or Cloud Run"
 
 dependencies = [
     "google-adk>=1.15.0,<2.0.0",
