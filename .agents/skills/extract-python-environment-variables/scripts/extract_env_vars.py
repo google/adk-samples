@@ -205,7 +205,9 @@ load_dotenv()"""
 # ---------------------------------------------------------------------------
 
 
-def _write_text_atomic(path: Path, content: str, encoding: str = "utf-8") -> None:
+def _write_text_atomic(
+    path: Path, content: str, encoding: str = "utf-8"
+) -> None:
     """Write *content* to *path* atomically via a sibling temp file.
 
     Writes to a temporary file in the same directory as *path*, then renames
@@ -250,7 +252,7 @@ def _read_text_preserving_newlines(path: Path) -> str:
     user's file in a way they didn't ask for. This helper opens with
     ``newline=""`` so the bytes come through unchanged.
     """
-    with open(path, "r", encoding="utf-8", newline="") as fh:
+    with open(path, encoding="utf-8", newline="") as fh:
         return fh.read()
 
 
@@ -512,9 +514,7 @@ def resolve_default(sources: list[Source]) -> ResolvedDefault:
         with_defaults,
         key=lambda s: (_KIND_PRIORITY.get(s.kind, 99), str(s.file), s.line),
     )
-    conflicts = sum(
-        1 for s in with_defaults if s.default != winner.default
-    )
+    conflicts = sum(1 for s in with_defaults if s.default != winner.default)
     return ResolvedDefault(
         value=winner.default, winner=winner, conflict_count=conflicts
     )
@@ -879,6 +879,103 @@ def _plan_updates(
     return to_append, to_upgrade
 
 
+def _build_updated_content(
+    env_example: Path,
+    to_append: dict[str, str],
+    to_upgrade: dict[str, tuple[int, str]],
+    added_names: list[str],
+    upgraded_names: list[str],
+) -> tuple[str, list[str]]:
+    """Assemble the new ``.env.example`` content in memory.
+
+    Reads the existing file (CRLF-preservingly), applies in-place upgrades
+    line-by-line via :func:`_rewrite_var_line` (with WARN on refusal),
+    ensures a trailing newline, and appends new entries in a marker block.
+
+    Returns ``(new_content, actually_upgraded)`` where ``actually_upgraded``
+    is the subset of ``upgraded_names`` that the fail-closed rewriter did
+    not refuse. The caller runs the round-trip safety check on the result
+    and decides whether to actually write.
+    """
+    if env_example.exists():
+        current = _read_text_preserving_newlines(env_example)
+    else:
+        current = ""
+    lines = current.splitlines(keepends=True)
+
+    actually_upgraded: list[str] = []
+    for var in upgraded_names:
+        _line_idx, new_body = to_upgrade[var]
+        if _rewrite_var_line(lines, var, new_body):
+            actually_upgraded.append(var)
+        else:
+            print(
+                f"[WARN] Refused to upgrade {var} in .env.example — "
+                "the existing line's structure was ambiguous (quoted "
+                "value, multiple matches, or line continuation). "
+                "Leaving it as-is. Delete the line and re-run to force "
+                "regeneration.",
+                file=sys.stderr,
+            )
+
+    # Ensure a trailing newline before appending fresh entries.
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] = lines[-1] + "\n"
+
+    if to_append:
+        block_header = (
+            "\n# Environment variables extracted by"
+            " extract-python-environment-variables\n"
+        )
+        lines.append(block_header)
+        for var in added_names:
+            lines.append(to_append[var] + "\n")
+
+    return "".join(lines), actually_upgraded
+
+
+def _passes_round_trip_check(
+    new_content: str,
+    actually_upgraded: list[str],
+    added_names: list[str],
+) -> bool:
+    """Re-parse ``new_content`` and verify every planned change looks right.
+
+    Every var in ``actually_upgraded`` must now classify as ``SKILL_REAL``;
+    every var in ``added_names`` must be present. Any deviation means our
+    rewrite produced something the classifier doesn't understand — a
+    rewriter bug — and the caller must REFUSE to write to preserve the
+    file's current on-disk contents.
+
+    Emits ``[ERROR]`` on stderr for the first mismatch it finds and
+    returns False. Returns True when everything re-parses cleanly.
+    """
+    reparsed = _parse_env_content(new_content)
+    for var in actually_upgraded:
+        entry = reparsed.get(var)
+        if (
+            entry is None
+            or entry.classification != EntryClassification.SKILL_REAL
+        ):
+            print(
+                f"[ERROR] Round-trip safety check failed for {var} — the "
+                "rewritten line would not re-parse as a skill-authored real "
+                "value. Refusing to write; .env.example was NOT modified.",
+                file=sys.stderr,
+            )
+            return False
+    for var in added_names:
+        if var not in reparsed:
+            print(
+                f"[ERROR] Round-trip safety check failed for appended {var} "
+                "— entry did not re-parse. Refusing to write; .env.example "
+                "was NOT modified.",
+                file=sys.stderr,
+            )
+            return False
+    return True
+
+
 def update_env_example(
     env_example: Path,
     env_vars: dict[str, list[Source]],
@@ -925,78 +1022,15 @@ def update_env_example(
     if dry_run:
         return added_names, upgraded_names
 
-    # Build the new content. Line-by-line rewrites are applied to the
-    # existing content; new entries are appended at the end.
-    #
-    # CRLF-preservation matters here: if we read the file with universal
-    # newlines mode (the default), Windows-authored .env.example files
-    # would silently lose their \r\n endings on every skill run. Reading
-    # + writing with newline="" keeps the bytes stable.
-    if env_example.exists():
-        current = _read_text_preserving_newlines(env_example)
-    else:
-        current = ""
-    lines = current.splitlines(keepends=True)
-
-    # Apply in-place upgrades. Any refusal (fail-closed rewriter) drops
-    # the var from the upgrade list.
-    actually_upgraded: list[str] = []
-    for var in upgraded_names:
-        _line_idx, new_body = to_upgrade[var]
-        if _rewrite_var_line(lines, var, new_body):
-            actually_upgraded.append(var)
-        else:
-            print(
-                f"[WARN] Refused to upgrade {var} in .env.example — "
-                "the existing line's structure was ambiguous (quoted "
-                "value, multiple matches, or line continuation). "
-                "Leaving it as-is. Delete the line and re-run to force "
-                "regeneration.",
-                file=sys.stderr,
-            )
-
-    # Ensure a trailing newline before appending fresh entries.
-    if lines and not lines[-1].endswith("\n"):
-        lines[-1] = lines[-1] + "\n"
-
-    if to_append:
-        block_header = (
-            "\n# Environment variables extracted by"
-            " extract-python-environment-variables\n"
-        )
-        lines.append(block_header)
-        for var in added_names:
-            lines.append(to_append[var] + "\n")
-
-    new_content = "".join(lines)
-
-    # Round-trip safety check: re-parse the new content and confirm
-    # every planned upgrade now shows as SKILL_REAL. If any doesn't,
-    # our rewrite produced something we don't understand — refuse to
-    # write and log an ERROR. Belt-and-braces backstop against a
-    # rewriter bug corrupting the file.
-    reparsed = _parse_env_content(new_content)
-    for var in actually_upgraded:
-        entry = reparsed.get(var)
-        if entry is None or entry.classification != EntryClassification.SKILL_REAL:
-            print(
-                f"[ERROR] Round-trip safety check failed for {var} — the "
-                "rewritten line would not re-parse as a skill-authored real "
-                "value. Refusing to write; .env.example was NOT modified.",
-                file=sys.stderr,
-            )
-            return [], []
-    # Also verify every appended entry re-parses. Missing → bug in the
-    # formatter or the append path.
-    for var in added_names:
-        if var not in reparsed:
-            print(
-                f"[ERROR] Round-trip safety check failed for appended {var} "
-                "— entry did not re-parse. Refusing to write; .env.example "
-                "was NOT modified.",
-                file=sys.stderr,
-            )
-            return [], []
+    # Build new content in memory (line-by-line rewrites + trailing
+    # appends), then run the round-trip safety check before writing.
+    new_content, actually_upgraded = _build_updated_content(
+        env_example, to_append, to_upgrade, added_names, upgraded_names
+    )
+    if not _passes_round_trip_check(
+        new_content, actually_upgraded, added_names
+    ):
+        return [], []
 
     try:
         _write_text_atomic(env_example, new_content)
@@ -1164,9 +1198,7 @@ def _getenv_default_node_ids(tree: ast.AST) -> set[int]:
                 if kw.arg == "default" and isinstance(kw.value, ast.Constant):
                     default_node = kw.value
                     break
-        if default_node is not None and isinstance(
-            default_node.value, str
-        ):
+        if default_node is not None and isinstance(default_node.value, str):
             ids.add(id(default_node))
 
     for node in ast.walk(tree):
@@ -1680,7 +1712,9 @@ def extract_hardcoded_models(
         except (SyntaxError, UnicodeDecodeError):
             continue
 
-        excluded_ids = _docstring_node_ids(tree) | _getenv_default_node_ids(tree)
+        excluded_ids = _docstring_node_ids(tree) | _getenv_default_node_ids(
+            tree
+        )
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant):
@@ -1780,6 +1814,72 @@ def _model_replacement(
     return start, end, f'os.getenv("{var_name}")', node.value, var_name
 
 
+def _collect_model_replacements(
+    tree: ast.AST, source: str, name_map: dict[str, str]
+) -> tuple[list[tuple[int, int, str]], dict[str, str]]:
+    """Walk ``tree`` and collect model-string replacement plans.
+
+    Returns ``(replacements, file_substituted)`` where:
+      * ``replacements`` is a list of ``(start_offset, end_offset,
+        replacement_text)`` triples suitable for a reverse-order splice.
+      * ``file_substituted`` maps ``{model_string: env_var_name}`` for
+        every replacement planned in this file — merged into the caller's
+        aggregate ONLY after the write succeeds, so a failed syntax check
+        or OSError never causes ``.env.example`` to record a substitution
+        that didn't actually land.
+
+    The combined exclusion set (docstrings + getenv defaults) protects
+    against corrupting documentation OR silently regressing the return
+    type of a call like ``os.getenv("V", "gemini-3.5-flash")`` from
+    ``str`` to ``str | None``.
+    """
+    excluded_ids = _docstring_node_ids(tree) | _getenv_default_node_ids(tree)
+    lines = source.splitlines(keepends=True)
+    replacements: list[tuple[int, int, str]] = []
+    file_substituted: dict[str, str] = {}
+    for node in ast.walk(tree):
+        replacement = _model_replacement(node, excluded_ids, name_map, lines)
+        if replacement is None:
+            continue
+        start, end, new_text, model_str, var_name = replacement
+        replacements.append((start, end, new_text))
+        file_substituted[model_str] = var_name
+    return replacements, file_substituted
+
+
+def _splice_and_ensure_os_import(
+    source: str, replacements: list[tuple[int, int, str]]
+) -> str:
+    """Apply the collected ``replacements`` to ``source`` and inject
+    ``import os`` if missing.
+
+    Splices in reverse order so earlier offsets stay valid. Injects
+    ``import os`` (AST-checked so a stray occurrence in a comment or
+    docstring doesn't suppress the real import) after any leading license
+    + module-docstring header, with a trailing blank line for readability.
+    """
+    replacements.sort(key=lambda x: x[0], reverse=True)
+    chars = list(source)
+    for start, end, new_text in replacements:
+        chars[start:end] = list(new_text)
+    modified = "".join(chars)
+
+    try:
+        already_imports_os = _imports_os(ast.parse(modified))
+    except SyntaxError:
+        already_imports_os = "import os" in modified
+    if not already_imports_os:
+        mod_lines = modified.splitlines(keepends=True)
+        idx = _post_header_index(mod_lines)
+        # Avoid double blank lines if the line at idx is already blank.
+        suffix = (
+            "\n" if idx < len(mod_lines) and mod_lines[idx].strip() else ""
+        )
+        mod_lines.insert(idx, f"import os\n{suffix}")
+        modified = "".join(mod_lines)
+    return modified
+
+
 def replace_hardcoded_models(
     py_files: list[Path],
     hits: dict[Path, list[tuple[int, str]]],
@@ -1813,32 +1913,9 @@ def replace_hardcoded_models(
         except (SyntaxError, UnicodeDecodeError):
             continue
 
-        # Combined exclusion set: docstrings + getenv-default string
-        # literals. Both must never be rewritten by the model-replacement
-        # path (docstrings would corrupt documentation; getenv defaults
-        # would silently regress the return type from str to str | None).
-        excluded_ids = (
-            _docstring_node_ids(tree) | _getenv_default_node_ids(tree)
+        replacements, file_substituted = _collect_model_replacements(
+            tree, source, name_map
         )
-        lines = source.splitlines(keepends=True)
-
-        # Collect (start_offset, end_offset, replacement_text) for each hit.
-        # Track per-file substitutions separately — they are only merged into
-        # `substituted` after a confirmed successful write, so a syntax-check
-        # failure or OSError never causes .env.example to be updated for a
-        # file whose source was not actually modified.
-        replacements: list[tuple[int, int, str]] = []
-        file_substituted: dict[str, str] = {}
-        for node in ast.walk(tree):
-            replacement = _model_replacement(
-                node, excluded_ids, name_map, lines
-            )
-            if replacement is None:
-                continue
-            start, end, new_text, model_str, var_name = replacement
-            replacements.append((start, end, new_text))
-            file_substituted[model_str] = var_name
-
         if not replacements:
             continue
 
@@ -1847,31 +1924,7 @@ def replace_hardcoded_models(
             substituted.update(file_substituted)
             continue
 
-        # Apply in reverse order so earlier offsets stay valid
-        replacements.sort(key=lambda x: x[0], reverse=True)
-        chars = list(source)
-        for start, end, new_text in replacements:
-            chars[start:end] = list(new_text)
-        modified = "".join(chars)
-
-        # Ensure `import os` is present, placed after license + docstring.
-        # AST-based so "import os" appearing only in a comment or docstring
-        # does not suppress the real import (which would leave the injected
-        # os.getenv(...) calls raising NameError at runtime).
-        # Include a trailing blank line so the import block is well-formatted.
-        try:
-            already_imports_os = _imports_os(ast.parse(modified))
-        except SyntaxError:
-            already_imports_os = "import os" in modified
-        if not already_imports_os:
-            mod_lines = modified.splitlines(keepends=True)
-            idx = _post_header_index(mod_lines)
-            # Avoid double blank lines if the line at idx is already blank
-            suffix = (
-                "\n" if idx < len(mod_lines) and mod_lines[idx].strip() else ""
-            )
-            mod_lines.insert(idx, f"import os\n{suffix}")
-            modified = "".join(mod_lines)
+        modified = _splice_and_ensure_os_import(source, replacements)
 
         # Syntax check before writing — refuse to write if the modified
         # source no longer parses. This catches edge cases like a model

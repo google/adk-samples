@@ -93,7 +93,10 @@ def test_find_python_files_skips_conftest_py_at_any_level(tmp_path):
     # `INTEGRATION_TEST` guarding integration-test collection) would leak
     # into .env.example — silently inviting users to set test-mode toggles.
     _write(tmp_path / "app" / "agent.py")
-    _write(tmp_path / "conftest.py", "import os\nos.environ.get('INTEGRATION_TEST')\n")
+    _write(
+        tmp_path / "conftest.py",
+        "import os\nos.environ.get('INTEGRATION_TEST')\n",
+    )
     _write(tmp_path / "app" / "conftest.py", "# also skipped\n")
     _write(
         tmp_path / "some_subpkg" / "conftest.py",
@@ -140,7 +143,9 @@ def test_extract_env_vars_ignores_conftest_py_content(tmp_path):
 # which are always the same in these tests.
 def _kd(result):
     """Return {var: [(kind, default), ...]} from an extract_env_vars result."""
-    return {v: [(s.kind, s.default) for s in srcs] for v, srcs in result.items()}
+    return {
+        v: [(s.kind, s.default) for s in srcs] for v, srcs in result.items()
+    }
 
 
 def test_extract_env_vars_all_forms(tmp_path):
@@ -300,7 +305,9 @@ def test_extract_env_vars_kwarg_default_captured(tmp_path):
     assert result["VAR_C"][0].default == "kw-sd-default"
 
 
-def test_extract_env_vars_positional_wins_over_kwarg_when_both_present(tmp_path):
+def test_extract_env_vars_positional_wins_over_kwarg_when_both_present(
+    tmp_path,
+):
     # Defensive: `os.getenv("X", "positional", default="kw")` is a
     # SyntaxError in Python (can't have both positional and kw for the
     # same param), but writers of weird code aside, our extractor should
@@ -539,9 +546,7 @@ def test_update_env_example_writes_setdefault_value(tmp_path):
     # commitment. The value MUST land in .env.example so users can find it.
     env = tmp_path / ".env.example"
 
-    m.update_env_example(
-        env, {"USE_VERTEX": _srcs(("setdefault", "TRUE"))}
-    )
+    m.update_env_example(env, {"USE_VERTEX": _srcs(("setdefault", "TRUE"))})
 
     content = env.read_text(encoding="utf-8")
     assert "USE_VERTEX=TRUE" in content
@@ -579,8 +584,7 @@ def test_update_env_example_preserves_user_edits_never_overwrites(tmp_path):
     # real values into .env.example.
     env = _write(
         tmp_path / ".env.example",
-        "# hand-tuned by maintainer\n"
-        "GOOGLE_CLOUD_PROJECT=my-real-project\n",
+        "# hand-tuned by maintainer\nGOOGLE_CLOUD_PROJECT=my-real-project\n",
     )
     before = env.read_text(encoding="utf-8")
 
@@ -628,7 +632,9 @@ def test_classify_v1_todo_with_user_comment_is_user_owned():
 def test_classify_marker_with_placeholder_is_skill_todo():
     # A line the skill itself wrote with a TODO — marker present, value
     # is exactly PLACEHOLDER.
-    line = f"VAR={m.PLACEHOLDER}  # {m.EXTRACTED_MARKER}; no default in source\n"
+    line = (
+        f"VAR={m.PLACEHOLDER}  # {m.EXTRACTED_MARKER}; no default in source\n"
+    )
     assert _classify(line) == m.EntryClassification.SKILL_TODO
 
 
@@ -652,11 +658,7 @@ def test_parse_env_example_returns_line_index_for_rewrite(tmp_path):
     # the rewriter can address it precisely.
     env = _write(
         tmp_path / ".env.example",
-        "# header\n"
-        "A=1\n"
-        "\n"
-        f"B={m.PLACEHOLDER}\n"
-        "C=3\n",
+        f"# header\nA=1\n\nB={m.PLACEHOLDER}\nC=3\n",
     )
     entries = m.parse_env_example(env)
     # Zero-based line indices.
@@ -689,9 +691,7 @@ def test_classify_export_prefix_v1_todo():
 
 
 def test_classify_export_prefix_marker_real():
-    line = (
-        f"export FOO=real-value  # {m.EXTRACTED_MARKER}; from setdefault in x.py\n"
-    )
+    line = f"export FOO=real-value  # {m.EXTRACTED_MARKER}; from setdefault in x.py\n"
     assert _classify(line) == m.EntryClassification.SKILL_REAL
 
 
@@ -724,12 +724,7 @@ def test_parse_env_example_skips_blank_and_comment_only_lines(tmp_path):
     # end up in the returned dict.
     env = _write(
         tmp_path / ".env.example",
-        "\n"
-        "# just a comment\n"
-        "\n"
-        "REAL=1\n"
-        "   # indented comment\n"
-        "\n",
+        "\n# just a comment\n\nREAL=1\n   # indented comment\n\n",
     )
     entries = m.parse_env_example(env)
     assert set(entries.keys()) == {"REAL"}
@@ -1053,8 +1048,7 @@ def test_upgrade_and_append_can_happen_in_one_pass(tmp_path):
     # some are missing (appendable), some are user-owned (skip).
     env = _write(
         tmp_path / ".env.example",
-        f"UPGRADABLE={m.PLACEHOLDER}\n"
-        "USER_OWNED_VAR=my-real-value\n",
+        f"UPGRADABLE={m.PLACEHOLDER}\nUSER_OWNED_VAR=my-real-value\n",
     )
 
     added, upgraded = m.update_env_example(
@@ -1084,7 +1078,7 @@ def test_upgrade_is_idempotent(tmp_path):
         f"V={m.PLACEHOLDER}\n",
     )
 
-    added1, upgraded1 = m.update_env_example(
+    _added1, upgraded1 = m.update_env_example(
         env, {"V": _srcs(("setdefault", "real"))}
     )
     content_after_first = env.read_text(encoding="utf-8")
@@ -1107,7 +1101,7 @@ def test_upgrade_dry_run_reports_but_does_not_write(tmp_path):
     )
     before = env.read_text(encoding="utf-8")
 
-    added, upgraded = m.update_env_example(
+    _added, upgraded = m.update_env_example(
         env, {"V": _srcs(("setdefault", "TRUE"))}, dry_run=True
     )
 
@@ -1122,14 +1116,13 @@ def test_upgrade_refuses_ambiguous_line_and_warns(tmp_path, capsys):
     # same var) must not be rewritten. Instead, warn and leave it alone.
     env = _write(
         tmp_path / ".env.example",
-        f"V={m.PLACEHOLDER}\n"
-        f"V={m.PLACEHOLDER}\n",
+        f"V={m.PLACEHOLDER}\nV={m.PLACEHOLDER}\n",
     )
     before = env.read_text(encoding="utf-8")
 
     # Parser gives us the first V (V1_TODO), so we plan to upgrade.
     # Rewriter finds two matches, refuses, and warns.
-    added, upgraded = m.update_env_example(
+    _added, upgraded = m.update_env_example(
         env, {"V": _srcs(("setdefault", "TRUE"))}
     )
 
@@ -1153,9 +1146,7 @@ def test_upgrade_preserves_ordering_and_surrounding_lines(tmp_path):
         "OTHER=leave-me-alone\n",
     )
 
-    m.update_env_example(
-        env, {"UPGRADABLE": _srcs(("setdefault", "TRUE"))}
-    )
+    m.update_env_example(env, {"UPGRADABLE": _srcs(("setdefault", "TRUE"))})
 
     content = env.read_text(encoding="utf-8")
     lines = content.splitlines()
@@ -1165,9 +1156,7 @@ def test_upgrade_preserves_ordering_and_surrounding_lines(tmp_path):
     upgradable_idx = next(
         i for i, ln in enumerate(lines) if ln.startswith("UPGRADABLE=")
     )
-    other_idx = next(
-        i for i, ln in enumerate(lines) if ln.startswith("OTHER=")
-    )
+    other_idx = next(i for i, ln in enumerate(lines) if ln.startswith("OTHER="))
     assert upgradable_idx < other_idx
     # Other var untouched.
     assert "OTHER=leave-me-alone" in lines
@@ -1183,7 +1172,9 @@ def test_update_env_example_noop_when_env_vars_empty(tmp_path):
     assert env.read_text(encoding="utf-8") == before
 
 
-def test_update_env_example_noop_when_no_changes_needed_does_not_touch_file(tmp_path):
+def test_update_env_example_noop_when_no_changes_needed_does_not_touch_file(
+    tmp_path,
+):
     # Every var already declared + no upgrades required → the file must
     # not be re-written at all (would show as a spurious modification in
     # git status / re-run diff).
@@ -1251,7 +1242,7 @@ def test_update_env_example_preserves_crlf_line_endings(tmp_path):
     # after an in-place upgrade — mixed endings in one file are ugly
     # and can break naive tools.
     env = tmp_path / ".env.example"
-    env.write_bytes(f"V={m.PLACEHOLDER}\r\n".encode("utf-8"))
+    env.write_bytes(f"V={m.PLACEHOLDER}\r\n".encode())
 
     m.update_env_example(env, {"V": _srcs(("setdefault", "real"))})
 
@@ -1483,7 +1474,9 @@ def test_resolve_default_setdefault_wins_over_environ_get():
     # setdefault is tier 0; environ_get is tier 1. setdefault always wins.
     sources = [
         m.Source(Path("z.py"), "setdefault", "sd-value", 1),
-        m.Source(Path("a.py"), "environ_get", "get-value", 1),  # earlier alphabetically!
+        m.Source(
+            Path("a.py"), "environ_get", "get-value", 1
+        ),  # earlier alphabetically!
     ]
     resolved = m.resolve_default(sources)
     # Priority beats alphabetical.
@@ -1561,7 +1554,9 @@ def test_format_env_entry_uses_basename_when_no_recipe_dir(tmp_path):
     assert str(tmp_path) not in line  # no absolute path leaked
 
 
-def test_format_env_entry_uses_basename_when_file_not_under_recipe_dir(tmp_path):
+def test_format_env_entry_uses_basename_when_file_not_under_recipe_dir(
+    tmp_path,
+):
     # If the source file is somewhere else on disk (unusual), we fall
     # back to basename rather than emitting an absolute path.
     src_file = Path("/tmp/somewhere/else.py")
@@ -1790,7 +1785,7 @@ def test_inject_load_dotenv_marks_late_relative_import_when_already_bootstrapped
     # (load_dotenv + os.environ.setdefault + trailing `from .agent`) without
     # a noqa marker on the relative import. When we run against such a file
     # we must NOT inject anything (load_dotenv is already there) but MUST
-    # still add `# noqa: E402` to the trailing relative import — otherwise
+    # still add a "noqa E402" marker to the trailing relative import — otherwise
     # ruff (Phase 4 in prepare-python-recipe) flags E402 for a pattern the
     # skill is aware of and could have suppressed.
     init = _write(
@@ -2133,10 +2128,7 @@ def test_extract_hardcoded_models_skips_getenv_kwarg_default(tmp_path):
 
 def test_extract_hardcoded_models_skips_environ_get_default(tmp_path):
     # os.environ.get("X", "d") — same protection.
-    src = (
-        "import os\n"
-        "M = os.environ.get('MODEL_NAME', 'gemini-3.5-flash')\n"
-    )
+    src = "import os\nM = os.environ.get('MODEL_NAME', 'gemini-3.5-flash')\n"
     py = _write(tmp_path / "mod.py", src)
 
     hits = m.extract_hardcoded_models([py])
@@ -2145,10 +2137,7 @@ def test_extract_hardcoded_models_skips_environ_get_default(tmp_path):
 
 def test_extract_hardcoded_models_skips_environ_setdefault_default(tmp_path):
     # os.environ.setdefault("X", "d") — same protection.
-    src = (
-        "import os\n"
-        "os.environ.setdefault('MODEL_NAME', 'gemini-3.5-flash')\n"
-    )
+    src = "import os\nos.environ.setdefault('MODEL_NAME', 'gemini-3.5-flash')\n"
     py = _write(tmp_path / "mod.py", src)
 
     hits = m.extract_hardcoded_models([py])
@@ -2219,7 +2208,9 @@ def test_replace_hardcoded_models_does_not_touch_getenv_defaults(tmp_path):
     # itself would still skip via the same exclusion. Simulate that here:
     forced_hits = {py: [(2, "gemini-3.5-flash"), (3, "gemini-3.5-flash")]}
     name_map = m.assign_model_var_names({"gemini-3.5-flash"})
-    substituted = m.replace_hardcoded_models(py_files=[py], hits=forced_hits, name_map=name_map)
+    substituted = m.replace_hardcoded_models(
+        py_files=[py], hits=forced_hits, name_map=name_map
+    )
     # No substitution happened because both hits were getenv defaults.
     assert substituted == {}
     # File byte-identical.
@@ -2411,12 +2402,12 @@ def test_run_step_pyproject_pass_when_already_present(tmp_path, capsys):
 def _make_sample_recipe(root: Path) -> Path:
     """A minimal recipe exercising all v2 code paths:
 
-      * MY_API_KEY — bare os.getenv, no default → TODO
-      * LOG_LEVEL — getenv with a real fallback → extracted verbatim
-      * USE_VERTEX — setdefault with a real value → extracted verbatim
-      * GOOGLE_CLOUD_PROJECT — setdefault with a stub value → downgraded
-        to TODO with the source string preserved in the comment
-      * MODEL — hardcoded model literal → replaced with os.getenv
+    * MY_API_KEY — bare os.getenv, no default → TODO
+    * LOG_LEVEL — getenv with a real fallback → extracted verbatim
+    * USE_VERTEX — setdefault with a real value → extracted verbatim
+    * GOOGLE_CLOUD_PROJECT — setdefault with a stub value → downgraded
+      to TODO with the source string preserved in the comment
+    * MODEL — hardcoded model literal → replaced with os.getenv
     """
     recipe = root / "my-recipe"
     pkg = recipe / "my_recipe"
@@ -2620,7 +2611,9 @@ def test_main_recipe_with_unparseable_env_example_line_does_not_crash(
     assert "NEW_VAR=" in content
 
 
-def test_main_second_run_after_migration_is_byte_identical(tmp_path, monkeypatch):
+def test_main_second_run_after_migration_is_byte_identical(
+    tmp_path, monkeypatch
+):
     # Cross-cutting idempotency: a full run that DOES modify things,
     # followed by an identical second run, must produce zero further
     # modifications. This is the strongest end-to-end guarantee that
@@ -2648,9 +2641,11 @@ def test_main_second_run_after_migration_is_byte_identical(tmp_path, monkeypatch
 # ---------------------------------------------------------------------------
 
 
-def test_invariant_user_owned_lines_byte_identical_after_any_writer_run(tmp_path):
+def test_invariant_user_owned_lines_byte_identical_after_any_writer_run(
+    tmp_path,
+):
     # Sweep across many scenarios (var missing / v1_todo / skill_todo /
-    # skill_real / user_owned × source has real value / no default /
+    # skill_real / user_owned x source has real value / no default /
     # placeholder-shape default). At the end of ALL of them, every line
     # we classified as USER_OWNED must be byte-identical to what it
     # was before.
@@ -2793,6 +2788,13 @@ def test_invariant_appended_entries_are_skill_owned(tmp_path):
     )
 
     entries = m.parse_env_example(env)
-    assert entries["WITH_DEFAULT"].classification == m.EntryClassification.SKILL_REAL
-    assert entries["NO_DEFAULT"].classification == m.EntryClassification.SKILL_TODO
-    assert entries["DOWNGRADED"].classification == m.EntryClassification.SKILL_TODO
+    assert (
+        entries["WITH_DEFAULT"].classification
+        == m.EntryClassification.SKILL_REAL
+    )
+    assert (
+        entries["NO_DEFAULT"].classification == m.EntryClassification.SKILL_TODO
+    )
+    assert (
+        entries["DOWNGRADED"].classification == m.EntryClassification.SKILL_TODO
+    )
