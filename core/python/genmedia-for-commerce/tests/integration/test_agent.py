@@ -12,6 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
+import pytest
+
+if not os.getenv("MODEL_NAME_GENERATED_1"):
+    pytest.skip(
+        "MODEL_NAME_GENERATED_1 not set — copy .env.example to .env first",
+        allow_module_level=True,
+    )
+
 from genmedia4commerce.agent import root_agent
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner

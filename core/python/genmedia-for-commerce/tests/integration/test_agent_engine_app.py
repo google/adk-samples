@@ -13,8 +13,16 @@
 # limitations under the License.
 
 import logging
+import os
 
 import pytest
+
+if not os.getenv("MODEL_NAME_GENERATED_1"):
+    pytest.skip(
+        "MODEL_NAME_GENERATED_1 not set — copy .env.example to .env first",
+        allow_module_level=True,
+    )
+
 from genmedia4commerce.agent_engine_app import AgentEngineApp
 from google.adk.events.event import Event
 
