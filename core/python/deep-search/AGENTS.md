@@ -133,7 +133,7 @@ The loop stops early when `research_evaluator` grades `pass` (the custom
   `interactive_planner_agent`). Rename any of them in `app/agent.py` and you
   **must** update `frontend/src/` (mainly `App.tsx` / `ChatMessagesView.tsx`).
 - **Models come from `MODEL_NAME`, not hardcoded.** `.env.example` sets
-  `MODEL_NAME=gemini-3.1-pro-preview`; both `worker_model` and `critic_model`
+  `MODEL_NAME=gemini-3.5-flash`; both `worker_model` and `critic_model`
   read the same var. If `MODEL_NAME` is unset, `config.py` returns `None` for the
   models — set it (the smoke test defaults it to `gemini-3.5-flash`). Do not use
   deprecated `gemini-2.0-flash` / `gemini-2.5-flash`.

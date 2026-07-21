@@ -168,7 +168,7 @@ needs the flag).
   default to `us-west1`, and `deploy-cloud-run` hard-codes `us-west1`. Keep them
   consistent.
 - **Model comes from the `MODEL_NAME` env var.** `.env.example` sets
-  `gemini-3-flash-preview`; the e2e test/stubs default to `gemini-3.5-flash`. Set
+  `gemini-3.5-flash`; the e2e test/stubs default to `gemini-3.5-flash`. Set
   `MODEL_NAME` explicitly (repo policy: use `gemini-3.5-flash`, not the
   deprecated 2.x models).
 - **`INTEGRATION_TEST=TRUE` mocks external services** (Cloud Logging, artifacts)

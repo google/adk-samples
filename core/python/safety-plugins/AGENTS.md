@@ -155,9 +155,8 @@ persisting harmful content to session state.
   real region (e.g. `us-central1`) — **not** `global`, which `__init__.py`
   defaults to.
 - **Models come from env vars.** `MODEL_NAME_GENERATED_1` (agents) and
-  `MODEL_NAME_GENERATED_2` (judge). `.env.example` still points the judge at
-  `gemini-2.5-flash-lite` (a deprecated 2.x model per repo policy — the file
-  flags it as a TODO). Prefer `gemini-3.5-flash`.
+  `MODEL_NAME_GENERATED_2` (judge). `.env.example` sets the agents to
+  `gemini-3.5-flash` and the judge to `gemini-3.1-flash-lite`.
 - **`main.py` uses absl flags**, so run it as a module
   (`python -m safety_plugins.main`); `--plugin` only accepts
   `llm_judge|model_armor|none`.

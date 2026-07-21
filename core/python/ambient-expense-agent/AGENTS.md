@@ -154,7 +154,7 @@ is not held for the human; the HITL resume is entirely out-of-band.
   exactly why `fast_api_app.py` normalizes the fully-qualified subscription path.
 - **Model comes from `MODEL_NAME`.** `config.py` reads `os.getenv("MODEL_NAME")`
   with **no default** (so it is `None` if unset). `.env.example` sets
-  `gemini-3-flash-preview`; tests set it explicitly. Don't hardcode model names
+  `gemini-3.5-flash`; tests set it explicitly. Don't hardcode model names
   and don't use deprecated ones (`gemini-2.0-flash`, `gemini-2.5-flash`).
 - **Import-time credentials.** Without `GOOGLE_API_KEY`, importing `config`
   calls `google.auth.default()` immediately — a credential-less import fails

@@ -120,7 +120,7 @@ adk-ae-oauth/
 
 | File | Role |
 |------|------|
-| `app/agent.py` | Defines the `root_agent` with `gemini-3-flash-preview` model and the `read_drive_file` tool. Includes instructions on how the agent should interact with users. |
+| `app/agent.py` | Defines the `root_agent` with `gemini-3.5-flash` model and the `read_drive_file` tool. Includes instructions on how the agent should interact with users. |
 | `app/auths.py` | OAuth 2.0 configuration. Defines `AUTH_SCHEME`, `AUTH_CREDENTIAL`, and `AUTH_CONFIG` used by ADK's OAuth flow during local development. Also defines `TOKEN_CACHE_KEY` and `SCOPES` used by `negotiate_creds()` in both environments. |
 | `app/tools.py` | Contains `negotiate_creds()` (the 3-stage OAuth resolution) and `read_drive_file()` (reads Google Docs, Sheets, Slides via export, and regular files via download). |
 | `tools/register_oauth.py` | Standalone script that registers an OAuth authorization resource with the Discovery Engine API. This tells Gemini Enterprise which OAuth credentials to use when the agent needs user consent. **Not deployed with the agent** — run once during setup. |
