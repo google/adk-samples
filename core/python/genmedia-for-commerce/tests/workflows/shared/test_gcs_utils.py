@@ -100,11 +100,13 @@ class TestUploadBytesToGcs:
         assert result == "gs://test-bucket/path/to/file.txt"
         client.bucket.assert_called_once_with("test-bucket")
         bucket.blob.assert_called_once_with("path/to/file.txt")
-        blob.upload_from_string.assert_called_once_with(b"test content")
+        blob.upload_from_string.assert_called_once_with(
+            b"test content", content_type=None
+        )
 
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_sets_content_type(self, mock_get_client, mock_storage_client):
-        """Should set content type when provided."""
+        """Should pass content type to upload_from_string when provided."""
         client, _bucket, blob = mock_storage_client
         mock_get_client.return_value = client
 
@@ -115,7 +117,9 @@ class TestUploadBytesToGcs:
             content_type="application/json",
         )
 
-        assert blob.content_type == "application/json"
+        blob.upload_from_string.assert_called_once_with(
+            b"test content", content_type="application/json"
+        )
 
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_passes_project_id(self, mock_get_client, mock_storage_client):
@@ -530,8 +534,9 @@ class TestUploadBytesToGcsIntegration:
         )
 
         assert result == "gs://images-bucket/products/shoe.png"
-        blob.upload_from_string.assert_called_once_with(png_bytes)
-        assert blob.content_type == "image/png"
+        blob.upload_from_string.assert_called_once_with(
+            png_bytes, content_type="image/png"
+        )
 
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_upload_video_bytes(self, mock_get_client, mock_storage_client):
@@ -549,4 +554,6 @@ class TestUploadBytesToGcsIntegration:
         )
 
         assert result == "gs://videos-bucket/outputs/product_360.mp4"
-        blob.upload_from_string.assert_called_once_with(video_bytes)
+        blob.upload_from_string.assert_called_once_with(
+            video_bytes, content_type="video/mp4"
+        )

@@ -49,9 +49,15 @@ import logging  # noqa: E402
 logging.basicConfig(level=logging.INFO)
 
 setup_telemetry()
-_, project_id = google.auth.default()
-logging_client = google_cloud_logging.Client()
-logger = logging_client.logger(__name__)
+try:
+    _, project_id = google.auth.default()
+    logging_client = google_cloud_logging.Client()
+    logger = logging_client.logger(__name__)
+except google.auth.exceptions.DefaultCredentialsError:
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    import logging as _std_logging
+
+    logger = _std_logging.getLogger(__name__)  # type: ignore[assignment]
 
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",")

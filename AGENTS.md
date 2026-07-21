@@ -13,3 +13,4 @@ All agents must follow the guidelines below without being reminded.
 - Minimum python version: 3.11
 - Package manager: Use `uv`, not `pip`
 - Formatter: Use `ruff` (line length 80, double quotes)
+- Do not rely on .env being present for the unit tests. However, .env.example files are present for each recipe and the unit tests can rely on those.

@@ -42,8 +42,11 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-_, project_id = google.auth.default()
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
+try:
+    _, project_id = google.auth.default()
+except google.auth.exceptions.DefaultCredentialsError:
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
 os.environ.setdefault(
     "GOOGLE_CLOUD_LOCATION", os.getenv("GLOBAL_REGION", "global")
 )
