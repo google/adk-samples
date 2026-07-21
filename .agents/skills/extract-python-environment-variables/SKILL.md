@@ -1,38 +1,52 @@
 ---
 name: extract-python-environment-variables
 description: >
-  Scans a Python recipe to find every place an environment variable is read,
-  then ensures all variables are declared in .env.example, that load_dotenv()
-  is bootstrapped in the package __init__.py, and that python-dotenv>=1.0.0
-  is listed in pyproject.toml.   Also detects hardcoded model-name string literals in the recipe's source
-  (e.g. "gemini-3.5-flash" in agent.py) and rewrites them to bare
-  os.getenv("MODEL_NAME") calls (single model) or
-  os.getenv("MODEL_NAME_GENERATED_1") / os.getenv("MODEL_NAME_GENERATED_2")
-  etc. (multiple models) — NO fallback default in source. The actual model
-  string is written as the value in .env.example (e.g.
-  MODEL_NAME_GENERATED_1=gemini-3.5-flash) with a comment reminding the
-  maintainer to rename the variable — this modifies source files, not just
-  configuration. IMPORTANT — two hard rules the skill NEVER breaks:
-  (1) Regular env vars in `.env.example` get ONLY TODO placeholders, never
-  inferred defaults. Hardcoded model strings are the exception: their known
-  value IS written to .env.example because it is not inferred — it was
-  literally in the source.
-  (2) Python source files get NO default values written by the skill —
-  the model-replacement path emits `os.getenv("VAR")` with no second
-  argument, and the skill never emits `os.environ.setdefault(...)`
-  bootstrap lines. Pre-existing `os.environ.setdefault(...)` or
+  Scans a Python recipe to find every place an environment variable is
+  accessed — including `os.environ.setdefault("V", "d")`, whose "d" would
+  otherwise be a hidden default a user editing .env.example has no way to
+  discover — then ensures all variables are declared in `.env.example`,
+  that `load_dotenv()` is bootstrapped in the package `__init__.py`, and
+  that `python-dotenv>=1.0.0` is listed in `pyproject.toml`. When a new
+  entry is added to `.env.example`, the extracted default from source is
+  written as the value (with a `# extracted-by:extract-env-vars` marker
+  and provenance comment); values that look like stubs
+  (`"my-project-id"`, `"changeme"`, `"<...>"`) are downgraded to the TODO
+  placeholder but the source string is preserved in the marker comment.
+  Also detects hardcoded model-name string literals (e.g.
+  `"gemini-3.5-flash"` in `agent.py`) and rewrites them to bare
+  `os.getenv("MODEL_NAME")` (single model) or
+  `os.getenv("MODEL_NAME_GENERATED_1")` / `MODEL_NAME_GENERATED_2`, …
+  (multiple models) — no fallback default in the Python source. The
+  model string is written as the value in `.env.example` with a comment
+  prompting a rename.   When re-run against a recipe whose `.env.example` already has entries,
+  the writer classifies each entry (skill-authored vs. user-authored,
+  TODO vs. real value) and only rewrites lines it can prove it authored;
+  user-authored lines are always preserved. A stale TODO (either
+  skill-authored or a bare v1-era `<TODO: update-this-value>` with no
+  inline comment) is upgraded in place when source can supply a real
+  default.
+  IMPORTANT — two hard rules the skill NEVER breaks:
+  (1) USER-EDIT SAFETY. Any `.env.example` line the skill cannot prove
+  it authored is USER_OWNED and is never modified. The rewriter fails
+  closed on any structural ambiguity (quoted values, backslash
+  continuation, duplicate declarations) — a stale TODO left in place is
+  cheap; a clobbered user edit is not.
+  (2) ADDITIVE-ONLY FOR PYTHON FILES. The skill never writes new
+  `os.environ.setdefault(...)` bootstrap lines into any Python file.
+  Pre-existing `os.environ.setdefault(...)` or
   `os.getenv("VAR", "default")` calls that the recipe author wrote by
-  hand are LEFT UNTOUCHED — the skill is additive-only for Python files
-  (adds `load_dotenv()` bootstrap; replaces hardcoded model literals;
-  appends `# noqa: E402` to trailing relative imports in `__init__.py`
-  when they'd otherwise trip Ruff after an env-bootstrap block).
+  hand are LEFT UNTOUCHED — the skill's only writes to Python files are
+  (a) the `load_dotenv()` bootstrap; (b) `# noqa: E402` on trailing
+  relative imports that would otherwise trip Ruff; (c) hardcoded
+  model-literal replacement.
   Use when the user wants to "extract env vars", "update .env.example",
-  "add load_dotenv", "replace hardcoded model names", or "fix environment
+  "add load_dotenv", "surface setdefault defaults", "upgrade stale TODOs
+  in .env.example", "replace hardcoded model names", or "fix environment
   variables" in a Python recipe.
 metadata:
   author: Google
   license: Apache-2.0
-  version: 1.0.0
+  version: 2.1.0
 ---
 
 # Extract Python Environment Variables
@@ -46,24 +60,45 @@ environment variables it uses.
 
 Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
 
-1. **Scans** all `.py` files (excluding `tests/`) for environment variable reads:
+1. **Scans** all `.py` files (excluding `tests/` and common cache/venv
+   directories) for environment variable accesses:
    - `os.environ["VAR"]`
    - `os.environ.get("VAR")` / `os.environ.get("VAR", "default")`
    - `os.getenv("VAR")` / `os.getenv("VAR", "default")`
+   - `os.environ.setdefault("VAR", "default")` &nbsp;&nbsp;*(v2)*
 
    Only names matching `^[A-Z_][A-Z0-9_]*$` (UPPER_SNAKE_CASE) are captured;
    a lowercase name like `os.getenv("my_api_key")` is **skipped** and a
    `[WARN]` line lists any that were dropped. Rename such vars to uppercase
    in source, or add them to `.env.example` by hand.
 
-2. **Updates `.env.example`** — appends any variables not already declared.
-   - **Every value is the placeholder `<TODO: update-this-value>`.** The
-     skill never writes inferred defaults into `.env.example`, even when
-     the source code has an `os.getenv("VAR", "some_default")` fallback.
-     `.env.example` is a template the human fills in; the source-code
-     fallback is a runtime default, not a value the maintainer has
-     committed to as canonical.
+2. **Updates `.env.example`** — appends any variables not already
+   declared AND upgrades stale TODO entries in place. Existing
+   user-authored lines are always preserved (see Rule 1 below).
    - Creates `.env.example` from scratch if it does not exist.
+   - Each new/upgraded line has the shape:
+     ```
+     VAR=<value>  # extracted-by:extract-env-vars; <provenance>
+     ```
+   - `<value>` is the **resolved default** extracted from source when the
+     author committed to one — with `os.environ.setdefault(...)` beating
+     `os.getenv("V", "d")` / `os.environ.get("V", "d")` (setdefault is a
+     stronger commitment: it mutates the process environment, while getenv
+     fallback is per-read). Alphabetical file order breaks ties.
+   - Values that look like **stubs** are downgraded to
+     `<TODO: update-this-value>` — e.g. `my-project-id`, `your-api-key`,
+     `changeme`, `<...>`, anything containing `example.com`. The source
+     string is preserved in the marker comment so the maintainer sees
+     what was found and can fix the source too.
+   - When no source supplied a string-literal default, the value is
+     `<TODO: update-this-value>` with a `no default in source` note.
+   - **Stale TODO upgrade (v2.1):** if an existing entry is either a
+     skill-authored TODO (has the marker) or a bare v1-era TODO (exact
+     value `<TODO: update-this-value>`, no marker, no inline comment)
+     AND source can now supply a real default, the line is rewritten in
+     place. This closes the discoverability loop for recipes originally
+     processed by v1 (which always wrote TODOs regardless of what source
+     said).
 
 3. **Injects `load_dotenv()`** into the package `__init__.py` (the first
    subdirectory inside the recipe that contains an `__init__.py`, skipping
@@ -117,30 +152,54 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
 
 ## Hard rules the skill NEVER breaks
 
-**Rule 1 — No inferred defaults for regular env vars.** For variables read
-via `os.getenv`/`os.environ`, `.env.example` always gets `<TODO: update-this-value>`,
-even when the source has an `os.getenv("VAR", "some-fallback")`. Exception:
-hardcoded model strings replaced in source ARE written with their actual value
-in `.env.example` (e.g. `MODEL_NAME_GENERATED_1=gemini-3.5-flash`) — this is
-not an inferred default, it is the known value that was literally in the source.
-The source replacement always emits bare `os.getenv("VAR")` with **no second
-argument** in both cases.
+**Rule 1 — User-edit safety for `.env.example`.** The writer classifies
+every existing entry before touching anything, and only rewrites lines
+it can prove it authored. Concretely:
+
+| Existing entry looks like | Source now provides | Action |
+|---|---|---|
+| Missing | any | **append** with resolved default (or TODO) |
+| A line the skill wrote (has `# extracted-by:extract-env-vars` marker) with `<TODO: update-this-value>` value | a REAL default (not placeholder-shape) | **upgrade in place** |
+| Same as above | no default OR a placeholder-shape default | **skip** (would be TODO → TODO churn) |
+| Bare `VAR=<TODO: update-this-value>` line with **no marker AND no inline comment** — a v1-era TODO | a REAL default | **upgrade in place** (v1 → v2 migration) |
+| A line the skill wrote with a REAL value | source has any value (even different) | **skip** (never overwrite skill-authored values on drift) |
+| Anything else (user typed value, user-authored comment, non-standard formatting) | any | **skip — never touched** |
+
+Golden rule underneath all of this: **fail closed**. If the classifier
+can't confidently prove a line was skill-authored or is a bare v1 TODO,
+it's `USER_OWNED` and untouchable. If the rewriter finds a line whose
+structure it doesn't understand (quoted value, backslash continuation,
+duplicate declarations), it refuses and warns rather than guessing. And
+before any write, the assembled file is re-parsed to verify every
+planned upgrade re-parses as a skill-authored real value — a bug in the
+rewriter cannot silently corrupt `.env.example`.
+
+To force regeneration of a line the skill would otherwise skip, delete
+the line and re-run.
+
+*Rationale for extracting defaults (v2) and upgrading stale TODOs
+(v2.1): a value hidden inside a Python file that a user must know about
+but has no reason to look at is, in practice, undocumented.
+`.env.example` is the documented configuration surface. Surfacing what
+the author already committed to in code — and updating a stale TODO
+once source can supply a real default — makes the configuration
+discoverable without inventing anything new. The value in source WAS
+the value; we're only lifting it into view.*
 
 **Rule 2 — Additive-only for Python files.** The skill never writes new
 `os.environ.setdefault(...)` bootstrap lines into any Python file.
-Pre-existing `os.environ.setdefault(...)` calls or
+Pre-existing `os.environ.setdefault(...)` or
 `os.getenv("VAR", "default")` calls that a recipe author wrote by hand
 are LEFT UNTOUCHED. The skill's only writes to Python files are:
 - Adding the `from dotenv import load_dotenv` + `load_dotenv()` snippet
   (once, only if not already present).
+- Appending `# noqa: E402` to trailing relative imports that would
+  otherwise trip Ruff after the env-bootstrap block.
 - Replacing hardcoded model literals with bare `os.getenv(...)` calls.
 
-Rationale: default values are the maintainer's decision, not the
-skill's. Persisting an inferred default (in `.env.example` or in a new
-Python bootstrap line) is presumptuous — it makes the recipe look like
-it works when the value is really the maintainer's job to fill in.
-Pre-existing lines are the maintainer's own committed choice; the
-skill respects that and doesn't rewrite them.
+Note that scanning `os.environ.setdefault(...)` and lifting its value
+into `.env.example` (v2) does NOT violate Rule 2 — the skill READS from
+Python source (unchanged behaviour) and WRITES only to `.env.example`.
 
 ---
 
@@ -204,9 +263,36 @@ to read — this is especially important for `--dry-run` output. For each variab
 or model string, include a column with the source file where it was found
 (locate it in the recipe's Python source; ignore `.env` and `.env.example`).
 
+For added variables, surface the **resolved default** and **its provenance**
+so the maintainer knows which value the skill chose and where it came from:
+
+| Variable | Value written to .env.example | Source |
+|----------|-------------------------------|--------|
+| `GOOGLE_CLOUD_PROJECT` | `<TODO: update-this-value>` *(downgraded — source had `"my-project-id"`)* | `agent.py` (setdefault) |
+| `GOOGLE_GENAI_USE_VERTEXAI` | `TRUE` | `__init__.py` (setdefault) |
+| `LOG_LEVEL` | `INFO` | `logging_setup.py` (getenv fallback) |
+| `API_KEY` | `<TODO: update-this-value>` *(no default in source)* | `client.py` (getenv, no fallback) |
+
+If the script reports **upgrades** (stale TODO entries rewritten in
+place with real defaults from source), surface those in a separate table
+so the maintainer can eyeball each one:
+
+| Variable | Was | Now | Source |
+|----------|-----|-----|--------|
+| `USE_VERTEX` | `<TODO: update-this-value>` | `TRUE` | `__init__.py` (setdefault) |
+
+If the script logged `[WARN] Refused to upgrade …` for any variable,
+surface that too — the line's structure was ambiguous and was left
+untouched deliberately.
+
 Once the script finishes successfully, summarise what changed:
 
-- Which variables were added to `.env.example` (or confirm it was already up to date).
+- Which variables were **added** to `.env.example` (with resolved value +
+  source) or confirm it was already up to date.
+- Which existing TODOs were **upgraded** in place (v2.1) with real
+  defaults from source.
+- Any values that were **downgraded to `<TODO>` because they looked like
+  placeholders** — the maintainer should fix the source too.
 - Whether `load_dotenv()` was injected or was already present.
 - Whether `python-dotenv` was added to `pyproject.toml` or was already there.
 

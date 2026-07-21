@@ -206,8 +206,16 @@ async def approve(request: Request):
 
 
 if __name__ == "__main__":
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", "8081")),
+    # Port resolution:
+    #   * Cloud Run injects PORT into every container, so honouring it is
+    #     required for the deployed frontend to receive traffic.
+    #   * Locally, the backend also reads PORT (with default 8080). If both
+    #     services shared a single PORT from .env, they'd collide on one
+    #     port. FRONTEND_PORT is the local-only escape hatch: set it in
+    #     .env alongside a distinct PORT for the backend to keep the two
+    #     services on separate ports. Default 8081 preserves the original
+    #     behaviour for a plain `make dev-frontend` with no env config.
+    port = int(
+        os.environ.get("FRONTEND_PORT") or os.environ.get("PORT", "8081")
     )
+    uvicorn.run(app, host="0.0.0.0", port=port)

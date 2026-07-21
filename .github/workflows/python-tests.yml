@@ -233,7 +233,7 @@ jobs:
 
       - name: Run pytest
         working-directory: ${{ matrix.recipe }}
-        run: uv run pytest
+        run: uv run pytest --ignore=tests/integration --ignore-glob="**/test_integration.py"
 
   # Final gate. `if: always()` so the required check always reports even when
   # detect-recipes or run-tests were cancelled/skipped/failed — a skipped

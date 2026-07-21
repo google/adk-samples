@@ -91,10 +91,55 @@ uv run validate manifest core/python/my-recipe
 uv run ruff format core/python/my-recipe && uv run ruff check core/python/my-recipe
 ```
 
-To run recipe tests:
+To run recipe tests (mirroring what CI does — integration tests excluded):
 
 ```bash
-cd core/python/my-recipe && uv run pytest
+cd core/python/my-recipe
+uv run pytest --ignore=tests/integration --ignore-glob="**/test_integration.py"
+```
+
+## Tests
+
+### Runnability test (required)
+
+Every Python recipe **must** contain `tests/test_runnability.py`. This is a
+lightweight smoke test that imports the recipe's agent module and asserts that
+`root_agent` is not `None` (and `app is not None` if the recipe defines one).
+It does not make real API calls — import-time side effects such as
+`vertexai.init` and `google.auth.default` are mocked automatically by the
+generated test.
+
+Generate or regenerate it with the `generate-python-runnability-test` skill:
+
+```
+"generate runnability test for core/python/my-recipe"
+```
+
+CI enforces its presence: a recipe without `tests/test_runnability.py` fails
+the `python-tests.yml` check.
+
+### Integration tests (skipped in CI)
+
+The `python-tests.yml` workflow excludes integration tests so the required PR
+check stays fast and credential-free. Two patterns are always excluded:
+
+| Pattern | What is excluded |
+|---------|-----------------|
+| `tests/integration/` | The entire directory and everything beneath it. |
+| `**/test_integration.py` | Any file with that exact name, at any depth. |
+
+Place any test that makes real API calls (Vertex AI, Cloud Storage, etc.) in
+one of those locations. They will not block the PR check but can be run
+locally:
+
+```bash
+cd core/python/my-recipe
+
+# Run only integration tests
+uv run pytest tests/integration
+
+# Run the full suite including integration tests
+uv run pytest
 ```
 
 ## What CI runs
@@ -111,3 +156,8 @@ Two workflows validate every PR that touches a recipe:
   `[project]` metadata check, and the hardcoded-model-name notice.
   Structural checks (folder name, size, required files, manifest schema)
   are NOT re-run here — the structure workflow already handles them.
+- **`python-tests.yml`** — runs `pytest` for every Python recipe touched
+  by the PR (or all recipes on a manual `workflow_dispatch`). Requires
+  `tests/test_runnability.py` to exist. Integration tests under
+  `tests/integration/` and files named `test_integration.py` are
+  automatically excluded.
