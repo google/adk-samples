@@ -213,6 +213,12 @@ def _write_text_atomic(path: Path, content: str, encoding: str = "utf-8") -> Non
     filesystem), a crash or disk-full error mid-write leaves the original
     file untouched — the worst outcome is an orphaned ``.tmp`` file.
 
+    ``newline=""`` disables Python's universal-newlines translation on
+    write, so any ``\\r\\n`` sequences in *content* land on disk verbatim
+    rather than being expanded by the platform. Callers that want to
+    preserve a file's original line endings must also disable universal
+    newlines on read (see :func:`_read_text_preserving_newlines`).
+
     Raises ``OSError`` on any I/O failure; callers are responsible for
     catching and reporting it.
     """
@@ -221,7 +227,7 @@ def _write_text_atomic(path: Path, content: str, encoding: str = "utf-8") -> Non
     try:
         fd, tmp_name = tempfile.mkstemp(dir=dir_, suffix=".tmp")
         tmp_path = Path(tmp_name)
-        with open(fd, "w", encoding=encoding) as fh:
+        with open(fd, "w", encoding=encoding, newline="") as fh:
             fh.write(content)
         tmp_path.replace(path)
     except OSError:
@@ -232,6 +238,20 @@ def _write_text_atomic(path: Path, content: str, encoding: str = "utf-8") -> Non
             except OSError:
                 pass
         raise
+
+
+def _read_text_preserving_newlines(path: Path) -> str:
+    """Read *path* WITHOUT converting CRLF/CR to LF.
+
+    ``Path.read_text()`` uses universal-newlines mode by default, which
+    silently rewrites ``\\r\\n`` to ``\\n`` in memory. That's fine for
+    parsing but catastrophic if the caller round-trips the file back to
+    disk — it will replace every ``\\r\\n`` with ``\\n``, mutating the
+    user's file in a way they didn't ask for. This helper opens with
+    ``newline=""`` so the bytes come through unchanged.
+    """
+    with open(path, "r", encoding="utf-8", newline="") as fh:
+        return fh.read()
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +335,21 @@ def _extract_var_from_node(
             else None
         )
 
-    # os.getenv("VAR") / os.getenv("VAR", "default")
+    def _default_from_call(call: ast.Call) -> str | None:
+        """Extract the ``default`` argument from a getenv/get/setdefault call.
+
+        Checks the second positional argument first, then falls back to
+        the ``default=`` keyword form (``os.getenv("X", default="y")``).
+        Non-string-literal defaults return None so the caller emits TODO.
+        """
+        if len(call.args) > 1:
+            return _str_const(call.args[1])
+        for kw in call.keywords:
+            if kw.arg == "default":
+                return _str_const(kw.value)
+        return None
+
+    # os.getenv("VAR") / os.getenv("VAR", "default") / os.getenv("VAR", default="d")
     if (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
@@ -325,11 +359,12 @@ def _extract_var_from_node(
         and node.args
     ):
         var_name = _str_const(node.args[0])
-        default = _str_const(node.args[1]) if len(node.args) > 1 else None
+        default = _default_from_call(node)
         return var_name, "getenv", default
 
     # os.environ.get("VAR") / os.environ.get("VAR", "default")
     # os.environ.setdefault("VAR", "default")
+    # Keyword-form default= is also honoured for both.
     if (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
@@ -341,7 +376,7 @@ def _extract_var_from_node(
         and node.args
     ):
         var_name = _str_const(node.args[0])
-        default = _str_const(node.args[1]) if len(node.args) > 1 else None
+        default = _default_from_call(node)
         kind = "environ_get" if node.func.attr == "get" else "setdefault"
         return var_name, kind, default
 
@@ -874,8 +909,13 @@ def update_env_example(
 
     # Build the new content. Line-by-line rewrites are applied to the
     # existing content; new entries are appended at the end.
+    #
+    # CRLF-preservation matters here: if we read the file with universal
+    # newlines mode (the default), Windows-authored .env.example files
+    # would silently lose their \r\n endings on every skill run. Reading
+    # + writing with newline="" keeps the bytes stable.
     if env_example.exists():
-        current = env_example.read_text(encoding="utf-8")
+        current = _read_text_preserving_newlines(env_example)
     else:
         current = ""
     lines = current.splitlines(keepends=True)

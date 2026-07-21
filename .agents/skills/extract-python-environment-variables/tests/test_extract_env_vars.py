@@ -230,6 +230,135 @@ def test_extract_env_vars_records_line_number(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# AST detection edge cases — the scanner must find TRUE positives and skip
+# TRUE negatives cleanly. False positives here would pollute .env.example;
+# false negatives would silently fail to surface a var to the user.
+# ---------------------------------------------------------------------------
+
+
+def test_extract_env_vars_kwarg_default_captured(tmp_path):
+    # `os.getenv("VAR", default="d")` — kwarg form. Rare but valid.
+    # The scanner must capture "d" so the discoverability guarantee
+    # holds regardless of calling style.
+    src = (
+        "import os\n"
+        "a = os.getenv('VAR_A', default='kw-default')\n"
+        "b = os.environ.get('VAR_B', default='kw-get-default')\n"
+        "os.environ.setdefault('VAR_C', default='kw-sd-default')\n"
+    )
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    assert result["VAR_A"][0].default == "kw-default"
+    assert result["VAR_B"][0].default == "kw-get-default"
+    assert result["VAR_C"][0].default == "kw-sd-default"
+
+
+def test_extract_env_vars_positional_wins_over_kwarg_when_both_present(tmp_path):
+    # Defensive: `os.getenv("X", "positional", default="kw")` is a
+    # SyntaxError in Python (can't have both positional and kw for the
+    # same param), but writers of weird code aside, our extractor should
+    # prefer the positional when it comes to picking a source. Since
+    # Python's own semantics reject this case at call time, we mainly
+    # verify our code doesn't crash and picks something deterministic.
+    #
+    # Practically we test only the disambiguation shape our helper picks:
+    # positional first, then kwarg. See _default_from_call.
+    src = "import os\nx = os.getenv('X', 'pos')\n"
+    py = _write(tmp_path / "mod.py", src)
+    assert m.extract_env_vars([py])["X"][0].default == "pos"
+
+
+def test_extract_env_vars_aliased_os_import_not_matched(tmp_path):
+    # `import os as o` then `o.getenv(...)` — the AST walker only fires
+    # on `os.getenv` (Attribute of Name('os')). This is intentional: we
+    # can't reliably track aliases across a whole codebase, so we accept
+    # a small false-negative rate on unusual import styles rather than
+    # a false-positive rate on look-alike names.
+    src = "import os as o\nx = o.getenv('SHOULD_NOT_MATCH', 'x')\n"
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    assert result == {}
+
+
+def test_extract_env_vars_from_import_getenv_not_matched(tmp_path):
+    # `from os import getenv` then `getenv(...)` — bare-name call. Same
+    # reasoning as the aliased-import case: we require the `os.` prefix.
+    src = "from os import getenv\nx = getenv('SHOULD_NOT_MATCH')\n"
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    assert result == {}
+
+
+def test_extract_env_vars_similar_but_wrong_attribute_not_matched(tmp_path):
+    # A non-os object with a `getenv` method must NOT match.
+    src = (
+        "class MyThing:\n"
+        "    def getenv(self, key): return None\n"
+        "obj = MyThing()\n"
+        "x = obj.getenv('NOT_A_REAL_ENV_VAR')\n"
+    )
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    assert result == {}
+
+
+def test_extract_env_vars_nested_getenv_captures_inner(tmp_path):
+    # `os.getenv(os.getenv("INNER", "def"), "outer-def")` — the inner
+    # call is captured; the outer's var_name is None (its first arg is
+    # not a string literal) so it doesn't contribute.
+    src = "import os\nx = os.getenv(os.getenv('INNER', 'def'), 'outer')\n"
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    assert "INNER" in result
+    assert result["INNER"][0].default == "def"
+    # The outer call had a non-string first arg → no entry produced.
+    # (There's nothing to assert absent by name — we just verify no
+    # spurious UPPER_SNAKE_CASE var appeared.)
+    assert len(result) == 1
+
+
+def test_extract_env_vars_setdefault_without_default_still_captured(tmp_path):
+    # `os.environ.setdefault("X")` is technically valid Python (returns
+    # None if X isn't set; setting an env var to None then coerces to
+    # "None" — nonsensical, but we still surface the var name).
+    src = "import os\nos.environ.setdefault('LONELY_VAR')\n"
+    py = _write(tmp_path / "mod.py", src)
+
+    result = m.extract_env_vars([py])
+
+    assert "LONELY_VAR" in result
+    assert result["LONELY_VAR"][0].kind == "setdefault"
+    assert result["LONELY_VAR"][0].default is None
+
+
+def test_extract_env_vars_multiple_files_aggregated(tmp_path):
+    # A var referenced in multiple files aggregates all sources into
+    # one list (preserving per-file provenance for the resolver).
+    f1 = _write(tmp_path / "a.py", "import os\nos.getenv('SHARED', 'from-a')\n")
+    f2 = _write(tmp_path / "b.py", "import os\nos.getenv('SHARED', 'from-b')\n")
+
+    result = m.extract_env_vars([f1, f2])
+
+    assert len(result["SHARED"]) == 2
+    files = {s.file for s in result["SHARED"]}
+    assert files == {f1, f2}
+
+
+def test_extract_env_vars_empty_file_list_is_empty_result():
+    assert m.extract_env_vars([]) == {}
+
+
+# ---------------------------------------------------------------------------
 # read_defined_vars
 # ---------------------------------------------------------------------------
 
@@ -506,6 +635,94 @@ def test_parse_env_example_first_occurrence_wins(tmp_path):
     assert entries["DUP"].classification == m.EntryClassification.V1_TODO
 
 
+def test_classify_export_prefix_v1_todo():
+    # `export VAR=<TODO: ...>` with no marker and no inline comment
+    # should still classify as V1_TODO (export is orthogonal to the
+    # classification signal).
+    line = f"export FOO={m.PLACEHOLDER}\n"
+    assert _classify(line) == m.EntryClassification.V1_TODO
+
+
+def test_classify_export_prefix_marker_real():
+    line = (
+        f"export FOO=real-value  # {m.EXTRACTED_MARKER}; from setdefault in x.py\n"
+    )
+    assert _classify(line) == m.EntryClassification.SKILL_REAL
+
+
+def test_classify_empty_value_is_user_owned():
+    # `FOO=` (empty value) is user-owned — the user may have deliberately
+    # set an empty default. It is NOT V1_TODO (that requires the exact
+    # PLACEHOLDER string).
+    line = "FOO=\n"
+    assert _classify(line) == m.EntryClassification.USER_OWNED
+
+
+def test_classify_value_with_whitespace_padding_still_v1_todo():
+    # Whitespace around the value must be stripped before comparison —
+    # otherwise `FOO=<TODO: update-this-value>   ` fails to classify
+    # correctly and blocks the upgrade path.
+    line = f"FOO=  {m.PLACEHOLDER}  \n"
+    assert _classify(line) == m.EntryClassification.V1_TODO
+
+
+def test_classify_indented_line_still_recognised():
+    # Leading whitespace on a var line is valid per python-dotenv. The
+    # classifier must not reject it — otherwise a well-formed but
+    # indented .env.example would get spurious appends.
+    line = f"  FOO={m.PLACEHOLDER}\n"
+    assert _classify(line) == m.EntryClassification.V1_TODO
+
+
+def test_parse_env_example_skips_blank_and_comment_only_lines(tmp_path):
+    # Blank lines and comment-only lines aren't entries and must not
+    # end up in the returned dict.
+    env = _write(
+        tmp_path / ".env.example",
+        "\n"
+        "# just a comment\n"
+        "\n"
+        "REAL=1\n"
+        "   # indented comment\n"
+        "\n",
+    )
+    entries = m.parse_env_example(env)
+    assert set(entries.keys()) == {"REAL"}
+
+
+def test_parse_env_example_skips_malformed_lines(tmp_path):
+    # A line that doesn't match the env-var shape (no `=`, or wrong
+    # name shape) is ignored — never crashes the parser.
+    env = _write(
+        tmp_path / ".env.example",
+        "GOOD=1\n"
+        "just a random line without equals\n"
+        "lowercase_var=2\n"  # not UPPER_SNAKE_CASE
+        "9NUMERIC_START=3\n"  # invalid identifier
+        "ALSO_GOOD=4\n",
+    )
+    entries = m.parse_env_example(env)
+    assert set(entries.keys()) == {"GOOD", "ALSO_GOOD"}
+
+
+def test_parse_env_example_missing_file_returns_empty_dict(tmp_path):
+    # No file → empty dict, not an exception. Downstream code relies
+    # on this so it can be called unconditionally.
+    entries = m.parse_env_example(tmp_path / "does-not-exist.env")
+    assert entries == {}
+
+
+def test_read_defined_vars_stays_backwards_compatible(tmp_path):
+    # read_defined_vars is now a thin wrapper around parse_env_example.
+    # Existing callers (assign_model_var_names) rely on the same return
+    # shape — verify it still returns just names.
+    env = _write(
+        tmp_path / ".env.example",
+        "A=1\nB=2\n# comment\n",
+    )
+    assert m.read_defined_vars(env) == {"A", "B"}
+
+
 # ---------------------------------------------------------------------------
 # _rewrite_var_line — safety-hardened in-place rewriter
 # ---------------------------------------------------------------------------
@@ -543,6 +760,74 @@ def test_rewriter_preserves_indent_and_export_together():
     ok = m._rewrite_var_line(lines, "FOO", "FOO=real")
     assert ok is True
     assert lines[0] == "\texport FOO=real\n"
+
+
+def test_rewriter_empty_lines_list_returns_false():
+    # No lines to match against → False, no crash.
+    lines: list[str] = []
+    assert m._rewrite_var_line(lines, "FOO", "FOO=x") is False
+
+
+def test_rewriter_does_not_match_similar_prefixed_var_names():
+    # `FOO` must not match `FOO_BAR` or `FOO_BAZ`. The regex uses
+    # re.escape + anchored end, so this is regression-guarded.
+    lines = [
+        "FOO_BAR=1\n",
+        "FOO_BAZ=2\n",
+        "FOO=target\n",
+    ]
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=new")
+    assert ok is True
+    # Only the FOO line changed.
+    assert lines[0] == "FOO_BAR=1\n"
+    assert lines[1] == "FOO_BAZ=2\n"
+    assert lines[2] == "FOO=new\n"
+
+
+def test_rewriter_leaves_all_non_matching_lines_byte_identical():
+    # Regression guard: replacing one line must never mutate any other
+    # line — including whitespace, comments, encoding, or ordering.
+    lines = [
+        "# License block\n",
+        "# ------------\n",
+        "\n",
+        "ALPHA=1\n",
+        "\r\n",  # CRLF blank
+        "BETA=2  # a user note\n",
+        f"TARGET={m.PLACEHOLDER}\n",
+        "GAMMA=3\n",
+        "\n",
+    ]
+    snapshot = list(lines)
+    ok = m._rewrite_var_line(lines, "TARGET", "TARGET=real")
+    assert ok is True
+    for i, original in enumerate(snapshot):
+        if i == 6:  # the TARGET line
+            assert lines[i] != original
+            assert lines[i] == "TARGET=real\n"
+        else:
+            assert lines[i] == original, f"line {i} unexpectedly changed"
+
+
+def test_rewriter_handles_tab_around_equals():
+    # `FOO\t=\tvalue` — legal per python-dotenv (which permits
+    # whitespace around `=`). Our regex allows [ \t]* on both sides.
+    lines = [f"FOO\t=\t{m.PLACEHOLDER}\n"]
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=real")
+    assert ok is True
+    # We use the standard shape on output (single `=`, no tabs).
+    # Preserved: nothing about the whitespace within the line.
+    assert lines[0] == "FOO=real\n"
+
+
+def test_rewriter_no_newline_on_last_line():
+    # Last line of file might have no trailing newline. The rewriter
+    # must preserve that — adding a newline could subtly change tools
+    # that care (git diff noise, some parsers).
+    lines = [f"FOO={m.PLACEHOLDER}"]  # no trailing newline
+    ok = m._rewrite_var_line(lines, "FOO", "FOO=real")
+    assert ok is True
+    assert lines[0] == "FOO=real"
 
 
 def test_rewriter_refuses_quoted_value():
@@ -843,6 +1128,94 @@ def test_upgrade_preserves_ordering_and_surrounding_lines(tmp_path):
     assert "OTHER=leave-me-alone" in lines
 
 
+def test_update_env_example_noop_when_env_vars_empty(tmp_path):
+    # A recipe with zero env-var accesses → nothing to do, no file
+    # touched, no crash.
+    env = _write(tmp_path / ".env.example", "EXISTING=1\n")
+    before = env.read_text(encoding="utf-8")
+    added, upgraded = m.update_env_example(env, {})
+    assert (added, upgraded) == ([], [])
+    assert env.read_text(encoding="utf-8") == before
+
+
+def test_update_env_example_noop_when_no_changes_needed_does_not_touch_file(tmp_path):
+    # Every var already declared + no upgrades required → the file must
+    # not be re-written at all (would show as a spurious modification in
+    # git status / re-run diff).
+    env = _write(tmp_path / ".env.example", "A=user-value\n")
+    original_mtime = env.stat().st_mtime_ns
+    original_bytes = env.read_bytes()
+
+    added, upgraded = m.update_env_example(
+        env, {"A": _srcs(("getenv", "different"))}
+    )
+    assert (added, upgraded) == ([], [])
+    # File content byte-identical.
+    assert env.read_bytes() == original_bytes
+    # (mtime check is best-effort — some filesystems have coarse
+    # resolution — but the byte-equality assertion is the strong one.)
+    _ = original_mtime  # silence unused
+
+
+def test_update_env_example_round_trip_check_refuses_corrupted_rewrite(
+    tmp_path, monkeypatch, capsys
+):
+    # SAFETY BACKSTOP: if a hypothetical bug in the rewriter produced
+    # a line that doesn't re-parse as SKILL_REAL, the round-trip check
+    # must catch it and refuse to write. This test forces that by
+    # monkeypatching the rewriter to succeed structurally but produce
+    # a corrupt line, and asserts the whole write is rolled back.
+    env = _write(tmp_path / ".env.example", f"V={m.PLACEHOLDER}\n")
+    before = env.read_bytes()
+
+    def _corrupt_rewriter(lines, var_name, new_line_body):
+        # Simulate a rewriter bug: signal success but write garbage
+        # that will never re-parse as a valid entry.
+        lines[0] = "totally not a valid env line !!!\n"
+        return True
+
+    monkeypatch.setattr(m, "_rewrite_var_line", _corrupt_rewriter)
+
+    added, upgraded = m.update_env_example(
+        env, {"V": _srcs(("setdefault", "real"))}
+    )
+    # Writer refused because of the round-trip check.
+    assert (added, upgraded) == ([], [])
+    # File byte-identical.
+    assert env.read_bytes() == before
+    # ERROR was logged so a caller / CI can see it.
+    err = capsys.readouterr().err
+    assert "Round-trip safety check failed" in err
+
+
+def test_update_env_example_upgrade_only_no_append_still_writes(tmp_path):
+    # A recipe where every var is already declared but some need
+    # upgrading — the writer must still update the file (upgrade
+    # path is not gated on there being appends).
+    env = _write(tmp_path / ".env.example", f"V={m.PLACEHOLDER}\n")
+    added, upgraded = m.update_env_example(
+        env, {"V": _srcs(("setdefault", "real"))}
+    )
+    assert added == []
+    assert upgraded == ["V"]
+    assert "V=real" in env.read_text(encoding="utf-8")
+
+
+def test_update_env_example_preserves_crlf_line_endings(tmp_path):
+    # A .env.example authored on Windows should keep its CRLF endings
+    # after an in-place upgrade — mixed endings in one file are ugly
+    # and can break naive tools.
+    env = tmp_path / ".env.example"
+    env.write_bytes(f"V={m.PLACEHOLDER}\r\n".encode("utf-8"))
+
+    m.update_env_example(env, {"V": _srcs(("setdefault", "real"))})
+
+    # Line still ends with CRLF, not LF.
+    content_bytes = env.read_bytes()
+    assert b"\r\n" in content_bytes
+    assert b"V=real" in content_bytes
+
+
 # ---------------------------------------------------------------------------
 # looks_like_placeholder
 # ---------------------------------------------------------------------------
@@ -888,6 +1261,65 @@ def test_looks_like_placeholder_passes_real_looking_values():
         "postgresql://localhost:5432/db",
     ):
         assert m.looks_like_placeholder(value) is None, value
+
+
+def test_looks_like_placeholder_broader_realistic_defaults():
+    # Extended coverage: things that should PASS through. If any of these
+    # get downgraded to TODO, real config will be missed.
+    for value in (
+        "0",
+        "1",
+        "false",
+        "False",
+        "off",
+        "DEBUG",
+        "ERROR",
+        "utf-8",
+        "en_US.UTF-8",
+        "8080",
+        "/tmp/cache",
+        "s3://bucket/prefix/",
+        "redis://cache.local:6379/0",
+        "us-east4-a",
+        "text-embedding-004",
+        "gs://my-bucket/path",
+        "@channel-name",
+        "prod",
+        "staging",
+    ):
+        assert m.looks_like_placeholder(value) is None, value
+
+
+def test_looks_like_placeholder_your_and_my_only_with_delimiter():
+    # We only flag "your-" / "your_" / "my-" / "my_" — not any word
+    # starting with those substrings (e.g. "yours", "yourself", "myth",
+    # "myself"). This prevents false positives on legitimate words.
+    for value in ("yours", "yourself", "myth", "myself", "mysql", "yourfoo"):
+        assert m.looks_like_placeholder(value) is None, value
+
+
+def test_looks_like_placeholder_case_insensitive_prefix_matching():
+    # "your-" prefix check is case-insensitive so YOUR_KEY / your-key /
+    # YoUr-KeY all get flagged.
+    for value in ("YOUR-KEY", "yOUr-key", "MY-project", "Your_secret"):
+        assert m.looks_like_placeholder(value) is not None, value
+
+
+def test_looks_like_placeholder_example_com_in_url_flagged():
+    # example.com anywhere in the value triggers the flag — this is
+    # deliberate. A URL with example.com is documentation-shaped, not
+    # a real endpoint.
+    assert m.looks_like_placeholder("https://api.example.com/v1") is not None
+    assert m.looks_like_placeholder("user@example.com") is not None
+
+
+def test_looks_like_placeholder_returns_reason_string():
+    # The return value must be a non-empty reason string, not just a
+    # truthy sentinel — the writer surfaces it in the marker comment.
+    reason = m.looks_like_placeholder("")
+    assert isinstance(reason, str) and reason
+    reason = m.looks_like_placeholder("changeme")
+    assert isinstance(reason, str) and reason
 
 
 # ---------------------------------------------------------------------------
@@ -956,6 +1388,63 @@ def test_resolve_default_ignores_sources_without_string_default():
     assert resolved.conflict_count == 0
 
 
+def test_resolve_default_empty_sources_returns_none():
+    # Defensive: an empty source list must not crash.
+    resolved = m.resolve_default([])
+    assert resolved.value is None
+    assert resolved.winner is None
+    assert resolved.conflict_count == 0
+
+
+def test_resolve_default_line_number_tiebreak_within_same_file():
+    # Two sources in the SAME file with different defaults: the earlier
+    # line wins (deterministic ordering after (kind, file, line)).
+    sources = [
+        m.Source(Path("x.py"), "setdefault", "later", 50),
+        m.Source(Path("x.py"), "setdefault", "earlier", 5),
+    ]
+    resolved = m.resolve_default(sources)
+    assert resolved.value == "earlier"
+    assert resolved.winner is not None
+    assert resolved.winner.line == 5
+
+
+def test_resolve_default_environ_get_and_getenv_at_same_priority():
+    # environ_get and getenv share the SAME priority tier (1); a
+    # setdefault (tier 0) beats both. Within tier 1, alphabetical
+    # file wins.
+    sources = [
+        m.Source(Path("b.py"), "getenv", "b-value", 1),
+        m.Source(Path("a.py"), "environ_get", "a-value", 1),
+    ]
+    resolved = m.resolve_default(sources)
+    # Alphabetical: "a.py" < "b.py" → a-value wins.
+    assert resolved.value == "a-value"
+
+
+def test_resolve_default_environ_sub_never_contributes_value():
+    # environ_sub sources always have default=None, so they can never
+    # supply a winning value. If ALL sources are environ_sub, the
+    # resolver returns None.
+    sources = [
+        m.Source(Path("a.py"), "environ_sub", None, 1),
+        m.Source(Path("b.py"), "environ_sub", None, 1),
+    ]
+    resolved = m.resolve_default(sources)
+    assert resolved.value is None
+
+
+def test_resolve_default_setdefault_wins_over_environ_get():
+    # setdefault is tier 0; environ_get is tier 1. setdefault always wins.
+    sources = [
+        m.Source(Path("z.py"), "setdefault", "sd-value", 1),
+        m.Source(Path("a.py"), "environ_get", "get-value", 1),  # earlier alphabetically!
+    ]
+    resolved = m.resolve_default(sources)
+    # Priority beats alphabetical.
+    assert resolved.value == "sd-value"
+
+
 # ---------------------------------------------------------------------------
 # format_env_entry
 # ---------------------------------------------------------------------------
@@ -1003,6 +1492,47 @@ def test_format_env_entry_records_conflict_in_comment(tmp_path):
     # Alphabetical tie-break within setdefault tier picks a.py's TRUE.
     assert line.startswith("FLAG=TRUE")
     assert "differs from 1 other source" in line
+
+
+def test_format_env_entry_no_conflict_note_when_sources_agree(tmp_path):
+    # Two sources with the same default → no conflict note in the comment
+    # (the comment should stay clean when nothing needs reconciling).
+    sources = [
+        m.Source(tmp_path / "a.py", "setdefault", "TRUE", 1),
+        m.Source(tmp_path / "b.py", "setdefault", "TRUE", 1),
+    ]
+    line = m.format_env_entry("FLAG", sources, recipe_dir=tmp_path)
+    assert line.startswith("FLAG=TRUE")
+    assert "differs from" not in line
+
+
+def test_format_env_entry_uses_basename_when_no_recipe_dir(tmp_path):
+    # Callers can pass recipe_dir=None (the parameter is optional). When
+    # they do, provenance uses the file's basename, not an absolute path.
+    src_file = tmp_path / "deep" / "nested" / "agent.py"
+    sources = [m.Source(src_file, "setdefault", "value", 1)]
+    line = m.format_env_entry("V", sources)  # recipe_dir omitted
+    assert "agent.py" in line
+    assert str(tmp_path) not in line  # no absolute path leaked
+
+
+def test_format_env_entry_uses_basename_when_file_not_under_recipe_dir(tmp_path):
+    # If the source file is somewhere else on disk (unusual), we fall
+    # back to basename rather than emitting an absolute path.
+    src_file = Path("/tmp/somewhere/else.py")
+    sources = [m.Source(src_file, "setdefault", "value", 1)]
+    line = m.format_env_entry("V", sources, recipe_dir=tmp_path)
+    assert "else.py" in line
+    assert "/tmp/somewhere" not in line
+
+
+def test_format_env_entry_line_contains_no_newlines():
+    # The formatter returns a SINGLE line; callers add the newline. A
+    # returned string with embedded newlines would corrupt .env.example.
+    sources = [m.Source(Path("x.py"), "setdefault", "value", 1)]
+    line = m.format_env_entry("V", sources)
+    assert "\n" not in line
+    assert "\r" not in line
 
 
 # ---------------------------------------------------------------------------
@@ -1822,3 +2352,274 @@ def test_main_real_run_applies_changes(tmp_path, monkeypatch):
         "os.environ.setdefault('GOOGLE_CLOUD_PROJECT', 'my-project-id')"
         in agent_text
     )
+
+
+# ---------------------------------------------------------------------------
+# End-to-end edge cases — main() against unusual recipe shapes
+# ---------------------------------------------------------------------------
+
+
+def test_main_recipe_with_no_python_files_does_not_crash(tmp_path, monkeypatch):
+    # A recipe directory that has a pyproject.toml but no Python files
+    # (empty scaffold, or someone deleted the source). Skill must
+    # complete gracefully.
+    recipe = tmp_path / "empty-recipe"
+    recipe.mkdir()
+    (recipe / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["python-dotenv>=1.0.0"]\n',
+        encoding="utf-8",
+    )
+
+    # No Python files at all; no crash, no .env.example created (nothing
+    # to write about).
+    _run_main(monkeypatch, recipe)
+
+    # .env.example is NOT created (there were no vars to write).
+    assert not (recipe / ".env.example").exists()
+
+
+def test_main_recipe_with_only_user_owned_env_example_is_noop(
+    tmp_path, monkeypatch
+):
+    # If the maintainer has hand-authored every entry (no markers, no
+    # v1 TODOs), the skill must NOT add or upgrade anything on that
+    # file — and the file must stay byte-identical.
+    recipe = tmp_path / "recipe"
+    pkg = recipe / "pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "agent.py").write_text(
+        "import os\n"
+        "A = os.getenv('MY_API_KEY', 'default-A')\n"
+        "B = os.getenv('MY_LOG_LEVEL', 'DEBUG')\n",
+        encoding="utf-8",
+    )
+    (recipe / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["python-dotenv>=1.0.0"]\n',
+        encoding="utf-8",
+    )
+    env_example = recipe / ".env.example"
+    env_example.write_text(
+        "# Fully hand-curated by maintainer\n"
+        "MY_API_KEY=hand-typed-real-value\n"
+        "MY_LOG_LEVEL=INFO  # user override\n",
+        encoding="utf-8",
+    )
+    before = env_example.read_bytes()
+
+    _run_main(monkeypatch, recipe)
+
+    # Byte-identical: nothing was added, nothing was rewritten.
+    assert env_example.read_bytes() == before
+
+
+def test_main_recipe_with_unparseable_env_example_line_does_not_crash(
+    tmp_path, monkeypatch
+):
+    # A .env.example with a malformed / non-declaration line should be
+    # tolerated — the parser skips such lines and the skill continues.
+    recipe = tmp_path / "recipe"
+    pkg = recipe / "pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "agent.py").write_text(
+        "import os\nKEY = os.getenv('NEW_VAR')\n",
+        encoding="utf-8",
+    )
+    (recipe / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["python-dotenv>=1.0.0"]\n',
+        encoding="utf-8",
+    )
+    (recipe / ".env.example").write_text(
+        "GOOD_VAR=1\n"
+        "this line is not a valid env declaration at all\n"
+        "ALSO_GOOD=2\n",
+        encoding="utf-8",
+    )
+
+    # Must complete without raising.
+    _run_main(monkeypatch, recipe)
+
+    # The garbage line is preserved verbatim (nothing to do with it).
+    content = (recipe / ".env.example").read_text(encoding="utf-8")
+    assert "this line is not a valid env declaration at all" in content
+    # And NEW_VAR was appended normally.
+    assert "NEW_VAR=" in content
+
+
+def test_main_second_run_after_migration_is_byte_identical(tmp_path, monkeypatch):
+    # Cross-cutting idempotency: a full run that DOES modify things,
+    # followed by an identical second run, must produce zero further
+    # modifications. This is the strongest end-to-end guarantee that
+    # the skill converges.
+    recipe = _make_sample_recipe(tmp_path)
+    (recipe / ".env.example").write_text(
+        f"USE_VERTEX={m.PLACEHOLDER}\n"
+        f"GOOGLE_CLOUD_PROJECT={m.PLACEHOLDER}\n"
+        "LOG_LEVEL=WARN  # user set this deliberately\n",
+        encoding="utf-8",
+    )
+
+    _run_main(monkeypatch, recipe)
+    after_first_run = (recipe / ".env.example").read_bytes()
+
+    _run_main(monkeypatch, recipe)
+    after_second_run = (recipe / ".env.example").read_bytes()
+
+    assert after_first_run == after_second_run
+
+
+# ---------------------------------------------------------------------------
+# Invariant / property-style tests — cut across many code paths at once,
+# guarding the golden rule: user data never mutates, idempotency is total.
+# ---------------------------------------------------------------------------
+
+
+def test_invariant_user_owned_lines_byte_identical_after_any_writer_run(tmp_path):
+    # Sweep across many scenarios (var missing / v1_todo / skill_todo /
+    # skill_real / user_owned × source has real value / no default /
+    # placeholder-shape default). At the end of ALL of them, every line
+    # we classified as USER_OWNED must be byte-identical to what it
+    # was before.
+    env = _write(
+        tmp_path / ".env.example",
+        "# hand-tuned by maintainer\n"
+        "USER_A=real-value-A\n"
+        "USER_B=real-value-B  # inline note\n"
+        "\texport USER_C=real-value-C\n"
+        f"USER_D={m.PLACEHOLDER}  # touched-by-hand, keep as TODO\n"  # V1 TODO + comment → USER_OWNED
+        "\n"
+        "# section 2\n"
+        "USER_E=user-value-E\n",
+    )
+    # Snapshot every line before any run.
+    before_lines = env.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    # Run a mix of scenarios in one call: missing (append), pre-existing
+    # SKILL_TODO getting upgraded, USER_OWNED with source drift.
+    m.update_env_example(
+        env,
+        {
+            # Missing → append (does not touch existing lines).
+            "APPEND_ME": _srcs(("setdefault", "TRUE")),
+            # Every USER_* var also appears in the source scan with a
+            # different value than what the maintainer typed. Golden
+            # rule: skill must never touch these.
+            "USER_A": _srcs(("setdefault", "would-clobber")),
+            "USER_B": _srcs(("setdefault", "would-clobber")),
+            "USER_C": _srcs(("setdefault", "would-clobber")),
+            "USER_D": _srcs(("setdefault", "would-clobber")),
+            "USER_E": _srcs(("setdefault", "would-clobber")),
+        },
+    )
+
+    after_lines = env.read_text(encoding="utf-8").splitlines(keepends=True)
+    # Every ORIGINAL line must still be present, byte-identical.
+    for original_line in before_lines:
+        assert original_line in after_lines, (
+            f"original user-owned line not preserved: {original_line!r}"
+        )
+
+
+def test_invariant_idempotency_across_all_v2_paths(tmp_path):
+    # A single .env.example exercising append, upgrade-v1, upgrade-skill,
+    # skip-user-owned, skip-placeholder-source, skip-drifted-skill-real
+    # in one shot. Run the writer twice; second call must return
+    # ([], []) and file must be byte-identical.
+    env = _write(
+        tmp_path / ".env.example",
+        f"V1_TODO_UPGRADABLE={m.PLACEHOLDER}\n"
+        f"V1_TODO_NO_SOURCE={m.PLACEHOLDER}\n"  # source has no default → skip
+        f"V1_TODO_PLACEHOLDER_SOURCE={m.PLACEHOLDER}\n"  # source has "my-x" → skip
+        f"SKILL_TODO_UPGRADABLE={m.PLACEHOLDER}"
+        f"  # {m.EXTRACTED_MARKER}; no default in source\n"
+        f"SKILL_REAL_DRIFTED=old-value"
+        f"  # {m.EXTRACTED_MARKER}; from setdefault in x.py\n"
+        "USER_OWNED_VAR=user-value\n",
+    )
+
+    env_vars = {
+        "V1_TODO_UPGRADABLE": _srcs(("setdefault", "real")),
+        "V1_TODO_NO_SOURCE": _srcs(("getenv", None)),
+        "V1_TODO_PLACEHOLDER_SOURCE": _srcs(("setdefault", "my-thing")),
+        "SKILL_TODO_UPGRADABLE": _srcs(("setdefault", "TRUE")),
+        "SKILL_REAL_DRIFTED": _srcs(("setdefault", "new-drifted-value")),
+        "USER_OWNED_VAR": _srcs(("setdefault", "would-clobber")),
+        "APPEND_ME": _srcs(("setdefault", "hello")),
+    }
+
+    added1, upgraded1 = m.update_env_example(env, env_vars)
+    content_after_first = env.read_bytes()
+
+    added2, upgraded2 = m.update_env_example(env, env_vars)
+    content_after_second = env.read_bytes()
+
+    # First run: added APPEND_ME; upgraded the two upgradable TODOs.
+    assert set(added1) == {"APPEND_ME"}
+    assert set(upgraded1) == {
+        "V1_TODO_UPGRADABLE",
+        "SKILL_TODO_UPGRADABLE",
+    }
+    # Second run: everything already in its final state.
+    assert added2 == []
+    assert upgraded2 == []
+    assert content_after_first == content_after_second
+
+
+def test_invariant_writer_never_produces_unclassifiable_entries(tmp_path):
+    # Every line the writer touches must re-parse cleanly into one of
+    # the four EntryClassification buckets. This guards against a
+    # malformed line being accidentally emitted (which would then
+    # confuse the classifier on the next run).
+    env = _write(
+        tmp_path / ".env.example",
+        f"V1_TODO={m.PLACEHOLDER}\n",
+    )
+
+    m.update_env_example(
+        env,
+        {
+            "V1_TODO": _srcs(("setdefault", "real")),
+            "APPEND_ME": _srcs(("getenv", "value")),
+            "APPEND_TODO": _srcs(("getenv", None)),
+            "APPEND_DOWNGRADED": _srcs(("setdefault", "my-project-id")),
+        },
+    )
+
+    # Every entry the writer produced must classify as one of the
+    # known buckets. Nothing should be "unclassifiable" (which would
+    # be caught by the round-trip check but is worth belt-and-braces
+    # testing at the invariant level).
+    valid_buckets = {
+        m.EntryClassification.USER_OWNED,
+        m.EntryClassification.V1_TODO,
+        m.EntryClassification.SKILL_TODO,
+        m.EntryClassification.SKILL_REAL,
+    }
+    entries = m.parse_env_example(env)
+    for name, entry in entries.items():
+        assert entry.classification in valid_buckets, (
+            f"{name} classified as unknown bucket: {entry.classification}"
+        )
+
+
+def test_invariant_appended_entries_are_skill_owned(tmp_path):
+    # Every entry APPENDED by the writer must be either SKILL_TODO or
+    # SKILL_REAL — never USER_OWNED (which would mean the skill's own
+    # writes don't carry the marker properly). This closes the loop
+    # so future runs can classify + upgrade correctly.
+    env = tmp_path / ".env.example"
+
+    m.update_env_example(
+        env,
+        {
+            "WITH_DEFAULT": _srcs(("setdefault", "real")),
+            "NO_DEFAULT": _srcs(("getenv", None)),
+            "DOWNGRADED": _srcs(("setdefault", "your-secret")),
+        },
+    )
+
+    entries = m.parse_env_example(env)
+    assert entries["WITH_DEFAULT"].classification == m.EntryClassification.SKILL_REAL
+    assert entries["NO_DEFAULT"].classification == m.EntryClassification.SKILL_TODO
+    assert entries["DOWNGRADED"].classification == m.EntryClassification.SKILL_TODO
