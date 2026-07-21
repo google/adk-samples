@@ -19,6 +19,7 @@ import os
 import vertexai
 from absl import app, flags
 from dotenv import load_dotenv
+from runtime_requirements import get_deployment_requirements
 from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
 
@@ -43,13 +44,7 @@ def create() -> None:
     remote_agent = agent_engines.create(
         adk_app,
         display_name=root_agent.name,
-        requirements=[
-            "google-adk (>=0.0.2)",
-            "google-cloud-aiplatform[agent_engines] (>=1.91.0,!=1.92.0)",
-            "google-genai (>=1.5.0,<2.0.0)",
-            "pydantic (>=2.10.6,<3.0.0)",
-            "absl-py (>=2.2.1,<3.0.0)",
-        ],
+        requirements=get_deployment_requirements(),
         #        extra_packages=[""],
     )
     print(f"Created remote agent: {remote_agent.resource_name}")
