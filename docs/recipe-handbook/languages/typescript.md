@@ -14,7 +14,7 @@ work. Once accepted, this page will mirror the shape of the
 [Python page](./python.md).
 
 Structural checks (folder name, size limits, `manifest.yaml`)
-apply to TypeScript recipes today — you can ship a working
+apply to TypeScript recipes today — you can submit a working
 `contrib/typescript/` recipe against those alone.
 
 ---

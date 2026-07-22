@@ -13,7 +13,7 @@ runner, and JVM target before you invest the work. Once accepted,
 this page will mirror the shape of the [Python page](./python.md).
 
 Structural checks (folder name, size limits, `manifest.yaml`)
-apply to Kotlin recipes today — you can ship a working
+apply to Kotlin recipes today — you can submit a working
 `contrib/kotlin/` recipe against those alone.
 
 ---

@@ -52,7 +52,7 @@ Generate with the `generate-manifest` AI skill.
 | `language` | `python`, `java`, `go`, `kotlin`, `typescript` |
 | `description` | Prose, minimum 10 characters |
 | `ownership.team` | Team name |
-| `ownership.poc` | GitHub user ID of the accountable owner |
+| `ownership.poc` (Point of Contact) | GitHub user ID of the accountable owner |
 
 **Common optional fields:**
 

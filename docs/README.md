@@ -1,4 +1,4 @@
-<!-- word count: 115 (target 100, cap 200) -->
+<!-- word count: 195 (target 100, cap 200) -->
 
 # `docs/`
 
@@ -6,9 +6,21 @@
 A **recipe** is one such example — a focused, self-contained agent
 that lives under `contrib/` and demonstrates one concrete ADK pattern.
 
-A good recipe has a clear purpose, solves a concrete problem for the
-ADK community, and offers something new. Please make sure the intent
-and value of your recipe can be clearly stated.
+**Who reads your recipe?** Other ADK developers — people building
+agents who are looking for a concrete starting point, a technique
+they haven't seen, or a pattern they can adapt. A good recipe saves
+them hours and earns visibility in the ADK community.
+
+**What makes a recipe good?** A clear purpose, a concrete problem it
+solves, and something new to teach. Before writing code, make sure
+you can answer: "What does this recipe demonstrate, and who benefits?"
+If the answer isn't clear, the recipe needs more focus. Recipes that
+duplicate existing examples without adding new insight may not be
+accepted.
+
+Contributing gives you visibility in the ADK community and helps
+other developers learn from your work. The more focused and
+well-documented your recipe is, the more useful it becomes.
 
 ## Start here
 

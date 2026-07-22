@@ -9,7 +9,7 @@ Deep detail lives in [`recipe-handbook/`](./recipe-handbook/README.md).
 
 ## 0. AI skills
 
-Requires an AI coding assistant (e.g. `Antigravity-cli`). If you don't have one, skip to
+Requires an AI coding assistant (e.g. CloudCode). If you don't have one, skip to
 [§ 3](#3-before-you-open-the-pr) for the manual commands.
 
 The fastest path is `prepare-python-recipe` — it runs every other
@@ -30,7 +30,8 @@ For deep detail on each skill, see the
 
 ## 1. Always
 
-- [ ] Recipe has a clear, unique purpose — see
+- [ ] Recipe has a clear, unique purpose: a concrete problem it
+      solves and something new to teach — see
       [What makes a good recipe](./recipe-handbook/README.md#what-makes-a-good-recipe)
 - [ ] Recipe lives at `contrib/<lang>/<name>` —
       [anatomy](./recipe-handbook/anatomy.md)
@@ -45,6 +46,9 @@ For deep detail on each skill, see the
 
 ## 2. Your language
 
+> **Deprecated models:** `gemini-2.0-flash` and `gemini-2.5-flash` are no
+> longer accepted. Use `gemini-3.5-flash`.
+
 **Python** — [details](./recipe-handbook/languages/python.md)
 - [ ] `pyproject.toml` aligned — AI skill:
       `align-recipe-pyproject`
@@ -57,8 +61,13 @@ For deep detail on each skill, see the
 - [ ] `tests/test_runnability.py` present — AI skill:
       `generate-python-runnability-test`
 
-**Java / Go / TypeScript / Kotlin** — language-specific guidance
-is in progress. Structural checks in § 3 already apply — run
+**Java / Go / TypeScript / Kotlin** — language-specific guidance is
+in progress; start with the relevant page before writing code:
+[Go](./recipe-handbook/languages/go.md) ·
+[Java](./recipe-handbook/languages/java.md) ·
+[TypeScript](./recipe-handbook/languages/typescript.md) ·
+[Kotlin](./recipe-handbook/languages/kotlin.md).
+Structural checks in § 3 already apply — run
 `uv run validate $RECIPE_PATH` and review
 [anatomy.md](./recipe-handbook/anatomy.md) for layout rules.
 
@@ -78,7 +87,7 @@ export RECIPE_PATH=contrib/python/my-recipe
 
 Replace `my-recipe` with your recipe's folder name.
 
-### Full manual command sequence
+### One-liner (paste this first)
 
 One block, one paste. Requires `$RECIPE_PATH` from above.
 
@@ -156,3 +165,7 @@ a PR.
   No manual trigger is needed.
 - Want the full story? →
   [handbook overview](./recipe-handbook/README.md)
+
+---
+
+↑ [Docs home](./README.md) · [Handbook](./recipe-handbook/README.md)

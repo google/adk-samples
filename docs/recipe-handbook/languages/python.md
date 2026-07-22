@@ -52,6 +52,9 @@ your `.env.example` or hand-written Python code.
 Full skill reference:
 [skills catalog](../skills-catalog.md#python-skills).
 
+> **Deprecated models:** `gemini-2.0-flash` and `gemini-2.5-flash` are no
+> longer accepted. Use `gemini-3.5-flash`.
+
 ## Copy-paste starters
 
 The `scaffold-python-recipe` skill creates these for you. Use

@@ -13,7 +13,7 @@ layout before you invest the work. Once accepted, this page will
 mirror the shape of the [Python page](./python.md).
 
 Structural checks (folder name, size limits, `manifest.yaml`) apply
-to Java recipes today — you can ship a working `contrib/java/`
+to Java recipes today — you can submit a working `contrib/java/`
 recipe against those alone.
 
 ---

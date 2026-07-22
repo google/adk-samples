@@ -8,35 +8,53 @@ Errors and warnings on a recipe PR, mapped to the fix.
 PR branch. No manual action is needed. If a check appears stuck,
 a reviewer can re-run it from the GitHub Actions UI.
 
+**Fix structural errors first.** Failures in `validate-recipe-structure`
+can mask downstream Python checks. A stale `uv.lock` causes both
+`python-dependency-policy` and `python-tests` to fail — run `uv lock`
+once to clear both.
+
 **Can't find your error?** Search this page for keywords from the
 CI log, or [jump to Something else](#something-else).
 
 ## Contents
 
+**Structure**
 - [manifest.yaml missing or invalid](#manifestyaml-missing-or-invalid)
 - [ownership.team or poc is a placeholder](#ownershipteam-or-poc-is-a-placeholder)
 - [Directory name too long or invalid](#directory-name-too-long-or-invalid)
+- [Recipe exceeds size or file limit](#recipe-exceeds-size-or-file-limit)
+
+**README.md**
 - [README.md is missing or empty](#readmemd-is-missing-or-empty)
 - [README.md contains TODO placeholders](#readmemd-contains-todo-placeholders)
 - [README.md is too short](#readmemd-is-too-short)
 - [README.md is missing a setup section](#readmemd-is-missing-a-setup-section)
 - [README.md is missing a run section or code block](#readmemd-is-missing-a-run-section-or-code-block)
-- [Recipe exceeds size or file limit](#recipe-exceeds-size-or-file-limit)
+
+**pyproject.toml**
 - [pyproject.toml has a local ruff configuration](#pyprojecttoml-has-a-local-ruff-configuration)
 - [Standalone Ruff config file](#standalone-ruff-config-file)
-- [Env var missing from .env.example](#env-var-missing-from-envexample)
 - [Project name doesn't match folder name](#project-name-doesnt-match-folder-name)
 - [Project description doesn't match manifest](#project-description-doesnt-match-manifest)
 - [requires-python below 3.11](#requires-python-below-311)
-- [Runnability test missing](#runnability-test-missing)
-- [uv.lock out of sync](#uvlock-out-of-sync)
 - [pyproject.toml has no sibling uv.lock](#pyprojecttoml-has-no-sibling-uvlock)
+
+**Environment variables**
+- [Env var missing from .env.example](#env-var-missing-from-envexample)
+
+**Dependencies (uv.lock)**
+- [uv.lock out of sync](#uvlock-out-of-sync)
 - [Lockfile references a non-PyPI URL](#lockfile-references-a-non-pypi-url)
 - [VCS dependency in uv.lock](#vcs-dependency-in-uvlock)
 - [Local path dependency in uv.lock](#local-path-dependency-in-uvlock)
 - [Missing package hash in uv.lock](#missing-package-hash-in-uvlock)
+
+**Tests and code style**
+- [Runnability test missing](#runnability-test-missing)
 - [Ruff format or check failed](#ruff-format-or-check-failed)
-- [Advisory notices (never fail CI)](#advisory-notices-never-fail-ci)
+
+**Other**
+- [Non-blocking notices](#non-blocking-notices)
 - [Something else](#something-else)
 
 ---
@@ -310,6 +328,8 @@ uv lock
 
 **Workflow:** [`python-format.yml`](../../.github/workflows/python-format.yml)
 
+CI output contains: `Would reformat` (format failure) or a Ruff rule ID such as `E`, `W`, `F`, `I` followed by a description (lint failure)
+
 Auto-fix most issues:
 
 ```bash
@@ -322,9 +342,9 @@ the rule ID.
 
 ---
 
-## Advisory notices (never fail CI)
+**The following will not block your PR.** Fix them when convenient.
 
-> **These notices will not block your PR.** Fix them when convenient.
+### Non-blocking notices
 
 - **Hardcoded model name** — replace with `os.getenv("MODEL_NAME")`.
   Run `extract-python-environment-variables`.
@@ -340,6 +360,14 @@ error message and the file it references. Then either:
 - Open a GitHub issue at
   [github.com/google/adk-samples/issues](https://github.com/google/adk-samples/issues)
   with the workflow name, error message, and a link to the failed run.
+  Use this template:
+
+  ```
+  **Recipe path:** contrib/python/my-recipe
+  **Workflow:** python-validate-recipe.yml
+  **Error:** (paste the relevant CI log lines here)
+  **Failed run:** (link to the GitHub Actions run)
+  ```
 
 ---
 
