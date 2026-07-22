@@ -45,6 +45,7 @@ Read the following files if they exist:
 | `ownership.poc` | Always use the exact placeholder `"TODO: Replace with your GitHub user ID"` — this is the literal string the validator checks for. Never invent or infer a GitHub ID from email addresses, file authors, or any other source. |
 | `ownership.contributors` | OPTIONAL. Omit the field entirely. Leave a commented-out sample line so the author knows it exists. Never infer contributor IDs. |
 | `tags` | Include but comment out entirely, with a sample entry showing the expected style. Do NOT generate real tags — tag choices are the author's call. |
+| `license` | OPTIONAL. If the recipe's source tree contains a `LICENSE` file or the author has explicitly stated a license, record the SPDX identifier (e.g. `"Apache-2.0"`, `"MIT"`, `"BSD-3-Clause"`). Otherwise comment it out. Never infer or guess — only set it if it is explicitly declared. |
 
 ### 4. Make judgment calls explicitly
 
@@ -86,6 +87,8 @@ ownership:
 # tags: (optional) uncomment and replace with meaningful labels
 #   - "rag"               # example — use technology names, patterns, and use-case keywords
 #   - "gemini"
+
+# license: "Apache-2.0"  # (optional) SPDX identifier; only set if explicitly declared — see https://spdx.org/licenses/
 ```
 
 Omit `architecture` entirely if none of its sub-fields can be determined from the code.

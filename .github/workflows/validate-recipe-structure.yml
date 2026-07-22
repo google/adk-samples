@@ -16,6 +16,7 @@ on:
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'
+      - 'tools/validate_readme.py'
       - 'tools/affected_recipes.py'
       - 'pyproject.toml'
   push:
@@ -31,6 +32,7 @@ on:
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'
+      - 'tools/validate_readme.py'
       - 'tools/affected_recipes.py'
       - 'pyproject.toml'
   workflow_dispatch:
@@ -40,7 +42,7 @@ permissions:
 
 jobs:
   validate-structure:
-    name: Check recipe structure (files, size, naming, manifest)
+    name: Check recipe structure and content
     runs-on: ubuntu-latest
 
     steps:
@@ -96,7 +98,7 @@ jobs:
           # If any infra file that controls this workflow's behaviour
           # changed, validate ALL recipes so the new config applies across
           # the board.
-          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/(schemas/manifest-schema\.json|policy\.yml|workflows/validate-recipe-structure\.yml)|tools/(validate|validate_manifest|validate_structure|affected_recipes)\.py|pyproject\.toml)$" || true)
+          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/(schemas/manifest-schema\.json|policy\.yml|workflows/validate-recipe-structure\.yml)|tools/(validate|validate_manifest|validate_structure|validate_readme|affected_recipes)\.py|pyproject\.toml)$" || true)
           if [ -n "$INFRA_CHANGED" ]; then
             echo "Schema, policy, workflow, or tool changed — will validate all recipes."
             echo "validate_all=true" >> "$GITHUB_OUTPUT"
@@ -128,10 +130,11 @@ jobs:
           set -euo pipefail
 
           if [ "$VALIDATE_ALL" = "true" ]; then
-            # `uv run validate structure` (no scope) walks core/, contrib/,
-            # and skills/ and reports every failing recipe in one pass.
-            uv run validate structure
-            exit 0
+            # Both validators walk core/, contrib/, and skills/ in one pass.
+            FAILED=0
+            uv run validate structure || FAILED=1
+            uv run validate readme    || FAILED=1
+            exit $FAILED
           fi
 
           if [ -z "$CHANGED_RECIPES" ]; then
@@ -146,6 +149,7 @@ jobs:
           while IFS= read -r recipe; do
             [ -z "$recipe" ] && continue
             uv run validate structure "$recipe" || FAILED=1
+            uv run validate readme    "$recipe" || FAILED=1
           done <<< "$CHANGED_RECIPES"
 
           if [ "$FAILED" -eq 1 ]; then

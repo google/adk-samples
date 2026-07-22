@@ -54,3 +54,7 @@ ownership:
 # OPTIONAL — Classification tags (technology names, patterns, use-case keywords).
 # tags:
 #   - "rag"
+
+# OPTIONAL — SPDX license identifier (e.g. "Apache-2.0", "MIT", "BSD-3-Clause").
+# Only set if explicitly declared in a LICENSE file or by the author.
+# license: "Apache-2.0"
