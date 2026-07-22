@@ -7,7 +7,7 @@ Usage:
 
 Both arguments are optional:
 
-  subcommand  — which check(s) to run; one of: manifest, structure, all
+  subcommand  — which check(s) to run; one of: manifest, structure, readme, all
                 (default: all)
   scope       — what to validate; one of:
                   all            (default) validate core/ and contrib/
@@ -26,6 +26,8 @@ Examples:
   uv run validate manifest core            # run manifest check on core/ only
   uv run validate structure                # run structural check on everything
   uv run validate structure core/rag-agent-search
+  uv run validate readme                   # run README check on everything
+  uv run validate readme core/python/rag-agent-search
 
 Exit codes:
   0 — all checks passed
@@ -35,13 +37,13 @@ Exit codes:
 import sys
 
 import validate_manifest
+import validate_readme
 import validate_structure
 
 SUBCOMMANDS = {
     "manifest": ("Manifest validation", validate_manifest.main),
     "structure": ("Structure validation", validate_structure.main),
-    # Register future tools here, e.g.:
-    # "lint": ("Lint check", validate_lint.main),
+    "readme": ("README validation", validate_readme.main),
 }
 
 VALID_SUBCOMMANDS = [*SUBCOMMANDS, "all"]

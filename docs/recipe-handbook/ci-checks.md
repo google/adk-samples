@@ -1,4 +1,4 @@
-<!-- word count: 502 (target 800, cap 1200) -->
+<!-- word count: 552 (target 800, cap 1200) -->
 
 # CI Checks
 
@@ -23,6 +23,15 @@ Runs on every PR touching a recipe.
   - `README.md` always
   - `pyproject.toml`, `uv.lock`, `.env.example`,
     `tests/test_runnability.py` for `language: python`
+- `README.md` content:
+  - No `TODO:` placeholders.
+  - At least 100 words.
+  - A setup section heading (`Setup`, `Prerequisites`,
+    `Installation`, `Requirements`, `Configuration`,
+    `Getting Started`, `Before You Begin`, `Environment`).
+  - A run section heading (`Run`, `Running`, `Usage`,
+    `Quickstart`, `Start`, `Deploy`, `Launch`, `How to Run`)
+    plus at least one fenced code block.
 
 Failure symptoms and fixes: see
 [troubleshooting.md](./troubleshooting.md).

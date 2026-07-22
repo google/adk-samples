@@ -1,4 +1,4 @@
-<!-- word count: 765 (target 700, cap 1000) -->
+<!-- word count: 830 (target 700, cap 1000) -->
 
 # Recipe Checklist
 
@@ -40,8 +40,9 @@ command sequence.
 - [ ] Under size limit: 70 files / 2 MB for `contrib/`
 - [ ] `manifest.yaml` valid, with real `ownership.team` and
       `ownership.poc` — AI skill: `generate-manifest`
-- [ ] `README.md` explains what the recipe does, setup, and how
-      to run
+- [ ] `README.md` has ≥ 100 words, a setup section, and a run
+      section with a code block — CI enforces this;
+      [details](./recipe-handbook/anatomy.md#readmemd)
 
 ## 2. Your language
 
@@ -90,12 +91,15 @@ Individual validators (useful for isolating one failure):
 
     uv run validate manifest $RECIPE_PATH
     uv run validate structure $RECIPE_PATH
+    uv run validate readme $RECIPE_PATH
 
 - `validate manifest` — checks `manifest.yaml` against the
   schema and verifies `ownership.team` / `ownership.poc` are
   not placeholders.
 - `validate structure` — checks folder name, size, required
   files, and layout.
+- `validate readme` — checks README.md for a setup section,
+  run section, code block, and minimum word count.
 
 ### Format and lint (Python only)
 

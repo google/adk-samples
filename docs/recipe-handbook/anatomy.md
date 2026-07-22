@@ -1,4 +1,4 @@
-<!-- word count: 378 (target 700, cap 1000) -->
+<!-- word count: 458 (target 700, cap 1000) -->
 
 # Anatomy of a Recipe
 
@@ -53,6 +53,7 @@ Generate with the `generate-manifest` AI skill.
 | Field | Purpose |
 |---|---|
 | `deployable` | `true` if the recipe supports one-click deployment. Useful for surfacing the recipe in Agent Garden. Defaults to `false`. |
+| `license` | SPDX license identifier (e.g. `"Apache-2.0"`, `"MIT"`). Set only if explicitly declared. |
 | `ownership.contributors` | Additional GitHub user IDs |
 | `tags` | Classification strings |
 | `architecture.agent` | `single` or `multi` |
@@ -85,8 +86,19 @@ Every recipe has one. Cover:
 3. Run — the exact command to start the agent.
 4. Optional: architecture diagram, example prompts, screenshots.
 
-No enforced template. Write for a contributor who has never
-seen the recipe before.
+CI enforces the following content checks:
+
+- No `TODO:` placeholders.
+- At least 100 words (description proxy).
+- A setup section — a heading containing one of: `Setup`,
+  `Prerequisites`, `Installation`, `Requirements`, `Configuration`,
+  `Getting Started`, `Before You Begin`, `Environment`.
+- A run section — a heading containing one of: `Run`, `Running`,
+  `Usage`, `Quickstart`, `Start`, `Deploy`, `Launch`,
+  `How to Run` — plus at least one fenced code block.
+
+Run `uv run validate readme <recipe-path>` locally to check
+before opening a PR.
 
 ## See also
 
