@@ -1,4 +1,4 @@
-<!-- word count: 103 (target 100, cap 200) -->
+<!-- word count: 105 (target 100, cap 200) -->
 
 # Kotlin Recipes
 
@@ -10,7 +10,7 @@ checks) is in place.
 [github.com/google/adk-samples/issues](https://github.com/google/adk-samples/issues)
 first so we can align on build tool (Gradle / Maven), test
 runner, and JVM target before you invest the work. Once accepted,
-this page will mirror the shape of [python.md](./python.md).
+this page will mirror the shape of the [Python page](./python.md).
 
 Structural checks (folder name, size limits, `manifest.yaml`)
 apply to Kotlin recipes today — you can ship a working

@@ -1,4 +1,4 @@
-<!-- word count: 458 (target 700, cap 1000) -->
+<!-- word count: 451 (target 700, cap 1000) -->
 
 # Anatomy of a Recipe
 
@@ -7,9 +7,8 @@ detail lives in [languages/](./languages/).
 
 ## Where a recipe lives
 
-| Location | Use for |
-|---|---|
-| `contrib/<lang>/<name>` | Community-contributed recipes, nested by language |
+Every recipe lives at `contrib/<lang>/<name>` — nested by
+language.
 
 ## Naming
 

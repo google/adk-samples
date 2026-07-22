@@ -1,4 +1,4 @@
-<!-- word count: 496 (target 500+, no cap) -->
+<!-- word count: 885 (target 500+, no cap) -->
 
 # Troubleshooting
 
@@ -28,6 +28,48 @@ Values like `TODO`, `your-team`, `changeme`, or the literal
 
 Rename the folder. Lowercase letters and hyphens only, ≤ 30
 chars, starts with a letter.
+
+## `README.md is missing` / `is empty`
+
+**Workflow:** `validate-recipe-structure.yml`.
+
+Every recipe needs a `README.md` explaining what the recipe
+does, how to set it up, and how to run it. Create the file and
+cover at minimum: description, setup, run.
+
+## `README.md contains TODO: placeholders`
+
+**Workflow:** `validate-recipe-structure.yml`.
+
+Replace every `TODO:` line with real content. Scaffold text and
+draft notes must be resolved before submitting.
+
+## `README.md is too short` (fewer than 100 words)
+
+**Workflow:** `validate-recipe-structure.yml`.
+
+The README must be at least 100 words. Add a real description,
+setup instructions, and run steps. Aim for 200-300 words.
+
+## `README.md is missing a setup section`
+
+**Workflow:** `validate-recipe-structure.yml`.
+
+Add a heading whose text contains one of: `Setup`,
+`Prerequisites`, `Installation`, `Requirements`, `Configuration`,
+`Getting Started`, `Before You Begin`, `Environment`.
+
+## `README.md is missing a run section` / `has no fenced code block`
+
+**Workflow:** `validate-recipe-structure.yml`.
+
+Add a heading whose text contains one of: `Run`, `Running`,
+`Usage`, `Quickstart`, `Start`, `Deploy`, `How to Run`. Under
+that heading, include at least one fenced code block (```` ``` ````)
+showing the exact command to start the agent.
+
+Run `uv run validate readme <recipe-path>` locally to check
+all six README rules before opening a PR.
 
 ## `Recipe exceeds size / file limit`
 
@@ -102,11 +144,59 @@ Run `generate-python-runnability-test`.
 
 ## `uv.lock out of sync`
 
-**Workflow:** `python-tests.yml` (via `uv sync --locked`).
+**Workflow:** `python-dependency-policy.yml` and `python-tests.yml`.
 
-Run `uv lock` from the recipe root:
+`uv lock --check` must pass — every `uv.lock` must be in sync
+with its sibling `pyproject.toml`. Run `uv lock` from the
+recipe root:
 
     cd contrib/python/my-recipe
+    uv lock
+
+## `pyproject.toml has no sibling uv.lock`
+
+**Workflow:** `python-dependency-policy.yml`.
+
+Every `pyproject.toml` with a `[project]` table or `[tool.uv]`
+section needs a `uv.lock` next to it. Run `uv lock` in that
+directory.
+
+## `Lockfile references a non-PyPI URL`
+
+**Workflow:** `python-dependency-policy.yml`.
+
+Every entry in `uv.lock` must resolve to `pypi.org` or
+`files.pythonhosted.org`. Internal registries, GitHub Packages,
+Artifactory, and similar sources are rejected. Replace the
+dependency with a PyPI-published alternative.
+
+## `VCS (git) dependency in uv.lock`
+
+**Workflow:** `python-dependency-policy.yml`.
+
+`source = { git = "..." }` entries are not allowed. Git
+dependencies are non-reproducible and bypass registry trust.
+Publish the package to PyPI, or use a PyPI equivalent.
+
+## `Local path dependency in uv.lock`
+
+**Workflow:** `python-dependency-policy.yml`.
+
+`path`, `editable`, or `directory` sources only exist on the
+committer's machine and cannot be resolved elsewhere. Exception:
+uv's self-referential `editable = "."` entry for the workspace
+root package is allowed. Remove all other local path sources.
+
+## `Missing package hash in uv.lock`
+
+**Workflow:** `python-dependency-policy.yml`.
+
+Every distribution must include a `sha256` hash. Missing hashes
+usually mean the lockfile was hand-edited or generated with a
+different tool. Regenerate cleanly:
+
+    cd contrib/python/my-recipe
+    rm uv.lock
     uv lock
 
 ## `Ruff format` or `Ruff check` failed

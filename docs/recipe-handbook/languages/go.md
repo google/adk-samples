@@ -1,4 +1,4 @@
-<!-- word count: 100 (target 100, cap 200) -->
+<!-- word count: 102 (target 100, cap 200) -->
 
 # Go Recipes
 
@@ -10,7 +10,7 @@ checks) is in place.
 [github.com/google/adk-samples/issues](https://github.com/google/adk-samples/issues)
 first so we can align on module layout, test runner, and CI
 expectations before you invest the work. Once accepted, this page
-will mirror the shape of [python.md](./python.md).
+will mirror the shape of the [Python page](./python.md).
 
 Structural checks (folder name, size limits, `manifest.yaml`)
 apply to Go recipes today — you can ship a working `contrib/go/`

@@ -1,4 +1,4 @@
-<!-- word count: 830 (target 700, cap 1000) -->
+<!-- word count: 820 (target 900, cap 1200) -->
 
 # Recipe Checklist
 
@@ -163,7 +163,5 @@ uv run pytest                              # Runs the tests
 
 - CI red on your PR? →
   [troubleshooting](./recipe-handbook/troubleshooting.md)
-- Not sure what a check is doing? →
-  [ci-checks](./recipe-handbook/ci-checks.md)
 - Want the full "how does it all fit together" story? →
   [handbook overview](./recipe-handbook/README.md)

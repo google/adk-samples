@@ -1,10 +1,9 @@
-<!-- word count: 807 (target 1200, cap 1800) -->
+<!-- word count: 842 (target 1200, cap 1800) -->
 
 # Python Recipes
 
 Everything Python-specific in one place. Universal requirements
-live in [anatomy.md](../anatomy.md); folder-specific rules live
-in [folders/](../folders/).
+live in [anatomy](../anatomy.md).
 
 ## Minimum Python version
 
@@ -186,8 +185,13 @@ Put tests that hit real APIs in one of these. Run locally:
 
 From the repo root:
 
-    # Structural checks (language-agnostic)
+    # All structural checks at once (manifest + structure + README)
     uv run validate contrib/python/my-recipe
+
+    # Individual validators (for isolating one failure)
+    uv run validate manifest contrib/python/my-recipe
+    uv run validate structure contrib/python/my-recipe
+    uv run validate readme contrib/python/my-recipe
 
     # Format and lint
     uv run ruff format contrib/python/my-recipe
@@ -200,9 +204,8 @@ From the repo root:
 
 ## AI skills for Python recipes
 
-Full catalog:
-[skills-catalog.md](../skills-catalog.md#python-skills). Quick
-reference:
+Full catalog: [Python skills, in the skills catalog](../skills-catalog.md#python-skills).
+Quick reference:
 
 | Skill | Job |
 |---|---|
@@ -214,8 +217,8 @@ reference:
 | `prepare-python-recipe` | Runs all of the above plus ruff and `uv lock` |
 
 For the fastest path, run `prepare-python-recipe` end-to-end —
-see
-[skills-catalog.md#prepare-python-recipe](../skills-catalog.md#prepare-python-recipe).
+see the
+[prepare-python-recipe entry in the skills catalog](../skills-catalog.md#prepare-python-recipe).
 
 ---
 

@@ -1,6 +1,6 @@
-<!-- word count: 538 (target 800, cap 1200) -->
+<!-- word count: 551 (target 1000, cap 1500) -->
 
-# Workflows
+# Scenarios
 
 > **Before you start.** Every recipe must have a clear intent
 > and deliver real value to the ADK community. State in one
@@ -9,8 +9,8 @@
 > Recipes that duplicate existing examples without new insight
 > may not be accepted.
 
-End-to-end scenarios. Each ties multiple checklist items and AI
-skills together.
+End-to-end walkthroughs. Each ties multiple checklist items and
+AI skills together.
 
 **Two paths through every scenario:**
 
@@ -20,9 +20,9 @@ skills together.
   `align-recipe-pyproject`, etc.
 - **Without an AI assistant:** run the equivalent commands
   manually. Every skill is a wrapper over commands you can run
-  yourself; see
-  [languages/python.md#local-commands](./languages/python.md#local-commands)
-  for the manual sequence.
+  yourself; see the
+  [Python local commands](./languages/python.md#local-commands)
+  section for the manual sequence.
 
 ## New Python recipe from scratch
 
@@ -41,7 +41,7 @@ Steps from an empty folder to a passing CI check.
    prompts, sub-agents. Reference:
    - [ADK developer docs](https://github.com/google/adk-python)
      for the agent API.
-   - [languages/python.md](./languages/python.md) for the
+   - [Python language rules](./languages/python.md) for the
      package layout this repo expects.
    - Existing recipes under `contrib/python/` for realistic
      examples.
@@ -96,8 +96,8 @@ hand-written Python code.
 
 ## Adding an integration test that hits real GCP
 
-Integration tests are excluded from CI (see
-[languages/python.md#integration-tests](./languages/python.md#integration-tests)).
+Integration tests are excluded from CI (see the
+[integration tests section of the Python page](./languages/python.md#integration-tests)).
 Add them for local and manual runs.
 
 1. Create `tests/integration/test_<feature>.py` (or any file

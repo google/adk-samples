@@ -1,4 +1,4 @@
-<!-- word count: 509 (target 400, cap 600) -->
+<!-- word count: 627 (target 500, cap 800) -->
 
 # Docs Style
 
@@ -65,10 +65,8 @@ does not mean the doc is underdeveloped.
 | `recipe-handbook/README.md` | 500 | 800 |
 | `recipe-handbook/anatomy.md` | 800 | 1200 |
 | `recipe-handbook/languages/python.md` | 1200 | 1800 |
-| `recipe-handbook/folders/*.md` | 300 | 500 |
 | `recipe-handbook/skills-catalog.md` | 800 | 1200 |
-| `recipe-handbook/workflows.md` | 1000 | 1500 |
-| `recipe-handbook/ci-checks.md` | 800 | 1200 |
+| `recipe-handbook/scenarios.md` | 1000 | 1500 |
 | `recipe-handbook/troubleshooting.md` | 500+, grows | no cap |
 
 ## Two-pass discipline
@@ -84,14 +82,35 @@ Every handbook page ends with a two-link footer:
     ← [Checklist](../recipe-checklist.md) · [Handbook](./README.md)
 
 Adjust the relative paths for pages under subdirectories
-(e.g. `folders/`, `languages/` use `../../recipe-checklist.md` and
+(e.g. `languages/` uses `../../recipe-checklist.md` and
 `../README.md`).
 
-**Non-handbook docs** (`STYLE.md`, `recipe-checklist.md`,
+**Non-handbook docs** (`_STYLE.md`, `recipe-checklist.md`,
 `recipe-handbook/README.md`, `docs/README.md`) also carry a
 footer for consistency, but link only where it makes sense — the
-handbook README self-links to itself for symmetry; `STYLE.md`
+handbook README self-links to itself for symmetry; `_STYLE.md`
 uses a checklist + handbook footer.
+
+## Link text
+
+- Never include `.md` in visible link text.
+- In prose, use natural language:
+  "the [anatomy](./anatomy.md) page shows the shape of a recipe."
+- In table-of-contents style bullet lists, use the page's title
+  as the link text: `- [Anatomy of a recipe](./anatomy.md) — ...`
+- For anchor links, name the section:
+  the [size limits](./anatomy.md#size-limits) section of anatomy.
+- Back-link footers use bare nouns: `← [Checklist] · [Handbook]`.
+
+## Handbook page structure
+
+- Handbook landing pages carry at most 4-5 content sections.
+- Intent statements and standards belong together in one section,
+  not split into separate ones.
+- Table-of-contents style navigation goes at the end of a
+  landing page, not the middle.
+- Group TOCs by reading order ("start here" vs. "reference")
+  when the reader has more than one path through.
 
 ---
 

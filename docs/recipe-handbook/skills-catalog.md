@@ -1,4 +1,4 @@
-<!-- word count: 649 (target 800, cap 1200) -->
+<!-- word count: 657 (target 800, cap 1200) -->
 
 # AI Skills Catalog
 
@@ -37,7 +37,7 @@ and writes a valid manifest matching the
 - **Writes:** `manifest.yaml`.
 - **When to use:** starting a new recipe, or an existing recipe
   is missing its manifest.
-- **Trigger:** "generate manifest for X".
+- **Trigger:** "generate manifest for contrib/python/my-recipe".
 
 ## Python skills
 
@@ -77,12 +77,12 @@ you've written a line of agent code.
   `README.md`, `tests/test_runnability.py`, `.env.example`,
   `manifest.yaml`.
 - **When to use:** starting a new Python recipe from scratch.
-- **Trigger:** "scaffold a new Python recipe at X".
+- **Trigger:** "scaffold a new Python recipe at contrib/python/my-recipe".
 
 ### `align-recipe-pyproject`
 
-Enforces the repo's `pyproject.toml` conventions (see
-[languages/python.md#pyprojecttoml](./languages/python.md#pyprojecttoml)).
+Enforces the repo's `pyproject.toml` conventions (see the
+[pyproject.toml rules, in the Python page](./languages/python.md#pyprojecttoml)).
 Uses a comment-preserving TOML editor so your own comments and
 formatting survive.
 
@@ -91,7 +91,7 @@ formatting survive.
 - **Modes:** `--dry-run` reports what needs alignment; apply mode
   rewrites.
 - **When to use:** cleaning up an existing recipe before PR.
-- **Trigger:** "align pyproject.toml for X".
+- **Trigger:** "align pyproject.toml for contrib/python/my-recipe".
 
 ### `extract-python-environment-variables`
 
@@ -107,7 +107,7 @@ Finds every environment variable your code reads and makes sure
   into Python files.
 - **When to use:** adding a new env var, migrating hardcoded
   model names, or preparing an existing recipe.
-- **Trigger:** "extract env vars for X".
+- **Trigger:** "extract env vars for contrib/python/my-recipe".
 
 ### `generate-python-runnability-test`
 
@@ -120,7 +120,7 @@ without credentials.
 - **Writes:** `tests/test_runnability.py`.
 - **Modes:** dry-run (preview) and apply.
 - **When to use:** adding the required runnability test.
-- **Trigger:** "generate runnability test for X".
+- **Trigger:** "generate runnability test for contrib/python/my-recipe".
 
 ## Java / Go / TypeScript / Kotlin skills
 
@@ -137,7 +137,8 @@ description, and helps you debug when a skill isn't loading.
 
 - **When to use:** writing a new skill, improving a skill's
   trigger description, fixing a skill that isn't activating.
-- **Trigger:** "help me author a skill", "make a skill for X".
+- **Trigger:** "help me author a skill named my-skill",
+  "make a skill for my-skill".
 
 ## Skills load automatically
 

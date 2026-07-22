@@ -1,4 +1,4 @@
-<!-- word count: 107 (target 100, cap 200) -->
+<!-- word count: 109 (target 100, cap 200) -->
 
 # TypeScript Recipes
 
@@ -10,8 +10,8 @@ no language-specific tooling (skills, CI,
 [github.com/google/adk-samples/issues](https://github.com/google/adk-samples/issues)
 first so we can align on package manager (npm / pnpm / yarn /
 bun), test runner, and TypeScript config before you invest the
-work. Once accepted, this page will mirror the shape of
-[python.md](./python.md).
+work. Once accepted, this page will mirror the shape of the
+[Python page](./python.md).
 
 Structural checks (folder name, size limits, `manifest.yaml`)
 apply to TypeScript recipes today — you can ship a working
