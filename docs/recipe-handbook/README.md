@@ -1,4 +1,4 @@
-<!-- word count: 303 (target 500, cap 800) -->
+<!-- word count: 300 (target 500, cap 800) -->
 
 # Recipe Handbook
 
@@ -32,17 +32,15 @@ Every accepted recipe:
 
 1. [Anatomy of a recipe](./anatomy.md) — what files every
    recipe has, and why
-2. ["New Python recipe from scratch"](./scenarios.md#new-python-recipe-from-scratch)
-   — end-to-end walk-through
-3. [Python language rules](./languages/python.md) — the
-   specific requirements
+2. [Python language rules](./languages/python.md) — the
+   specific requirements, plus end-to-end scenarios
+3. ["New Python recipe from scratch"](./languages/python.md#new-python-recipe-from-scratch)
+   — walk-through inside the Python page
 
 **Reference:**
 
 - [Skills catalog](./skills-catalog.md) — the AI skills that
   do the work for you
-- [Scenarios](./scenarios.md) — end-to-end walkthroughs
-  beyond the first-recipe path
 - [Troubleshooting](./troubleshooting.md) — errors mapped
   directly to fixes
 - Other languages *(coming soon)*: Java · Go · TypeScript ·

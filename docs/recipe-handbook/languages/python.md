@@ -1,181 +1,120 @@
-<!-- word count: 842 (target 1200, cap 1800) -->
+<!-- word count: 552 (target 700, cap 1000) -->
 
 # Python Recipes
 
 Everything Python-specific in one place. Universal requirements
 live in [anatomy](../anatomy.md).
 
-## Minimum Python version
+## Package layout
 
-`>= 3.11`. CI enforces via `[project].requires-python`.
-
-## `pyproject.toml`
-
-Required. Generate with the `align-recipe-pyproject` AI skill —
-it enforces the conventions below and preserves existing
-comments.
-
-**Required fields:**
-
-- `[project].name` — must equal the recipe folder basename. A
-  recipe at `contrib/python/my-recipe` needs `name = "my-recipe"`.
-- `[project].requires-python` — cannot permit versions below
-  3.11.
-- `[project].description` — if present, must exactly match
-  `manifest.description` (after `strip()`).
-- `[project].version` — any valid version.
-- `[build-system]` — required. Recipes use `hatchling`:
-
-      [build-system]
-      requires = ["hatchling"]
-      build-backend = "hatchling.build"
-
-**Forbidden:**
-
-- `[tool.ruff]` or `[tool.ruff.*]` — any Ruff config in the
-  recipe. Centralised in the repo root `pyproject.toml`.
-- Standalone `ruff.toml` or `.ruff.toml` anywhere under the
-  recipe.
-
-**Package layout:**
-
-Recipes name their Python package `app` by convention:
+Every Python recipe uses this shape:
 
     contrib/python/my-recipe/
-      pyproject.toml
+      pyproject.toml            # project spec + deps
+      uv.lock                   # pinned deps
+      .env.example              # env vars the recipe reads
+      manifest.yaml             # recipe metadata (see anatomy)
+      README.md                 # description, setup, run
       app/
-        __init__.py
-        agent.py
+        __init__.py             # runs load_dotenv(), then imports agent
+        agent.py                # your agent code
       tests/
-        test_runnability.py
+        test_runnability.py     # import smoke test
 
-The root `pyproject.toml` sets `known-first-party = ["app"]` for
-isort, so this naming is what keeps imports sorted correctly
-across recipes.
+**Best practice: name the Python package `app`.** Not strictly
+enforced, but the root Ruff/isort configuration assumes it
+(`known-first-party = ["app"]`) — other names produce wrong
+import ordering.
 
-## `uv.lock`
+**Minimum Python:** 3.11.
 
-Required. Generate by running `uv lock` from the recipe root:
+## Copy-paste starters
 
-    cd contrib/python/my-recipe
-    uv lock
+The `scaffold-python-recipe` skill creates these for you. Use
+them by hand if you're setting up a recipe manually.
 
-Regenerate whenever `pyproject.toml` dependencies change.
+### `pyproject.toml`
 
-## `.env.example`
+```toml
+[project]
+name = "my-recipe"           # must equal the recipe folder name
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "google-adk",
+    "python-dotenv>=1.0.0",
+]
 
-Required. Declares every environment variable the recipe reads
-from Python source.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+```
 
-**Common keys** (`python-validate-recipe.yml` emits a notice if
-these are missing but doesn't fail):
+Optional: add `description` if you want it in your `pyproject.toml`
+— it must match `manifest.description` exactly. Do NOT add
+`[tool.ruff]` or a local `ruff.toml` (Ruff config is
+centralised at the repo root).
 
-- `GOOGLE_CLOUD_PROJECT`
-- `GOOGLE_CLOUD_LOCATION`
-- `MODEL_NAME`
+### `.env.example`
 
-**Enforced:** every `os.getenv(...)`, `os.environ[...]`, and
-`os.environ.setdefault(...)` call in the recipe's Python source
-must have a matching entry in `.env.example`. Missing entries
-fail CI. `check_env_vars.py` detects them by AST-parsing your
-Python source (Abstract Syntax Tree — it reads the code
-structure, not the running program), so it handles multi-line
-calls and import aliases like `from os import getenv`.
+```
+GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
+MODEL_NAME=gemini-3.5-flash
+```
 
-Generate or update with the
-`extract-python-environment-variables` AI skill. It scans the
-source, populates `.env.example` with real defaults extracted
-from the code, and never overwrites lines you authored.
+Every env var your code reads must appear here. Read model
+names from `MODEL_NAME` — never hardcode a model literal in
+source. Deprecated: `gemini-2.0-flash`, `gemini-2.5-flash`.
 
-**Format:**
+### `app/__init__.py`
 
-    # Google Cloud
-    GOOGLE_CLOUD_PROJECT=your-project-id
-    GOOGLE_CLOUD_LOCATION=us-central1
+```python
+from dotenv import load_dotenv
 
-    # Model
-    MODEL_NAME=gemini-3.5-flash
+load_dotenv()
 
-## `load_dotenv()` placement
+from . import agent  # noqa: E402
+```
 
-Call `load_dotenv()` in the package's `__init__.py`, not
-`agent.py`:
+Call `load_dotenv()` here, not in `agent.py`. `__init__.py`
+runs first when the package is imported, so `.env` loads
+before any env-var reads at agent-import time. The
+`# noqa: E402` tells Ruff the late import is intentional.
 
-    # app/__init__.py
-    from dotenv import load_dotenv
+### `tests/test_runnability.py`
 
-    load_dotenv()
+```python
+"""Runnability tests for the recipe."""
 
-    from . import agent  # noqa: E402
 
-`agent.py` can read environment variables at import time. If
-`load_dotenv()` is also in `agent.py`, those reads happen before
-the `.env` file loads. Putting `load_dotenv()` in `__init__.py`
-ensures the `.env` file loads first, because `__init__.py` runs
-first when the package is imported.
+def test_agent_runnability() -> None:
+    """Verify agent.py imports and defines root_agent."""
+    import app.agent
 
-Add `python-dotenv >= 1.0.0` to `pyproject.toml` dependencies.
-The `extract-python-environment-variables` skill handles both.
+    assert app.agent.root_agent is not None
+```
 
-## Model names
-
-Use `gemini-3.5-flash`. Do NOT hardcode any model name in
-source. Read from an environment variable:
-
-    model_name = os.getenv("MODEL_NAME")
-
-Replace any existing `gemini-2.0-flash` or `gemini-2.5-flash`
-literals (both deprecated) by running
-`extract-python-environment-variables` — it finds hardcoded
-model literals (`gemini-*`, `claude-*`, `llama-*`, …), rewrites
-them to `os.getenv(...)` calls, and adds the entry to
-`.env.example`.
-
-`python-validate-recipe.yml` emits a `::notice` for hardcoded
-model literals but does not fail.
-
-## Ruff
-
-One Ruff configuration for the whole repo, in the root
-`pyproject.toml`:
-
-- Line length 80
-- Double quotes, space indent
-- Rules: `E`, `F`, `I`, `C`, `PL`, `B`, `UP`, `RUF`
-
-Recipes must not override any of it (see "Forbidden" above).
-
-Run from the repo root:
-
-    uv run ruff format contrib/python/my-recipe
-    uv run ruff check contrib/python/my-recipe
-
-## `tests/test_runnability.py`
-
-Required. This test loads `app/agent.py` and asserts
-`root_agent is not None` (and `app is not None` if the recipe
-defines one). Its only job is to confirm your agent code does
-not crash on import — no real API calls are made, and
-import-time side effects like `vertexai.init` and
-`google.auth.default` are mocked.
-
-Generate with the `generate-python-runnability-test` AI skill.
-It AST-parses `agent.py` to figure out which import-time side
-effects need mocking and which env vars need setting.
-
-Missing this file fails `python-tests.yml`.
+This is the bare minimum; you may need to tweak or extend it
+to make it work for your recipe. The core idea is to import
+`app.agent` and check whether `root_agent` is `None`.
 
 ## Integration tests
 
-`python-tests.yml` skips two patterns so the PR check stays
-fast and credential-free:
+Tests that hit real external resources (Gemini, BigQuery,
+third-party APIs). CI skips them for speed and credentials —
+run them locally before opening a PR.
+
+**Excluded from CI:**
 
 | Pattern | Excluded |
 |---|---|
 | `tests/integration/` | Everything under this directory |
 | `**/test_integration.py` | Files with this exact name, any depth |
 
-Put tests that hit real APIs in one of these. Run locally:
+**Adding one:** create a file matching either pattern, write
+it with real API calls, document credential setup in the
+recipe's `README.md`. Run locally:
 
     cd contrib/python/my-recipe
     uv run pytest tests/integration    # integration only
@@ -183,42 +122,43 @@ Put tests that hit real APIs in one of these. Run locally:
 
 ## Local commands
 
-From the repo root:
+```bash
+# Structural checks (all validators at once)
+uv run validate contrib/python/my-recipe
+# Or individual: manifest / structure / readme
+uv run validate readme contrib/python/my-recipe
 
-    # All structural checks at once (manifest + structure + README)
-    uv run validate contrib/python/my-recipe
+# Format and lint
+uv run ruff format contrib/python/my-recipe
+uv run ruff check contrib/python/my-recipe
 
-    # Individual validators (for isolating one failure)
-    uv run validate manifest contrib/python/my-recipe
-    uv run validate structure contrib/python/my-recipe
-    uv run validate readme contrib/python/my-recipe
+# Tests (mirrors CI — integration excluded)
+cd contrib/python/my-recipe
+uv run pytest --ignore=tests/integration \
+  --ignore-glob="**/test_integration.py"
+```
 
-    # Format and lint
-    uv run ruff format contrib/python/my-recipe
-    uv run ruff check contrib/python/my-recipe
+## The fast path
 
-    # Tests (mirrors CI — integration excluded)
-    cd contrib/python/my-recipe
-    uv run pytest --ignore=tests/integration \
-      --ignore-glob="**/test_integration.py"
+**New recipe:**
 
-## AI skills for Python recipes
+```
+"scaffold a new Python recipe at contrib/python/my-recipe"
+# ... write your agent in app/agent.py ...
+"prepare the python recipe contrib/python/my-recipe"
+```
 
-Full catalog: [Python skills, in the skills catalog](../skills-catalog.md#python-skills).
-Quick reference:
+**Updating a recipe:**
 
-| Skill | Job |
-|---|---|
-| `scaffold-python-recipe` | Create a new recipe with compliant layout |
-| `generate-manifest` | Populate `manifest.yaml` |
-| `align-recipe-pyproject` | Align `pyproject.toml` with standards |
-| `extract-python-environment-variables` | Populate `.env.example`, add `load_dotenv()`, replace hardcoded models |
-| `generate-python-runnability-test` | Write `tests/test_runnability.py` |
-| `prepare-python-recipe` | Runs all of the above plus ruff and `uv lock` |
+```
+"prepare the python recipe contrib/python/my-recipe"
+```
 
-For the fastest path, run `prepare-python-recipe` end-to-end —
-see the
-[prepare-python-recipe entry in the skills catalog](../skills-catalog.md#prepare-python-recipe).
+`prepare-python-recipe` is safe to re-run and won't overwrite
+your `.env.example` or hand-written Python code.
+
+Full skill reference:
+[skills catalog](../skills-catalog.md#python-skills).
 
 ---
 

@@ -1,14 +1,21 @@
-<!-- word count: 451 (target 700, cap 1000) -->
+<!-- word count: 504 (target 700, cap 1000) -->
 
 # Anatomy of a Recipe
 
-The universal shape of a `contrib/` recipe. Language-specific
-detail lives in [languages/](./languages/).
+The shape shared by every ADK recipe in this repo, regardless
+of root or language. Language-specific detail lives in
+[languages/](./languages/).
 
 ## Where a recipe lives
 
-Every recipe lives at `contrib/<lang>/<name>` — nested by
-language.
+Every recipe lives at `<root>/<lang>/<name>`, where `<root>` is
+`core/` (curated by the `agents-cli` team) or `contrib/`
+(community). Nested by language.
+
+Contributors submit new recipes to `contrib/`. The rest of this
+page covers what all recipes share. `core/` recipes have one
+additional file — `AGENTS.md` — with maintainer context; it is
+not required for `contrib/`.
 
 ## Naming
 
