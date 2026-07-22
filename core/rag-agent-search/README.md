@@ -31,8 +31,15 @@ pipeline is required.
    `sample_data/`, or copy your own files to the bucket), then `make ingest`
    to trigger an immediate sync (otherwise the connector waits for its daily
    refresh).
-5. `make install && make playground`, then select the `app` folder and ask,
-   e.g., *"What is the payload and battery life of the Atlas-7 robot?"*
+
+## Run
+
+```bash
+make install && make playground
+```
+
+Select the `app` folder, then ask a question such as
+*"What is the payload and battery life of the Atlas-7 robot?"*
 
 ## Test
 `make test` runs the integration test. The retriever is mocked
