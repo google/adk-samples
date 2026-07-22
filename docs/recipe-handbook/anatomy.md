@@ -1,4 +1,4 @@
-<!-- word count: 504 (target 700, cap 1000) -->
+<!-- word count: 530 (target 700, cap 1000) -->
 
 # Anatomy of a Recipe
 
@@ -58,7 +58,7 @@ Generate with the `generate-manifest` AI skill.
 
 | Field | Purpose |
 |---|---|
-| `deployable` | `true` if the recipe supports one-click deployment. Useful for surfacing the recipe in Agent Garden. Defaults to `false`. |
+| `deployable` | `true` if the recipe supports one-click deployment. Defaults to `false`. |
 | `license` | SPDX license identifier (e.g. `"Apache-2.0"`, `"MIT"`). Set only if explicitly declared. |
 | `ownership.contributors` | Additional GitHub user IDs |
 | `tags` | Classification strings |

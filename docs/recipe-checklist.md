@@ -1,18 +1,18 @@
-<!-- word count: 820 (target 900, cap 1200) -->
+<!-- word count: 830 (target 900, cap 1200) -->
 
 # Recipe Checklist
 
-Everything you need to ship a `contrib/` recipe, on one page.
+Everything you need to submit a `contrib/` recipe, on one page.
 Deep detail lives in [`recipe-handbook/`](./recipe-handbook/README.md).
 
 ---
 
-## AI skills reference
+## 0. AI skills
 
-If you use an AI assistant (e.g.
-[Antigravity CLI](https://antigravity.google/product/antigravity-cli)),
-the following skills automate most of the checklist. The fastest
-path is to invoke `prepare-python-recipe` — it runs every other
+Requires an AI coding assistant (e.g. `Antigravity-cli`). If you don't have one, skip to
+[§ 3](#3-before-you-open-the-pr) for the manual commands.
+
+The fastest path is `prepare-python-recipe` — it runs every other
 skill in the right order.
 
 | Skill | What it does | Example prompt |
@@ -26,13 +26,12 @@ skill in the right order.
 For deep detail on each skill, see the
 [Skills Catalog](./recipe-handbook/skills-catalog.md).
 
-If you're not using an AI assistant, § 3 below shows the manual
-command sequence.
-
 ---
 
 ## 1. Always
 
+- [ ] Recipe has a clear, unique purpose — see
+      [What makes a good recipe](./recipe-handbook/README.md#what-makes-a-good-recipe)
 - [ ] Recipe lives at `contrib/<lang>/<name>` —
       [anatomy](./recipe-handbook/anatomy.md)
 - [ ] Recipe name (folder name) ≤ 30 chars, lowercase + hyphens
@@ -54,13 +53,14 @@ command sequence.
       AI skill: `extract-python-environment-variables`
 - [ ] `load_dotenv()` called in the package `__init__.py` (not
       `agent.py`)
-- [ ] Models: use up-to-date models like `gemini-3.5-flash` (not `gemini-2.0-flash` or
-      `gemini-2.5-flash`)
+- [ ] Model names read from env vars, not hardcoded in source
 - [ ] `tests/test_runnability.py` present — AI skill:
       `generate-python-runnability-test`
 
 **Java / Go / TypeScript / Kotlin** — language-specific guidance
-coming soon. Structural checks apply already.
+is in progress. Structural checks in § 3 already apply — run
+`uv run validate $RECIPE_PATH` and review
+[anatomy.md](./recipe-handbook/anatomy.md) for layout rules.
 
 ## 3. Before you open the PR
 
@@ -72,10 +72,27 @@ first.
 
 Do this once before running any of the commands below:
 
-    export RECIPE_PATH=contrib/python/my-recipe
+```bash
+export RECIPE_PATH=contrib/python/my-recipe
+```
 
-Replace `my-recipe` with your recipe's folder name. Every
-command below assumes this variable is set.
+Replace `my-recipe` with your recipe's folder name.
+
+### Full manual command sequence
+
+One block, one paste. Requires `$RECIPE_PATH` from above.
+
+```bash
+# From the repo root
+uv run validate $RECIPE_PATH                # Validates manifest and structure
+uv run ruff format $RECIPE_PATH             # Formats the recipe code
+uv run ruff check --fix $RECIPE_PATH        # Fixes lint errors
+
+# From the recipe root
+cd $RECIPE_PATH
+uv lock                                     # Updates the lock file
+uv run pytest                               # Runs the tests
+```
 
 ### Structural checks
 
@@ -89,9 +106,11 @@ against your recipe and reports PASS / FAIL for each.
 
 Individual validators (useful for isolating one failure):
 
-    uv run validate manifest $RECIPE_PATH
-    uv run validate structure $RECIPE_PATH
-    uv run validate readme $RECIPE_PATH
+```bash
+uv run validate manifest $RECIPE_PATH
+uv run validate structure $RECIPE_PATH
+uv run validate readme $RECIPE_PATH
+```
 
 - `validate manifest` — checks `manifest.yaml` against the
   schema and verifies `ownership.team` / `ownership.poc` are
@@ -117,51 +136,23 @@ Individual validators (useful for isolating one failure):
       uv run pytest --ignore=tests/integration --ignore-glob="**/test_integration.py"
       ```
 
-### About integration tests
+### Integration tests
 
-Integration tests exercise real external resources — Gemini,
-BigQuery, third-party APIs, and similar. They're the most
-valuable tests you can write before shipping a recipe: they
-prove the whole thing actually works end-to-end. But they need
-credentials, network access, and can be slow or flaky — so
-GitHub CI skips them on every PR to keep the required check
-fast and credential-free.
-
-For Python recipes, CI treats these two patterns as integration
-tests and excludes them:
-
-- Anything under `tests/integration/`
-- Any file named `test_integration.py`, at any depth
-
-Run them locally before opening a PR if your recipe hits real
-services:
-
-    cd $RECIPE_PATH
-    uv run pytest                      # full suite including integration
-
-### Full manual command sequence
-
-One block, one paste. Requires `$RECIPE_PATH` from the "Set
-your recipe path" step above.
-
-```bash
-# Set your recipe path
-export RECIPE_PATH=contrib/python/my-recipe # Replace with your recipe's folder name, not the recipe name
-
-# From the repo root
-uv run validate $RECIPE_PATH                # Validates the manifest and structure of the recipe
-uv run ruff format $RECIPE_PATH             # Formats the recipe code
-uv run ruff check --fix $RECIPE_PATH        # Fixes lint errors in the recipe code
-
-# From the recipe root
-cd $RECIPE_PATH
-uv lock                                    # Updates the lock file 
-uv run pytest                              # Runs the tests
-```
+CI excludes integration tests by default. See
+[python.md — Integration tests](./recipe-handbook/languages/python.md#integration-tests)
+for exclusion patterns and how to run them locally before opening
+a PR.
 
 ## 4. When something fails
 
-- CI red on your PR? →
+- CI failing on your PR? →
   [troubleshooting](./recipe-handbook/troubleshooting.md)
-- Want the full "how does it all fit together" story? →
+- Fix `validate-recipe-structure` failures first — structural
+  errors can mask Python-specific checks downstream.
+- Some failures cascade: a stale `uv.lock` causes both
+  `python-dependency-policy` and `python-tests` to fail. Fix
+  the root cause before pushing again.
+- CI re-runs automatically on every push to your PR branch.
+  No manual trigger is needed.
+- Want the full story? →
   [handbook overview](./recipe-handbook/README.md)

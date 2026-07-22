@@ -1,4 +1,4 @@
-<!-- word count: 300 (target 500, cap 800) -->
+<!-- word count: 345 (target 500, cap 800) -->
 
 # Recipe Handbook
 
@@ -8,7 +8,7 @@ This handbook is the reference — standards, tooling, and the
 *why* behind each. If you already know your way around, the
 [checklist](../recipe-checklist.md) is your day-to-day tool.
 You don't have to read every handbook page; the checklist
-links back here whenever a step needs unpacking.
+links back here whenever a step needs more explanation.
 
 ## What makes a good recipe
 
@@ -28,14 +28,20 @@ Every accepted recipe:
 
 ## Handbook pages
 
-**If you're new here, start with:**
+**New here?** Start with the [checklist](../recipe-checklist.md) —
+it covers everything on one page. Come back here for deeper context:
 
 1. [Anatomy of a recipe](./anatomy.md) — what files every
    recipe has, and why
 2. [Python language rules](./languages/python.md) — the
    specific requirements, plus end-to-end scenarios
-3. ["New Python recipe from scratch"](./languages/python.md#new-python-recipe-from-scratch)
-   — walk-through inside the Python page
+3. [The fast path](./languages/python.md#the-fast-path)
+   — new recipe or updating an existing one, two prompts
+
+**Updating an existing recipe?** Run `prepare-python-recipe`
+against your recipe path — it's safe to re-run and applies
+any new requirements automatically. Then check the
+[checklist](../recipe-checklist.md) for any manual steps.
 
 **Reference:**
 

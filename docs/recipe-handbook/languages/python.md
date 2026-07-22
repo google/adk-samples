@@ -9,17 +9,19 @@ live in [anatomy](../anatomy.md).
 
 Every Python recipe uses this shape:
 
-    contrib/python/my-recipe/
-      pyproject.toml            # project spec + deps
-      uv.lock                   # pinned deps
-      .env.example              # env vars the recipe reads
-      manifest.yaml             # recipe metadata (see anatomy)
-      README.md                 # description, setup, run
-      app/
-        __init__.py             # runs load_dotenv(), then imports agent
-        agent.py                # your agent code
-      tests/
-        test_runnability.py     # import smoke test
+```
+contrib/python/my-recipe/
+  pyproject.toml            # project spec + deps
+  uv.lock                   # pinned deps
+  .env.example              # env vars the recipe reads
+  manifest.yaml             # recipe metadata (see anatomy)
+  README.md                 # description, setup, run
+  app/
+    __init__.py             # runs load_dotenv(), then imports agent
+    agent.py                # your agent code
+  tests/
+    test_runnability.py     # import smoke test
+```
 
 **Best practice: name the Python package `app`.** Not strictly
 enforced, but the root Ruff/isort configuration assumes it
@@ -27,6 +29,28 @@ enforced, but the root Ruff/isort configuration assumes it
 import ordering.
 
 **Minimum Python:** 3.11.
+
+## The fast path
+
+**New recipe:**
+
+```
+"scaffold a new Python recipe at contrib/python/my-recipe"
+# ... write your agent in app/agent.py ...
+"prepare the python recipe contrib/python/my-recipe"
+```
+
+**Updating a recipe:**
+
+```
+"prepare the python recipe contrib/python/my-recipe"
+```
+
+`prepare-python-recipe` is safe to re-run and won't overwrite
+your `.env.example` or hand-written Python code.
+
+Full skill reference:
+[skills catalog](../skills-catalog.md#python-skills).
 
 ## Copy-paste starters
 
@@ -116,9 +140,11 @@ run them locally before opening a PR.
 it with real API calls, document credential setup in the
 recipe's `README.md`. Run locally:
 
-    cd contrib/python/my-recipe
-    uv run pytest tests/integration    # integration only
-    uv run pytest                      # full suite
+```bash
+cd contrib/python/my-recipe
+uv run pytest tests/integration    # integration only
+uv run pytest                      # full suite
+```
 
 ## Local commands
 
@@ -137,28 +163,6 @@ cd contrib/python/my-recipe
 uv run pytest --ignore=tests/integration \
   --ignore-glob="**/test_integration.py"
 ```
-
-## The fast path
-
-**New recipe:**
-
-```
-"scaffold a new Python recipe at contrib/python/my-recipe"
-# ... write your agent in app/agent.py ...
-"prepare the python recipe contrib/python/my-recipe"
-```
-
-**Updating a recipe:**
-
-```
-"prepare the python recipe contrib/python/my-recipe"
-```
-
-`prepare-python-recipe` is safe to re-run and won't overwrite
-your `.env.example` or hand-written Python code.
-
-Full skill reference:
-[skills catalog](../skills-catalog.md#python-skills).
 
 ---
 

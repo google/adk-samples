@@ -1,10 +1,8 @@
-<!-- word count: 657 (target 800, cap 1200) -->
+<!-- word count: 685 (target 800, cap 1200) -->
 
 # AI Skills Catalog
 
-Skills your AI assistant (e.g.
-[Antigravity CLI](https://antigravity.google/product/antigravity-cli))
-invokes to help you prepare a recipe. Source lives at
+Skills your AI coding assistant invokes to help you prepare a recipe. Source lives at
 [`.agents/skills/`](../../.agents/skills/); each has a `SKILL.md`
 with a full description. This catalog summarises them and maps
 them to the [checklist](../recipe-checklist.md).
@@ -17,9 +15,11 @@ them to the [checklist](../recipe-checklist.md).
 
 Say the skill's name or its trigger phrase to your assistant:
 
-    "prepare the python recipe contrib/python/my-recipe"
-    "align pyproject.toml for my recipe"
-    "generate manifest.yaml for contrib/python/my-recipe"
+```
+"prepare the python recipe contrib/python/my-recipe"
+"align pyproject.toml for my recipe"
+"generate manifest.yaml for contrib/python/my-recipe"
+```
 
 The assistant loads the skill on demand and runs it.
 
@@ -63,6 +63,8 @@ decision from you.
 
 - **Input:** recipe path (must be at final target path).
 - **When to use:** fastest path to a PR-ready recipe.
+- **Safe to re-run:** won't overwrite `.env.example` or hand-written
+  Python code.
 - **Trigger:** "prepare the python recipe contrib/python/my-recipe".
 
 ### `scaffold-python-recipe`
