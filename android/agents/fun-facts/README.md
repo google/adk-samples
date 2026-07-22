@@ -8,7 +8,7 @@ facts about any topic, with a Jetpack Compose chat interface.
 
 The Fun Facts Agent is a single-agent sample designed to demonstrate how to
 integrate ADK Kotlin into a native Android application. It wraps the same
-fun-facts agent from the [Kotlin samples](../../kotlin/agents/fun-facts/) in a
+fun-facts agent from the [Kotlin samples](../../../kotlin/agents/fun-facts/) in a
 Compose-based chat UI, using `InMemoryRunner` inside a ViewModel to manage
 agent interactions.
 
