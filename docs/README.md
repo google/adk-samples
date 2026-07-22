@@ -1,6 +1,6 @@
 <!-- word count: 195 (target 100, cap 200) -->
 
-# `docs/`
+# Contributing to adk-samples
 
 `adk-samples` is a curated collection of runnable ADK agent examples.
 A **recipe** is one such example — a focused, self-contained agent
