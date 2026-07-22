@@ -5,8 +5,9 @@ import (
 	"time"
 
 	"github.com/tpryan/noaago"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 )
 
 const (
@@ -65,7 +66,7 @@ func NewTideTool() (tool.Tool, *TideProvider, error) {
 	return t, tp, err
 }
 
-func (tp *TideProvider) GetTides(ctx tool.Context, args TideArgs) (TideResult, error) {
+func (tp *TideProvider) GetTides(ctx agent.Context, args TideArgs) (TideResult, error) {
 	stations, err := tp.findNearbyStations(args.Latitude, args.Longitude)
 	if err != nil {
 		return TideResult{}, err

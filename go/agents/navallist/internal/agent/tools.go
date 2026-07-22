@@ -8,7 +8,7 @@ import (
 	"navallist/internal/data"
 
 	"github.com/charmbracelet/log"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
 )
 
 // UpdateChecklistArgs defines the input for the checklist item tool.
@@ -47,7 +47,7 @@ func (t *ChecklistTool) resolveTripID(ctx context.Context, adkSessionID string) 
 }
 
 // GetCrewList returns the names of all people currently participating in the trip.
-func (t *ChecklistTool) GetCrewList(ctx tool.Context, _ struct{}) (interface{}, error) {
+func (t *ChecklistTool) GetCrewList(ctx agent.Context, _ struct{}) (interface{}, error) {
 	adkID := ctx.SessionID()
 	tripID, err := t.resolveTripID(ctx, adkID)
 	if err != nil {
@@ -65,7 +65,7 @@ func (t *ChecklistTool) GetCrewList(ctx tool.Context, _ struct{}) (interface{}, 
 }
 
 // GetChecklistStatus returns the current state of all items in the checklist.
-func (t *ChecklistTool) GetChecklistStatus(ctx tool.Context, _ struct{}) (interface{}, error) {
+func (t *ChecklistTool) GetChecklistStatus(ctx agent.Context, _ struct{}) (interface{}, error) {
 	adkID := ctx.SessionID()
 	tripID, err := t.resolveTripID(ctx, adkID)
 	if err != nil {
@@ -88,7 +88,7 @@ type UpdateItemsArgs struct {
 }
 
 // UpdateItems allows the agent to update one or more items in a single tool call.
-func (t *ChecklistTool) UpdateItems(ctx tool.Context, args UpdateItemsArgs) (ToolResult, error) {
+func (t *ChecklistTool) UpdateItems(ctx agent.Context, args UpdateItemsArgs) (ToolResult, error) {
 	log.Info("Tool UpdateItems called", "count", len(args.Updates), "session_id", ctx.SessionID())
 
 	var successes []string
@@ -128,7 +128,7 @@ func (t *ChecklistTool) UpdateItems(ctx tool.Context, args UpdateItemsArgs) (Too
 }
 
 // updateItemInternal is the internal helper for updating checklist items.
-func (t *ChecklistTool) updateItemInternal(ctx tool.Context, args UpdateChecklistArgs) (result ToolResult, err error) {
+func (t *ChecklistTool) updateItemInternal(ctx agent.Context, args UpdateChecklistArgs) (result ToolResult, err error) {
 	log.Info("Internal updateItemInternal called", "args", args, "session_id", ctx.SessionID())
 
 	adkID := ctx.SessionID()
@@ -174,7 +174,7 @@ func (t *ChecklistTool) updateItemInternal(ctx tool.Context, args UpdateChecklis
 }
 
 // UpdateMetadata is the function called by the agent to update trip details.
-func (t *ChecklistTool) UpdateMetadata(ctx tool.Context, args UpdateTripArgs) (ToolResult, error) {
+func (t *ChecklistTool) UpdateMetadata(ctx agent.Context, args UpdateTripArgs) (ToolResult, error) {
 	log.Info("Tool UpdateMetadata called", "args", args, "session_id", ctx.SessionID())
 
 	adkID := ctx.SessionID()

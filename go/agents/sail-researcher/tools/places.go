@@ -9,8 +9,9 @@ import (
 	places "cloud.google.com/go/maps/places/apiv1"
 	"cloud.google.com/go/maps/places/apiv1/placespb"
 	"github.com/googleapis/gax-go/v2"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	"google.golang.org/api/option"
 	"google.golang.org/genproto/googleapis/type/latlng"
 	"google.golang.org/grpc/metadata"
@@ -83,7 +84,7 @@ func NewPlacesTool(ctx context.Context, apiKey string) (tool.Tool, *PlacesProvid
 	return t, p, err
 }
 
-func (p *PlacesProvider) FindPlaces(ctx tool.Context, args PlacesArgs) (PlacesResponse, error) {
+func (p *PlacesProvider) FindPlaces(ctx agent.Context, args PlacesArgs) (PlacesResponse, error) {
 	start := time.Now()
 
 	// Default radius if 0

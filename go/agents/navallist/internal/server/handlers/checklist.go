@@ -120,17 +120,17 @@ func (h *ChecklistHandler) RunInteraction(w http.ResponseWriter, r *http.Request
 
 	if err != nil {
 		log.Error("Agent interaction failed", "err", err, "session", sessionID)
-		
+
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		status := http.StatusInternalServerError
 		code := "internal_error"
-		
+
 		if errors.Is(err, data.ErrNotFound) {
 			status = http.StatusNotFound
 			code = "session_not_found"
-		} else if strings.Contains(strings.ToLower(err.Error()), "overloaded") || 
-		           strings.Contains(strings.ToLower(err.Error()), "rate limit") {
+		} else if strings.Contains(strings.ToLower(err.Error()), "overloaded") ||
+			strings.Contains(strings.ToLower(err.Error()), "rate limit") {
 			status = http.StatusTooManyRequests
 			code = "overloaded"
 		}

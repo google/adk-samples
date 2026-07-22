@@ -17,11 +17,11 @@ package reviser
 import (
 	"strings"
 
-	"google.golang.org/adk/agent"
+	"google.golang.org/adk/v2/agent"
 
-	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/v2/agent/llmagent"
 
-	"google.golang.org/adk/model"
+	"google.golang.org/adk/v2/model"
 )
 
 const EndMark = "---END-OF-EDIT---"
@@ -114,7 +114,7 @@ func New(model model.LLM) (agent.Agent, error) {
 }
 
 func removeEndOfEditMark(
-	ctx agent.CallbackContext,
+	ctx agent.Context,
 	response *model.LLMResponse,
 	respError error,
 ) (*model.LLMResponse, error) {

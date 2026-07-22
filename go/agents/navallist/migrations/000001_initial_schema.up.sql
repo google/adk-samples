@@ -5,15 +5,15 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- 1. Functions
 CREATE OR REPLACE FUNCTION shortkey_generate() RETURNS text
     LANGUAGE plpgsql
-    AS $
+    AS $$
 BEGIN
     RETURN substr(translate(encode(gen_random_bytes(9), 'base64'), '+/', '-_'), 1, 11);
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION notify_changes() RETURNS trigger
     LANGUAGE plpgsql
-    AS $
+    AS $$
 DECLARE
   payload JSON;
   payload_text TEXT;
@@ -47,7 +47,7 @@ BEGIN
   PERFORM pg_notify('db_events', payload_text);
   RETURN NEW;
 END;
-$;
+$$;
 
 -- 2. Tables
 CREATE TABLE users (

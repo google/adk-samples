@@ -14,14 +14,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/joho/godotenv"
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/cmd/launcher"
-	"google.golang.org/adk/model/gemini"
-	"google.golang.org/adk/server/adkrest"
-	"google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/geminitool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model/gemini"
+	"google.golang.org/adk/v2/server/adkrest"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/geminitool"
 	"google.golang.org/genai"
 )
 
@@ -61,7 +60,7 @@ func LoadConfig() Config {
 	}
 
 	if cfg.ModelName == "" {
-		cfg.ModelName = "gemini-2.5-flash"
+		cfg.ModelName = "gemini-flash-latest"
 	}
 
 	return cfg
@@ -104,14 +103,15 @@ func main() {
 	// 3. Create Loader
 	loader := agent.NewSingleLoader(boatAgent)
 
-	// 4. Launcher Config
-	launcherConfig := &launcher.Config{
-		AgentLoader:    loader,
-		SessionService: session.InMemoryService(),
+	// 4. Create ADK HTTP Handler
+	adkHandler, err := adkrest.NewServer(adkrest.ServerConfig{
+		AgentLoader:     loader,
+		SessionService:  session.InMemoryService(),
+		SSEWriteTimeout: 120 * time.Second,
+	})
+	if err != nil {
+		log.Fatalf("Failed to create REST handler: %v", err)
 	}
-
-	// 5. Create ADK HTTP Handler
-	adkHandler := adkrest.NewHandler(launcherConfig, 120*time.Second)
 
 	// 6. Setup Router
 	mux := http.NewServeMux()

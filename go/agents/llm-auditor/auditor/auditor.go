@@ -17,9 +17,9 @@ package auditor
 import (
 	"context"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/workflowagents/sequentialagent"
-	"google.golang.org/adk/model/gemini"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/workflowagents/sequentialagent"
+	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/genai"
 
 	"llmauditor/critic"
@@ -27,7 +27,7 @@ import (
 )
 
 func GetLLmAuditorAgent(ctx context.Context) agent.Agent {
-	model, err := gemini.NewModel(ctx, "gemini-2.5-flash", &genai.ClientConfig{})
+	model, err := gemini.NewModel(ctx, "gemini-flash-latest", &genai.ClientConfig{})
 	if err != nil {
 		panic(err)
 	}

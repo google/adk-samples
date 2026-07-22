@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	DefaultModelName = "gemini-2.0-flash-001"
+	DefaultModelName = "gemini-flash-latest"
 	DefaultPort      = "8081"
 	DefaultEnv       = "development"
 )

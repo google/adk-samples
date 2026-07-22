@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/nathan-osman/go-sunrise"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	"googlemaps.github.io/maps"
 )
 
@@ -59,7 +60,7 @@ func NewSunriseTool(apiKey string) (tool.Tool, *SunriseProvider, error) {
 	return t, sp, err
 }
 
-func (sp *SunriseProvider) GetSunriseSunset(ctx tool.Context, args SunriseArgs) (SunriseResult, error) {
+func (sp *SunriseProvider) GetSunriseSunset(ctx agent.Context, args SunriseArgs) (SunriseResult, error) {
 	targetDate, err := time.Parse("2006-01-02", args.Date)
 	if err != nil {
 		return SunriseResult{}, fmt.Errorf("%w: %v", ErrInvalidDate, err)

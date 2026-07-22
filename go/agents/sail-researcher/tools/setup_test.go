@@ -2,16 +2,23 @@ package tools
 
 import (
 	"context"
+	"time"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/memory"
-	"google.golang.org/adk/session"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/memory"
+	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 )
 
 type mockToolContext struct {
 	context.Context
+	*agent.ContextMock
 }
+
+func (m mockToolContext) Deadline() (deadline time.Time, ok bool) { return m.Context.Deadline() }
+func (m mockToolContext) Done() <-chan struct{}                   { return m.Context.Done() }
+func (m mockToolContext) Err() error                              { return m.Context.Err() }
+func (m mockToolContext) Value(key any) any                       { return m.Context.Value(key) }
 
 func (m mockToolContext) Actions() *session.EventActions {
 	return nil

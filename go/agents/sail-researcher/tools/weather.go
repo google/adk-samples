@@ -6,8 +6,9 @@ import (
 
 	"github.com/tpryan/openmeteogo"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 )
 
 const metersToFeet = 3.28084
@@ -64,7 +65,7 @@ func NewWeatherTool() (tool.Tool, *WeatherProvider, error) {
 	return t, wp, err
 }
 
-func (wp *WeatherProvider) GetWeatherForecast(ctx tool.Context, args WeatherArgs) (WeatherResult, error) {
+func (wp *WeatherProvider) GetWeatherForecast(ctx agent.Context, args WeatherArgs) (WeatherResult, error) {
 	start := time.Now()
 
 	targetDate, err := time.Parse("2006-01-02", args.Date)

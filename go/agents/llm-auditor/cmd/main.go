@@ -16,15 +16,16 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
+	"os"
+
 	"llmauditor/auditor"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/artifact"
-	"google.golang.org/adk/cmd/launcher/adk"
-	"google.golang.org/adk/cmd/launcher/web"
-	"google.golang.org/adk/cmd/restapi/services"
-	"google.golang.org/adk/session"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/artifact"
+	"google.golang.org/adk/v2/cmd/launcher"
+	"google.golang.org/adk/v2/cmd/launcher/full"
+	"google.golang.org/adk/v2/session"
 )
 
 func main() {
@@ -34,18 +35,19 @@ func main() {
 	sessionService := session.InMemoryService()
 	artifactservice := artifact.InMemoryService()
 
-	agentLoader := services.NewStaticAgentLoader(
-		llmAuditorAgent,
-		map[string]agent.Agent{
-			"llm_auditor": llmAuditorAgent,
-		},
-	)
-
-	webConfig, _, _ := web.ParseArgs([]string{})
-	fmt.Println(webConfig)
-	web.Serve(webConfig, &adk.Config{
+	config := &launcher.Config{
 		SessionService:  sessionService,
-		AgentLoader:     agentLoader,
+		AgentLoader:     agent.NewSingleLoader(llmAuditorAgent),
 		ArtifactService: artifactservice,
-	})
+	}
+
+	args := os.Args[1:]
+	if len(args) == 0 {
+		args = []string{"web", "api", "webui"}
+	}
+
+	l := full.NewLauncher()
+	if err := l.Execute(ctx, config, args); err != nil {
+		log.Fatalf("Run failed: %v\n\n%s", err, l.CommandLineSyntax())
+	}
 }

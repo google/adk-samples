@@ -5,7 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
 )
 
 // ToolMonitor tracks tool execution times.
@@ -22,7 +23,7 @@ func NewToolMonitor() *ToolMonitor {
 }
 
 // OnBeforeTool records the start time of a tool execution.
-func (tm *ToolMonitor) OnBeforeTool(ctx tool.Context, t tool.Tool, args map[string]any) (map[string]any, error) {
+func (tm *ToolMonitor) OnBeforeTool(ctx agent.Context, t tool.Tool, args map[string]any) (map[string]any, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	tm.timings[ctx.FunctionCallID()] = time.Now()
@@ -30,7 +31,7 @@ func (tm *ToolMonitor) OnBeforeTool(ctx tool.Context, t tool.Tool, args map[stri
 }
 
 // OnAfterTool records the end time and logs the duration of a tool execution.
-func (tm *ToolMonitor) OnAfterTool(ctx tool.Context, t tool.Tool, args map[string]any, result map[string]any, err error) (map[string]any, error) {
+func (tm *ToolMonitor) OnAfterTool(ctx agent.Context, t tool.Tool, args map[string]any, result map[string]any, err error) (map[string]any, error) {
 	tm.mu.Lock()
 	startTime, ok := tm.timings[ctx.FunctionCallID()]
 	if ok {
