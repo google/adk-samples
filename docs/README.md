@@ -6,10 +6,10 @@
 A **recipe** is one such example — a focused, self-contained agent
 that lives under `contrib/` and demonstrates one concrete ADK pattern.
 
-**Who reads your recipe?** Other ADK developers — people building
-agents who are looking for a concrete starting point, a technique
-they haven't seen, or a pattern they can adapt. A good recipe saves
-them hours and earns visibility in the ADK community.
+**Who reads your recipe?** ADK developers looking for a starting
+point or pattern to adapt — and coding agents (AI coding assistants)
+reading your recipe on a user's behalf. Both benefit from clear
+structure and a focused `README.md`.
 
 **What makes a recipe good?** A clear purpose, a concrete problem it
 solves, and something new to teach. Before writing code, make sure
