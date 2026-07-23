@@ -1,9 +1,0 @@
-.git
-.gitignore
-.venv
-__pycache__
-*.pyc
-app/.env
-app/server.log
-tests
-uv.lock
