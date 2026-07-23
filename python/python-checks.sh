@@ -46,9 +46,9 @@ run_isort() {
     local path="$1"
     if [ -n "$path" ]; then
         if [[ "$path" == notebooks/* ]]; then
-            isort --check-only --diff "$path"
+            isort --profile black --check-only --diff "$path"
         else
-            isort --check-only --diff "$path"
+            isort --profile black --check-only --diff "$path"
         fi
         echo -e "iSort check passed for: $path"
     fi
