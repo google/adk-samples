@@ -84,11 +84,10 @@ Adjust the relative paths for pages under subdirectories
 (e.g. `languages/` uses `../../recipe-checklist.md` and
 `../README.md`).
 
-**Non-handbook docs** (`_STYLE.md`, `recipe-checklist.md`,
+**Non-handbook docs** (`recipe-checklist.md`,
 `recipe-handbook/README.md`, `docs/README.md`) also carry a
 footer for consistency, but link only where it makes sense — the
-handbook README self-links to itself for symmetry; `_STYLE.md`
-uses a checklist + handbook footer.
+handbook README self-links to itself for symmetry.
 
 ## Link text
 
@@ -113,4 +112,4 @@ uses a checklist + handbook footer.
 
 ---
 
-← [Checklist](./recipe-checklist.md) · [Handbook](./recipe-handbook/README.md)
+← [Checklist](../docs/recipe-checklist.md) · [Handbook](../docs/recipe-handbook/README.md)
