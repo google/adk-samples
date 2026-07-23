@@ -9,6 +9,7 @@ on:
     paths:
       - "core/**/*.py"
       - "contrib/**/*.py"
+      - "skills/**/*.py"
       - "**/pyproject.toml"
 
 permissions:

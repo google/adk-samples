@@ -52,7 +52,7 @@ Runs `scripts/align_pyproject.py` against a recipe directory. Six rules:
 
 1. **Always use the script — never hand-edit `pyproject.toml` or `manifest.yaml` to perform these changes.** The script exists specifically so edits are style-preserving and reviewable via one report.
 
-2. **Ask for the recipe directory** if the user has not provided one. Do not guess. Recipe roots live under `core/python/<name>/` or `contrib/<name>/`.
+2. **Ask for the recipe directory** if the user has not provided one. Do not guess. Recipe roots live under `core/python/<name>/`, `contrib/<name>/`, or `skills/python/<name>/`.
 
 3. **Always start with `--dry-run`** unless the user has explicitly said "apply", "fix it", "just do it", or equivalent. Show them what would change before doing it.
 
@@ -76,7 +76,7 @@ Runs `scripts/align_pyproject.py` against a recipe directory. Six rules:
 
 | Field | Required | Description |
 |---|---|---|
-| `--recipe-dir` | Yes | Path to the recipe root (e.g. `core/python/cross-session-memory`, `contrib/my-recipe`). |
+| `--recipe-dir` | Yes | Path to the recipe root (e.g. `core/python/cross-session-memory`, `contrib/my-recipe`, `skills/python/my-skill`). |
 | `--dry-run` | No | Report what would change without modifying any files. |
 | `--description-source` | Only when resolving a `description-matches-manifest` mismatch. Values: `pyproject`, `manifest`, `delete`. See below. | Chooses how to reconcile a description mismatch. |
 

@@ -11,6 +11,7 @@ on:
     paths:
       - 'core/**'
       - 'contrib/**'
+      - 'skills/**'
       - '.github/workflows/python-validate-recipe.yml'
       - '.github/scripts/check_env_vars.py'
       - '.github/scripts/check_recipe_pyproject.py'
