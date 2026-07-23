@@ -160,6 +160,21 @@ def test_validate_manifest_placeholder_description(tmp_path):
     assert any("description" in e for e in errors)
 
 
+def test_validate_manifest_with_valid_license(tmp_path):
+    schema = m.load_schema()
+    content = VALID_MANIFEST + 'license: "Apache-2.0"\n'
+    manifest = _write(tmp_path / "manifest.yaml", content)
+    assert m.validate_manifest(manifest, schema) == []
+
+
+def test_validate_manifest_with_empty_license(tmp_path):
+    schema = m.load_schema()
+    content = VALID_MANIFEST + 'license: ""\n'
+    manifest = _write(tmp_path / "manifest.yaml", content)
+    errors = m.validate_manifest(manifest, schema)
+    assert any("license" in e for e in errors)
+
+
 # ---------------------------------------------------------------------------
 # collect_recipe_dirs (monkeypatch REPO_ROOT to a fake tree)
 # ---------------------------------------------------------------------------

@@ -135,6 +135,11 @@
         }
       }
     },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SPDX license identifier for the recipe (e.g. 'Apache-2.0', 'MIT', 'BSD-3-Clause'). See https://spdx.org/licenses/"
+    },
     "tags": {
       "type": "array",
       "items": {
