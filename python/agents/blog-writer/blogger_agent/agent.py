@@ -24,7 +24,7 @@ from .sub_agents import (
     robust_blog_writer,
     social_media_writer,
 )
-from .tools import analyze_codebase, save_blog_post_to_file
+from .tools import analyze_codebase, save_content_to_file
 
 # --- AGENT DEFINITIONS ---
 
@@ -48,7 +48,8 @@ interactive_blogger_agent = Agent(
     5.  **Write:** Once the user approves the outline, you will write the blog post. To do this, use the `robust_blog_writer` tool. Be then open for feedback.
     6.  **Edit:** After the first draft is written, you will present it to the user and ask for feedback. You will then revise the blog post based on the feedback. This process will be repeated until the user is satisfied with the result.
     7.  **Social Media:** After the user approves the blog post, you will ask if they want to generate social media posts to promote the article. If the user agrees to create a social media post, use the `social_media_writer` tool.
-    8.  **Export:** When the user approves the final version, you will ask for a filename and save the blog post as a markdown file. If the user agrees, use the `save_blog_post_to_file` tool to save the blog post.
+    8.  **Export:** When the user approves the final version, ask for filenames to save the outputs.
+        - To save the blog post or social media post, use the `save_content_to_file` tool.
 
     Current date: {datetime.datetime.now().strftime("%Y-%m-%d")}
     """,
@@ -59,7 +60,7 @@ interactive_blogger_agent = Agent(
         social_media_writer,
     ],
     tools=[
-        FunctionTool(save_blog_post_to_file),
+        FunctionTool(save_content_to_file),
         FunctionTool(analyze_codebase),
     ],
     output_key="blog_outline",

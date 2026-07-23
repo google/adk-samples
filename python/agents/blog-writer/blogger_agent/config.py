@@ -16,14 +16,21 @@ import os
 from dataclasses import dataclass
 
 import google.auth
+from dotenv import load_dotenv
 
+# # Load environment variables from .env file
+load_dotenv()
 # To use AI Studio credentials:
 # 1. Create a .env file in the /app directory with:
 #    GOOGLE_GENAI_USE_VERTEXAI=FALSE
 #    GOOGLE_API_KEY=PASTE_YOUR_ACTUAL_API_KEY_HERE
 # 2. This will override the default Vertex AI configuration
-_, project_id = google.auth.default()
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
+try:
+    _, project_id = google.auth.default()
+except Exception:
+    project_id = None
+if project_id:
+    os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
 os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
@@ -38,8 +45,8 @@ class ResearchConfiguration:
         max_search_iterations (int): Maximum search iterations allowed.
     """
 
-    critic_model: str = "gemini-2.5-pro"
-    worker_model: str = "gemini-2.5-flash"
+    critic_model: str = "gemini-3.5-flash-lite"
+    worker_model: str = "gemini-3.1-flash-lite"
     max_search_iterations: int = 5
 
 
