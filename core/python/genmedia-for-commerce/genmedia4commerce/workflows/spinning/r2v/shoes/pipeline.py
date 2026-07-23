@@ -96,7 +96,7 @@ def generate_single_clip_r2v(  # noqa: C901, PLR0912, PLR0915
         reference_images_unstacked: Unstacked reference image bytes for consistency validation
         reference_labels_unstacked: Labels for unstacked reference images
         disable_logging: If True, disables all logging output (default: True)
-        product_consistency_model: Model to use for product consistency validation (default: "gemini-3-flash-preview")
+        product_consistency_model: Model to use for product consistency validation (default: "gemini-3.6-flash")
 
     Returns:
         dict: Metadata about the generated clip
@@ -504,7 +504,7 @@ def run_video_gen_pipeline_r2v(  # noqa: PLR0915
         max_retries: Maximum retries for video generation (default: 5)
         veo_model: Veo model to use for video generation (default: "veo-3.1-generate-001")
         reference_type: Type of reference images ("asset", "style", etc.) (default: "asset")
-        product_consistency_model: Model for product consistency validation (default: "gemini-3-flash
+        product_consistency_model: Model for product consistency validation (default: "gemini-3.6-flash
         -preview")
         product_id: Product identifier for GCS uploads (required if gcs_bucket is set)
         gcs_bucket: GCS bucket name. If provided, uploads results to GCS (default: None)

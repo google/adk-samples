@@ -198,7 +198,7 @@ class GenMediaConfig:
 
     """
 
-    agent_model: str = os.getenv("MODEL_NAME_GENERATED_1", "gemini-3.5-flash")
+    agent_model: str = os.getenv("MODEL_NAME_GENERATED_1", "gemini-3.6-flash")
     mcp_server_url: str = os.getenv(
         "MCP_SERVER_URL", "http://localhost:8081/sse"
     )
