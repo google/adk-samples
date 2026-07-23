@@ -54,7 +54,8 @@ any new requirements automatically. Then check the
 ## Glossary
 
 - **Recipe** — a runnable agent example (or importable agent
-  module) under `contrib/`.
+  module) under `contrib/`, consumed by ADK developers and coding
+  agents alike.
 - **Skill** — a pre-loaded instruction set that your AI coding
   assistant follows when you ask it to perform a task (e.g.
   `prepare-python-recipe`). Skill files live in `.agents/skills/`

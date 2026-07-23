@@ -13,9 +13,9 @@ Every recipe lives at `<root>/<lang>/<name>`, where `<root>` is
 (community). Nested by language.
 
 Contributors submit new recipes to `contrib/`. The rest of this
-page covers what all recipes share. `core/` recipes have one
-additional file — `AGENTS.md` — with maintainer context; it is
-not required for `contrib/`.
+page covers what all recipes share. `core/` recipes have one additional file — `AGENTS.md` — written
+for coding agents: intent, key files to study, and reuse notes.
+Not required for `contrib/`.
 
 ## Naming
 
