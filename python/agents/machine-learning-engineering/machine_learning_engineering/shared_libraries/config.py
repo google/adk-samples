@@ -9,7 +9,7 @@ class DefaultConfig:
     """Default configuration."""
 
     data_dir: str = "./machine_learning_engineering/tasks/"  # the directory path where the machine learning tasks and their data are stored.
-    task_name: str = "california-housing-prices"  # The name of the specific task to be loaded and processed.
+    task_name: str = os.environ.get("TASK_NAME", "california-housing-prices")  # The name of the specific task to be loaded and processed.
     task_type: str = (
         "Tabular Regression"  # The type of machine learning problem.
     )

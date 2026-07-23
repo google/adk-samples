@@ -340,9 +340,15 @@ enhanced_search_executor = LlmAgent(
     You are a specialist researcher executing a refinement pass.
     You have been activated because the previous research was graded as 'fail'.
 
-    1.  Review the 'research_evaluation' state key to understand the feedback and required fixes.
-    2.  Execute EVERY query listed in 'follow_up_queries' using the 'google_search' tool.
-    3.  Synthesize the new findings and COMBINE them with the existing information in 'section_research_findings'.
+    Research evaluation feedback:
+    {research_evaluation}
+
+    Existing research findings to build upon:
+    {section_research_findings}
+
+    1.  Review the research evaluation feedback above to understand what needs to be fixed and which follow-up queries to run.
+    2.  Execute EVERY follow-up query listed in the evaluation using the 'google_search' tool.
+    3.  Synthesize the new findings and COMBINE them with the existing research findings above.
     4.  Your output MUST be the new, complete, and improved set of research findings.
     """,
     tools=[google_search],

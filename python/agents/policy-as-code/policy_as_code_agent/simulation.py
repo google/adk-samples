@@ -108,7 +108,6 @@ def run_simulation(policy_code: str, metadata: list) -> list:
             "tuple": tuple,
             "zip": zip,
             "isinstance": isinstance,
-            "__import__": __import__,
         },
         "json": json,
         "re": re,

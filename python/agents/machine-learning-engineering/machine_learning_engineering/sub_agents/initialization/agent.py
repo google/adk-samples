@@ -279,9 +279,17 @@ def prepare_task(
     common_util.set_random_seed(callback_context.state["seed"])
     task_name = callback_context.state.get("task_name", "")
     data_dir = callback_context.state.get("data_dir", "")
-    task_description = open(
-        os.path.join(data_dir, task_name, "task_description.txt"),
-    ).read()
+    task_dir = os.path.join(data_dir, task_name)
+    for ext in ("task_description.txt", "task_description.md"):
+        desc_path = os.path.join(task_dir, ext)
+        if os.path.exists(desc_path):
+            task_description = open(desc_path).read()
+            break
+    else:
+        raise FileNotFoundError(
+            f"No task description file found in {task_dir}. "
+            "Expected 'task_description.txt' or 'task_description.md'."
+        )
     callback_context.state["task_description"] = task_description
     return None
 
