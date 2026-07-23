@@ -16,10 +16,10 @@ import glob
 import os
 
 
-def save_blog_post_to_file(blog_post: str, filename: str) -> dict:
-    """Saves the blog post to a file."""
+def save_content_to_file(content: str, filename: str) -> dict:
+    """Saves text content (such as a blog post or social media post) to a file."""
     with open(filename, "w") as f:
-        f.write(blog_post)
+        f.write(content)
     return {"status": "success"}
 
 
