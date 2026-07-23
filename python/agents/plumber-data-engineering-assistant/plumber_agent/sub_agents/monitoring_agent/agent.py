@@ -13,7 +13,7 @@ from .tools.utils import get_cpu_utilization, get_latest_resource_based_logs
 
 root_agent = Agent(
     name="monitoring_agent",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     description=(f"{AGENT_DESCRIPTION}"),
     instruction=(f"{AGENT_INSTRUCTIONS}"),
     tools=[

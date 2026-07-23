@@ -109,7 +109,7 @@ def get_dataproc_template_mapping(
         Returns an empty JSON string `'{}'` if any step in the process fails.
     """
     try:
-        model = GenerativeModel("gemini-2.0-flash")
+        model = GenerativeModel("gemini-2.5-flash")
 
         # FIND THE CORRECT README FILE BASED ON THE USER INPUT
         response = model.generate_content(
@@ -344,7 +344,7 @@ def update_dataproc_template(
         transformation_sql=transformation_sql,
     )
 
-    model = GenerativeModel("gemini-2.0-flash")
+    model = GenerativeModel("gemini-2.5-flash")
     response = model.generate_content(prompt)
     new_template_code = response.text
 
