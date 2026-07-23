@@ -1,5 +1,5 @@
 [project]
-name = "<RECIPE_NAME>"
+name = "weather-assistant"
 version = "0.1.0"
 requires-python = ">=3.11,<3.13"
 dependencies = [

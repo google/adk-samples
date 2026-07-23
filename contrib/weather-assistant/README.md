@@ -1,4 +1,4 @@
-# <RECIPE_NAME>
+# weather-assistant
 
 This is a simple agent using the ADK Python SDK to demonstrate its capabilities.
 
@@ -9,7 +9,7 @@ Before you begin, ensure you have:
 
 ## Quick Start
 
-> **Note**: All commands below must be run from the recipe root directory (`<OUTPUT_DIRECTORY>/<RECIPE_NAME>/`).
+> **Note**: All commands below must be run from the recipe root directory (`contrib/weather-assistant/`).
 
 1. Install required packages:
    ```bash
@@ -32,7 +32,7 @@ Before you begin, ensure you have:
    uv run uvicorn app.fast_api_app:app --reload
    ```
 
-## Testing
+## Running Tests
 
 To run the unit, integration, and runnability tests:
 
@@ -50,9 +50,7 @@ uv run pytest tests/unit
 uv run pytest tests/integration
 ```
 
-## Running
-
-Use the following commands as a quick reference for common operations. All commands must be run from the recipe root directory (`<OUTPUT_DIRECTORY>/<RECIPE_NAME>/`).
+## Commands
 
 | Command | Description |
 | ------- | ----------- |
