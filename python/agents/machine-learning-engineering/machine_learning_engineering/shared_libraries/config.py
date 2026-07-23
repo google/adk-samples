@@ -16,7 +16,7 @@ class DefaultConfig:
     lower: bool = True  # True if a lower value of the metric is better.
     workspace_dir: str = "./machine_learning_engineering/workspace/"  # Directory used for saving intermediate outputs, results, logs.
     agent_model: str = os.environ.get(
-        "ROOT_AGENT_MODEL", "gemini-2.0-flash-001"
+        "ROOT_AGENT_MODEL", "gemini-2.5-flash"
     )  # Name the LLM model to be used by the agent.
     task_description: str = ""  # The detailed description of the task.
     task_summary: str = ""  # The concise summary of the task.

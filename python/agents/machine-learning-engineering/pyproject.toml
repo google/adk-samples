@@ -3,8 +3,8 @@ name = "machine-learning-engineering"
 version = "0.1.0"
 description = "MLE-STAR: A novel machine learning engineering (MLE) agent to automate the implementation of ML models."
 authors = [
-    { name = "Jiefeng Chen", email = "jiefengc@google.com" },
     { name = "Raj Sinha", email = "sinharaj@google.com" },
+    { name = "Jiefeng Chen", email = "jiefengc@google.com" },
     { name = "Jaehyun Nam", email = "jaehyunnam@google.com" },
     { name = "Jinsung Yoon", email = "jinsungyoon@google.com" }
 ]
@@ -13,7 +13,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 
 dependencies = [
-    "google-adk>=1.5.0",
+    "google-adk>=1.32.0",
     "google-genai>=1.9.0",
     "pydantic>=2.10.6",
     "python-dotenv>=1.0.1",

@@ -252,6 +252,7 @@ This document describes the required configuration parameters in the `DefaultCon
 
 #### `task_name`
 
+
 - **Description:** The name of the specific task to be loaded and processed.
 - **Type:** `str`
 - **Default:** `"california-housing-prices"`
@@ -284,7 +285,7 @@ This document describes the required configuration parameters in the `DefaultCon
 
 #### `agent_model`
 
-- **Description:** Specifies the identifier for the LLM model to be used by the agent. It defaults to the value of the environment variable `ROOT_AGENT_MODEL` or `"gemini-2.0-flash-001"` if the variable is not set.
+- **Description:** Specifies the identifier for the LLM model to be used by the agent. It defaults to the value of the environment variable `ROOT_AGENT_MODEL` or `"gemini-2.5-flash"` if the variable is not set.
 - **Type:** `str`
-- **Default:** `os.environ.get("ROOT_AGENT_MODEL", "gemini-2.0-flash-001")`
+- **Default:** `os.environ.get("ROOT_AGENT_MODEL", "gemini-2.5-flash")`
 
