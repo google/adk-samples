@@ -1,8 +1,12 @@
 import pytest
+from blogger_agent.agent import root_agent
+from dotenv import load_dotenv
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from blogger_agent.agent import root_agent
 from google.genai import types as genai_types
+
+# Load env variables for direct execution
+load_dotenv()
 
 
 @pytest.mark.asyncio
@@ -14,9 +18,7 @@ async def test_blogger_agent_smoke_test():
     await session_service.create_session(
         app_name="app", user_id="test_user", session_id="test_session"
     )
-    runner = Runner(
-        agent=root_agent, app_name="app", session_service=session_service
-    )
+    runner = Runner(agent=root_agent, app_name="app", session_service=session_service)
 
     # Test initial greeting/query
     query = "Hello, I want to write a blog post about Python testing best practices."
