@@ -40,7 +40,7 @@ async def run_spinning_shoes_r2v(
     veo_model: str = "veo-3.1-generate-001",
     reference_type: str = "asset",
     upscale_images: bool = True,
-    product_consistency_model: str = "gemini-3-flash-preview",
+    product_consistency_model: str = "gemini-3.6-flash",
     product_id: str = "",
     gcs_bucket: str = "",
     gcs_destination_prefix: str = "shoe_spinning_outputs",
@@ -82,7 +82,7 @@ async def run_spinning_shoes_r2v(
 
     client, veo_client = _get_clients()
     shoe_classifier_model = os.getenv("SHOE_CLASSIFICATION_ENDPOINT")
-    gemini_model = "gemini-2.5-flash"
+    gemini_model = "gemini-3.6-flash"
 
     logger.info(
         f"[MCP spinning_shoes_r2v] Starting: {len(images_bytes)} images, "

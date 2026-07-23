@@ -102,7 +102,7 @@ async def run_spinning_interpolation(
         None,
         lambda: get_interpolation_prompt(
             client=client,
-            gemini_model="gemini-2.5-flash-lite",
+            gemini_model="gemini-3.5-flash-lite",
             all_images_bytes=[processed_images[0], processed_images[1]],
         ),
     )

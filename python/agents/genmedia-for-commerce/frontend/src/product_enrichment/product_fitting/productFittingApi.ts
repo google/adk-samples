@@ -66,7 +66,7 @@ export async function generateFitting(
     garment_images_base64: request.garmentImages.map(img => dataUrlToBase64(img)),
     scenario: request.scenario,
     max_retries: request.maxRetries ?? 5,
-    generation_model: request.generationModel ?? 'gemini-3.1-flash-image-preview',
+    generation_model: request.generationModel ?? 'gemini-3.1-flash-image',
     ethnicity: request.ethnicity,
     gender: request.gender,
   }

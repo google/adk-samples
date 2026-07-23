@@ -38,7 +38,7 @@ NUMBER_OF_EPOCHS = int(os.getenv("FINETUNE_EPOCHS", "10"))
 LORA_RANK = int(os.getenv("FINETUNE_LORA_RANK", "2"))  # 2, 4, or 8
 LR_MULTIPLIER = float(os.getenv("FINETUNE_LR_MULTIPLIER", "0.5"))
 VERSION = int(os.getenv("FINETUNE_VERSION", "1"))
-BASE_MODEL = os.getenv("FINETUNE_BASE_MODEL", "gemini-2.5-flash")
+BASE_MODEL = os.getenv("FINETUNE_BASE_MODEL", "gemini-3.6-flash")
 
 CATALOGUE_SEED = "genmedia_for_commerce_generated_fashion_images"
 BUCKET_NAME = hashlib.sha256(CATALOGUE_SEED.encode()).hexdigest()[:63]

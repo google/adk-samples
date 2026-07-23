@@ -36,7 +36,7 @@ VALID_VIEWS = ["front", "back", "other"]
 def classify_garments(
     client,
     garment_images_bytes_list: list[bytes],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
 ) -> dict:
     """Classify multiple images of the same garment in a single call.
 
@@ -302,7 +302,7 @@ Only return the JSON object, nothing else."""
 def select_best_front(
     client,
     garment_images: list[bytes],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
     category: str = "",
 ) -> dict:
     """Select up to 2 best front-view garment images from a list."""
@@ -324,7 +324,7 @@ def describe_garment_detailed(
     client,
     front_images: list[bytes],
     back_images: list[bytes],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
 ) -> dict:
     """Generate a detailed description of the garment including brand identification.
 
@@ -334,7 +334,7 @@ def describe_garment_detailed(
         client: Gemini client instance
         front_images: Selected front garment images
         back_images: Selected back garment images
-        model: Gemini model to use (default: "gemini-3-flash-preview")
+        model: Gemini model to use (default: "gemini-3.6-flash")
 
     Returns:
         dict with keys: general, front_details, back_details
@@ -425,7 +425,7 @@ IMPORTANT:
 def select_best_back(
     client,
     garment_images: list[bytes],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
     category: str = "",
 ) -> dict:
     """Select up to 2 best back-view garment images from a list."""

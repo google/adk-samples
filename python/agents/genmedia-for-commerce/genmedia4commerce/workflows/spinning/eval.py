@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 def classify_product_type(
     client,
     image_bytes: bytes,
-    model: str = "gemini-2.5-flash-lite",
+    model: str = "gemini-3.5-flash-lite",
 ) -> str:
     """Classify whether a product image shows glasses/eyewear or something else.
 
@@ -147,7 +147,7 @@ def get_rotation_classification(video_bytes: bytes) -> str:
 
 
 def glitch_detection(
-    client, video_bytes: bytes, model: str = "gemini-3-flash-preview"
+    client, video_bytes: bytes, model: str = "gemini-3.6-flash"
 ) -> dict:
     """Detect visual glitches in a 360-degree product spinning video.
 
@@ -162,7 +162,7 @@ def glitch_detection(
     Args:
         client: Gemini client instance
         video_bytes: Video as bytes
-        model: Gemini model to use (default: "gemini-3-flash-preview")
+        model: Gemini model to use (default: "gemini-3.6-flash")
 
     Returns:
         dict: {

@@ -278,7 +278,7 @@ async def run_image_vto(
                 genai_client,
                 best_image,
                 garment_images,
-                "gemini-3-flash-preview",
+                "gemini-3.6-flash",
                 garment_descriptions,
             )
 

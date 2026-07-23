@@ -30,7 +30,7 @@ def evaluate_garment(
     client,
     generated_image_bytes: bytes,
     reference_garment_bytes: bytes | list[bytes],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
     view_details: str = "",
     garment_description: str = "",
 ) -> dict:
@@ -200,7 +200,7 @@ def evaluate_footwear(
     client,
     generated_image_bytes: bytes,
     reference_images: list[bytes],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
     garment_description: str = "",
 ) -> dict:
     """Evaluate how well footwear was reproduced in a generated fitting image.
@@ -327,7 +327,7 @@ def evaluate_garments(
     client,
     generated_image_bytes: bytes,
     garment_images_bytes_list: list[bytes],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
     view_details: str = "",
     garment_description: str = "",
 ) -> dict:
@@ -381,7 +381,7 @@ def evaluate_garments(
 def evaluate_wearing_quality(
     client,
     generated_image_bytes: bytes,
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
 ) -> dict:
     """Evaluate the wearing quality of a generated VTO image.
 
@@ -477,7 +477,7 @@ Only return the JSON object, nothing else."""
 def rank_fitting_variations(
     client,
     variations: list[tuple[int, bytes]],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
 ) -> list[dict]:
     """Rank all non-discarded fitting variations for a single view by comparing them side-by-side.
 

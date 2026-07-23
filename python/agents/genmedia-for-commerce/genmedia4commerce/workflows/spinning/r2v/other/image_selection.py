@@ -40,7 +40,7 @@ SIDE_PRIORITY_PRODUCTS = {"shoes", "cars"}
 def classify_product_images(
     client,
     images_bytes: list[bytes],
-    model: str = "gemini-2.5-flash",
+    model: str = "gemini-3.6-flash",
 ) -> dict:
     """Classify product type and each image's view angle in a single Gemini call.
 
@@ -149,7 +149,7 @@ Only return the JSON object, nothing else."""
 def select_best_images(
     client,
     images_bytes: list[bytes],
-    model: str = "gemini-2.5-flash",
+    model: str = "gemini-3.6-flash",
 ) -> list[bytes]:
     """Select the best 4 images for R2V spinning from any number of inputs.
 

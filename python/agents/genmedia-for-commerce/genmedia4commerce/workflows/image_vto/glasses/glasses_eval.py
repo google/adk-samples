@@ -31,7 +31,7 @@ def evaluate_glasses(
     client,
     generated_image_bytes: bytes,
     reference_glasses_bytes: bytes,
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
 ) -> dict:
     """Evaluate how faithfully the glasses in the generated image match the reference.
 
@@ -141,7 +141,7 @@ def evaluate_all_glasses(
     client,
     generated_image_bytes: bytes,
     glasses_images_bytes_list: list[bytes],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
 ) -> dict:
     """Evaluate all reference glasses against the generated VTO image.
 

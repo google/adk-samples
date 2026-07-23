@@ -215,7 +215,7 @@ Generate the image.""",
     step1_result = generate_nano(
         client=client,
         text_images_pieces=user_message,
-        model="gemini-3.1-flash-image-preview",
+        model="gemini-3.1-flash-image",
         config=config,
     )
 
@@ -244,7 +244,7 @@ Generate the image.""",
     step2_result = generate_nano(
         client=client,
         text_images_pieces=correction_message,
-        model="gemini-3.1-flash-image-preview",
+        model="gemini-3.1-flash-image",
         config=config,
     )
 

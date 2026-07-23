@@ -53,7 +53,7 @@ class TestClassifyShoe:
         mock_generate.return_value = "front"
 
         result = classify_shoe(
-            image=sample_shoe_image, client=mock_gemini_client, model="gemini-2.5-flash"
+            image=sample_shoe_image, client=mock_gemini_client, model="gemini-3.6-flash"
         )
 
         assert result == "front"
@@ -67,7 +67,7 @@ class TestClassifyShoe:
         mock_generate.return_value = "left"
 
         result = classify_shoe(
-            image=sample_shoe_image, client=mock_gemini_client, model="gemini-2.5-flash"
+            image=sample_shoe_image, client=mock_gemini_client, model="gemini-3.6-flash"
         )
 
         assert result == "left"
@@ -80,7 +80,7 @@ class TestClassifyShoe:
         mock_generate.return_value = "right"
 
         result = classify_shoe(
-            image=sample_shoe_image, client=mock_gemini_client, model="gemini-2.5-flash"
+            image=sample_shoe_image, client=mock_gemini_client, model="gemini-3.6-flash"
         )
 
         assert result == "right"
@@ -93,7 +93,7 @@ class TestClassifyShoe:
         mock_generate.return_value = "back"
 
         result = classify_shoe(
-            image=sample_shoe_image, client=mock_gemini_client, model="gemini-2.5-flash"
+            image=sample_shoe_image, client=mock_gemini_client, model="gemini-3.6-flash"
         )
 
         assert result == "back"
@@ -106,7 +106,7 @@ class TestClassifyShoe:
         mock_generate.return_value = "multiple"
 
         result = classify_shoe(
-            image=sample_shoe_image, client=mock_gemini_client, model="gemini-2.5-flash"
+            image=sample_shoe_image, client=mock_gemini_client, model="gemini-3.6-flash"
         )
 
         assert result == "multiple"
@@ -119,7 +119,7 @@ class TestClassifyShoe:
         mock_generate.return_value = "invalid"
 
         result = classify_shoe(
-            image=sample_shoe_image, client=mock_gemini_client, model="gemini-2.5-flash"
+            image=sample_shoe_image, client=mock_gemini_client, model="gemini-3.6-flash"
         )
 
         assert result == "invalid"
@@ -134,7 +134,7 @@ class TestClassifyShoe:
         classify_shoe(
             image=sample_shoe_image,
             client=mock_gemini_client,
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             mode="normal",
         )
 
@@ -154,7 +154,7 @@ class TestClassifyShoe:
         classify_shoe(
             image=sample_shoe_image,
             client=mock_gemini_client,
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             mode="validation",
         )
 
@@ -170,7 +170,7 @@ class TestClassifyShoe:
         mock_generate.return_value = "front"
 
         classify_shoe(
-            image=sample_shoe_image, client=mock_gemini_client, model="gemini-2.5-flash"
+            image=sample_shoe_image, client=mock_gemini_client, model="gemini-3.6-flash"
         )
 
         call_kwargs = mock_generate.call_args.kwargs
@@ -185,7 +185,7 @@ class TestClassifyShoe:
         mock_generate.return_value = "front"
 
         classify_shoe(
-            image=sample_shoe_image, client=mock_gemini_client, model="gemini-2.5-flash"
+            image=sample_shoe_image, client=mock_gemini_client, model="gemini-3.6-flash"
         )
 
         call_kwargs = mock_generate.call_args.kwargs
@@ -237,7 +237,7 @@ class TestClassifyShoePositions:
         mock_generate.return_value = position
 
         result = classify_shoe(
-            image=sample_shoe_image, client=mock_gemini_client, model="gemini-2.5-flash"
+            image=sample_shoe_image, client=mock_gemini_client, model="gemini-3.6-flash"
         )
 
         assert result == position
@@ -311,7 +311,7 @@ class TestClassifyShoeClosure:
         )
 
         call_kwargs = mock_generate.call_args.kwargs
-        assert call_kwargs["model"] == "gemini-2.5-flash-lite"
+        assert call_kwargs["model"] == "gemini-3.5-flash-lite"
 
     @patch("workflows.spinning.r2v.shoes.classify_shoes.generate_gemini")
     def test_uses_custom_model(

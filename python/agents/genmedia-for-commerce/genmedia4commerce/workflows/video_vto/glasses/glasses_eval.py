@@ -90,7 +90,7 @@ def check_video_for_glitches(client, video_bytes):
 
     response_text = ""
     for chunk in client.models.generate_content_stream(
-        model="gemini-2.5-pro",
+        model="gemini-3.1-pro-preview",
         contents=contents,
         config=config,
     ):

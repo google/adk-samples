@@ -152,7 +152,7 @@ class TestGenerateNano:
         )
 
         call_kwargs = mock_gemini_client.models.generate_content.call_args.kwargs
-        assert call_kwargs["model"] == "gemini-3.1-flash-image-preview"
+        assert call_kwargs["model"] == "gemini-3.1-flash-image"
 
     def test_uses_provided_config(self, mock_gemini_client, generated_image_bytes):
         """Should use custom config when provided."""

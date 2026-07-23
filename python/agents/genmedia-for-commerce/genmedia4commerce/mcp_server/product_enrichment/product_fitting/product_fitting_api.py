@@ -51,7 +51,7 @@ class ProductFittingRequest(BaseModel):
         default=3, description="Maximum generation attempts per view"
     )
     generation_model: str = Field(
-        default="gemini-3.1-flash-image-preview",
+        default="gemini-3.1-flash-image",
         description="Gemini model for image generation",
     )
     product_id: str = Field(default="", description="Optional product identifier")

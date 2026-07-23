@@ -277,7 +277,7 @@ def describe_input_attachment(img_bytes: bytes, conversation_context: str) -> st
     parts = [get_part(prompt), get_part(img_bytes)]
     contents = [types.Content(role="user", parts=parts)]
     result = genai_client.models.generate_content(
-        model="gemini-2.5-flash-lite",
+        model="gemini-3.5-flash-lite",
         contents=contents,
         config=config,
     )
@@ -384,7 +384,7 @@ def test_vertex_connection(project: str, token: str) -> bool:
     """
     try:
         response = http_requests.post(
-            f"https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/global/publishers/google/models/gemini-2.5-flash:countTokens",
+            f"https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/global/publishers/google/models/gemini-3.6-flash:countTokens",
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",

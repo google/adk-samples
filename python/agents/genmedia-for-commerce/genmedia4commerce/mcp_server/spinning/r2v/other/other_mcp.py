@@ -74,7 +74,7 @@ async def run_spinning_other_r2v(
             return {"error": f"Invalid base64 encoding for image {idx}: {e}"}
 
     client, veo_client = _get_clients()
-    gemini_model = "gemini-2.5-flash"
+    gemini_model = "gemini-3.6-flash"
 
     logger.info(f"[MCP spinning_other_r2v] Starting with {len(images_bytes)} images")
 

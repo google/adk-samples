@@ -33,7 +33,7 @@ def evaluate_garments(
     client,
     generated_image_bytes: bytes,
     garment_images_bytes_list: list[bytes | str],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
     garment_descriptions: list[dict] | None = None,
 ) -> dict:
     """Evaluate all reference garments against the generated VTO image in parallel.
@@ -103,7 +103,7 @@ def evaluate_garments(
 def evaluate_wearing_quality(
     client,
     generated_image_bytes: bytes,
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
 ) -> dict:
     """Evaluate the wearing quality of a generated VTO image.
 

@@ -75,7 +75,7 @@ async def _evaluate_image(
             genai_client,
             image,
             garment_imgs,
-            "gemini-3-flash-preview",
+            "gemini-3.6-flash",
             footwear_desc,
         )
         wearing_eval = {"score": 3, "explanation": "Included in footwear eval"}
@@ -86,7 +86,7 @@ async def _evaluate_image(
                 genai_client,
                 image,
                 garment_imgs,
-                "gemini-3-flash-preview",
+                "gemini-3.6-flash",
                 eval_view_details,
                 desc_general,
             ),
@@ -94,7 +94,7 @@ async def _evaluate_image(
                 evaluate_wearing_quality,
                 genai_client,
                 image,
-                "gemini-3-flash-preview",
+                "gemini-3.6-flash",
             ),
         )
     details = garments_eval.get("garment_details", [])

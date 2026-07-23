@@ -44,7 +44,7 @@ GLOBAL_REGION = os.getenv("GLOBAL_REGION", "global")
 
 client = genai.Client(vertexai=True, project=PROJECT_ID, location=GLOBAL_REGION)
 veo_client = genai.Client(vertexai=True, project=PROJECT_ID, location=GLOBAL_REGION)
-gemini_model = "gemini-2.5-flash"
+gemini_model = "gemini-3.6-flash"
 
 router = APIRouter(
     prefix="/api/spinning/r2v/other",

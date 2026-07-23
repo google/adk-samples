@@ -32,7 +32,7 @@ from workflows.shared.video_utils import (
 
 def generate_generic_product_title(
     client,
-    gemini_model: str = "gemini-2.5-flash-lite",
+    gemini_model: str = "gemini-3.5-flash-lite",
     all_images_bytes: list[bytes] | None = None,
 ) -> str:
     """Generate a very generic product title from images.
@@ -85,14 +85,14 @@ Return ONLY the generic title starting with "a" or "an", nothing else.
 
 def get_interpolation_prompt(
     client,
-    gemini_model: str = "gemini-2.5-flash-lite",
+    gemini_model: str = "gemini-3.5-flash-lite",
     all_images_bytes: list[bytes] | None = None,
 ):
     """Generate the prompt used for interpolation video generation with a generic product title.
 
     Args:
         client: Gemini client for title generation
-        gemini_model: Model to use for title generation (default: "gemini-2.5-flash-lite")
+        gemini_model: Model to use for title generation (default: "gemini-3.5-flash-lite")
         all_images_bytes: List of image bytes to analyze
 
     Returns:

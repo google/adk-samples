@@ -95,7 +95,7 @@ async def product_fitting(
     gender: str,
     scenario: str = "a pure white background (#FFFFFF), no shadows, no gradients",
     max_retries: int = 3,
-    generation_model: str = "gemini-3.1-flash-image-preview",
+    generation_model: str = "gemini-3.1-flash-image",
     product_id: str = "",
 ) -> str:
     """Generate product fitting images showing garments worn on a model body.

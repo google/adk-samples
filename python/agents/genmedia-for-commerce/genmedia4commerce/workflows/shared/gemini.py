@@ -35,7 +35,7 @@ def generate_gemini(
     client,
     schema=None,
     config=None,
-    model="gemini-2.5-flash",
+    model="gemini-3.6-flash",
     video_metadata=None,
 ):
     """Generate text content using Gemini.
@@ -45,7 +45,7 @@ def generate_gemini(
         client: Gemini client instance
         schema: Optional response schema for structured output
         config: Optional GenerateContentConfig (uses default if None)
-        model: Model to use (default: "gemini-2.5-flash")
+        model: Model to use (default: "gemini-3.6-flash")
         video_metadata: Optional VideoMetadata applied to bytes parts
                         (e.g. types.VideoMetadata(fps=2))
 

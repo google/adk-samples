@@ -142,7 +142,7 @@ async def interpolation_generate_prompt(
     prompt_text = await run_in_threadpool(
         get_interpolation_prompt,
         client=client,
-        gemini_model="gemini-2.5-flash-lite",
+        gemini_model="gemini-3.5-flash-lite",
         all_images_bytes=[img1_bytes, img2_bytes],
     )
 
@@ -172,7 +172,7 @@ async def interpolation_generate_all(
             prompt = await run_in_threadpool(
                 get_interpolation_prompt,
                 client=client,
-                gemini_model="gemini-2.5-flash-lite",
+                gemini_model="gemini-3.5-flash-lite",
                 all_images_bytes=images_bytes,
             )
             logger.info(f"[Interpolation] Generated prompt: {prompt[:100]}...")

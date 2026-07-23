@@ -32,7 +32,7 @@ VEO_R2V_PROMPT_TEMPLATE = """**[Subject]:** {{description}}
 
 def generate_footwear_description(
     client,
-    gemini_model: str = "gemini-2.5-flash",
+    gemini_model: str = "gemini-3.6-flash",
     all_images_bytes: list[bytes] | None = None,
 ) -> str:
     """Generate a description of the footwear product from images.
@@ -76,7 +76,7 @@ Return ONLY the description, nothing else.
 
 def generate_veo_prompt_r2v(
     client,
-    gemini_model: str = "gemini-2.5-flash",
+    gemini_model: str = "gemini-3.6-flash",
     all_images_bytes: list[bytes] | None = None,
 ) -> str:
     """Generate a Veo prompt for reference-to-video (R2V) generation.

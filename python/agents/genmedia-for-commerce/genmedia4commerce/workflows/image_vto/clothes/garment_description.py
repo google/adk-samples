@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 def describe_garment_for_vto(
     client,
     garment_image: bytes | str,
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
 ) -> dict:
     """Describe a single garment image for VTO purposes.
 
@@ -110,7 +110,7 @@ Only return the JSON object, nothing else."""
 def describe_all_garments(
     client,
     garment_images: list[bytes | str],
-    model: str = "gemini-3-flash-preview",
+    model: str = "gemini-3.6-flash",
 ) -> list[dict]:
     """Describe all garment images in parallel.
 

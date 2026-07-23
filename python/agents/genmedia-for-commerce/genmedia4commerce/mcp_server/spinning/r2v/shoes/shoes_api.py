@@ -46,7 +46,7 @@ GLOBAL_REGION = os.getenv("GLOBAL_REGION", "global")
 client = genai.Client(vertexai=True, project=PROJECT_ID, location=GLOBAL_REGION)
 veo_client = genai.Client(vertexai=True, project=PROJECT_ID, location=GLOBAL_REGION)
 shoe_classifier_model = os.getenv("SHOE_CLASSIFICATION_ENDPOINT")
-gemini_model = "gemini-2.5-flash"
+gemini_model = "gemini-3.6-flash"
 
 router = APIRouter(
     prefix="/api/shoes/spinning",
@@ -310,7 +310,7 @@ async def run_pipeline_endpoint_r2v(payload: dict = Body(...)):
     reference_type = payload.get("reference_type", "asset")
     upscale_images = payload.get("upscale_images", True)
     product_consistency_model = payload.get(
-        "product_consistency_model", "gemini-3-flash-preview"
+        "product_consistency_model", "gemini-3.6-flash"
     )
     product_id = payload.get("product_id")
     gcs_bucket = payload.get("gcs_bucket")

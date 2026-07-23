@@ -168,7 +168,7 @@ def describe_glasses(client, glasses_image_bytes: bytes) -> str | None:
             text_images_pieces=[glasses_image_bytes, prompt],
             client=client,
             config=config,
-            model="gemini-3-flash-preview",
+            model="gemini-3.6-flash",
         )
         logger.info(f"[Glasses VTO] Auto-described glasses: {description}")
         return description
@@ -320,7 +320,7 @@ def enhance_photo_nano(client, image_bytes, view_type="front"):
         prompt = """A professional 4K studio-quality image shows the subject's face in a front-facing view. The subject is not wearing any glasses and maintains a neutral, natural expression. The lighting is bright and even, highlighting the facial features and casting no shadows. The background is a simple, clean white, and the photograph is exceptionally sharp, free of any motion blur. When generating the image, Keep the person's hair and face intact."""
 
     return generate_nano(
-        client, [prompt, image_bytes], model="gemini-3.1-flash-image-preview"
+        client, [prompt, image_bytes], model="gemini-3.1-flash-image"
     )
 
 
@@ -339,4 +339,4 @@ def edit_frame_nano(client, prompt, generated_image):
     parts = [prompt]
     parts.extend(["\nHere is the image to modify:\n", generated_image])
 
-    return generate_nano(client, parts, model="gemini-3.1-flash-image-preview")
+    return generate_nano(client, parts, model="gemini-3.1-flash-image")
