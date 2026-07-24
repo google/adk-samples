@@ -47,6 +47,10 @@ context and tooling reference, the
 [Recipe Handbook](./docs/recipe-handbook/README.md) has the deep
 detail.
 
+Contributor workflow skills (recipe scaffolding, manifest
+generation, pyproject alignment, and more) live in
+[`.agents/skills/`](./.agents/skills/).
+
 ## Getting help
 
 Open a GitHub issue at
