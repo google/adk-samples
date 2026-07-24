@@ -93,7 +93,7 @@ def get_interpolation_prompt(
 
     Args:
         client: Gemini client for title generation
-        gemini_model: Model to use for title generation (default: "gemini-2.5-flash-lite")
+        gemini_model: Model to use for title generation (default: "gemini-3.5-flash-lite")
         all_images_bytes: List of image bytes to analyze
 
     Returns:
