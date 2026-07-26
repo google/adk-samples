@@ -51,7 +51,7 @@ def _get_clients():
     return client, veo_client
 
 
-async def run_spinning_other_r2v(  # noqa: C901
+async def run_spinning_other_r2v(
     images_base64: list[str],
 ) -> dict:
     """Generate a 360-degree spinning video of any product using reference-to-video (R2V).

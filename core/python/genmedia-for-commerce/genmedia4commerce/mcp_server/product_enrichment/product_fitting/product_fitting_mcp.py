@@ -83,7 +83,7 @@ def _load_preset_model_photos(ethnicity: str, gender: str) -> dict[str, bytes]:
     return photos
 
 
-async def run_product_fitting(  # noqa: C901, PLR0911, PLR0912
+async def run_product_fitting(
     garment_images_base64: list[str],
     gender: str,
     ethnicity: str = "european",

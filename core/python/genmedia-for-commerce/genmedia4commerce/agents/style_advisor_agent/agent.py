@@ -60,7 +60,7 @@ MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8081/sse")
 # --- Shared Callbacks & Logic (Mirrors router_agent) ---
 
 
-async def extract_uploaded_images(  # noqa: C901
+async def extract_uploaded_images(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> None:
     """Extract uploaded images from the LLM request and store them in state."""
@@ -96,7 +96,7 @@ async def extract_uploaded_images(  # noqa: C901
         )
 
 
-async def inject_uploaded_images(  # noqa: C901
+async def inject_uploaded_images(
     tool: BaseTool, args: dict, tool_context: ToolContext
 ) -> dict | None:
     """Inject uploaded images into tool arguments."""
@@ -177,7 +177,7 @@ def _is_b64_blob(v) -> bool:
     return isinstance(v, str) and len(v) > 1000
 
 
-def _strip_images_from_result(  # noqa: C901
+def _strip_images_from_result(
     result: dict, tool_name: str
 ) -> tuple[dict, dict[str, bytes]]:
     artifacts: dict[str, bytes] = {}

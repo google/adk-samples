@@ -49,7 +49,7 @@ def _get_clients():
     return client, veo_client
 
 
-async def run_spinning_interpolation(  # noqa: C901
+async def run_spinning_interpolation(
     images_base64: list[str],
     background_color: str = "#FFFFFF",
 ) -> dict:

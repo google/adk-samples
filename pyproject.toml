@@ -43,6 +43,9 @@ packages = ["tools"]
 [tool.ruff]
 line-length = 80
 target-version = "py310"
+# Resolve first-party imports per recipe, so a package not named `app` is
+# still first-party to its own recipe.
+src = [".", "core/*/*", "contrib/*/*"]
 
 [tool.ruff.lint]
 select = [
@@ -60,6 +63,14 @@ ignore = [
     "PLR0913", # Agents and tools legitimately have many parameters
     "PLR2004", # HTTP status codes (200, 422) are universally understood
     "PLC0415", # Deferred imports in tests are valid for ADK recipe side effects
+    # Function-size family, same rationale as PLR0913; already tripped by
+    # merged recipes.
+    "PLR0917", # too-many-positional-arguments
+    "PLR0911", # too-many-return-statements
+    "PLR0912", # too-many-branches
+    "PLR0915", # too-many-statements
+    "C901",    # complex-structure
+    "PLW0603", # Module-level singletons and caches
 ]
 
 [tool.ruff.lint.per-file-ignores]

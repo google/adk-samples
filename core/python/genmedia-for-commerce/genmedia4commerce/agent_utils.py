@@ -196,7 +196,7 @@ async def copy_gcs_asset(
         return None
 
 
-def extract_media(parsed, tool_name: str) -> list[bytes | str]:  # noqa: C901
+def extract_media(parsed, tool_name: str) -> list[bytes | str]:
     """Extract all media references from a parsed tool result.
 
     Walks the object and collects:
@@ -207,7 +207,7 @@ def extract_media(parsed, tool_name: str) -> list[bytes | str]:  # noqa: C901
     """
     media: list[bytes | str] = []
 
-    def _walk_dict(d: dict, depth: int = 0):  # noqa: C901, PLR0912
+    def _walk_dict(d: dict, depth: int = 0):
         if depth > 3:
             return
         for k, v in d.items():

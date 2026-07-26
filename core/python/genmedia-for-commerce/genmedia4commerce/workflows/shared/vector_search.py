@@ -26,13 +26,14 @@ from pathlib import Path
 import numpy as np
 import pyarrow.parquet as pq
 from dotenv import load_dotenv
+from google import genai
+from workflows.shared.gemini import embed_gemini
+
 from genmedia4commerce.config import (
     _ASSET_BUCKET,
     _ASSET_PREFIX,
     BACKEND_ASSETS_DIR,
 )
-from google import genai
-from workflows.shared.gemini import embed_gemini
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ _embed_client: genai.Client | None = None
 
 def _load():
     """Load embeddings and metadata into memory."""
-    global _embeddings, _metadata_table, _embed_client  # noqa: PLW0603
+    global _embeddings, _metadata_table, _embed_client
 
     if _embeddings is not None:
         return

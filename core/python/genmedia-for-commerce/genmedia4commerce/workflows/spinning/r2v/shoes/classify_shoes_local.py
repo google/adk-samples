@@ -29,11 +29,12 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
-from genmedia4commerce.config import BACKEND_ASSETS_DIR
 from google import genai
 from PIL import Image
 from workflows.shared.gemini import embed_gemini
 from workflows.shared.utils import predict_parallel
+
+from genmedia4commerce.config import BACKEND_ASSETS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +269,7 @@ _embedding_client: genai.Client | None = None
 
 
 def _get_classifier_v2():
-    global _classifier_v2  # noqa: PLW0603
+    global _classifier_v2
     if _classifier_v2 is None:
         logger.info(
             f"Loading V2 shoe classifier weights from {_WEIGHTS_V2_PATH}"
@@ -278,7 +279,7 @@ def _get_classifier_v2():
 
 
 def _get_classifier_v1():
-    global _classifier_v1  # noqa: PLW0603
+    global _classifier_v1
     if _classifier_v1 is None:
         logger.info(
             f"Loading V1 shoe classifier weights from {_WEIGHTS_V1_PATH}"
@@ -289,7 +290,7 @@ def _get_classifier_v1():
 
 def _get_embedding_client():
     """Return a Gemini client configured for the embedding model region."""
-    global _embedding_client  # noqa: PLW0603
+    global _embedding_client
     if _embedding_client is None:
         project_id = os.getenv("PROJECT_ID", "my_project")
         location = os.getenv("US_REGION", "us-central1")

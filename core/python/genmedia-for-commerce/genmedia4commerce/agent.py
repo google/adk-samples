@@ -76,7 +76,7 @@ if not logger.handlers:
 project_id = os.environ["GOOGLE_CLOUD_PROJECT"]
 
 
-async def build_conversational_history(  # noqa: C901, PLR0912, PLR0915
+async def build_conversational_history(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> None:
     """Before-model callback that handles both ADK and GE playground sessions.
@@ -303,7 +303,7 @@ async def inject_uploaded_images(
     return None
 
 
-async def handle_tool_response(  # noqa: C901, PLR0912, PLR0915
+async def handle_tool_response(
     tool: BaseTool, args: dict, tool_context: ToolContext, tool_response: dict
 ) -> dict | None:
     """After-tool callback to intercept MCP tool results.
