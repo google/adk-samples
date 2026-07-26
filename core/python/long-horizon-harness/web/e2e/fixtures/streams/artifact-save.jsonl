@@ -1,0 +1,3 @@
+{"kind":"status-update","taskId":"task-1","contextId":"ctx-e2e","final":false,"metadata":{"adk_partial":true},"status":{"state":"working","message":{"kind":"message","role":"agent","parts":[{"kind":"text","text":"Saving the generated plot now."}]}}}
+{"kind":"artifact-update","taskId":"task-1","contextId":"ctx-e2e","artifact":{"artifactId":"art-1","name":"damped_oscillator","parts":[{"kind":"file","file":{"bytes":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==","mimeType":"image/png","name":"damped_oscillator.png"}}]}}
+{"kind":"message","messageId":"m-final","contextId":"ctx-e2e","role":"agent","parts":[{"kind":"text","text":"Done — file is attached."}]}

@@ -1,0 +1,22 @@
+{
+  "description": "TaskArtifactUpdateEvent carrying a single file Part. File parts only arrive via artifact-update (text/data are duplicated on status-update too).",
+  "event": {
+    "kind": "artifact-update",
+    "taskId": "task-1",
+    "contextId": "ctx-1",
+    "artifact": {
+      "artifactId": "art-1",
+      "name": "screenshot",
+      "parts": [
+        {
+          "kind": "file",
+          "file": {
+            "bytes": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+            "mimeType": "image/png",
+            "name": "tiny.png"
+          }
+        }
+      ]
+    }
+  }
+}

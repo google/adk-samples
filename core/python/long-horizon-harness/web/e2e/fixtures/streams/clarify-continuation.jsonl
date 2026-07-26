@@ -1,0 +1,2 @@
+{"kind":"status-update","taskId":"task-2","contextId":"ctx-e2e","final":false,"status":{"state":"working","message":{"kind":"message","role":"agent","parts":[{"kind":"text","text":"Generating a bar plot now."}]}}}
+{"kind":"message","messageId":"m-final","contextId":"ctx-e2e","role":"agent","parts":[{"kind":"text","text":"Done!"}]}

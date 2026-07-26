@@ -1,0 +1,49 @@
+{
+  "description": "adk_request_confirmation for a gated terminal command. UI renders a PermissionCard from payload.choices (trailing 'Decline' = cancel) because payload.kind === 'permission'.",
+  "event": {
+    "kind": "status-update",
+    "taskId": "task-1",
+    "contextId": "ctx-1",
+    "final": false,
+    "status": {
+      "state": "working",
+      "message": {
+        "kind": "message",
+        "role": "agent",
+        "parts": [
+          {
+            "kind": "data",
+            "data": {
+              "id": "adk-conf-perm-1",
+              "name": "adk_request_confirmation",
+              "args": {
+                "originalFunctionCall": {
+                  "id": "adk-call-terminal-1",
+                  "name": "terminal",
+                  "args": { "command": "bq rm -t mydataset.mytable" }
+                },
+                "toolConfirmation": {
+                  "hint": "Run: bq rm -t mydataset.mytable",
+                  "payload": {
+                    "kind": "permission",
+                    "toolName": "terminal",
+                    "summary": "Run: bq rm -t mydataset.mytable",
+                    "proposedRule": { "toolName": "terminal", "commandPrefix": ["bq rm"], "decision": "allow" },
+                    "question": "Run: bq rm -t mydataset.mytable",
+                    "choices": [
+                      "Yes, once",
+                      "Yes — allow `bq rm` this session",
+                      "Always allow `bq rm`",
+                      "Decline"
+                    ]
+                  }
+                }
+              }
+            },
+            "metadata": { "adk_type": "function_call" }
+          }
+        ]
+      }
+    }
+  }
+}

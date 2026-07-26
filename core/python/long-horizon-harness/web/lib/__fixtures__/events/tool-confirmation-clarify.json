@@ -1,0 +1,43 @@
+{
+  "description": "Synthesized adk_request_confirmation framework call carrying the original clarify call + the request_confirmation payload (hint = question, payload = {question, choices}). UI should render a clarify-style card (question + choice buttons) since the originalCall is clarify.",
+  "event": {
+    "kind": "status-update",
+    "taskId": "task-1",
+    "contextId": "ctx-1",
+    "final": false,
+    "status": {
+      "state": "working",
+      "message": {
+        "kind": "message",
+        "role": "agent",
+        "parts": [
+          {
+            "kind": "data",
+            "data": {
+              "id": "adk-conf-1",
+              "name": "adk_request_confirmation",
+              "args": {
+                "originalFunctionCall": {
+                  "id": "adk-call-clarify-1",
+                  "name": "clarify",
+                  "args": {
+                    "question": "What kind of plot would you like?",
+                    "choices": ["line", "bar", "scatter"]
+                  }
+                },
+                "toolConfirmation": {
+                  "hint": "What kind of plot would you like?",
+                  "payload": {
+                    "question": "What kind of plot would you like?",
+                    "choices": ["line", "bar", "scatter"]
+                  }
+                }
+              }
+            },
+            "metadata": { "adk_type": "function_call" }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,2 @@
+{"kind":"status-update","taskId":"task-1","contextId":"ctx-e2e","final":false,"status":{"state":"working","message":{"kind":"message","role":"agent","parts":[{"kind":"data","data":{"id":"adk-call-clarify-1","name":"clarify","args":{"question":"What kind of plot would you like?","choices":["line","bar","scatter"]}},"metadata":{"adk_type":"function_call"}}]}}}
+{"kind":"status-update","taskId":"task-1","contextId":"ctx-e2e","final":true,"status":{"state":"input-required"}}

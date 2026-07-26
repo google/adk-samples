@@ -1,0 +1,30 @@
+{
+  "description": "function_call DataPart for the clarify tool. The agent is asking the user to pick from a finite list of choices. Wire shape mirrors horizon/tools/clarify.py — args carry question + choices.",
+  "event": {
+    "kind": "status-update",
+    "taskId": "task-1",
+    "contextId": "ctx-1",
+    "final": false,
+    "status": {
+      "state": "working",
+      "message": {
+        "kind": "message",
+        "role": "agent",
+        "parts": [
+          {
+            "kind": "data",
+            "data": {
+              "id": "adk-call-clarify-1",
+              "name": "clarify",
+              "args": {
+                "question": "What kind of plot would you like?",
+                "choices": ["line", "bar", "scatter"]
+              }
+            },
+            "metadata": { "adk_type": "function_call" }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,3 @@
+{"kind":"status-update","taskId":"task-1","contextId":"ctx-e2e","final":false,"metadata":{"adk_partial":true},"status":{"state":"working","message":{"kind":"message","role":"agent","parts":[{"kind":"text","text":"Hello"}]}}}
+{"kind":"status-update","taskId":"task-1","contextId":"ctx-e2e","final":false,"metadata":{"adk_partial":true},"status":{"state":"working","message":{"kind":"message","role":"agent","parts":[{"kind":"text","text":", world"}]}}}
+{"kind":"message","messageId":"m-final","contextId":"ctx-e2e","role":"agent","parts":[{"kind":"text","text":"Hello, world!"}]}

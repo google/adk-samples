@@ -1,0 +1,26 @@
+{
+  "description": "A function_call DataPart for a non-special tool. Locks the existing generic ToolChip pill render.",
+  "event": {
+    "kind": "status-update",
+    "taskId": "task-1",
+    "contextId": "ctx-1",
+    "final": false,
+    "status": {
+      "state": "working",
+      "message": {
+        "kind": "message",
+        "role": "agent",
+        "parts": [
+          {
+            "kind": "data",
+            "data": {
+              "name": "web_search",
+              "args": { "query": "anthropic adk" }
+            },
+            "metadata": { "adk_type": "function_call" }
+          }
+        ]
+      }
+    }
+  }
+}

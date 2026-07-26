@@ -1,0 +1,27 @@
+{
+  "description": "function_call DataPart for the ADK-built-in load_skill tool. Renders as a friendlier compact chip (skill icon + 'Loading skill: <name>') instead of the generic ToolChip.",
+  "event": {
+    "kind": "status-update",
+    "taskId": "task-1",
+    "contextId": "ctx-1",
+    "final": false,
+    "status": {
+      "state": "working",
+      "message": {
+        "kind": "message",
+        "role": "agent",
+        "parts": [
+          {
+            "kind": "data",
+            "data": {
+              "id": "adk-call-load-skill-1",
+              "name": "load_skill",
+              "args": { "name": "plotting" }
+            },
+            "metadata": { "adk_type": "function_call" }
+          }
+        ]
+      }
+    }
+  }
+}

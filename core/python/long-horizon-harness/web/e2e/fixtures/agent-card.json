@@ -1,0 +1,12 @@
+{
+  "name": "lha",
+  "description": "Horizon (E2E mock)",
+  "version": "0.0.0",
+  "url": "http://localhost:3000/a2a",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "capabilities": {
+    "streaming": true
+  },
+  "skills": []
+}

@@ -1,0 +1,26 @@
+{
+  "description": "A function_response DataPart — surfaced by the consumer as a tool_result so the raw response is available to render.",
+  "event": {
+    "kind": "status-update",
+    "taskId": "task-1",
+    "contextId": "ctx-1",
+    "final": false,
+    "status": {
+      "state": "working",
+      "message": {
+        "kind": "message",
+        "role": "agent",
+        "parts": [
+          {
+            "kind": "data",
+            "data": {
+              "name": "web_search",
+              "response": { "results": ["doc1", "doc2"] }
+            },
+            "metadata": { "adk_type": "function_response" }
+          }
+        ]
+      }
+    }
+  }
+}

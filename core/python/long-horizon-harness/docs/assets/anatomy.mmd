@@ -1,0 +1,66 @@
+flowchart TB
+    Client["Client
+Vite chat shell · A2A peer · agents-cli one-shot"]
+
+    subgraph Runner["lha Runner · FastAPI · ADK 2.5"]
+        direction TB
+        Plugins["plugins  IterationBudget · SiblingAgent · Guardrails"]
+        Prompt["prompt  3-tier (stable · cached · volatile + skills)"]
+        Model["model  DispatchingLlm → Gemini 3.6 Flash / 3.1 Pro"]
+        Compact["compact  HorizonSummarizer over old events"]
+    end
+
+    subgraph Tools["Tools"]
+        direction TB
+        ToolList["terminal · file_ops · web
+clarify · add_memory
+delegate · agent (fork)"]
+    end
+
+    subgraph Vertex["Vertex AI"]
+        direction TB
+        MemoryBank["Memory Bank
+cross-session"]
+        AgentEngine["Agent Engine
+sessions"]
+        AgentRuntime["Agent Runtime
+sandbox"]
+    end
+
+    subgraph Sandbox["Sandbox"]
+        direction TB
+        SandboxDetail["local fs (dev) · BYOC sandbox container (prod)
+daily snapshot (opt-in)"]
+    end
+
+    Client -->|"A2A JSON-RPC + SSE — structured UI parts stream back"| Runner
+    Runner -->|"tool call"| Tools
+    Runner -->|"search_memory"| Vertex
+    Tools --> Sandbox
+
+    %% self-improvement loop
+    Judge["after every turn ▸ judge fork writes memories
+and patches skills — never blocks the reply"]
+    Dream["on a schedule ▸ dream review reads recent
+sessions and curates the user_profile"]
+    Surface["next turn ▸ both surface back via Memory Bank
+and the 3-tier system prompt"]
+
+    Runner -.->|"↻ it dreams"| Judge
+    Judge --> Dream
+    Dream --> Surface
+    Surface -.->|"closes the loop"| Runner
+
+    classDef gcp fill:#4285F4,stroke:#1a73e8,color:#ffffff;
+    classDef lha fill:#ede9fe,stroke:#7c3aed,color:#4c1d95;
+    classDef tools fill:#d1fae5,stroke:#059669,color:#064e3b;
+    classDef client fill:#f1f5f9,stroke:#64748b,color:#1e293b;
+    classDef sandbox fill:#cffafe,stroke:#0891b2,color:#164e63;
+    classDef loop fill:#fef3c7,stroke:#d97706,color:#78350f;
+
+    class Client client;
+    class Runner,Plugins,Prompt,Model,Compact lha;
+    class Tools,ToolList tools;
+    class Vertex,MemoryBank,AgentEngine,AgentRuntime gcp;
+    class Sandbox,SandboxDetail sandbox;
+    class Judge,Dream,Surface loop;

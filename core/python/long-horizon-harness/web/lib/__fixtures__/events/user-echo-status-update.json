@@ -1,0 +1,17 @@
+{
+  "description": "First status-update echoes the user's input as state=submitted with role=user. The consumer must skip these so the user's text isn't merged into the assistant bubble.",
+  "event": {
+    "kind": "status-update",
+    "taskId": "task-1",
+    "contextId": "ctx-1",
+    "final": false,
+    "status": {
+      "state": "submitted",
+      "message": {
+        "kind": "message",
+        "role": "user",
+        "parts": [{ "kind": "text", "text": "hello agent" }]
+      }
+    }
+  }
+}
