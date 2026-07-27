@@ -10,9 +10,17 @@ on:
       - opened
       - synchronize
       - reopened
-  # Trigger on workflow runs to catch test completions
+  # Trigger when CI completes so auto-merge can evaluate and land the PR.
+  # Lists every workflow whose completion should prompt a merge evaluation.
+  # "🐍 Python Tests" is the longest-running gate and fires last on most PRs.
+  # Add / remove names here if required checks change.
   workflow_run:
-    workflows: ["checks"]
+    workflows:
+      - "🐍 Python Tests"
+      - "Validate Python Recipe"
+      - "Validate Recipe Structure"
+      - "🐍 Python Format PR Checks"
+      - "Python Dependency Policy"
     types:
       - completed
 
@@ -113,24 +121,36 @@ jobs:
           # Check if all changed files are in python/agents/** directories using agent starter pack for testing
           HAS_AUTOMATED_TESTS=true
 
-          # Get all changed agent directories
-          CHANGED_AGENT_DIRS=$(echo "$CHANGED_FILES" | grep -o 'python/agents/[^/]*' | sort -u || true)
+          # Get all changed recipe directories across all supported locations:
+          #   core/<lang>/<recipe>   contrib/<lang>/<recipe>   skills/<lang>/<recipe>
+          # The pattern captures exactly 3 path segments so sub-directories
+          # (e.g. core/python/deep-search/frontend) map back to the recipe root.
+          CHANGED_AGENT_DIRS=$(echo "$CHANGED_FILES" \
+            | grep -oE '(core|contrib|skills)/[^/]+/[^/]+' \
+            | sort -u || true)
 
           if [ -z "$CHANGED_AGENT_DIRS" ]; then
-            echo "No changes in python/agents/** directories"
+            echo "No changes in core/|contrib/|skills/ recipe directories"
             HAS_AUTOMATED_TESTS=false
           else
             for dir in $CHANGED_AGENT_DIRS; do
-              if [ ! -f "$dir/pyproject.toml" ]; then
-                echo "$dir does not have pyproject.toml"
-                HAS_AUTOMATED_TESTS=false
-                break
-              fi
-
-              if ! grep -q '\[tool\.agent-starter-pack\]' "$dir/pyproject.toml"; then
-                echo "$dir is not using agent starter pack for testing"
-                HAS_AUTOMATED_TESTS=false
-                break
+              # Python recipes: require [tool.agent-starter-pack] as the signal
+              # that the recipe has automated tests wired up.
+              if [[ "$dir" == *"/python/"* ]]; then
+                if [ ! -f "$dir/pyproject.toml" ]; then
+                  echo "$dir does not have pyproject.toml"
+                  HAS_AUTOMATED_TESTS=false
+                  break
+                fi
+                if ! grep -q '\[tool\.agent-starter-pack\]' "$dir/pyproject.toml"; then
+                  echo "$dir is not using agent starter pack for testing"
+                  HAS_AUTOMATED_TESTS=false
+                  break
+                fi
+              else
+                # Non-Python recipes (Go, Java, Kotlin, TypeScript): no
+                # language-specific marker — trust CI checks to gate quality.
+                echo "$dir is a non-Python recipe; trusting CI checks."
               fi
             done
           fi

@@ -13,6 +13,8 @@ on:
       - 'core/**/pyproject.toml'
       - 'contrib/**/uv.lock'
       - 'contrib/**/pyproject.toml'
+      - 'skills/**/uv.lock'
+      - 'skills/**/pyproject.toml'
       - '.github/workflows/python-dependency-policy.yml'
       - '.github/scripts/check_lockfile_hashes.py'
   push:
@@ -25,6 +27,8 @@ on:
       - 'core/**/pyproject.toml'
       - 'contrib/**/uv.lock'
       - 'contrib/**/pyproject.toml'
+      - 'skills/**/uv.lock'
+      - 'skills/**/pyproject.toml'
       - '.github/workflows/python-dependency-policy.yml'
       - '.github/scripts/check_lockfile_hashes.py'
   workflow_dispatch:

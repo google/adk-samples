@@ -44,9 +44,14 @@ jobs:
       - name: 'Find untriaged issues'
         id: 'find_issues'
         env:
+          # GITHUB_REPOSITORY and GITHUB_OUTPUT are auto-supplied by the
+          # runner — do NOT redeclare them here. The previous incarnation
+          # of this step set `GITHUB_OUTPUT: '${{ github.output }}'`, but
+          # `github.output` is not a valid Actions context and resolves to
+          # an empty string, so the step-level env overrode the real
+          # output-file path with "" and every `>> "${GITHUB_OUTPUT}"`
+          # write failed under `set -euo pipefail`.
           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
-          GITHUB_REPOSITORY: '${{ github.repository }}'
-          GITHUB_OUTPUT: '${{ github.output }}'
         run: |-
           set -euo pipefail
 

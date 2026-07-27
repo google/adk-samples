@@ -272,8 +272,18 @@ jobs:
           # Count files whose status is not 'added'. If zero, every file in this
           # PR is brand-new — treat it as a new recipe drop and skip automated review.
           # Human admin approval is the real quality gate for new recipe submissions.
+          #
+          # IMPORTANT: `gh api --paginate --jq EXPR` applies EXPR to EACH page's
+          # response separately and concatenates the results. The `/pulls/N/files`
+          # endpoint paginates at 30 files per page, so a previous form
+          #     --jq '[.[] | select(.status != "added")] | length'
+          # emitted one integer per page for any PR with more than 30 changed
+          # files, and the multi-line capture broke the `-eq` comparison below
+          # under `set -euo pipefail` — the guard would crash on every large PR.
+          # Emit one filename per matching file and count with `wc -l` instead:
+          # per-page jq output is a stream of lines, `wc -l` sums them.
           NON_ADDED_COUNT="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
-            --paginate --jq '[.[] | select(.status != "added")] | length')"
+            --paginate --jq '.[] | select(.status != "added") | .filename' | wc -l)"
 
           if [[ "${NON_ADDED_COUNT}" -eq 0 ]]; then
             echo "skip=true" >> "${GITHUB_OUTPUT}"

@@ -55,14 +55,22 @@ jobs:
         github.event_name == 'pull_request_review_comment' &&
         github.event.pull_request.head.repo.fork == false &&
         contains(github.event.comment.body, '@gemini-cli /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association)
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
       ) ||
       (
         github.event_name == 'pull_request_review' &&
         github.event.pull_request.head.repo.fork == false &&
         contains(github.event.review.body, '@gemini-cli /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.review.author_association)
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
       )
+      # CONTRIBUTOR association is intentionally allowed on the
+      # `pull_request` trigger above so PRs from prior contributors still
+      # receive an automated review on open/reopen/synchronize. It is
+      # deliberately NOT allowed on the comment/review re-invoke paths
+      # (`issue_comment`, `pull_request_review`,
+      # `pull_request_review_comment`) so re-runs require an
+      # OWNER/MEMBER/COLLABORATOR — bounds the model-call quota against
+      # any past contributor being able to re-trigger reviews at will.
     uses: './.github/workflows/_ai-pr-review-core.yml'
     with:
       review_label: 'Maintainability'
