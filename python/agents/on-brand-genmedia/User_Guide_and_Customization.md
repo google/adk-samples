@@ -15,7 +15,7 @@ Below are the available digital assets:
 
 | Cognitive White T-Shirt | NeuroBlue T-Shirt | NeuroVibe AI Office Reception |
 | :---: | :---: | :---: |
-| <img src="on_brand_genmedia/data/assets/Cognitive_White_T_Shirt_with_full_primary_logo.jpg" width="175" alt="White T-Shirt" /> | <img src="on_brand_genmedia/data/assets/NeuroBlue_T_shirt_with_pulse_arrow_logo.jpg" width="175" alt="Blue T-Shirt" /> | <img src="on_brand_genmedia/data/assets/NeuroVibe_AI_office_reception.jpg" width="175" alt="Office Reception" /> |
+| <img src="on_brand_genmedia/data/assets/Cognitive_White_T_Shirt_with_full_primary_logo.webp" width="175" alt="White T-Shirt" /> | <img src="on_brand_genmedia/data/assets/NeuroBlue_T_shirt_with_pulse_arrow_logo.webp" width="175" alt="Blue T-Shirt" /> | <img src="on_brand_genmedia/data/assets/NeuroVibe_AI_office_reception.webp" width="175" alt="Office Reception" /> |
 
 ## Examples of Usage
 Here are examples of prompts and the corresponding generated images.
@@ -23,14 +23,14 @@ Here are examples of prompts and the corresponding generated images.
 ### Example 1
 **Prompt:** "Generate an medium shot image of a professional dressed young male in thirties standing in the NeuroVibe AI office reception area"
 
-<img src="on_brand_genmedia/data/generated_images/NeuroVibe_employee_by_the_reception.jpg" width="300" alt="Professional Male in Reception" />
+<img src="on_brand_genmedia/data/generated_images/NeuroVibe_employee_by_the_reception.webp" width="300" alt="Professional Male in Reception" />
 
 ---
 
 ### Example 2
 **Prompt:** "Create an image of a NeuroVibe AI employee who is a female in early thirties wearing Cognitive white company T-shirt"
 
-<img src="on_brand_genmedia/data/generated_images/NeuroVibe_employee_in_company_merchandise.jpg" width="300" alt="Female Employee in Merchandise" />
+<img src="on_brand_genmedia/data/generated_images/NeuroVibe_employee_in_company_merchandise.webp" width="300" alt="Female Employee in Merchandise" />
 
 ---
 

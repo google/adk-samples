@@ -39,7 +39,7 @@ The LLM Auditor chains two sub-agents in a sequential pipeline:
     inaccuracies while preserving the original structure and style. An
     after-model callback strips the edit marker from the output.
 
-![LLM Auditor Architecture](llm_auditor_architecture.png)
+![LLM Auditor Architecture](llm_auditor_architecture.webp)
 
 ## Project Structure
 
