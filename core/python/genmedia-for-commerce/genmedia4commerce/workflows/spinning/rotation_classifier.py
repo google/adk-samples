@@ -160,7 +160,7 @@ def classify_rotation_detailed(
 # =============================================================================
 
 
-def _apply_v3f_rules(detection: dict, config: ClassifierConfig) -> tuple:  # noqa: C901, PLR0911, PLR0912
+def _apply_v3f_rules(detection: dict, config: ClassifierConfig) -> tuple:
     """Apply V3f classification rules.
 
     Rules (in order):
@@ -254,7 +254,7 @@ def _apply_v3f_rules(detection: dict, config: ClassifierConfig) -> tuple:  # noq
 # =============================================================================
 
 
-def c_detect_rotation_segments(  # noqa: C901, PLR0912, PLR0915
+def c_detect_rotation_segments(
     video_path: str, config: ClassifierConfig
 ) -> dict:
     """Detect rotation segments using sparse optical flow.

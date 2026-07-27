@@ -155,7 +155,7 @@ async def interpolation_generate_prompt(
 
 
 @router.post("/generate-all")
-async def interpolation_generate_all(  # noqa: C901, PLR0912, PLR0915
+async def interpolation_generate_all(
     images: list[UploadFile] = File(...),  # noqa: B008
     prompt: str = Form(""),
     backgroundColor: str = Form("#FFFFFF"),

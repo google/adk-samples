@@ -213,7 +213,7 @@ async def _try_fix(
         return None, {"status": "error", "error": str(e)}
 
 
-async def _generate_view(  # noqa: C901, PLR0912, PLR0915
+async def _generate_view(
     view_name: str,
     garment_imgs: list[bytes],
     model_img: bytes | None,
@@ -644,7 +644,7 @@ def _build_validation(result: dict | None) -> dict | None:
     }
 
 
-async def run_fitting_pipeline(  # noqa: C901, PLR0912, PLR0915
+async def run_fitting_pipeline(
     garment_images_bytes: list[bytes],
     model_photo_map: dict[str, bytes],
     max_retries: int,

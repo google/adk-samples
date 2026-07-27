@@ -34,7 +34,7 @@ def get_config(var_name, prompt, default=None, is_secret=False):
     return value
 
 
-def register_oauth():  # noqa: PLR0915
+def register_oauth():
     print("--- [ Interactive A2A OAuth Registration ] ---")
 
     # 1. Gather configuration interactively or from env

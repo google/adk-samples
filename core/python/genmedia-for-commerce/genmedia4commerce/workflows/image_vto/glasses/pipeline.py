@@ -47,7 +47,7 @@ _config_loaded = False
 
 
 def _ensure_config():
-    global _config_loaded  # noqa: PLW0603
+    global _config_loaded
     if _config_loaded:
         return
     from dotenv import load_dotenv
@@ -126,7 +126,7 @@ class VTOResult:
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
-async def run_glasses_vto(  # noqa: C901, PLR0915
+async def run_glasses_vto(
     model_image: bytes,
     glasses_images: list[bytes],
     num_variations: int = 3,

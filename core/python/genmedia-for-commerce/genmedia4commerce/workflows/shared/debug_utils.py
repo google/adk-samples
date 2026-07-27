@@ -52,7 +52,7 @@ _session_folder = None
 
 def _get_session_folder():
     """Lazy initialization of session folder."""
-    global _session_folder  # noqa: PLW0603
+    global _session_folder
     if _session_folder is None:
         _session_folder = get_debug_session_folder()
         logger.info(f"[Debug] Saving images to: {_session_folder}")
@@ -109,12 +109,12 @@ def save_debug_image(img_bytes, step_name, prefix=""):
 
 def reset_session():
     """Reset the session folder to create a new one for the next run."""
-    global _session_folder  # noqa: PLW0603
+    global _session_folder
     _session_folder = None
 
 
 def set_debug_enabled(enabled: bool):
     """Enable or disable debug image saving."""
-    global DEBUG_ENABLED  # noqa: PLW0603
+    global DEBUG_ENABLED
     DEBUG_ENABLED = enabled
     logger.info(f"[Debug] Debug saving {'enabled' if enabled else 'disabled'}")

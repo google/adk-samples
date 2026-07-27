@@ -74,7 +74,7 @@ async def _get_auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _extract_pending_approval(session: dict, user_id: str) -> dict | None:  # noqa: C901
+def _extract_pending_approval(session: dict, user_id: str) -> dict | None:
     """Extract pending approval info from a session's events.
 
     Scans for an ``adk_request_input`` function call without a matching

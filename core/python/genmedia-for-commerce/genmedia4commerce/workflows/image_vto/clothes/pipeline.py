@@ -59,7 +59,7 @@ _config_loaded = False
 
 
 def _ensure_config():
-    global _config_loaded  # noqa: PLW0603
+    global _config_loaded
     if _config_loaded:
         return
     from dotenv import load_dotenv
@@ -138,7 +138,7 @@ class VTOResult:
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
-async def run_image_vto(  # noqa: C901, PLR0915
+async def run_image_vto(
     full_body_image: bytes,
     garment_images: list[bytes | str],
     scenario: str = "a plain light grey studio environment",

@@ -48,7 +48,7 @@ router = APIRouter(
 
 
 @router.post("/change-background")
-async def change_background_endpoint(  # noqa: C901, PLR0915
+async def change_background_endpoint(
     person_image: UploadFile = File(...),  # noqa: B008
     background_description: str = Form(None),
     background_image: UploadFile = File(None),  # noqa: B008
@@ -77,7 +77,7 @@ async def change_background_endpoint(  # noqa: C901, PLR0915
 
     logger.info(f"Generating {num_variations} background change variations")
 
-    async def generate_stream():  # noqa: C901
+    async def generate_stream():
         try:
 
             async def process_face():
