@@ -1,0 +1,66 @@
+name: Sync Dependabot Config
+
+# Regenerates .github/dependabot.yml whenever the recipe tree changes.
+#
+# Triggers
+# --------
+#   push to main   — any file under core/, contrib/, or skills/ changed
+#                    (recipe added, removed, or renamed triggers a rescan)
+#   script changed — the generator itself was updated; re-run to apply
+#   manual         — workflow_dispatch for on-demand refreshes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'core/**'
+      - 'contrib/**'
+      - 'skills/**'
+      - '.github/scripts/generate_dependabot.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-dependabot-config
+  cancel-in-progress: false  # never cancel; always let the latest push win
+
+jobs:
+  sync:
+    name: Regenerate dependabot.yml
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          # Use the default GITHUB_TOKEN — enough for a same-repo push
+          # on a non-protected branch when "Allow GitHub Actions to create
+          # and approve pull requests" is enabled in repo settings.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Full history not needed; a shallow clone is fine here.
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate dependabot.yml
+        run: python .github/scripts/generate_dependabot.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet .github/dependabot.yml; then
+            echo "dependabot.yml is already up to date — nothing to commit."
+          else
+            git add .github/dependabot.yml
+            git commit -m "chore: sync dependabot config [skip ci]"
+            git push
+            echo "dependabot.yml updated and pushed."
+          fi
