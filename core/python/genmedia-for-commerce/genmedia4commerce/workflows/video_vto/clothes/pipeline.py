@@ -55,7 +55,7 @@ _config_loaded = False
 
 
 def _ensure_config():
-    global _config_loaded  # noqa: PLW0603
+    global _config_loaded
     if _config_loaded:
         return
     config_path = Path(__file__).parent.parent.parent.parent / "config.env"
@@ -139,7 +139,7 @@ def _evaluate_all_clips(
 # ---------------------------------------------------------------------------
 # Animate Model (video-only, no image VTO)
 # ---------------------------------------------------------------------------
-async def run_animate_model(  # noqa: C901
+async def run_animate_model(
     model_image: bytes,
     number_of_videos: int = 4,
     prompt: str = "",

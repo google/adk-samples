@@ -31,7 +31,7 @@ The agent’s default configuration allows you to simulate interactions with a f
 
 
 ### Architecture
-![Personalized Shopping Agent Architecture](ps_architecture.png)
+![Personalized Shopping Agent Architecture](ps_architecture.webp)
 
 ### Key Features
 
@@ -150,7 +150,7 @@ ____________
 
 #### Example 2: image based search
 
-* Session file: [image_search_denim_skirt.session.json](tests/example_interactions/text_search_floral_dress.session.md) (The input image file for this session is [example_product.png](tests/example_interactions/example_product.png))
+* Session file: [image_search_denim_skirt.session.json](tests/example_interactions/text_search_floral_dress.session.md) (The input image file for this session is [example_product.webp](tests/example_interactions/example_product.webp))
 
 ## Running Eval
 

@@ -136,7 +136,7 @@ def generate_veo(
     return all_videos
 
 
-def create_collage(  # noqa: C901, PLR0915
+def create_collage(
     model_image_bytes=None,
     glasses_image_bytes=None,
     model_side_image_bytes=None,

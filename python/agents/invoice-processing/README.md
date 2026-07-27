@@ -184,7 +184,7 @@ ALF rules handle **exceptions not covered by the rules book** -- not bugs in the
 
 ## Architecture
 
-![Architecture Diagram](agent_pattern.png)
+![Architecture Diagram](agent_pattern.webp)
 
 The diagram above illustrates the three-zone architecture of the Invoice Processing agent:
 

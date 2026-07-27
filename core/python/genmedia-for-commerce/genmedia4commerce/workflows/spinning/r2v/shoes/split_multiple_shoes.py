@@ -33,7 +33,7 @@ Segment both footwears in the image with precise definition.
 """
 
 
-def sort_masks_by_horizontal_position(  # noqa: C901
+def sort_masks_by_horizontal_position(
     mask_data_list: list, mode: str = "right", verbose: bool = False
 ) -> list:
     """Sorts a list of (mask, value) tuples based on the mask's horizontal position.
@@ -257,7 +257,7 @@ def construct_image(image: PImage.Image, mask: PImage.Image) -> PImage.Image:
     return white_background
 
 
-def divide_duplicate_image(  # noqa: C901
+def divide_duplicate_image(
     image_bytes: bytes, client, verbose: bool = False, return_masks=False
 ) -> list:
     """Segment an image based on a prompt, identify duplicate objects, and separate them.

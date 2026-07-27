@@ -331,7 +331,7 @@ def upscale_image_bytes(client, image_bytes, upscale_factor="x4"):
     return upscaled_bytes
 
 
-def replace_background(  # noqa: C901, PLR0912, PLR0915
+def replace_background(
     client,
     img_bytes,
     contour_tolerance=0.01,
@@ -466,7 +466,7 @@ def replace_background(  # noqa: C901, PLR0912, PLR0915
     return output_buffer.getvalue()
 
 
-def replace_background_with_mask_return(  # noqa: PLR0915
+def replace_background_with_mask_return(
     client,
     img_bytes,
     contour_tolerance=0.01,

@@ -419,7 +419,7 @@ Output format (JSON):
 """
 
 
-def evaluate_all_views_single_call(  # noqa: C901, PLR0915
+def evaluate_all_views_single_call(
     client,
     frames_to_evaluate: list[dict],
     all_frame_bytes: list[bytes],

@@ -52,7 +52,7 @@ def get_insightface_app() -> FaceAnalysis:
 
     Uses buffalo_l model for highest accuracy, running on CPU via ONNX.
     """
-    global _insightface_app  # noqa: PLW0603
+    global _insightface_app
     if _insightface_app is None:
         logger.info("[InsightFace] Initializing FaceAnalysis app (CPU mode)...")
         _insightface_app = FaceAnalysis(
@@ -121,7 +121,7 @@ def _mask_eye_regions(img_bgr: np.ndarray, face) -> np.ndarray:
 
 def get_eval_pool() -> ThreadPoolExecutor:
     """Get or create the shared evaluation thread pool."""
-    global _eval_pool  # noqa: PLW0603
+    global _eval_pool
     if _eval_pool is None:
         logger.info(
             f"[Face Eval] Creating thread pool with {_POOL_MAX_WORKERS} workers"

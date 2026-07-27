@@ -37,6 +37,12 @@ exclusions:
 - `target/`, `build/`, `.gradle/` (Java, Kotlin)
 - `vendor/`, `go.sum` (Go)
 
+**Images:** a single unoptimized PNG screenshot can consume the whole
+`contrib/` budget. Use WebP (`cwebp -q 85`) for anything only linked from
+docs. Leave the original format alone if application code depends on it —
+an import, a build asset, a hardcoded path or MIME type — not just a doc
+reference.
+
 ## `manifest.yaml`
 
 Every recipe has one. Schema:
@@ -90,7 +96,8 @@ Every recipe has one. Cover:
 1. What the recipe does (one paragraph).
 2. Setup — prerequisites, credentials, environment variables.
 3. Run — the exact command to start the agent.
-4. Optional: architecture diagram, example prompts, screenshots.
+4. Optional: architecture diagram, example prompts, screenshots (WebP —
+   see [Size limits](#size-limits)).
 
 CI enforces the following content checks:
 

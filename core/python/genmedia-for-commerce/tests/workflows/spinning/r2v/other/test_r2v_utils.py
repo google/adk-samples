@@ -69,7 +69,7 @@ class TestGenerateProductDescription:
         mock_client.models.generate_content.return_value = mock_response
 
         result = generate_product_description(
-            mock_client, "gemini-2.5-flash", [red_image_bytes]
+            mock_client, "gemini-3.6-flash", [red_image_bytes]
         )
 
         assert (
@@ -87,11 +87,11 @@ class TestGenerateProductDescription:
         mock_client.models.generate_content.return_value = mock_response
 
         generate_product_description(
-            mock_client, "gemini-2.5-pro", [red_image_bytes]
+            mock_client, "gemini-3.1-pro-preview", [red_image_bytes]
         )
 
         call_kwargs = mock_client.models.generate_content.call_args
-        assert call_kwargs.kwargs["model"] == "gemini-2.5-pro"
+        assert call_kwargs.kwargs["model"] == "gemini-3.1-pro-preview"
 
     def test_passes_all_images(self, red_image_bytes):
         """Should include all provided images in the request parts."""
@@ -101,7 +101,7 @@ class TestGenerateProductDescription:
         mock_client.models.generate_content.return_value = mock_response
 
         images = [red_image_bytes, red_image_bytes, red_image_bytes]
-        generate_product_description(mock_client, "gemini-2.5-flash", images)
+        generate_product_description(mock_client, "gemini-3.6-flash", images)
 
         call_kwargs = mock_client.models.generate_content.call_args
         contents = call_kwargs.kwargs["contents"]

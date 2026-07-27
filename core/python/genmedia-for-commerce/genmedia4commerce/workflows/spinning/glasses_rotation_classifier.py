@@ -40,7 +40,7 @@ SAMPLE_INTERVAL = 4
 MIN_MASK_AREA_RATIO = 0.005  # Minimum mask area as fraction of frame
 
 
-def classify_glasses_rotation(  # noqa: C901, PLR0912, PLR0915
+def classify_glasses_rotation(
     segmentation_client,
     video_bytes: bytes,
 ) -> str:

@@ -43,7 +43,7 @@ def _get_clients():
     return genai_client, nano_client
 
 
-async def run_glasses_vto_tool(  # noqa: C901, PLR0911, PLR0912
+async def run_glasses_vto_tool(
     model_image_base64: str,
     product_images_base64: list[str],
     num_variations: int = 3,
