@@ -7,7 +7,7 @@
 
 The Software Bug Assistant is a sample agent designed to help IT Support and Software Developers triage, manage, and resolve software issues. This sample agent uses ADK Python, a PostgreSQL bug ticket database (internal tickets), GitHub MCP server (external tickets), RAG, Google Search, and StackOverflow to assist in debugging. 
 
-![](deployment/images/google-cloud-architecture.png)
+![](deployment/images/google-cloud-architecture.webp)
 
 This README contains instructions for local and Google Cloud deployment.
 
@@ -355,7 +355,7 @@ Here are some example requests you may ask the agent:
 
 These instructions walk through the process of deploying the Software Bug Assistant agent to Google Cloud, including Cloud Run and Cloud SQL (PostgreSQL). This setup also adds RAG capabilities to the tickets database, using the [google_ml_integration](https://cloud.google.com/blog/products/ai-machine-learning/google-ml-intergration-extension-for-cloud-sql) vector plugin for Cloud SQL, and the `text-embeddings-005` model from Vertex AI.
 
-![](deployment/images/google-cloud-architecture.png)
+![](deployment/images/google-cloud-architecture.webp)
 
 ### Before you begin 
 
@@ -414,7 +414,7 @@ From the Cloud Console (Cloud SQL), open **Cloud SQL Studio**.
 
 Log into the `tickets-db` Database using the `postgres` user (password: `admin`, but note you can change to a more secure password under Cloud SQL > Primary Instance > Users).
 
-![](deployment/images/cloud-sql-studio.png)
+![](deployment/images/cloud-sql-studio.webp)
 
 Open a new **Editor** tab. Then, paste in the following SQL code to set up the table and create vector embeddings.
 
@@ -505,7 +505,7 @@ SELECT * FROM tickets;
 
 You should see: 
 
-<img src="deployment/images/verify-db.png" width="80%" alt="Verify database table">
+<img src="deployment/images/verify-db.webp" width="80%" alt="Verify database table">
 
 
 ### 9 - Deploy the MCP Toolbox for Databases server to Cloud Run 
@@ -647,7 +647,7 @@ Test the agent by asking questions like:
 
 *Example workflow*: 
 
-![](deployment/images/cloud-run-example.png)
+![](deployment/images/cloud-run-example.webp)
 
 
 ### Clean up

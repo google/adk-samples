@@ -37,7 +37,8 @@ For deep detail on each skill, see the
       [anatomy](./recipe-handbook/anatomy.md)
 - [ ] Recipe name (folder name) ≤ 30 chars, lowercase + hyphens
       only
-- [ ] Under size limit: 70 files / 2 MB for `contrib/`
+- [ ] Under size limit: 70 files / 2 MB for `contrib/` — use WebP for
+      doc-only screenshots/diagrams
 - [ ] `manifest.yaml` valid, with real `ownership.team` and
       `ownership.poc` — AI skill: `generate-manifest`
 - [ ] `README.md` has ≥ 100 words, a setup section, and a run

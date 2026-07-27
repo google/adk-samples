@@ -4,7 +4,7 @@ The Software Bug Assistant is a sample agent designed to help IT Support and Sof
 
 This README contains instructions for local and Google Cloud deployment. 
 
-<img src="deployment/images/agent-arch-lite-mode.png" width="60%" alt="Architecture">
+<img src="deployment/images/agent-arch-lite-mode.webp" width="60%" alt="Architecture">
 
 **Jump to**:
 - [💻 Run Locally](#run-locally)
@@ -139,7 +139,7 @@ Click "Connect," and a green light with the label "Connected" should appear. Cli
 
 Test by clicking the `get-tickets-by-status` tool. Type in the `status` field: `Open`. You should see a response with some of the open bugs we just added to the table.
 
-![](deployment/images/mcp-inspector.png)
+![](deployment/images/mcp-inspector.webp)
 
 ### 5 - Run the Java agent locally 
 
@@ -177,14 +177,14 @@ Open a new browser tab, and navigate to `http://localhost:8080`. This is where t
 
 You should see: 
 
-![](deployment/images/adk-web-open.png)
+![](deployment/images/adk-web-open.webp)
 
 Run some test prompts. You could try: 
 - "What bugs are assigned to samuel.green@example.com?"
 
 You should see: 
 
-![](deployment/images/samuel-bugs.png)
+![](deployment/images/samuel-bugs.webp)
 
 If you do not use the ADK Web UI, you can run the agent directly in the console with:
 ```
@@ -195,7 +195,7 @@ mvn clean package exec:java@run
 
 These instructions walk through the process of deploying the Software Bug Assistant agent to Google Cloud, including Cloud Run and Cloud SQL (PostgreSQL):. This setup also adds RAG capabilities to the tickets database, using the [google_ml_integration](https://cloud.google.com/blog/products/ai-machine-learning/google-ml-intergration-extension-for-cloud-sql) vector plugin for Cloud SQL, and the `text-embeddings-005` model from Vertex AI.
 
-![](deployment/images/google-cloud-architecture.png)
+![](deployment/images/google-cloud-architecture.webp)
 
 ### Prerequisites 
 
@@ -358,7 +358,7 @@ SELECT * FROM tickets;
 
 You should see: 
 
-<img src="deployment/images/verify-db.png" width="80%" alt="Architecture">
+<img src="deployment/images/verify-db.webp" width="80%" alt="Architecture">
 
 
 ### 10 - Deploy the MCP Toolbox to Cloud Run 
@@ -512,7 +512,7 @@ Test the agent by asking questions like:
 
 *Example workflow*: 
 
-![](deployment/images/cloudrun-example-workflow.png)
+![](deployment/images/cloudrun-example-workflow.webp)
 
 
 ### Clean up 

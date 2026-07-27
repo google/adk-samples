@@ -10,7 +10,7 @@ A Real-Time Speech-to-Text (STT) and Text-to-Speech (TTS) Evaluations and Record
   - **The "Buffer" Management (`google/adk/flows/llm_flows/audio_cache_manager.py`)**: Sequential volatile memory storage that appends raw chunks into memory before concatenating and transmitting them to the artifact service.
   - **The "Filing Cabinet" (`google/adk/artifacts/file_artifact_service.py`)**: Executes physical disk operations to synchronously write and structure raw `.l16` and `.pcm` audio blobs alongside `metadata.json` footprint files.
   - **The architecture diagram below illustrates the end-to-end audio capture and artifact storage workflow:** 
-![alt text](image.png)
+![alt text](image.webp)
 - **Pillar 2: ASR & STT Evaluation Engine**: Integrates a robust word-level Word Error Rate (WER) evaluation suite built using the Levenshtein distance algorithm to quantify Automatic Speech Recognition (ASR) performance and word error rates against established Ground Truth lines.
 - **Language & Accent Best Practices**: Natively enforcing strict language anchoring for optimal performance on the Live API `gemini-live-2.5-flash`. By carefully aligning the API's `language_code` with the user's spoken language and explicitly embedding targeted instructions (e.g., `"RESPOND IN {OUTPUT_LANGUAGE}. YOU MUST RESPOND UNMISTAKABLY IN {OUTPUT_LANGUAGE}."`) into your system prompts, the live API anchors interactions accurately and seamlessly navigates user accent constraints [Source](https://ai.google.dev/gemini-api/docs/live-api/best-practices#language-guidelines)
 
