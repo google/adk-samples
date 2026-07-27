@@ -183,7 +183,7 @@ updates:
     ]
     # Static github-actions entry is always last
     body_parts.append(
-        _render_entry("github-actions", "/", extra_labels=["github_actions"])
+        _render_entry("github-actions", "/", extra_labels=["github-actions"])
     )
     return header + "\n".join(body_parts)
 

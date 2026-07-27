@@ -278,7 +278,7 @@ updates:
       include: scope
     labels:
       - dependencies
-      - github_actions
+      - github-actions
     open-pull-requests-limit: 5
     groups:
       all-actions:

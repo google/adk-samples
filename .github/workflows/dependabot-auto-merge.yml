@@ -10,9 +10,17 @@ on:
       - opened
       - synchronize
       - reopened
-  # Trigger on workflow runs to catch test completions
+  # Trigger when CI completes so auto-merge can evaluate and land the PR.
+  # Lists every workflow whose completion should prompt a merge evaluation.
+  # "🐍 Python Tests" is the longest-running gate and fires last on most PRs.
+  # Add / remove names here if required checks change.
   workflow_run:
-    workflows: ["checks"]
+    workflows:
+      - "🐍 Python Tests"
+      - "Validate Python Recipe"
+      - "Validate Recipe Structure"
+      - "🐍 Python Format PR Checks"
+      - "Python Dependency Policy"
     types:
       - completed
 
