@@ -20,7 +20,7 @@ metadata:
 
 # Generate Python Runnability Test
 
-Use this skill to create the `tests/test_runnability.py` file that every Python recipe under `core/python/` or `contrib/` must ship (see `python-validate-recipe.yml` Check 4). The generated test is deliberately minimal — it just verifies the agent module imports and defines the expected globals. Business-logic testing lives elsewhere.
+Use this skill to create the `tests/test_runnability.py` file that every Python recipe under `core/python/`, `contrib/`, or `skills/python/` must ship (see `python-validate-recipe.yml` Check 4). The generated test is deliberately minimal — it just verifies the agent module imports and defines the expected globals. Business-logic testing lives elsewhere.
 
 ---
 
@@ -60,7 +60,7 @@ Runs `scripts/generate_runnability_test.py` against a recipe directory. Steps:
 
 1. **Always use the script — never hand-write `tests/test_runnability.py` yourself.** The skill exists to keep the boilerplate consistent across recipes.
 
-2. **Ask for the recipe directory** if the user hasn't given one. Recipe roots live under `core/python/<name>/` or `contrib/<name>/`.
+2. **Ask for the recipe directory** if the user hasn't given one. Recipe roots live under `core/python/<name>/`, `contrib/<name>/`, or `skills/python/<name>/`.
 
 3. **Always start with `--dry-run`** unless the user has explicitly said "apply", "generate it", "just do it", or equivalent. Show them what would land before writing.
 
@@ -86,7 +86,7 @@ Runs `scripts/generate_runnability_test.py` against a recipe directory. Steps:
 
 | Field | Required | Description |
 |---|---|---|
-| `--recipe-dir` | Yes | Path to the recipe root (e.g. `core/python/cross-session-memory`, `contrib/my-recipe`). |
+| `--recipe-dir` | Yes | Path to the recipe root (e.g. `core/python/cross-session-memory`, `contrib/my-recipe`, `skills/python/my-skill`). |
 | `--dry-run` | No | Print the JSON report (with the generated content in `test_content`) without writing any file. |
 | `--overwrite` | No | Overwrite an existing `tests/test_runnability.py`. Default: refuse and exit 1. |
 | `--agent-file` | No | Override auto-detection of the entry-point file. Path is relative to `--recipe-dir` (or absolute). Use when the recipe uses a non-standard layout (rare — <2% of recipes). |

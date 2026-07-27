@@ -2,7 +2,7 @@
 name: prepare-python-recipe
 description: >
   End-to-end orchestration to prepare or update a Python recipe under
-  core/python/ or contrib/ so it passes every check in
+  core/python/, contrib/, or skills/python/ so it passes every check in
   .github/workflows/python-validate-recipe.yml. Runs seven phases in
   order on an already-in-place recipe: manifest.yaml generation,
   environment-variable extraction, pyproject.toml alignment, ruff
@@ -55,7 +55,7 @@ The skill assumes the user has already:
 1. **Deactivated** any active Python virtual environment.
 2. **Pulled latest** from `origin` (`git pull` at the repo root).
 3. **Synced repo root deps** (`uv sync` at the repo root).
-4. **Placed the recipe at its target path** — either freshly scaffolded, moved from another location, or renamed to its final basename under `core/python/<name>/` or `contrib/<name>/`.
+4. **Placed the recipe at its target path** — either freshly scaffolded, moved from another location, or renamed to its final basename under `core/python/<name>/`, `contrib/<name>/`, or `skills/python/<name>/`.
 5. **Committed the original recipe** so `git diff` shows what the skill changed.
 
 If the user has NOT done these and asks you to run the skill anyway, tell them to complete the prerequisites first and stop. Do NOT run `git pull`, `git commit`, deactivate their venv, or move/rename directories on their behalf — those are deliberately out of scope.
@@ -124,7 +124,7 @@ At the end, print a summary table and remind the user to `git diff` and commit �
 
 | Field | Required | Description |
 |---|---|---|
-| Recipe directory | Yes | Path to the recipe root (e.g. `core/python/cross-session-memory`, `contrib/my-recipe`). Passed to every sub-script as `--recipe-dir`. |
+| Recipe directory | Yes | Path to the recipe root (e.g. `core/python/cross-session-memory`, `contrib/my-recipe`, `skills/python/my-skill`). Passed to every sub-script as `--recipe-dir`. |
 
 If the user has not specified the recipe directory, ask for it before proceeding.
 

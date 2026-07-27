@@ -219,7 +219,7 @@ Python source (unchanged behaviour) and WRITES only to `.env.example`.
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| Recipe directory | Yes | Path to the recipe root (e.g. `contrib/my-recipe` or `core/python/my-recipe`) |
+| Recipe directory | Yes | Path to the recipe root (e.g. `contrib/my-recipe`, `core/python/my-recipe`, or `skills/python/my-skill`) |
 
 If the user has not specified the recipe directory, ask for it before proceeding.
 
