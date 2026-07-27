@@ -256,7 +256,49 @@ jobs:
           done
           { echo "changed_files<<${DELIM}"; echo "${CHANGED_FILES}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
+      - name: 'Check if PR is new-file-only (skip review for new recipe drops)'
+        id: 'new_files_only_guard'
+        env:
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+        run: |-
+          set -euo pipefail
+
+          if [[ -z "${PR_NUMBER}" ]]; then
+            echo "skip=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # Count files whose status is not 'added'. If zero, every file in this
+          # PR is brand-new — treat it as a new recipe drop and skip automated review.
+          # Human admin approval is the real quality gate for new recipe submissions.
+          #
+          # IMPORTANT: `gh api --paginate --jq EXPR` applies EXPR to EACH page's
+          # response separately and concatenates the results. The `/pulls/N/files`
+          # endpoint paginates at 30 files per page, so a previous form
+          #     --jq '[.[] | select(.status != "added")] | length'
+          # emitted one integer per page for any PR with more than 30 changed
+          # files, and the multi-line capture broke the `-eq` comparison below
+          # under `set -euo pipefail` — the guard would crash on every large PR.
+          # Emit one filename per matching file and count with `wc -l` instead:
+          # per-page jq output is a stream of lines, `wc -l` sums them.
+          NON_ADDED_COUNT="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --paginate --jq '.[] | select(.status != "added") | .filename' | wc -l)"
+
+          if [[ "${NON_ADDED_COUNT}" -eq 0 ]]; then
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            gh pr comment "${PR_NUMBER}" \
+              --body "This PR only adds new files — automated AI review was skipped. New recipe submissions are reviewed by a maintainer during the approval process."
+          else
+            echo "skip=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: 'Pre-pull GitHub MCP server image'
+        if: steps.new_files_only_guard.outputs.skip != 'true'
+        run: docker pull ghcr.io/github/github-mcp-server:v1.5.0
+
       - name: 'Run AI PR Review'
+        if: steps.new_files_only_guard.outputs.skip != 'true'
         uses: 'google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489' # ratchet:google-github-actions/run-gemini-cli@v0
         id: 'gemini_pr_review'
         env:
@@ -287,7 +329,7 @@ jobs:
           use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           settings: |-
             {
-              "maxSessionTurns": 20,
+              "maxSessionTurns": 10,
               "mcpServers": {
                 "github": {
                   "command": "docker",

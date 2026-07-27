@@ -13,6 +13,7 @@ on:
       - '.github/schemas/manifest-schema.json'
       - '.github/policy.yml'
       - '.github/workflows/validate-recipe-structure.yml'
+      - '.github/scripts/generate_dependabot.py'
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'
@@ -29,6 +30,7 @@ on:
       - '.github/schemas/manifest-schema.json'
       - '.github/policy.yml'
       - '.github/workflows/validate-recipe-structure.yml'
+      - '.github/scripts/generate_dependabot.py'
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'
@@ -44,6 +46,9 @@ jobs:
   validate-structure:
     name: Check recipe structure and content
     runs-on: ubuntu-latest
+    # Structure checks are pure Python (no builds); 15 minutes leaves plenty
+    # of headroom even on the full-repo scan path.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -160,3 +165,22 @@ jobs:
             echo "========================================"
             exit 1
           fi
+
+  check-dependabot-config:
+    name: Check dependabot.yml is up to date
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check dependabot.yml is fresh
+        run: |
+          python .github/scripts/generate_dependabot.py --check
+          echo "[PASS] dependabot.yml matches the current recipe tree."

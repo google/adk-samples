@@ -9,19 +9,19 @@ on:
     paths:
       # Only file types that can meaningfully affect Python test results.
       # Doc-only PRs (README changes etc.) intentionally skip this workflow.
-       - "core/**/*.py"
-       - "core/**/pyproject.toml"
-       - "core/**/uv.lock"
-       - "core/**/manifest.yaml"
-       - "contrib/**/*.py"
-       - "contrib/**/pyproject.toml"
-       - "contrib/**/uv.lock"
-       - "contrib/**/manifest.yaml"
-       - "skills/**/*.py"
-       - "skills/**/pyproject.toml"
-       - "skills/**/uv.lock"
-       - "skills/**/manifest.yaml"
-       - ".github/workflows/python-tests.yml"
+      - "core/**/*.py"
+      - "core/**/pyproject.toml"
+      - "core/**/uv.lock"
+      - "core/**/manifest.yaml"
+      - "contrib/**/*.py"
+      - "contrib/**/pyproject.toml"
+      - "contrib/**/uv.lock"
+      - "contrib/**/manifest.yaml"
+      - "skills/**/*.py"
+      - "skills/**/pyproject.toml"
+      - "skills/**/uv.lock"
+      - "skills/**/manifest.yaml"
+      - ".github/workflows/python-tests.yml"
   workflow_dispatch:
     inputs:
       run_all:

@@ -19,8 +19,12 @@ on:
         required: true
         type: 'number'
 
+# `workflow_dispatch` provides `github.event.inputs.issue_number` but no
+# `github.event.issue.number` — without a fallback, dispatched runs share
+# the same null-suffixed group and cancel each other. `github.run_id` at
+# the end guarantees the key is never empty.
 concurrency:
-  group: '${{ github.workflow }}-${{ github.event.issue.number }}'
+  group: '${{ github.workflow }}-${{ github.event.issue.number || github.event.inputs.issue_number || github.run_id }}'
   cancel-in-progress: true
 
 defaults:
@@ -131,9 +135,21 @@ jobs:
         with:
           github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
           script: |-
-            github.rest.issues.createComment({
-              owner: '${{ github.repository }}'.split('/')[0],
-              repo: '${{ github.repository }}'.split('/')[1],
-              issue_number: '${{ github.event.issue.number }}',
-              body: 'There is a problem with the Gemini CLI issue triaging. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
-            })
+            // Use the github-script `context` helpers rather than splitting
+            // an interpolated ${{ github.repository }} string — cleaner and
+            // avoids leaking a template expression into the JS source.
+            // github.event.issue.number is null on workflow_dispatch, so
+            // fall back to the dispatched input in that case.
+            const issueNumber = context.payload.issue?.number
+              ?? Number(context.payload.inputs?.issue_number);
+            if (!issueNumber) {
+              core.warning('No issue number available — cannot post failure comment.');
+              return;
+            }
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: `There is a problem with the Gemini CLI issue triaging. Please check the [action logs](${runUrl}) for details.`
+            });

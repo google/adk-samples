@@ -1,275 +1,285 @@
+# AUTO-GENERATED — do not edit by hand.
+# Owned by .github/scripts/generate_dependabot.py
+#
+# This file is regenerated automatically on every push to main that touches
+# core/, contrib/, or skills/.  To force an immediate refresh, trigger the
+# "Sync Dependabot Config" workflow manually from the Actions tab, or run:
+#
+#   python .github/scripts/generate_dependabot.py
+#
+# Ecosystems tracked: uv (Python), gomod (Go), maven (Java),
+#                     gradle (Kotlin), npm (TypeScript/JS), github-actions
+
 version: 2
 updates:
-  # Python agents with uv.lock files
-  - package-ecosystem: "uv"
-    directory: "/python/agents/academic-research"
+  - package-ecosystem: "npm"
+    directory: "/core/python/deep-search/frontend"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/core/python/genmedia-for-commerce/frontend"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:00"
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/blog-writer"
+    directory: "/core/python/ambient-expense-agent"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/data-science"
+    directory: "/core/python/ambient-expense-agent/frontend"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/financial-advisor"
+    directory: "/core/python/cross-session-memory"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/deep-search"
+    directory: "/core/python/deep-search"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/image-scoring"
+    directory: "/core/python/genmedia-for-commerce"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/medical-pre-authorization"
+    directory: "/core/python/oauth-user-consent-flow"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/marketing-agency"
+    directory: "/core/python/rag-agent-search"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/realtime-conversational-agent/server"
+    directory: "/core/python/rag-vector-search"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/software-bug-assistant"
+    directory: "/core/python/rag-vector-search/data_ingestion"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/short-movie-agents"
+    directory: "/core/python/safety-plugins"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/RAG"
+    directory: "/core/rag-agent-search"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/customer-service"
+    directory: "/core/rag-vector-search"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "uv"
-    directory: "/python/agents/personalized-shopping"
+    directory: "/core/rag-vector-search/data_ingestion"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
+      - dependencies
+    open-pull-requests-limit: 5
     groups:
       all-dependencies:
         patterns:
           - "*"
 
-  - package-ecosystem: "uv"
-    directory: "/python/agents/podcast_transcript_agent"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "02:00"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-    labels:
-      - "dependencies"
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/python/agents/travel-concierge"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "02:00"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-    labels:
-      - "dependencies"
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  # Keep GitHub Actions up to date
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
       time: "02:00"
     commit-message:
-      prefix: "chore"
-      include: "scope"
+      prefix: chore
+      include: scope
     labels:
-      - "dependencies"
-      - "github-actions"
+      - dependencies
+      - github-actions
+    open-pull-requests-limit: 5
     groups:
       all-actions:
         patterns:
