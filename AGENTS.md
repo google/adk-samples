@@ -4,10 +4,12 @@ All agents must follow the guidelines below without being reminded.
 ## General
 - Use the term **recipe** instead of **sample** everywhere — responses,
   code comments, commit messages, PR descriptions, docs.
-- Recipes live under `core/python/` (curated) or `contrib/` (community).
-  Skills live under `.agents/skills/`. Do NOT mix skill changes and recipe
+- Recipes live under `core/` (curated), `contrib/` (community), or
+  `skills/` (vertical skills). **Tooling skills** (AI coding-assistant
+  helpers) live under `.agents/skills/` — these are a completely separate
+  concept. Do NOT mix `.agents/skills/` changes and recipe/vertical-skill
   changes in the same PR. If a tool run modifies files outside your task's
-  scope (e.g. a repo-wide ruff sweep touching an unrelated skill), revert
+  scope (e.g. a repo-wide ruff sweep touching an unrelated recipe), revert
   those and mention them so the user can decide.
 - When your task is scoped to a specific recipe or skill, stay inside its
   directory. If you notice similar issues elsewhere, flag them in your
@@ -34,7 +36,7 @@ All agents must follow the guidelines below without being reminded.
 - Do NOT use `gemini-2.0-flash` or `gemini-2.5-flash` — both are deprecated. Use `gemini-3.5-flash` instead.
 
 ## Python
-- Python recipes go under `contrib/` or `core/python`
+- Python recipes go under `contrib/python/`, `core/python/`, or `skills/python/`
 - Minimum python version: 3.11
 - Package manager: Use `uv`, not `pip`
 - Formatter/linter: `ruff` — line length 80, double quotes. Config lives

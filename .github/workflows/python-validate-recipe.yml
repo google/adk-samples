@@ -11,6 +11,7 @@ on:
     paths:
       - 'core/**'
       - 'contrib/**'
+      - 'skills/**'
       - '.github/workflows/python-validate-recipe.yml'
       - '.github/scripts/check_env_vars.py'
       - '.github/scripts/check_recipe_pyproject.py'
@@ -26,6 +27,10 @@ jobs:
   validate-python-recipes:
     name: Check Python-specific recipe constraints
     runs-on: ubuntu-latest
+    # 20 minutes covers `uv sync` + a full-repo scan on the workflow_dispatch
+    # / infra-changed path, with headroom. Prevents the default 6-hour job
+    # ceiling from applying when a check hangs.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository

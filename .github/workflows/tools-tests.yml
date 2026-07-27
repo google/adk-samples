@@ -29,6 +29,10 @@ jobs:
   pytest:
     name: pytest (tools + skills)
     runs-on: ubuntu-latest
+    # Tooling + skills tests are lightweight (stdlib + pytest); 15 min
+    # leaves headroom for cold uv-sync while still protecting against a
+    # stuck job riding the default 6-hour timeout.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository

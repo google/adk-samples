@@ -44,6 +44,9 @@ jobs:
   validate-structure:
     name: Check recipe structure and content
     runs-on: ubuntu-latest
+    # Structure checks are pure Python (no builds); 15 minutes leaves plenty
+    # of headroom even on the full-repo scan path.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository

@@ -9,6 +9,7 @@ on:
     paths:
       - "core/**/*.py"
       - "contrib/**/*.py"
+      - "skills/**/*.py"
       - "**/pyproject.toml"
 
 permissions:
@@ -32,6 +33,9 @@ jobs:
   ruff-format:
     name: Ruff Format Suggestions
     runs-on: ubuntu-latest
+    # Ruff on the PR-diff is fast; 10 min is a generous ceiling that still
+    # protects against a stuck reviewdog HTTP call to the GitHub API.
+    timeout-minutes: 10
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -90,6 +94,8 @@ jobs:
   ruff-lint:
     name: Ruff Lint Suggestions
     runs-on: ubuntu-latest
+    # Same rationale as ruff-format above.
+    timeout-minutes: 10
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

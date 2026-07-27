@@ -20,10 +20,21 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on the same PR (or on the same ref for push /
+# workflow_dispatch) — without this a rapid series of doc pushes stacks
+# up redundant lychee scans (each of which can walk many external URLs).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate-docs-links:
     name: Check every link in docs/ resolves
     runs-on: ubuntu-latest
+    # lychee's default retry/backoff plus the whole external-link universe
+    # can drag a scan out; 10 minutes is a safe ceiling for docs/ today
+    # and prevents a stuck job from riding the default 6-hour timeout.
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -36,6 +47,13 @@ jobs:
         # avoids rate-limiting on unauthenticated GitHub API calls when
         # docs link to the repo's own issues page.
         uses: lycheeverse/lychee-action@v2
+        env:
+          # Authenticate GitHub link checks with the workflow token so
+          # docs that link to any github.com URL (users, other repos,
+          # gists) are checked via authenticated requests and do not hit
+          # the 60-req/hr unauthenticated rate limit. Lychee reads this
+          # env var natively.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: >-
             --no-progress
