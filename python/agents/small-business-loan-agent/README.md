@@ -118,7 +118,7 @@ Agent: [check_process_status -> detects DocumentExtractionAgent completed]
 
 ## B. Architecture Visuals
 
-![Agent Architecture](agent_pattern.png)
+![Agent Architecture](agent_pattern.webp)
 
 **Complete loan application**
 

@@ -93,7 +93,7 @@ The **Economic Research Agent (ERA)** is a production-grade site-selection and m
 
 ## B. Architecture Visuals
 
-![ERA Architecture](economic_research_agent_architecture.png)
+![ERA Architecture](economic_research_agent_architecture.webp)
 
 ```mermaid
 graph TD

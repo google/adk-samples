@@ -23,7 +23,7 @@ without human interaction.
 
 This is the high-level workflow the agent follows to generate its analysis (note
 that step 3, "Review press conference video", is still in development).
-![FOMC Research agent workflow](<FOMC_Research_Agent_Workflow.png>)
+![FOMC Research agent workflow](<FOMC_Research_Agent_Workflow.webp>)
 
 ## Agent Details
 The key features of the FOMC Research Agent include:

@@ -173,7 +173,7 @@ Each agent displayed here is organized as follows:
 │   ├── deployment/                         # Deployment to Agent Engine
 │   ├── eval/                               # Folder containing the evaluation method
 │   ├── tests/                              # Folder containing unit tests for tools
-│   ├── agent_pattern.png                   # Diagram of the agent pattern
+│   ├── agent_pattern.webp                   # Diagram of the agent pattern
 │   ├── .env.example                        # Store agent specific env variables
 │   ├── pyproject.toml                      # Project configuration
 │   └── README.md                           # Provides an overview of the agent
@@ -217,7 +217,7 @@ The root of each agent resides in its own directory under `agents/`. For example
     *   Contains unit and integration tests for the agent.
     *   Test files (e.g., `test_agents.py`) are used to verify the agent's functionality.
 
-5.  **`agent_pattern.png`**
+5.  **`agent_pattern.webp`**
 
     *   A visual diagram illustrating the agent's architecture, including its sub-agents and their interactions.
 
