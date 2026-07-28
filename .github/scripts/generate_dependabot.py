@@ -153,6 +153,12 @@ def _render_entry(ecosystem: str, directory: str, *, extra_labels: list[str] | N
     labels:
 {labels_lines}
     open-pull-requests-limit: 1
+    # Wait a few days after a release before opening a PR, so the community
+    # catches broken releases before we auto-merge them. Security updates
+    # bypass this cooldown and fire immediately.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     groups:
       {group_name}:
         patterns:
