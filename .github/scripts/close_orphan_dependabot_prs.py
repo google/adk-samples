@@ -98,7 +98,7 @@ def head_ref_matches(head_ref: str, pair: tuple[str, str]) -> bool:
         prefix = f"dependabot/{eco}/{directory.lstrip('/')}/"
     if not head_ref.startswith(prefix):
         return False
-    tail = head_ref[len(prefix):]
+    tail = head_ref[len(prefix) :]
     return bool(tail) and "/" not in tail
 
 
@@ -110,12 +110,19 @@ def list_open_dependabot_prs() -> list[dict]:
     """Return [{number, headRefName}, ...] for every open Dependabot PR."""
     result = subprocess.run(
         [
-            "gh", "pr", "list",
-            "--repo", REPO,
-            "--author", "app/dependabot",
-            "--state", "open",
-            "--limit", "500",
-            "--json", "number,headRefName",
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            REPO,
+            "--author",
+            "app/dependabot",
+            "--state",
+            "open",
+            "--limit",
+            "500",
+            "--json",
+            "number,headRefName",
         ],
         check=True,
         capture_output=True,
@@ -127,10 +134,15 @@ def list_open_dependabot_prs() -> list[dict]:
 def close_pr(number: int) -> tuple[bool, str]:
     result = subprocess.run(
         [
-            "gh", "pr", "close", str(number),
-            "--repo", REPO,
+            "gh",
+            "pr",
+            "close",
+            str(number),
+            "--repo",
+            REPO,
             "--delete-branch",
         ],
+        check=False,
         capture_output=True,
         text=True,
     )
