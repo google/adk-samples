@@ -375,7 +375,6 @@ updates:
     # bypass this cooldown and fire immediately.
     cooldown:
       default-days: 7
-      semver-major-days: 14
     groups:
       all-actions:
         patterns:

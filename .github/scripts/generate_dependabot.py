@@ -140,6 +140,14 @@ def _render_entry(ecosystem: str, directory: str, *, extra_labels: list[str] | N
 
     group_name = "all-actions" if ecosystem == "github-actions" else "all-dependencies"
 
+    # `semver-major-days` is only valid for ecosystems that follow semver.
+    # github-actions releases (v1, v2, ...) don't, and Dependabot rejects the
+    # whole config if it appears there.
+    if ecosystem == "github-actions":
+        cooldown_lines = "      default-days: 7"
+    else:
+        cooldown_lines = "      default-days: 7\n      semver-major-days: 14"
+
     return f"""\
   - package-ecosystem: "{ecosystem}"
     directory: "{directory}"
@@ -157,8 +165,7 @@ def _render_entry(ecosystem: str, directory: str, *, extra_labels: list[str] | N
     # catches broken releases before we auto-merge them. Security updates
     # bypass this cooldown and fire immediately.
     cooldown:
-      default-days: 7
-      semver-major-days: 14
+{cooldown_lines}
     groups:
       {group_name}:
         patterns:
