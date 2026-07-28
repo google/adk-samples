@@ -98,3 +98,13 @@ jobs:
             --base main \
             --head "$BRANCH" \
             --label "dependencies"
+
+      # Belt-and-braces cleanup: on EVERY sync run, close any open Dependabot
+      # PR whose target directory no longer appears in dependabot.yml. When a
+      # directory is removed from config Dependabot itself never closes the
+      # PRs it opened for that directory, so without this step they linger as
+      # zombies. Cheap when there is nothing to close.
+      - name: Close orphaned Dependabot PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/scripts/close_orphan_dependabot_prs.py

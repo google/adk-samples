@@ -23,7 +23,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -40,7 +40,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -57,7 +57,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -74,7 +74,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -91,7 +91,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -108,7 +108,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -125,7 +125,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -142,7 +142,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -159,7 +159,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -176,7 +176,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -193,7 +193,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -210,7 +210,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -227,7 +227,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -244,7 +244,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -261,7 +261,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-dependencies:
         patterns:
@@ -279,7 +279,7 @@ updates:
     labels:
       - dependencies
       - github-actions
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       all-actions:
         patterns:

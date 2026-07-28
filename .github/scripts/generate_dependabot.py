@@ -152,7 +152,7 @@ def _render_entry(ecosystem: str, directory: str, *, extra_labels: list[str] | N
       include: scope
     labels:
 {labels_lines}
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     groups:
       {group_name}:
         patterns:
