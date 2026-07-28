@@ -19,11 +19,11 @@
 /core/go/**            @tklopfenstein
 /core/java/**          @eliasecchig
 /core/typescript/**    @happyhuman
-/core/kotlin/**        @koverholt
+/core/kotlin/**        @happyhuman
 
 # --- contrib/ ---
 /contrib/python/**     @happyhuman
 /contrib/go/**         @tklopfenstein
 /contrib/java/**       @happyhuman
 /contrib/typescript/** @happyhuman
-/contrib/kotlin/**     @koverholt
+/contrib/kotlin/**     @happyhuman
