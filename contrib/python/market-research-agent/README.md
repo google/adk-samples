@@ -33,7 +33,7 @@ The orchestrator geocodes the input address, then calls all four specialist agen
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - [`uv`](https://docs.astral.sh/uv/) for dependency management
 - A Google AI Studio API key **or** a Google Cloud project with Vertex AI enabled
 - A [Google Places API key](https://developers.google.com/maps/documentation/places/web-service/get-api-key)
@@ -43,7 +43,7 @@ The orchestrator geocodes the input address, then calls all four specialist agen
 ```bash
 # Clone the repo
 git clone https://github.com/google/adk-samples.git
-cd adk-samples/python/agents/market-research-agent
+cd adk-samples/contrib/python/market-research-agent
 
 # Install dependencies
 uv sync
@@ -78,6 +78,8 @@ gcloud auth application-default login
 gcloud auth application-default set-quota-project $GOOGLE_CLOUD_PROJECT
 ```
 
+Both options also require `MODEL_NAME` (defaults to `gemini-3.5-flash` in `.env.example`), which is used by the orchestrator and every sub-agent.
+
 ## Running the Agent
 
 **With the ADK web UI:**
@@ -87,7 +89,7 @@ uv run adk web
 
 **With the ADK CLI:**
 ```bash
-uv run adk run market_research_agent
+uv run adk run app
 ```
 
 ### Example Interaction

@@ -12,22 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Traffic estimation sub-agent."""
+"""Location scoring sub-agent."""
+
+import os
 
 from google.adk.agents import LlmAgent
 
-from ...tools.places import nearby_search, place_details
-from .prompt import TRAFFIC_PROMPT
+from ...tools.places import geocode_address, nearby_search, text_search
+from .prompt import LOCATION_PROMPT
 
-traffic_agent = LlmAgent(
-    name="traffic_agent",
-    model="gemini-2.0-flash",
+location_agent = LlmAgent(
+    name="location_agent",
+    model=os.getenv("MODEL_NAME"),
     description=(
-        "Estimates foot traffic and demand at a target location by analyzing "
-        "competitor opening hours and review data. "
+        "Scores a target location 0-100 for business suitability across "
+        "competition density, accessibility, and demand signal dimensions. "
         "Input: task description with lat, lng, business_type, and "
-        "radius_meters. Output: JSON TrafficEstimate object."
+        "radius_meters. Output: JSON LocationScore object."
     ),
-    instruction=TRAFFIC_PROMPT,
-    tools=[nearby_search, place_details],
+    instruction=LOCATION_PROMPT,
+    tools=[nearby_search, text_search, geocode_address],
 )

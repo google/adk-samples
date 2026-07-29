@@ -15,21 +15,31 @@
 """Unit tests for the market research agent."""
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from google.adk.agents import LlmAgent
 
-from market_research_agent.agent import root_agent
-from market_research_agent.sub_agents.competitor.agent import competitor_agent
-from market_research_agent.sub_agents.gap.agent import gap_agent
-from market_research_agent.sub_agents.location.agent import location_agent
-from market_research_agent.sub_agents.traffic.agent import traffic_agent
-from market_research_agent.tools.places import geocode_address, nearby_search
+from app.agent import root_agent
+from app.sub_agents.competitor.agent import competitor_agent
+from app.sub_agents.gap.agent import gap_agent
+from app.sub_agents.location.agent import location_agent
+from app.sub_agents.traffic.agent import traffic_agent
+from app.tools.places import geocode_address, nearby_search
 
 _TEST_LAT = 51.523
 _TEST_LNG = -0.073
 _PRICE_LEVEL_MODERATE = 2
+
+
+def _tool_names(tools):
+    """Tool names for a mix of plain functions and BaseTool instances.
+
+    ADK stores a bare function passed to `tools=` as-is until it's wrapped
+    at run time, so it only has `__name__`; AgentTool/BaseTool instances
+    expose `.name` instead.
+    """
+    return [getattr(t, "name", getattr(t, "__name__", None)) for t in tools]
 
 
 class TestAgentStructure:
@@ -39,7 +49,7 @@ class TestAgentStructure:
         assert isinstance(root_agent, LlmAgent)
 
     def test_root_agent_has_required_tools(self):
-        tool_names = [t.name for t in root_agent.tools]
+        tool_names = _tool_names(root_agent.tools)
         assert "geocode_address" in tool_names
         assert "competitor_agent" in tool_names
         assert "location_agent" in tool_names
@@ -56,23 +66,23 @@ class TestAgentStructure:
             assert isinstance(agent, LlmAgent)
 
     def test_competitor_agent_tools(self):
-        tool_names = [t.name for t in competitor_agent.tools]
+        tool_names = _tool_names(competitor_agent.tools)
         assert "nearby_search" in tool_names
         assert "place_details" in tool_names
         assert "text_search" in tool_names
 
     def test_location_agent_tools(self):
-        tool_names = [t.name for t in location_agent.tools]
+        tool_names = _tool_names(location_agent.tools)
         assert "nearby_search" in tool_names
         assert "geocode_address" in tool_names
 
     def test_traffic_agent_tools(self):
-        tool_names = [t.name for t in traffic_agent.tools]
+        tool_names = _tool_names(traffic_agent.tools)
         assert "nearby_search" in tool_names
         assert "place_details" in tool_names
 
     def test_gap_agent_tools(self):
-        tool_names = [t.name for t in gap_agent.tools]
+        tool_names = _tool_names(gap_agent.tools)
         assert "nearby_search" in tool_names
         assert "text_search" in tool_names
         assert "place_details" in tool_names
@@ -97,7 +107,11 @@ class TestPlacesTools:
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client_cls.return_value.__aenter__.return_value = mock_client
-            mock_response_obj = AsyncMock()
+            # The response object itself is synchronous (httpx.Response.json()
+            # and .raise_for_status() are not coroutines) — only the client's
+            # get()/post() calls are async, so mock the response with
+            # MagicMock rather than AsyncMock.
+            mock_response_obj = MagicMock()
             mock_response_obj.json.return_value = mock_response
             mock_client.get.return_value = mock_response_obj
 
@@ -114,7 +128,7 @@ class TestPlacesTools:
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client_cls.return_value.__aenter__.return_value = mock_client
-            mock_response_obj = AsyncMock()
+            mock_response_obj = MagicMock()
             mock_response_obj.json.return_value = mock_response
             mock_client.get.return_value = mock_response_obj
 
@@ -143,7 +157,7 @@ class TestPlacesTools:
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client_cls.return_value.__aenter__.return_value = mock_client
-            mock_response_obj = AsyncMock()
+            mock_response_obj = MagicMock()
             mock_response_obj.json.return_value = mock_response
             mock_client.post.return_value = mock_response_obj
 
@@ -162,7 +176,7 @@ class TestPlacesTools:
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client_cls.return_value.__aenter__.return_value = mock_client
-            mock_response_obj = AsyncMock()
+            mock_response_obj = MagicMock()
             mock_response_obj.json.return_value = mock_response
             mock_client.post.return_value = mock_response_obj
 

@@ -14,6 +14,8 @@
 
 """Competitor analysis sub-agent."""
 
+import os
+
 from google.adk.agents import LlmAgent
 
 from ...tools.places import nearby_search, place_details, text_search
@@ -21,7 +23,7 @@ from .prompt import COMPETITOR_PROMPT
 
 competitor_agent = LlmAgent(
     name="competitor_agent",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME"),
     description=(
         "Finds and scores all nearby competitors for a given business type "
         "at a target location. Input: task description with lat, lng, "

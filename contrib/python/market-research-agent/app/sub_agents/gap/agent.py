@@ -14,6 +14,8 @@
 
 """Market gap identification sub-agent."""
 
+import os
+
 from google.adk.agents import LlmAgent
 
 from ...tools.places import nearby_search, place_details, text_search
@@ -21,7 +23,7 @@ from .prompt import GAP_PROMPT
 
 gap_agent = LlmAgent(
     name="gap_agent",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME"),
     description=(
         "Identifies underserved market opportunities near a target location "
         "by searching for adjacent or missing business types. "

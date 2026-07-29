@@ -14,6 +14,8 @@
 
 """Market Research Agent — orchestrator and root agent definition."""
 
+import os
+
 from google.adk.agents import LlmAgent
 from google.adk.tools.agent_tool import AgentTool
 
@@ -26,7 +28,7 @@ from .tools.places import geocode_address
 
 root_agent = LlmAgent(
     name="market_research_orchestrator",
-    model="gemini-2.0-flash",
+    model=os.getenv("MODEL_NAME"),
     description=(
         "Performs comprehensive market research for any location and business "
         "type. Geocodes the address, runs competitor analysis, location "

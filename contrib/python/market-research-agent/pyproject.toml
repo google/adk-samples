@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A multi-agent system that performs comprehensive market research for any location and business type using Google Places API."
 license = {text = "Apache License 2.0"}
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 dependencies = [
     "google-adk>=1.0.0",
@@ -22,15 +22,13 @@ dev = [
     "pytest-asyncio>=0.26.0",
 ]
 
-[tool.ruff]
-extend = "../../../pyproject.toml"
-
-[tool.ruff.lint.isort]
-known-first-party = ["market_research_agent"]
-
 [tool.hatch.build.targets.wheel]
-packages = ["market_research_agent"]
+packages = ["app"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true
