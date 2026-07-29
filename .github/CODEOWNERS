@@ -27,3 +27,6 @@
 /contrib/java/**       @happyhuman
 /contrib/typescript/** @happyhuman
 /contrib/kotlin/**     @happyhuman
+
+# --- skills/ ---
+/skills/**             @happyhuman

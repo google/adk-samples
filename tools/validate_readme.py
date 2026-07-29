@@ -165,10 +165,7 @@ def main(scope: str | None = None) -> int:
 
     if missing:
         passed = False
-        print(
-            "\n[FAIL] Missing README.md in the following recipe"
-            " directories:"
-        )
+        print("\n[FAIL] Missing README.md in the following recipe directories:")
         for d in missing:
             print(f"  - {d}/")
             print(

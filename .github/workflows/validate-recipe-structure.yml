@@ -33,6 +33,7 @@ on:
       - 'tools/validate_readme.py'
       - 'tools/affected_recipes.py'
       - 'tools/check_frozen_paths.py'
+      - 'tools/validate_placement.py'
       - 'pyproject.toml'
   push:
     branches:
@@ -233,6 +234,39 @@ jobs:
           # recipe out of a retired folder is never blocked by this check.
           git diff --diff-filter=AM --name-only "origin/$BASE_REF"...HEAD \
             | uv run python tools/check_frozen_paths.py
+
+  check-recipe-placement:
+    name: Check recipe placement
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Deliberately unconditional — unlike check-frozen-paths there is no bot
+    # or label exemption. A whole-tree scan, so it also catches a
+    # misplacement that arrives by rename or bad merge rather than by an
+    # obvious "add a recipe" diff.
+    #
+    # It cannot ride on the validate-structure job above: that runs the
+    # validators per AFFECTED recipe, and affected_recipes.py maps a
+    # misplaced skill (skills/<solution> with no vertical) to None, so it
+    # would never appear in changed_recipes.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: false
+
+      - name: Install validation dependencies
+        # validate_placement imports validate_manifest, which needs PyYAML
+        # from the repo-root pyproject.toml.
+        run: uv sync
+
+      - name: Check every recipe sits at its required path
+        run: uv run python tools/validate_placement.py
 
   check-dependabot-config:
     name: Check dependabot.yml is up to date

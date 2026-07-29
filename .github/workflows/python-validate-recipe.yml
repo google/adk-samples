@@ -119,10 +119,11 @@ jobs:
           # the diff step uses — with --language python. This keeps one
           # source of truth for the layout matrix (path → recipe →
           # language) instead of re-implementing it in shell. `skills/`
-          # is included so that a Python recipe under skills/python/…
-          # (or a flat skills/<recipe>/ with language: python in its
-          # manifest) is picked up by the full scan; missing roots are
-          # tolerated silently via 2>/dev/null.
+          # is included so that a Python skill at
+          # skills/<vertical>/<solution>/ is picked up by the full scan.
+          # Its language comes from manifest.language rather than the path:
+          # the middle component under skills/ is a vertical (retail/, hr/),
+          # not a language. Missing roots are tolerated via 2>/dev/null.
           # NOT `--no-project`: see the notes on the sibling invocation
           # above.
           ALL=$(find core contrib skills -type f 2>/dev/null | uv run python tools/affected_recipes.py --language python)

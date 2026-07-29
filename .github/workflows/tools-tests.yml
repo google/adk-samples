@@ -8,6 +8,23 @@ on:
     paths:
       - "tools/**"
       - ".agents/**"
+      - ".github/scripts/**"
+      # The three .github entries below are not cosmetic. Several tests load
+      # the REAL repo config rather than a fixture, so editing one of these
+      # files can break the suite even though nothing under tools/ changed:
+      #   .github/policy.yml
+      #     tools/tests/test_check_frozen_paths.py::
+      #       test_real_policy_file_declares_the_retired_roots calls
+      #       load_frozen_paths() with no argument, which falls back to
+      #       POLICY_PATH (tools/check_frozen_paths.py:38).
+      #   .github/schemas/manifest-schema.json
+      #     test_validate_manifest.py and test_validate_structure.py call
+      #     load_schema(), which hardcodes SCHEMA_PATH and takes no override
+      #     parameter (tools/validate_manifest.py:40,113).
+      # Without these entries such a PR merges green and the failure only
+      # surfaces later, on an unrelated PR that happens to touch tools/.
+      - ".github/policy.yml"
+      - ".github/schemas/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/tools-tests.yml"
@@ -15,8 +32,14 @@ on:
     branches:
       - main
     paths:
+      # Keep in sync with the pull_request list above (GitHub Actions does
+      # not support YAML anchors, so the duplication is unavoidable). See
+      # that block for why the .github/ entries are required.
       - "tools/**"
       - ".agents/**"
+      - ".github/scripts/**"
+      - ".github/policy.yml"
+      - ".github/schemas/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/tools-tests.yml"
@@ -24,6 +47,12 @@ on:
 
 permissions:
   contents: read
+
+# Cancel superseded runs on the same PR (or ref for push/dispatch) so a rapid
+# series of pushes doesn't queue up redundant runs of the same suite.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pytest:
@@ -45,7 +74,11 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies (incl. dev group)
-        run: uv sync --dev
+        # --locked keeps this job hermetic: install exactly what uv.lock
+        # pins, never silently re-resolve. Lockfile-drift ENFORCEMENT is not
+        # this workflow's job — python-dependency-policy.yml (Check 5, `uv
+        # lock --check`) owns that and emits a far more actionable message.
+        run: uv sync --locked --dev
 
       - name: Run pytest
         run: uv run pytest

@@ -37,6 +37,7 @@ Exit codes:
 import sys
 
 import validate_manifest
+import validate_placement
 import validate_readme
 import validate_structure
 
@@ -44,6 +45,12 @@ SUBCOMMANDS = {
     "manifest": ("Manifest validation", validate_manifest.main),
     "structure": ("Structure validation", validate_structure.main),
     "readme": ("README validation", validate_readme.main),
+    # Placement answers "is this recipe in the right folder", which the
+    # per-recipe checkers above cannot: they only ever see recipes the
+    # collector already found, and a misplaced one is missed by that
+    # collector. CI runs it as its own job; registering it here is what
+    # lets a contributor catch the problem locally before pushing.
+    "placement": ("Placement validation", validate_placement.main),
 }
 
 VALID_SUBCOMMANDS = [*SUBCOMMANDS, "all"]

@@ -1,4 +1,4 @@
-<!-- word count: 345 (target 500, cap 800) -->
+<!-- word count: 397 (target 500, cap 800) -->
 
 # Recipe Handbook
 
@@ -35,7 +35,8 @@ it covers everything on one page. Come back here for deeper context:
   recipes, regardless of language
 - [Python language rules](./languages/python.md) — starts with the
   fast path; specific requirements and end-to-end scenarios
-- [Skills catalog](./skills-catalog.md) — AI skills reference
+- [Repo skills catalog](./skills-catalog.md) — the assistant
+  helpers that build this repo
 
 **Updating an existing recipe?** Run `prepare-python-recipe`
 against your recipe path — it's safe to re-run and applies
@@ -44,8 +45,8 @@ any new requirements automatically. Then check the
 
 **Reference:**
 
-- [Skills catalog](./skills-catalog.md) — the AI skills that
-  do the work for you
+- [Repo skills catalog](./skills-catalog.md) — the assistant
+  helpers that do the work for you
 - [Troubleshooting](./troubleshooting.md) — errors mapped
   directly to fixes
 - Other languages *(coming soon)*: Java · Go · TypeScript ·
@@ -56,10 +57,16 @@ any new requirements automatically. Then check the
 - **Recipe** — a runnable agent example (or importable agent
   module) under `contrib/`, consumed by ADK developers and coding
   agents alike.
-- **Skill** — a pre-loaded instruction set that your AI coding
+- **Repo skill** — a pre-loaded instruction set that your AI coding
   assistant follows when you ask it to perform a task (e.g.
-  `prepare-python-recipe`). Skill files live in `.agents/skills/`
-  and load automatically when you open this repo.
+  `prepare-python-recipe`). Files live in `.agents/skills/` and load
+  automatically when you open this repo. Repo skills *build* the
+  repo; they are never shipped to users.
+- **Vertical skill** — a recipe under
+  `skills/<vertical>/<solution>/` (e.g. `skills/retail/store-ops/`),
+  where the vertical names the business domain that owns it.
+  Shipped to users like any other recipe. Unrelated to repo skills,
+  despite the shared word.
 - **Manifest** — `manifest.yaml`. Declares recipe metadata:
   type, language, ownership, description.
 - **Runnability test** — a smoke test that imports the agent module

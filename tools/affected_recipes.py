@@ -8,12 +8,15 @@ Called by CI workflows to translate a `git diff --name-only` result into
 the set of recipes that need re-validation.
 
 Layout rules (kept in sync with tools/validate_manifest.py):
-    <root>/<recipe>/…              flat
-    <root>/<language>/<recipe>/…   language-namespaced
+    <root>/<recipe>/…              flat            (core / contrib)
+    <root>/<language>/<recipe>/…   language-nsed   (core / contrib)
+    skills/<vertical>/<solution>/… vertical-nsed   (skills)
 
 where:
     <root>      ∈ RECIPE_ROOTS               (core / contrib / skills)
     <language>  ∈ LANGUAGE_NAMESPACE_DIRS    (python / java / go / …)
+    <vertical>  is free-form (retail / hr / finance / …) and mandatory —
+                see NAMESPACE_REQUIRED_ROOTS in validate_manifest.py
 
 A path whose <recipe> component doesn't correspond to a real directory
 on disk is dropped by default — this filters out top-level files like
@@ -75,6 +78,18 @@ def recipe_dir_for(path: str) -> str | None:
     # returning a bogus candidate like "core/" that the filesystem
     # existence filter would then accept because `core/` is a real dir.
     if not part1:
+        return None
+
+    # Roots where the namespace is mandatory (skills/<vertical>/<solution>).
+    # The vertical is free-form, so it can only be recognised by position:
+    # a path identifies a solution only when there is something BELOW it,
+    # i.e. at least root/vertical/solution/<file>. Anything shallower —
+    # `skills/foo/SKILL.md`, a solution placed directly under the root —
+    # deliberately maps to None rather than inventing a recipe at the wrong
+    # depth. tools/validate_placement.py reports those as misplaced.
+    if root in vm.NAMESPACE_REQUIRED_ROOTS:
+        if len(parts) >= 4 and part2:
+            return f"{root}/{part1}/{part2}"
         return None
 
     # Language-namespaced: root/language/recipe/…

@@ -48,6 +48,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # Single source of truth for the recipe roots this workflow scans.
+    # Mirrors tools/validate_manifest.py:RECIPE_ROOTS and the lists in
+    # python-tests.yml:85 / python-validate-recipe.yml:129. Both matcher
+    # forms used below (the `grep -E` alternation and the `find` argument
+    # list) are derived from this one value.
+    #
+    # Deriving rather than duplicating is deliberate: this list was
+    # previously hardcoded at six separate sites, and when skills/ was
+    # added to `on.paths` above, those six were missed. The result was a
+    # workflow that triggered on skills/ lockfiles and then validated
+    # nothing while still reporting success.
+    env:
+      RECIPE_ROOTS: "core contrib skills"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
@@ -70,11 +84,12 @@ jobs:
       # On pull_request: only lockfiles that were added/modified in this PR, plus
       #   the sibling uv.lock for any pyproject.toml that was changed. The root
       #   uv.lock is included if the root uv.lock or pyproject.toml was touched.
-      # On push to main or workflow_dispatch: all uv.lock files under core/ and
-      #   contrib/, plus the root uv.lock (full scan as a safety net).
+      # On push to main or workflow_dispatch: all uv.lock files under the
+      #   recipe roots, plus the root uv.lock (full scan as a safety net).
       #
-      # Samples live exclusively under core/ and contrib/. The root uv.lock is
-      # treated separately as repo-level infrastructure.
+      # Recipes live exclusively under the recipe roots (see RECIPE_ROOTS on
+      # the job above). The root uv.lock is treated separately as repo-level
+      # infrastructure.
       #
       # The resolved list is written to $LOCKFILES_FILE (one path per line) so
       # that subsequent steps can iterate with `while IFS= read -r` and avoid
@@ -93,23 +108,38 @@ jobs:
 
           LOCKFILES_FILE="${RUNNER_TEMP}/lockfiles.txt"
 
+          # Derive both matcher forms from the single RECIPE_ROOTS value.
+          ROOTS_RE="${RECIPE_ROOTS// /|}"      # core|contrib|skills
+          read -ra ROOTS <<< "$RECIPE_ROOTS"
+
+          # Only hand `find` roots that actually exist. find errors on a
+          # missing starting-point, and that error would otherwise have to be
+          # suppressed with 2>/dev/null — which silently turns "this root is
+          # missing" into "this root has no lockfiles", a false-clean result.
+          # Filtering up front means the suppression is unnecessary and a
+          # genuine find failure stays visible.
+          EXISTING_ROOTS=()
+          for root in "${ROOTS[@]}"; do
+            [ -d "$root" ] && EXISTING_ROOTS+=("$root")
+          done
+
           if [ "$EVENT_NAME" = "pull_request" ]; then
             git fetch origin "$BASE_REF"
             # --diff-filter=d: exclude deleted files; downstream [ -f ] guards
             # are kept as defence-in-depth but the filter makes intent explicit.
             CHANGED=$(git diff --name-only --diff-filter=d "origin/$BASE_REF"...HEAD)
 
-            # Collect directly changed uv.lock files under core/ or contrib/
-            LOCKS=$(echo "$CHANGED" | grep -E "^(core|contrib)/.*uv\.lock$" || true)
+            # Collect directly changed uv.lock files under any recipe root
+            LOCKS=$(echo "$CHANGED" | grep -E "^(${ROOTS_RE})/.*uv\.lock$" || true)
 
-            # For any changed pyproject.toml under core/ or contrib/, add its sibling uv.lock
+            # For any changed pyproject.toml under a recipe root, add its sibling uv.lock
             while IFS= read -r pyproject; do
               [ -z "$pyproject" ] && continue
               sibling="$(dirname "$pyproject")/uv.lock"
               if [ -f "$sibling" ]; then
                 LOCKS=$(printf "%s\n%s" "$LOCKS" "$sibling")
               fi
-            done <<< "$(echo "$CHANGED" | grep -E "^(core|contrib)/.*pyproject\.toml$" || true)"
+            done <<< "$(echo "$CHANGED" | grep -E "^(${ROOTS_RE})/.*pyproject\.toml$" || true)"
 
             # Include the root uv.lock if the root uv.lock or pyproject.toml was touched
             ROOT_CHANGED=$(echo "$CHANGED" | grep -E "^(uv\.lock|pyproject\.toml)$" || true)
@@ -125,10 +155,11 @@ jobs:
             INFRA_CHANGED=$(echo "$CHANGED" | grep -E "^(\.github/workflows/python-dependency-policy\.yml|\.github/scripts/check_lockfile_hashes\.py)$" || true)
             if [ -n "$INFRA_CHANGED" ]; then
               echo "Workflow or script changed — falling back to full scan."
-              # Use { } group rather than `find uv.lock core contrib …` to avoid
-              # passing a potentially-absent root file as a find starting-point,
-              # which would error and be silently swallowed by 2>/dev/null.
-              LOCKS=$({ [ -f uv.lock ] && echo uv.lock; find core contrib -name "uv.lock" 2>/dev/null; } || true)
+              # Use { } group rather than `find uv.lock <roots> …` to avoid
+              # passing a potentially-absent root FILE as a find starting-point.
+              # EXISTING_ROOTS (built above) covers the same hazard for the
+              # root DIRECTORIES, so no 2>/dev/null suppression is needed here.
+              LOCKS=$({ [ -f uv.lock ] && echo uv.lock; [ ${#EXISTING_ROOTS[@]} -gt 0 ] && find "${EXISTING_ROOTS[@]}" -name "uv.lock"; } || true)
             fi
 
             # Deduplicate and filter to only existing files
@@ -137,7 +168,7 @@ jobs:
             done > "$LOCKFILES_FILE" || true
           else
             # push to main or workflow_dispatch — scan everything
-            { [ -f uv.lock ] && echo uv.lock; find core contrib -name "uv.lock" 2>/dev/null; } > "$LOCKFILES_FILE" || true
+            { [ -f uv.lock ] && echo uv.lock; [ ${#EXISTING_ROOTS[@]} -gt 0 ] && find "${EXISTING_ROOTS[@]}" -name "uv.lock"; } > "$LOCKFILES_FILE" || true
           fi
 
           if [ ! -s "$LOCKFILES_FILE" ]; then
@@ -356,10 +387,11 @@ jobs:
           echo "[PASS] All lockfiles are up-to-date."
 
       # ---------------------------------------------------------------------------
-      # Check 6: Every pyproject.toml (root, core/, contrib/) must have a sibling
-      # uv.lock. Only checked for pyproject.toml files touched in this PR (or all
-      # of them on push/dispatch). Skips config-only pyproject.toml files that have
-      # no [project] table and no [tool.uv] section.
+      # Check 6: Every pyproject.toml (the root one, plus any under a recipe
+      # root — see RECIPE_ROOTS on the job) must have a sibling uv.lock. Only
+      # checked for pyproject.toml files touched in this PR (or all of them on
+      # push/dispatch). Skips config-only pyproject.toml files that have no
+      # [project] table and no [tool.uv] section.
       # ---------------------------------------------------------------------------
       - name: Check every pyproject.toml has a lockfile
         env:
@@ -368,17 +400,28 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Same derivation as the Resolve step above: shell variables do not
+          # carry across steps, but the RECIPE_ROOTS value they derive from is
+          # job-level, so the root list is still defined in exactly one place.
+          ROOTS_RE="${RECIPE_ROOTS// /|}"
+          read -ra ROOTS <<< "$RECIPE_ROOTS"
+
+          EXISTING_ROOTS=()
+          for root in "${ROOTS[@]}"; do
+            [ -d "$root" ] && EXISTING_ROOTS+=("$root")
+          done
+
           # On pull_request the base ref was already fetched in the Resolve step;
           # no second git fetch needed.
           if [ "$EVENT_NAME" = "pull_request" ]; then
             CHANGED=$(git diff --name-only --diff-filter=d "origin/$BASE_REF"...HEAD)
-            # Include root pyproject.toml and any under core/ or contrib/
-            PYPROJECTS=$(echo "$CHANGED" | grep -E "^(pyproject\.toml|(core|contrib)/.*pyproject\.toml)$" || true)
+            # Include the root pyproject.toml and any under a recipe root
+            PYPROJECTS=$(echo "$CHANGED" | grep -E "^(pyproject\.toml|(${ROOTS_RE})/.*pyproject\.toml)$" || true)
           else
             # { } group avoids passing a potentially-absent root pyproject.toml as
-            # a find starting-point (find would error; 2>/dev/null would silently
-            # swallow that, producing a false-clean result).
-            PYPROJECTS=$({ [ -f pyproject.toml ] && echo pyproject.toml; find core contrib -name "pyproject.toml" 2>/dev/null; } || true)
+            # a find starting-point (find would error). EXISTING_ROOTS covers the
+            # same hazard for the root directories, so no 2>/dev/null is needed.
+            PYPROJECTS=$({ [ -f pyproject.toml ] && echo pyproject.toml; [ ${#EXISTING_ROOTS[@]} -gt 0 ] && find "${EXISTING_ROOTS[@]}" -name "pyproject.toml"; } || true)
           fi
 
           if [ -z "$PYPROJECTS" ]; then

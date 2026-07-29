@@ -1015,7 +1015,8 @@ def run(
                 ERROR,
                 f"{recipe_dir} looks like a git repository root (it contains "
                 f"a .git entry), not a recipe. Point --recipe-dir at a recipe "
-                f"root under core/python/<name>/, contrib/<name>/, or skills/python/<name>/.",
+                f"root under core/python/<name>/, contrib/python/<name>/, or "
+                f"skills/<vertical>/<solution>/.",
             )
         )
         return report

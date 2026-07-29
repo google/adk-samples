@@ -1,11 +1,16 @@
-<!-- word count: 685 (target 800, cap 1200) -->
+<!-- word count: 714 (target 800, cap 1200) -->
 
-# AI Skills Catalog
+# Repo Skills Catalog
 
-Skills your AI coding assistant invokes to help you prepare a recipe. Source lives at
+**Repo skills** your AI coding assistant invokes to help you prepare a
+recipe. Source lives at
 [`.agents/skills/`](../../.agents/skills/); each has a `SKILL.md`
 with a full description. This catalog summarises them and maps
 them to the [checklist](../recipe-checklist.md).
+
+> Not to be confused with **vertical skills** — recipes shipped to
+> users under `skills/<vertical>/<solution>/`. Repo skills build this
+> repo; vertical skills are built with it.
 
 > **Fastest path:** for a PR-ready recipe in one command, use
 > [`prepare-python-recipe`](#prepare-python-recipe). It runs

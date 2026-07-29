@@ -17,6 +17,14 @@ Checks performed, in order, for each recipe:
      policy.required_files.by_language[<manifest.language>].
      manifest.yaml itself is NOT listed in policy.required_files; check 1
      is authoritative for it, and duplicating the rule would double-report.
+  6. Required directories present — the same three-way union over
+     policy.required_dirs. Vertical skills use this for scripts/,
+     assets/, references/ and tests/unit/. An empty directory passes.
+
+Name matching for checks 5 and 6 is done in Python rather than by asking
+the filesystem, so a case-mismatched file fails identically on macOS and
+on Linux CI. Entries listed in policy.case_insensitive_files may be
+spelled in any case and report an advisory note instead.
 
 Language detection: manifest.language is the ONLY source of truth. Path
 convention (e.g. core/python/foo/) carries no meaning to this checker.
@@ -88,28 +96,60 @@ def load_policy() -> dict:
         return yaml.safe_load(f) or {}
 
 
-def required_files_for(
-    policy: dict, root: str, language: str | None
+def _resolve_required(
+    policy: dict, section: str, root: str, language: str | None
 ) -> list[str]:
     """Union of `always`, `by_root[root]`, and `by_language[language]`
-    from policy.required_files. Missing sections and missing keys degrade
-    silently to an empty list so partial policy configs remain usable
-    (e.g. `skills:` not yet defined)."""
-    rf = policy.get("required_files") or {}
-    files: list[str] = []
-    files.extend(rf.get("always") or [])
-    files.extend((rf.get("by_root") or {}).get(root) or [])
+    from the named policy section. Missing sections and missing keys
+    degrade silently to an empty list so partial policy configs remain
+    usable (e.g. a root with no entries yet)."""
+    config = policy.get(section) or {}
+    entries: list[str] = []
+    entries.extend(config.get("always") or [])
+    entries.extend((config.get("by_root") or {}).get(root) or [])
     if language:
-        files.extend((rf.get("by_language") or {}).get(language) or [])
-    # Preserve order but drop duplicates — a file could be listed under
+        entries.extend((config.get("by_language") or {}).get(language) or [])
+    # Preserve order but drop duplicates — an entry could be listed under
     # multiple sources without meaning it's required twice.
     seen: set[str] = set()
     deduped: list[str] = []
-    for f in files:
-        if f not in seen:
-            seen.add(f)
-            deduped.append(f)
+    for entry in entries:
+        if entry not in seen:
+            seen.add(entry)
+            deduped.append(entry)
     return deduped
+
+
+def required_files_for(
+    policy: dict, root: str, language: str | None
+) -> list[str]:
+    """Files every recipe under this root/language must ship."""
+    return _resolve_required(policy, "required_files", root, language)
+
+
+def required_dirs_for(
+    policy: dict, root: str, language: str | None
+) -> list[str]:
+    """Directories every recipe under this root/language must ship.
+
+    Separate from required_files because the two need different existence
+    tests; a `scripts` entry in required_files could never be satisfied by
+    a directory.
+    """
+    return _resolve_required(policy, "required_dirs", root, language)
+
+
+def case_insensitive_entries(policy: dict) -> set[str]:
+    """Required entries whose name may be spelled in any case.
+
+    Opt-in per entry, deliberately. Most required files are read by other
+    tools that demand an exact name — uv reads `pyproject.toml` and
+    `uv.lock`, pytest collects `tests/test_runnability.py`, and our own
+    tooling globs `manifest.yaml`. Accepting `PyProject.toml` would pass
+    this check and then break uv, which is a worse failure than the one
+    the leniency prevents. Only files nothing else parses belong here.
+    """
+    return {str(e) for e in (policy.get("case_insensitive_files") or [])}
 
 
 # ===========================================================================
@@ -296,6 +336,49 @@ def check_size_and_count(
     return errors
 
 
+def _find_entry(
+    recipe_dir: Path, rel: str, *, case_insensitive: bool
+) -> tuple[Path | None, bool]:
+    """Resolve a recipe-relative path by comparing names in Python.
+
+    Returns (path, exact). `path` is None when nothing matched; `exact`
+    reports whether the match used the requested spelling.
+
+    Deliberately does NOT use Path.is_file()/is_dir() to test for
+    existence: those delegate to the filesystem, and macOS is normally
+    case-insensitive, so `PyProject.toml` would satisfy `pyproject.toml`
+    locally and then fail on Linux CI. Comparing names here makes the
+    verdict identical on every platform, and makes leniency an explicit
+    per-entry decision rather than a property of the contributor's laptop.
+    """
+    current = recipe_dir
+    exact = True
+    for segment in Path(rel).parts:
+        if not current.is_dir():
+            return None, False
+        children = sorted(current.iterdir())
+        match = next((c for c in children if c.name == segment), None)
+        if match is None and case_insensitive:
+            lowered = segment.lower()
+            match = next(
+                (c for c in children if c.name.lower() == lowered), None
+            )
+            if match is not None:
+                exact = False
+        if match is None:
+            return None, False
+        current = match
+    return current, exact
+
+
+def _note_inexact(rel: str, found: Path) -> None:
+    print(
+        f"[NOTE] Required entry '{rel}' matched as '{found.name}'. "
+        f"Accepted, but '{rel}' is the canonical spelling — renaming keeps "
+        "the tree consistent for tools that look for the exact name."
+    )
+
+
 def check_required_files(
     recipe_dir: Path, root: str, language: str | None, policy: dict
 ) -> list[str]:
@@ -303,11 +386,46 @@ def check_required_files(
     Paths are recipe-relative and may include subdirectories
     (e.g. tests/test_runnability.py)."""
     required = required_files_for(policy, root, language)
+    lenient = case_insensitive_entries(policy)
     errors: list[str] = []
     for rel in required:
-        target = recipe_dir / rel
-        if not target.is_file():
+        found, exact = _find_entry(
+            recipe_dir, rel, case_insensitive=rel in lenient
+        )
+        if found is None:
             errors.append(f"Required file '{rel}' is missing.")
+        elif not found.is_file():
+            errors.append(f"Required file '{rel}' exists but is not a file.")
+        elif not exact:
+            _note_inexact(rel, found)
+    return errors
+
+
+def check_required_dirs(
+    recipe_dir: Path, root: str, language: str | None, policy: dict
+) -> list[str]:
+    """Every path in the union list must exist as a directory.
+
+    An empty directory passes: some required folders (assets/,
+    references/) legitimately have nothing in them for a given recipe,
+    and git cannot commit an empty directory anyway, so in practice they
+    carry a .gitkeep.
+    """
+    required = required_dirs_for(policy, root, language)
+    lenient = case_insensitive_entries(policy)
+    errors: list[str] = []
+    for rel in required:
+        found, exact = _find_entry(
+            recipe_dir, rel, case_insensitive=rel in lenient
+        )
+        if found is None:
+            errors.append(f"Required directory '{rel}/' is missing.")
+        elif not found.is_dir():
+            # Reporting this as "missing" would send the author hunting
+            # for something that is right there under the wrong kind.
+            errors.append(f"Required directory '{rel}/' exists but is a file.")
+        elif not exact:
+            _note_inexact(rel, found)
     return errors
 
 
@@ -362,6 +480,12 @@ def validate_recipe(recipe_dir: Path, policy: dict, schema: dict) -> list[str]:
     language = detect_language(manifest_path) if manifest_present else None
     for err in check_required_files(recipe_dir, root, language, policy):
         errors.append(f"[required-files] {err}")
+
+    # Check 6: required directories. Same union, different existence test —
+    # a vertical skill must ship scripts/, assets/, references/ and
+    # tests/unit/, none of which required_files could express.
+    for err in check_required_dirs(recipe_dir, root, language, policy):
+        errors.append(f"[required-dirs] {err}")
 
     return errors
 

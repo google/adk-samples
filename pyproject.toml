@@ -94,9 +94,14 @@ indent-style = "space"
 addopts = "--import-mode=importlib"
 # Only the repo tooling and skill scripts are tested here. Recipe tests under
 # core/ and contrib/ have their own per-recipe suites (see python-tests.yml).
+# .github/scripts has no tests yet; it is listed so that any added later are
+# collected without a config change. Those scripts gate real PRs (e.g.
+# check_env_vars.py and check_recipe_pyproject.py run in
+# python-validate-recipe.yml) and are currently uncovered.
 testpaths = [
   "tools/tests",
   ".agents/skills",
+  ".github/scripts",
 ]
 # Never descend into skill template payloads or virtualenvs. The scaffold
 # skill ships template test files under resources/templates/tests/ that contain
