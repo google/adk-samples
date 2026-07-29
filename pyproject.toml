@@ -16,8 +16,21 @@ validate = "validate:main"
 [dependency-groups]
 # Test-only dependencies for the repo tooling (tools/) and skill scripts
 # (.agents/skills/*/scripts/). Install with `uv sync --dev`.
+#
+# tomlkit, ruamel.yaml and packaging are imported directly by
+# .agents/skills/align-recipe-pyproject/scripts/align_pyproject.py, which
+# pytest imports via that skill's tests. Without them, collection of the
+# whole suite fails. They live here rather than in [project.dependencies]
+# because nothing under tools/ needs them at runtime.
+#
+# packaging is also imported by .github/scripts/check_recipe_pyproject.py,
+# but that gate injects its own deps via `uv run --with` and does not read
+# this group -- so it is declared here for the test run, not for that gate.
 dev = [
   "pytest>=8",
+  "tomlkit>=0.13",
+  "ruamel.yaml>=0.18",
+  "packaging>=24",
 ]
 
 [build-system]
