@@ -3109,3 +3109,128 @@ def test_assign_model_var_names_unchanged_without_hints():
         "MODEL_NAME_GENERATED_1",
         "MODEL_NAME_GENERATED_2",
     }
+
+
+# ---------------------------------------------------------------------------
+# Structural exclusions: position decides whether a model literal is a
+# configurable constant.
+#
+# Regression: the extractor rewrote every gemini-* string it found, including
+# the keys AND values of a model lookup table:
+#
+#     IMAGE_MODELS = {"flash": "gemini-2.5-flash-image", ...}
+#
+# Turning a dict key into os.getenv(...) means IMAGE_MODELS.get("flash")
+# never matches again — a silent, total break of the lookup.
+# ---------------------------------------------------------------------------
+
+
+LOOKUP_TABLE_SRC = """IMAGE_MODELS = {
+    "gemini-2.5-flash-image": "gemini-2.5-flash-image",
+    "flash": "gemini-2.5-flash-image",
+    "pro": "gemini-2.5-pro-image",
+}
+
+
+def resolve(label):
+    if "gemini-3.1" in label:
+        return IMAGE_MODELS["gemini-2.5-pro-image"]
+    return IMAGE_MODELS.get(label, IMAGE_MODELS["gemini-2.5-flash-image"])
+"""
+
+
+def test_dict_literal_entries_are_not_detected(tmp_path):
+    py = _write(tmp_path / "models.py", LOOKUP_TABLE_SRC)
+    assert m.extract_hardcoded_models([py]) == {}
+
+
+def test_dict_literal_is_left_byte_identical(tmp_path):
+    py = _write(tmp_path / "models.py", LOOKUP_TABLE_SRC)
+    hits = m.extract_hardcoded_models([py])
+    name_map = m.assign_model_var_names(
+        {"gemini-2.5-flash-image", "gemini-2.5-pro-image", "gemini-3.1"}
+    )
+
+    m.replace_hardcoded_models([py], hits, name_map)
+
+    assert py.read_text(encoding="utf-8") == LOOKUP_TABLE_SRC
+
+
+def test_list_set_and_tuple_entries_are_excluded(tmp_path):
+    py = _write(
+        tmp_path / "c.py",
+        'ALLOWED = ["gemini-3.5-flash"]\n'
+        'SUPPORTED = {"gemini-3.5-pro"}\n'
+        'PAIR = ("gemini-3.1-flash-image",)\n',
+    )
+    assert m.extract_hardcoded_models([py]) == {}
+
+
+def test_subscript_index_is_excluded(tmp_path):
+    py = _write(tmp_path / "c.py", 'X = TABLE["gemini-3.5-flash"]\n')
+    assert m.extract_hardcoded_models([py]) == {}
+
+
+def test_comparison_operand_is_excluded(tmp_path):
+    py = _write(
+        tmp_path / "c.py",
+        'if "gemini-3.1" in model_id:\n    pass\n',
+    )
+    assert m.extract_hardcoded_models([py]) == {}
+
+
+def test_scalar_assignment_is_still_detected(tmp_path):
+    # The exclusions must not swallow the case the skill exists for.
+    py = _write(tmp_path / "agent.py", 'MODEL = "gemini-3.5-flash"\n')
+    hits = m.extract_hardcoded_models([py])
+    assert [v for hits_ in hits.values() for _, v in hits_] == [
+        "gemini-3.5-flash"
+    ]
+
+
+def test_call_keyword_argument_is_still_detected(tmp_path):
+    py = _write(tmp_path / "agent.py", 'a = Agent(model="gemini-3.5-flash")\n')
+    hits = m.extract_hardcoded_models([py])
+    assert [v for hits_ in hits.values() for _, v in hits_] == [
+        "gemini-3.5-flash"
+    ]
+
+
+def test_dict_target_does_not_produce_a_var_name_hint(tmp_path):
+    # `IMAGE_MODELS = {...}` names a TABLE, not a model. Deriving the env var
+    # name IMAGE_MODELS from it produced a nonsensical .env.example entry.
+    py = _write(tmp_path / "models.py", LOOKUP_TABLE_SRC)
+    assert m.extract_model_var_hints([py]) == {}
+
+
+def test_skipped_literals_are_reported(tmp_path):
+    py = _write(tmp_path / "models.py", LOOKUP_TABLE_SRC)
+    skipped = m.extract_skipped_model_literals([py])
+
+    values = [v for _, v in skipped[py]]
+    assert "gemini-2.5-flash-image" in values  # dict key + value
+    assert "gemini-2.5-pro-image" in values
+    assert "gemini-3.1" in values  # comparison operand
+
+
+def test_skipped_literals_deduplicate_per_line(tmp_path):
+    # `"x": "x"` is two nodes on one line; report it once.
+    py = _write(
+        tmp_path / "d.py",
+        'T = {\n    "gemini-3.5-flash": "gemini-3.5-flash",\n}\n',
+    )
+    skipped = m.extract_skipped_model_literals([py])
+    assert skipped[py] == [(2, "gemini-3.5-flash")]
+
+
+def test_skipped_literals_ignore_docstring_mentions(tmp_path):
+    py = _write(
+        tmp_path / "d.py",
+        '"""Uses gemini-3.5-flash by default."""\n',
+    )
+    assert m.extract_skipped_model_literals([py]) == {}
+
+
+def test_skipped_report_empty_when_nothing_excluded(tmp_path):
+    py = _write(tmp_path / "agent.py", 'MODEL = "gemini-3.5-flash"\n')
+    assert m.extract_skipped_model_literals([py]) == {}

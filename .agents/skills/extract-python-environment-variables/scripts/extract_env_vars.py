@@ -1259,6 +1259,72 @@ def _getenv_default_node_ids(tree: ast.AST) -> set[int]:
     return ids
 
 
+def _structural_exclusion_node_ids(tree: ast.AST) -> set[int]:
+    """
+    Return the id() of every ast.Constant that must NOT be rewritten because
+    of WHERE it sits, regardless of what it looks like.
+
+    A model string is only a candidate for promotion to an env var when it is
+    a *configurable constant*. Three positions mean it is something else, and
+    rewriting them corrupts working code:
+
+    1. **An element of a collection literal** (dict key or value, list, set,
+       or tuple entry). These are lookup tables and enumerations of supported
+       models, not a single configurable choice::
+
+           IMAGE_MODELS = {
+               "flash": "gemini-2.5-flash-image",
+               "pro":   "gemini-2.5-pro-image",
+           }
+
+       Rewriting the values makes the table resolve at import time from a
+       single env var; rewriting the KEYS is worse still, because
+       ``IMAGE_MODELS.get("flash")`` then never matches anything. A dict key
+       must stay a static literal.
+
+    2. **A subscript index** — ``IMAGE_MODELS["gemini-3.1"]`` is a key INTO
+       such a table. Replacing it looks up a different (probably absent)
+       entry.
+
+    3. **An operand of a comparison** — ``if "gemini-3.1" in model_id`` tests
+       a value rather than configuring one. Replacing it changes the
+       predicate's meaning.
+
+    Skipping a legitimate extraction is cheap (the user can lift the value by
+    hand); silently breaking a lookup table is not. When in doubt this errs
+    towards skipping, and the skipped literals are reported so nothing is
+    hidden — see :func:`extract_skipped_model_literals`.
+    """
+    ids: set[int] = set()
+    for parent in ast.walk(tree):
+        if isinstance(parent, ast.Dict):
+            # `keys` holds None for a `**expansion` entry — guard for it.
+            for node in list(parent.keys) + list(parent.values):
+                if isinstance(node, ast.Constant):
+                    ids.add(id(node))
+        elif isinstance(parent, (ast.List, ast.Set, ast.Tuple)):
+            for node in parent.elts:
+                if isinstance(node, ast.Constant):
+                    ids.add(id(node))
+        elif isinstance(parent, ast.Subscript):
+            if isinstance(parent.slice, ast.Constant):
+                ids.add(id(parent.slice))
+        elif isinstance(parent, ast.Compare):
+            for node in [parent.left, *parent.comparators]:
+                if isinstance(node, ast.Constant):
+                    ids.add(id(node))
+    return ids
+
+
+def _model_exclusion_node_ids(tree: ast.AST) -> set[int]:
+    """Every Constant the model-replacement path must leave alone."""
+    return (
+        _docstring_node_ids(tree)
+        | _getenv_default_node_ids(tree)
+        | _structural_exclusion_node_ids(tree)
+    )
+
+
 def _flat_offset(lines: list[str], lineno: int, col: int) -> int:
     """Convert a 1-based lineno + 0-based col_offset to a flat char offset."""
     return sum(len(ln) for ln in lines[: lineno - 1]) + col
@@ -1797,6 +1863,9 @@ def extract_hardcoded_models(
         :func:`_getenv_default_node_ids`) — those are already serving as
         env-var defaults; replacing them would silently regress the type
         from ``str`` to ``str | None`` and could break at runtime.
+      * String literals whose POSITION means they aren't a configurable
+        constant — collection-literal entries, subscript indices, and
+        comparison operands (see :func:`_structural_exclusion_node_ids`).
 
     Returns:
       {file_path: [(line_number, model_string), ...]}
@@ -1810,9 +1879,7 @@ def extract_hardcoded_models(
         except (SyntaxError, UnicodeDecodeError):
             continue
 
-        excluded_ids = _docstring_node_ids(tree) | _getenv_default_node_ids(
-            tree
-        )
+        excluded_ids = _model_exclusion_node_ids(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant):
@@ -1825,6 +1892,61 @@ def extract_hardcoded_models(
                 hits.setdefault(py_file, []).append((node.lineno, node.value))
 
     return hits
+
+
+def extract_skipped_model_literals(
+    py_files: list[Path],
+) -> dict[Path, list[tuple[int, str]]]:
+    """
+    Find model strings deliberately NOT rewritten because of their position.
+
+    These are the literals :func:`_structural_exclusion_node_ids` protects —
+    lookup-table entries, subscript keys, comparison operands. They are
+    reported rather than silently dropped so the maintainer knows the recipe
+    still hardcodes a model somewhere, and can decide whether that table
+    ought to be configurable.
+
+    Docstring mentions are excluded (prose, not code). Identical
+    (line, string) pairs are de-duplicated: ``{"gemini-x": "gemini-x"}``
+    holds two distinct nodes on one line, and listing it twice only makes
+    the report harder to read.
+
+    Returns:
+      {file_path: [(line_number, model_string), ...]}
+    """
+    skipped: dict[Path, list[tuple[int, str]]] = {}
+
+    for py_file in py_files:
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(py_file))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+
+        structural = _structural_exclusion_node_ids(tree)
+        docstrings = _docstring_node_ids(tree)
+        seen: set[tuple[int, str]] = set()
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant):
+                continue
+            if id(node) not in structural or id(node) in docstrings:
+                continue
+            if not isinstance(node.value, str):
+                continue
+            if not any(node.value.startswith(p) for p in MODEL_PREFIXES):
+                continue
+            key = (node.lineno, node.value)
+            if key in seen:
+                continue
+            seen.add(key)
+            skipped.setdefault(py_file, []).append(key)
+
+    if skipped:
+        for hits in skipped.values():
+            hits.sort()
+
+    return skipped
 
 
 def _assignment_target_name(node: ast.AST) -> str | None:
@@ -1897,9 +2019,7 @@ def extract_model_var_hints(py_files: list[Path]) -> dict[str, str]:
         except (SyntaxError, UnicodeDecodeError):
             continue
 
-        excluded_ids = _docstring_node_ids(tree) | _getenv_default_node_ids(
-            tree
-        )
+        excluded_ids = _model_exclusion_node_ids(tree)
 
         for node in ast.walk(tree):
             target = _assignment_target_name(node)
@@ -2083,7 +2203,7 @@ def _collect_model_replacements(
     type of a call like ``os.getenv("V", "gemini-3.5-flash")`` from
     ``str`` to ``str | None``.
     """
-    excluded_ids = _docstring_node_ids(tree) | _getenv_default_node_ids(tree)
+    excluded_ids = _model_exclusion_node_ids(tree)
     lines = source.splitlines(keepends=True)
     replacements: list[tuple[int, int, str]] = []
     file_substituted: dict[str, str] = {}
@@ -2378,6 +2498,23 @@ def run_step_model_names(
     lookup that would evaluate to ``None``.
     """
     model_hits = extract_hardcoded_models(py_files)
+    skipped = extract_skipped_model_literals(py_files)
+
+    if skipped:
+        total = sum(len(v) for v in skipped.values())
+        print(
+            f"\n[INFO] Left {total} model literal(s) in place — their position "
+            "means they are not a configurable constant (lookup-table entry, "
+            "subscript key, or comparison operand). Rewriting them would "
+            "break the code:"
+        )
+        for py_file, file_hits in skipped.items():
+            for lineno, model_str in file_hits:
+                print(
+                    f"       {py_file.relative_to(recipe_dir)}:{lineno}"
+                    f' — "{model_str}"'
+                )
+
     if not model_hits:
         print("\n[PASS] No hardcoded model names detected.")
         return

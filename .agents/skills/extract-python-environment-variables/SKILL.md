@@ -51,7 +51,7 @@ description: >
 metadata:
   author: Google
   license: Apache-2.0
-  version: 2.2.0
+  version: 2.3.0
 ---
 
 # Extract Python Environment Variables
@@ -149,6 +149,34 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
 
 4. **Replaces hardcoded model names** in source (e.g. `model="gemini-3.5-flash"`
    in `agent.py`) with an `os.getenv(...)` call.
+
+   **Position decides eligibility.** A model string is only promoted when it
+   is a *configurable constant*. Three positions mean it is something else,
+   and are left untouched:
+
+   - **Collection-literal entries** (dict keys and values, list/set/tuple
+     items) — lookup tables and enumerations of supported models:
+
+     ```python
+     IMAGE_MODELS = {
+         "flash": "gemini-2.5-flash-image",
+         "pro":   "gemini-2.5-pro-image",
+     }
+     ```
+
+     Rewriting the values collapses the table onto one env var; rewriting the
+     **keys** is worse, because `IMAGE_MODELS.get("flash")` then never
+     matches anything. A dict key must stay a static literal.
+   - **Subscript indices** — `IMAGE_MODELS["gemini-3.1"]` is a key *into*
+     such a table, so replacing it looks up a different entry.
+   - **Comparison operands** — `if "gemini-3.1" in model_id` tests a value
+     rather than configuring one.
+
+   Skipping a legitimate extraction is cheap (lift it by hand); silently
+   breaking a lookup table is not, so this errs towards skipping. Every
+   skipped literal is listed in an `[INFO]` block, so nothing is hidden — and
+   because these strings never reach the naming step, a dict target like
+   `IMAGE_MODELS` can no longer leak into `.env.example` as a variable name.
 
    **Variable name.** The assignment target that holds the literal is used
    when it names a model, since it carries far more meaning than a generic
