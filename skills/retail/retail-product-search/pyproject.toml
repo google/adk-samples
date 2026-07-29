@@ -1,0 +1,39 @@
+[project]
+name = "retail-product-search"
+version = "0.1.0"
+description = "Semantic product search agent using Vertex AI Vector Search and BigQuery"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+
+dependencies = [
+    "google-cloud-bigquery>=3.0",
+    "google-cloud-storage>=2.0",
+    "google-cloud-vectorsearch>=0.5,<1.0",  # preview/beta -- pin to known-working range
+    "google-cloud-aiplatform>=1.30",
+    "google-genai>=1.0",
+    "pyyaml>=6.0",
+    "requests>=2.28",
+    "pyOpenSSL>=23.0",  # mTLS during BigQuery / Vector Search auth in some envs
+]
+
+[project.optional-dependencies]
+adk = ["google-adk>=2.2.0"]  # agent runtime for `adk web` and the ADK framework wrapper
+
+[tool.setuptools.packages.find]
+include = ["scripts*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+    "pytest-cov>=4.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/integration"]
+addopts = "-s -v"
+log_cli = true
+log_cli_level = "INFO"
+markers = [
+    "live: integration test that hits real GCP. Requires LIVE_EVAL=1 and a fresh GCP project to ingest into.",
+]
