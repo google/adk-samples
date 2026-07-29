@@ -34,12 +34,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
         with:
           python-version: "3.11"
           enable-cache: false
@@ -119,10 +119,11 @@ jobs:
           # the diff step uses — with --language python. This keeps one
           # source of truth for the layout matrix (path → recipe →
           # language) instead of re-implementing it in shell. `skills/`
-          # is included so that a Python recipe under skills/python/…
-          # (or a flat skills/<recipe>/ with language: python in its
-          # manifest) is picked up by the full scan; missing roots are
-          # tolerated silently via 2>/dev/null.
+          # is included so that a Python skill at
+          # skills/<vertical>/<solution>/ is picked up by the full scan.
+          # Its language comes from manifest.language rather than the path:
+          # the middle component under skills/ is a vertical (retail/, hr/),
+          # not a language. Missing roots are tolerated via 2>/dev/null.
           # NOT `--no-project`: see the notes on the sibling invocation
           # above.
           ALL=$(find core contrib skills -type f 2>/dev/null | uv run python tools/affected_recipes.py --language python)

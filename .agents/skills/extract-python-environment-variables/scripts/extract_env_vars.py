@@ -2176,7 +2176,7 @@ def main() -> None:
     parser.add_argument(
         "--recipe-dir",
         required=True,
-        help="Path to the root of the Python recipe (e.g. contrib/my-recipe)",
+        help="Path to the root of the Python recipe (e.g. contrib/python/my-recipe)",
     )
     parser.add_argument(
         "--dry-run",

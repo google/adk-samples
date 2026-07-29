@@ -1,5 +1,17 @@
 # Sample Agents (Java)
 
+> [!IMPORTANT]
+> **This folder is retired.** `java/agents/` no longer accepts new
+> recipes, or changes to the recipes already here. Recipes now live in
+> **`contrib/java/`**.
+>
+> - **Contributing a new recipe?** Start with the
+>   [recipe checklist](../docs/recipe-checklist.md).
+> - **Already have a recipe here?** Move it to `contrib/java/<name>` and
+>   follow the same checklist. See the
+>   [contributor guide](../docs/README.md).
+>
+> Pull requests that add or modify files under `java/agents/` fail CI.
 
 This folder contains Java agent samples for the [Agent Development Kit](https://github.com/google/adk-java) (ADK).
 

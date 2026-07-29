@@ -19,8 +19,17 @@ Usage
   python .github/scripts/generate_dependabot.py        # writes in-place
   python .github/scripts/generate_dependabot.py --check # exit 1 if stale
 
-Invoked automatically by .github/workflows/sync-dependabot-config.yml on
-every push to main that touches core/, contrib/, or skills/.
+Who runs this
+-------------
+There is no automatic regeneration on push. main is protected, so the
+github-actions bot cannot commit to it. Instead:
+
+  1. You add or remove a recipe — run this script and commit the updated
+     .github/dependabot.yml in the SAME pull request. The freshness gate in
+     .github/workflows/validate-recipe-structure.yml fails your PR otherwise.
+  2. A maintainer can run the "Sync Dependabot Config" workflow manually from
+     the Actions tab to catch any drift that slipped through; it opens a small
+     PR with the regenerated file.
 
 DO NOT edit .github/dependabot.yml by hand — this script owns it.
 """
@@ -28,6 +37,7 @@ DO NOT edit .github/dependabot.yml by hand — this script owns it.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import sys
@@ -45,8 +55,15 @@ SCAN_ROOTS = ["core", "contrib", "skills"]
 
 # Directory names that are never recipe roots — skip entirely during the walk
 SKIP_DIRS = {
-    ".venv", "node_modules", ".gradle", ".git",
-    "__pycache__", ".tox", ".mypy_cache", "dist", "build",
+    ".venv",
+    "node_modules",
+    ".gradle",
+    ".git",
+    "__pycache__",
+    ".tox",
+    ".mypy_cache",
+    "dist",
+    "build",
 }
 
 # ---------------------------------------------------------------------------
@@ -69,7 +86,9 @@ def _is_maven(d: Path) -> bool:
 
 def _is_gradle(d: Path) -> bool:
     # Only the root project has settings.gradle.kts; sub-modules do not.
-    return (d / "build.gradle.kts").is_file() and (d / "settings.gradle.kts").is_file()
+    return (d / "build.gradle.kts").is_file() and (
+        d / "settings.gradle.kts"
+    ).is_file()
 
 
 def _is_npm(d: Path) -> bool:
@@ -84,11 +103,11 @@ def _is_npm(d: Path) -> bool:
 
 
 DETECTORS: list[tuple[str, object]] = [
-    ("uv",     _is_uv),
-    ("gomod",  _is_gomod),
-    ("maven",  _is_maven),
+    ("uv", _is_uv),
+    ("gomod", _is_gomod),
+    ("maven", _is_maven),
     ("gradle", _is_gradle),
-    ("npm",    _is_npm),
+    ("npm", _is_npm),
 ]
 
 # ---------------------------------------------------------------------------
@@ -122,10 +141,13 @@ def scan(repo_root: Path) -> list[dict]:
                     continue
                 seen.add(key)
 
-                entries.append({"package-ecosystem": ecosystem, "directory": rel})
+                entries.append(
+                    {"package-ecosystem": ecosystem, "directory": rel}
+                )
 
     entries.sort(key=lambda e: (e["package-ecosystem"], e["directory"]))
     return entries
+
 
 # ---------------------------------------------------------------------------
 # YAML renderer
@@ -133,12 +155,16 @@ def scan(repo_root: Path) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _render_entry(ecosystem: str, directory: str, *, extra_labels: list[str] | None = None) -> str:
+def _render_entry(
+    ecosystem: str, directory: str, *, extra_labels: list[str] | None = None
+) -> str:
     labels_lines = "      - dependencies"
     if extra_labels:
         labels_lines += "\n" + "\n".join(f"      - {lb}" for lb in extra_labels)
 
-    group_name = "all-actions" if ecosystem == "github-actions" else "all-dependencies"
+    group_name = (
+        "all-actions" if ecosystem == "github-actions" else "all-dependencies"
+    )
 
     # `semver-major-days` is only valid for ecosystems that follow semver.
     # github-actions releases (v1, v2, ...) don't, and Dependabot rejects the
@@ -175,14 +201,17 @@ def _render_entry(ecosystem: str, directory: str, *, extra_labels: list[str] | N
 
 def render(entries: list[dict]) -> str:
     header = """\
-# AUTO-GENERATED — do not edit by hand.
-# Owned by .github/scripts/generate_dependabot.py
+# GENERATED FILE — every line below is written by
+# .github/scripts/generate_dependabot.py. Do not edit it by hand.
 #
-# This file is regenerated automatically on every push to main that touches
-# core/, contrib/, or skills/.  To force an immediate refresh, trigger the
-# "Sync Dependabot Config" workflow manually from the Actions tab, or run:
+# Nothing triggers that script for you — there is no push hook, schedule, or
+# bot that keeps this in sync. Whoever adds or removes a recipe has to run it
+# and commit the result in the same pull request:
 #
 #   python .github/scripts/generate_dependabot.py
+#
+# CI enforces this — the "Check dependabot.yml is up to date" job fails the
+# PR if this file no longer matches the recipe tree.
 #
 # Ecosystems tracked: uv (Python), gomod (Go), maven (Java),
 #                     gradle (Kotlin), npm (TypeScript/JS), github-actions
@@ -191,8 +220,7 @@ version: 2
 updates:
 """
     body_parts = [
-        _render_entry(e["package-ecosystem"], e["directory"])
-        for e in entries
+        _render_entry(e["package-ecosystem"], e["directory"]) for e in entries
     ]
     # Static github-actions entry is always last
     body_parts.append(
@@ -200,13 +228,16 @@ updates:
     )
     return header + "\n".join(body_parts)
 
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Generate .github/dependabot.yml")
+    parser = argparse.ArgumentParser(
+        description="Generate .github/dependabot.yml"
+    )
     parser.add_argument(
         "--check",
         action="store_true",
@@ -217,19 +248,37 @@ def main(argv: list[str] | None = None) -> int:
     entries = scan(REPO_ROOT)
     content = render(entries)
 
-    current = OUTPUT_FILE.read_text(encoding="utf-8") if OUTPUT_FILE.is_file() else ""
+    current = (
+        OUTPUT_FILE.read_text(encoding="utf-8") if OUTPUT_FILE.is_file() else ""
+    )
 
     if content == current:
         print(f"dependabot.yml is up to date ({len(entries)} recipe entries).")
         return 0
 
     if args.check:
-        print("dependabot.yml is STALE. Run the script locally to regenerate:")
+        print("dependabot.yml is STALE — it does not match the recipe tree.")
+        print("")
+        print("Fix it by running this from the repo root and committing the")
+        print("result in this same pull request:")
+        print("")
         print("  python .github/scripts/generate_dependabot.py")
+        print("")
+        print("Missing (+) and stale (-) lines:")
+        print("")
+        diff = difflib.unified_diff(
+            current.splitlines(keepends=True),
+            content.splitlines(keepends=True),
+            fromfile="committed .github/dependabot.yml",
+            tofile="expected from the current recipe tree",
+        )
+        sys.stdout.writelines(diff)
         return 1
 
     OUTPUT_FILE.write_text(content, encoding="utf-8")
-    print(f"dependabot.yml written: {len(entries)} recipe entries + github-actions.")
+    print(
+        f"dependabot.yml written: {len(entries)} recipe entries + github-actions."
+    )
     for e in entries:
         print(f"  [{e['package-ecosystem']:8s}] {e['directory']}")
     return 0

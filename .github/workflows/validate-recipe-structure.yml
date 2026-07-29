@@ -6,10 +6,23 @@ name: Validate Recipe Structure
 
 on:
   pull_request:
+    # `labeled` is included so that applying the `allow-legacy-path` escape
+    # hatch re-runs the retired-folder check instead of needing a manual
+    # re-run. The other three are the GitHub defaults, which listing
+    # `types` at all would otherwise drop.
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - 'core/**'
       - 'contrib/**'
       - 'skills/**'
+      # Retired recipe roots (policy.yml `frozen_paths`). Without these the
+      # workflow never fires for a PR that only touches a retired folder,
+      # and the check below could never see it.
+      - 'python/agents/**'
+      - 'java/agents/**'
+      - 'go/agents/**'
+      - 'kotlin/agents/**'
+      - 'typescript/agents/**'
       - '.github/schemas/manifest-schema.json'
       - '.github/policy.yml'
       - '.github/workflows/validate-recipe-structure.yml'
@@ -19,6 +32,8 @@ on:
       - 'tools/validate_structure.py'
       - 'tools/validate_readme.py'
       - 'tools/affected_recipes.py'
+      - 'tools/check_frozen_paths.py'
+      - 'tools/validate_placement.py'
       - 'pyproject.toml'
   push:
     branches:
@@ -52,12 +67,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
         with:
           # Pin explicitly for reproducibility and to match the sibling
           # python-validate-recipe.yml step. Structure checks only need
@@ -166,6 +181,93 @@ jobs:
             exit 1
           fi
 
+  check-frozen-paths:
+    name: Check for work in retired folders
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Pull requests only — on a push to main the merge has already happened,
+    # so failing there is noise rather than a gate.
+    #
+    # Skipped for bot authors: Dependabot still has open PRs touching the
+    # retired roots, and blocking them would just generate churn. Matching on
+    # the `[bot]` suffix rather than naming Dependabot covers future bots too.
+    #
+    # Skipped when a maintainer applies `allow-legacy-path`. Only users with
+    # write access can label a PR, so this is the same permission boundary as
+    # an admin override — but it is explicit and recorded on the PR.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !endsWith(github.event.pull_request.user.login, '[bot]') &&
+      !contains(github.event.pull_request.labels.*.name, 'allow-legacy-path')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          # Full history so the merge-base diff below resolves.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
+        with:
+          python-version: "3.11"
+          enable-cache: false
+
+      - name: Install validation dependencies
+        # tools/check_frozen_paths.py reads .github/policy.yml, so it needs
+        # PyYAML from the repo-root pyproject.toml.
+        run: uv sync
+
+      - name: Check for changes in retired recipe folders
+        env:
+          # Route the GitHub-controlled value through an env var rather than
+          # interpolating it directly, same as the sibling job above.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin "$BASE_REF"
+
+          # --diff-filter=AM keeps additions and modifications only.
+          # Deletions and renames are deliberately excluded so that MOVING a
+          # recipe out of a retired folder is never blocked by this check.
+          git diff --diff-filter=AM --name-only "origin/$BASE_REF"...HEAD \
+            | uv run python tools/check_frozen_paths.py
+
+  check-recipe-placement:
+    name: Check recipe placement
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Deliberately unconditional — unlike check-frozen-paths there is no bot
+    # or label exemption. A whole-tree scan, so it also catches a
+    # misplacement that arrives by rename or bad merge rather than by an
+    # obvious "add a recipe" diff.
+    #
+    # It cannot ride on the validate-structure job above: that runs the
+    # validators per AFFECTED recipe, and affected_recipes.py maps a
+    # misplaced skill (skills/<solution> with no vertical) to None, so it
+    # would never appear in changed_recipes.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
+        with:
+          python-version: "3.11"
+          enable-cache: false
+
+      - name: Install validation dependencies
+        # validate_placement imports validate_manifest, which needs PyYAML
+        # from the repo-root pyproject.toml.
+        run: uv sync
+
+      - name: Check every recipe sits at its required path
+        run: uv run python tools/validate_placement.py
+
   check-dependabot-config:
     name: Check dependabot.yml is up to date
     runs-on: ubuntu-latest
@@ -173,10 +275,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # ratchet:actions/setup-python@v5
         with:
           python-version: "3.11"
 

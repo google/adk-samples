@@ -11,7 +11,7 @@ Scan a recipe directory and produce a valid `manifest.yaml` for it, then validat
 
 ### 1. Identify the target recipe
 
-The user will provide a path to a recipe directory (e.g. `core/rag-agent-search`, `contrib/my-recipe`, `skills/python/my-skill`). If they don't, ask for it before proceeding.
+The user will provide a path to a recipe directory (e.g. `core/python/rag-agent-search`, `contrib/python/my-recipe`, `skills/retail/store-ops`). If they don't, ask for it before proceeding.
 
 ### 2. Read the schema
 
@@ -101,7 +101,7 @@ After writing the manifest, run the validator **from the repo root** (do not `cd
 uv run validate manifest <recipe-path>
 ```
 
-`<recipe-path>` must be **relative to the repo root** (e.g. `core/python/my-recipe`, `contrib/my-recipe`, `skills/python/my-skill`), not an absolute path.
+`<recipe-path>` must be **relative to the repo root** (e.g. `core/python/my-recipe`, `contrib/python/my-recipe`, `skills/retail/store-ops`), not an absolute path.
 
 Interpret the result carefully — there are two kinds of failure:
 

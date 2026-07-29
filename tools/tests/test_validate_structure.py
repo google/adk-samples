@@ -75,13 +75,23 @@ def _base_policy() -> dict:
             "by_root": {
                 "core": ["AGENTS.md"],
                 "contrib": [],
-                "skills": ["SKILL.md"],
+                "skills": ["SKILL.md", "EVAL.yaml"],
             },
             "by_language": {
                 "python": ["pyproject.toml", "uv.lock"],
                 "java": [],
             },
-        }
+        },
+        "required_dirs": {
+            "always": [],
+            "by_root": {
+                "core": [],
+                "contrib": [],
+                "skills": ["scripts", "assets", "references", "tests/unit"],
+            },
+            "by_language": {"python": [], "java": []},
+        },
+        "case_insensitive_files": ["EVAL.yaml"],
     }
 
 
@@ -103,7 +113,7 @@ def test_required_files_for_contrib_python():
 
 def test_required_files_for_skills_no_language():
     files = m.required_files_for(_base_policy(), "skills", None)
-    assert files == ["README.md", "SKILL.md"]
+    assert files == ["README.md", "SKILL.md", "EVAL.yaml"]
 
 
 def test_required_files_for_unknown_root_and_language():
@@ -382,11 +392,16 @@ def test_check_size_and_count_large_tier_relaxes(tmp_path):
 
 
 def test_check_size_and_count_root_without_limits_skips(tmp_path):
-    # No `skills` section in recipe_size_limits → nothing to enforce.
-    recipe = _make_python_recipe(tmp_path, "skills/foo", include_agents=False)
+    # A root with no section in recipe_size_limits → nothing to enforce.
+    # Uses a fictional root because core, contrib and skills all have real
+    # limits in .github/policy.yml now, so none of them demonstrates this.
+    recipe = _make_python_recipe(
+        tmp_path, "playground/foo", include_agents=False
+    )
     manifest = recipe / "manifest.yaml"
     assert (
-        m.check_size_and_count(recipe, "skills", _size_policy(), manifest) == []
+        m.check_size_and_count(recipe, "playground", _size_policy(), manifest)
+        == []
     )
 
 
@@ -574,3 +589,204 @@ def test_main_returns_one_on_failure(fake_repo, capsys):
 def test_main_single_recipe_scope(fake_repo):
     _make_python_recipe(fake_repo, "core/only", include_agents=True)
     assert m.main("core/only") == 0
+
+
+# ---------------------------------------------------------------------------
+# required_dirs_for — same three-way union as required_files_for
+# ---------------------------------------------------------------------------
+
+
+def test_required_dirs_for_skills():
+    dirs = m.required_dirs_for(_base_policy(), "skills", "python")
+    assert dirs == ["scripts", "assets", "references", "tests/unit"]
+
+
+def test_required_dirs_for_core_is_empty():
+    assert m.required_dirs_for(_base_policy(), "core", "python") == []
+
+
+def test_required_dirs_for_missing_section_degrades():
+    assert m.required_dirs_for({}, "skills", "python") == []
+
+
+def test_required_dirs_for_dedupes():
+    policy = {
+        "required_dirs": {
+            "always": ["scripts"],
+            "by_root": {"skills": ["scripts", "assets"]},
+            "by_language": {"python": ["assets"]},
+        }
+    }
+    assert m.required_dirs_for(policy, "skills", "python") == [
+        "scripts",
+        "assets",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Vertical skills — the full file + directory contract
+# ---------------------------------------------------------------------------
+
+SKILL_MANIFEST = VALID_MANIFEST
+
+
+def _make_skill(root: Path, rel: str = "skills/retail/store-ops") -> Path:
+    """A complete, valid Python vertical skill: every required file and
+    every required directory."""
+    skill = root / rel
+    skill.mkdir(parents=True, exist_ok=True)
+    _write(skill / "manifest.yaml", SKILL_MANIFEST)
+    _write(skill / "README.md", "# skill\n")
+    _write(skill / "SKILL.md", "# installer\n")
+    _write(skill / "EVAL.yaml", "rubrics: []\n")
+    _write(skill / "pyproject.toml", "[project]\nname='x'\n")
+    _write(skill / "uv.lock", "# lockfile\n")
+    _write(skill / ".env.example", "FOO=1\n")
+    _write(skill / "tests" / "test_runnability.py", "def test(): pass\n")
+    for d in ("scripts", "assets", "references", "tests/unit"):
+        (skill / d).mkdir(parents=True, exist_ok=True)
+    return skill
+
+
+def test_complete_skill_passes(isolated_repo):
+    skill = _make_skill(isolated_repo)
+    schema = vm.load_schema()
+    assert m.validate_recipe(skill, _full_policy(), schema) == []
+
+
+def test_skill_missing_a_required_dir_fails(isolated_repo):
+    skill = _make_skill(isolated_repo)
+    (skill / "assets").rmdir()
+    errors = m.validate_recipe(skill, _full_policy(), vm.load_schema())
+    assert any("[required-dirs]" in e and "assets/" in e for e in errors)
+
+
+def test_skill_missing_eval_yaml_fails(isolated_repo):
+    skill = _make_skill(isolated_repo)
+    (skill / "EVAL.yaml").unlink()
+    errors = m.validate_recipe(skill, _full_policy(), vm.load_schema())
+    assert any("EVAL.yaml" in e for e in errors)
+
+
+def test_empty_required_dirs_pass(isolated_repo):
+    """assets/ and references/ are legitimately empty for some skills."""
+    skill = _make_skill(isolated_repo)
+    assert list((skill / "assets").iterdir()) == []
+    assert (
+        m.check_required_dirs(skill, "skills", "python", _full_policy()) == []
+    )
+
+
+def test_required_dir_that_is_actually_a_file_is_reported_precisely(
+    isolated_repo,
+):
+    """'missing' would send the author hunting for something that is
+    right there under the wrong kind."""
+    skill = _make_skill(isolated_repo)
+    (skill / "scripts").rmdir()
+    _write(skill / "scripts", "oops\n")
+    errors = m.check_required_dirs(skill, "skills", "python", _full_policy())
+    assert len(errors) == 1
+    assert "exists but is a file" in errors[0]
+
+
+# ---------------------------------------------------------------------------
+# Case handling — must not depend on the host filesystem
+# ---------------------------------------------------------------------------
+
+
+def test_wrong_case_fails_for_a_strict_entry(isolated_repo):
+    """pyproject.toml is read by uv, which resolves it by exact name.
+    Accepting PyProject.toml would pass here and then break uv. This must
+    fail on macOS too, where the filesystem alone would accept it."""
+    skill = _make_skill(isolated_repo)
+    (skill / "pyproject.toml").unlink()
+    _write(skill / "PyProject.toml", "[project]\nname='x'\n")
+    errors = m.check_required_files(skill, "skills", "python", _full_policy())
+    assert any("pyproject.toml" in e and "missing" in e for e in errors)
+
+
+def test_wrong_case_passes_for_eval_yaml_with_a_note(isolated_repo, capsys):
+    skill = _make_skill(isolated_repo)
+    (skill / "EVAL.yaml").unlink()
+    _write(skill / "eval.yaml", "rubrics: []\n")
+    assert (
+        m.check_required_files(skill, "skills", "python", _full_policy()) == []
+    )
+    out = capsys.readouterr().out
+    assert "[NOTE]" in out
+    assert "eval.yaml" in out
+    assert "EVAL.yaml" in out
+
+
+def test_exact_case_produces_no_note(isolated_repo, capsys):
+    skill = _make_skill(isolated_repo)
+    assert (
+        m.check_required_files(skill, "skills", "python", _full_policy()) == []
+    )
+    assert "[NOTE]" not in capsys.readouterr().out
+
+
+def test_find_entry_compares_names_in_python(tmp_path):
+    """Pins the platform-independence: the match is decided by comparing
+    names, never by asking the filesystem, so the verdict is the same on a
+    case-insensitive macOS volume and on Linux CI."""
+    _write(tmp_path / "EVAL.yaml", "x")
+    assert m._find_entry(tmp_path, "EVAL.yaml", case_insensitive=False)[0]
+    assert m._find_entry(tmp_path, "eval.yaml", case_insensitive=False) == (
+        None,
+        False,
+    )
+    found, exact = m._find_entry(tmp_path, "eval.yaml", case_insensitive=True)
+    assert found is not None and exact is False
+
+
+def test_find_entry_walks_nested_segments(tmp_path):
+    _write(tmp_path / "tests" / "unit" / "test_x.py", "x")
+    found, exact = m._find_entry(tmp_path, "tests/unit", case_insensitive=False)
+    assert found is not None and found.is_dir() and exact is True
+    assert m._find_entry(tmp_path, "tests/Unit", case_insensitive=False) == (
+        None,
+        False,
+    )
+
+
+def test_case_insensitive_entries_reads_policy():
+    assert m.case_insensitive_entries(_full_policy()) == {"EVAL.yaml"}
+    assert m.case_insensitive_entries({}) == set()
+
+
+# ---------------------------------------------------------------------------
+# Guards on the committed policy.yml
+# ---------------------------------------------------------------------------
+
+
+def test_committed_policy_declares_the_skill_contract():
+    """A future edit must not silently drop part of the contract."""
+    policy = m.load_policy()
+    files = m.required_files_for(policy, "skills", "python")
+    dirs = m.required_dirs_for(policy, "skills", "python")
+    for f in (
+        "README.md",
+        "SKILL.md",
+        "EVAL.yaml",
+        "pyproject.toml",
+        "uv.lock",
+        "tests/test_runnability.py",
+    ):
+        assert f in files, f
+    for d in ("scripts", "assets", "references", "tests/unit"):
+        assert d in dirs, d
+
+
+def test_committed_policy_keeps_tool_read_files_case_strict():
+    """These are resolved by exact name by uv, pytest and our own tooling;
+    relaxing them would pass CI and then break the tool that reads them."""
+    lenient = m.case_insensitive_entries(m.load_policy())
+    for f in (
+        "pyproject.toml",
+        "uv.lock",
+        "manifest.yaml",
+        "tests/test_runnability.py",
+    ):
+        assert f not in lenient, f

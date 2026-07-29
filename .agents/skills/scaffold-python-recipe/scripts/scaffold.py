@@ -68,10 +68,30 @@ def is_safe_output_dir(output_dir: str) -> bool:
 
     Blocks relative escapes like ``../../other-repo`` for any caller. Absolute
     destinations are allowed here so the function stays usable as a testable
-    primitive; the CLI additionally restricts ``--output-dir`` to the two
-    documented locations (see ``__main__``).
+    primitive; the CLI additionally restricts ``--output-dir`` to the
+    documented locations (see ``ALLOWED_OUTPUT_DIRS``).
     """
     return ".." not in re.split(r"[\\/]", output_dir)
+
+
+# Locations the CLI will scaffold into. `contrib` (flat) stays accepted
+# because recipes already live there, but `contrib/python` is the documented
+# home for new Python recipes.
+#
+# Vertical skills (skills/<vertical>/<solution>) are deliberately absent:
+# they need a different template — SKILL.md, EVAL.yaml, scripts/, assets/,
+# references/, tests/unit/ — which this skill does not ship. Refusing is
+# better than scaffolding a recipe-shaped tree into a skills path.
+ALLOWED_OUTPUT_DIRS = ("contrib", "contrib/python", "core/python")
+
+
+def is_allowed_output_dir(output_dir: str) -> bool:
+    """Return True if ``output_dir`` is one of the documented locations.
+
+    Trailing slashes are tolerated to match the paths shown in the skill's
+    instructions.
+    """
+    return output_dir.rstrip("/") in ALLOWED_OUTPUT_DIRS
 
 
 def replace_in_file(filepath: str, replacements: dict[str, str]) -> None:
@@ -175,13 +195,11 @@ if __name__ == "__main__":
 
     # Enforce the documented, valid locations (SKILL.md) at the CLI so a direct
     # invocation can't scaffold outside the repo (e.g. --output-dir
-    # ../../other-repo) or into an unintended location. Trailing slashes are
-    # tolerated to match the paths shown in the skill's instructions.
-    allowed_output_dirs = ("contrib", "core/python")
-    if args.output_dir.rstrip("/") not in allowed_output_dirs:
+    # ../../other-repo) or into an unintended location.
+    if not is_allowed_output_dir(args.output_dir):
         print(
             "Error: --output-dir must be one of "
-            f"{allowed_output_dirs} (got '{args.output_dir}')."
+            f"{ALLOWED_OUTPUT_DIRS} (got '{args.output_dir}')."
         )
         sys.exit(2)
 

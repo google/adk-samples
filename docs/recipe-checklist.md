@@ -1,4 +1,4 @@
-<!-- word count: 830 (target 900, cap 1200) -->
+<!-- word count: 831 (target 900, cap 1200) -->
 
 # Recipe Checklist
 
@@ -24,7 +24,7 @@ skill in the right order.
 | `generate-python-runnability-test` | Writes `tests/test_runnability.py` | `generate runnability test for contrib/python/my-recipe` |
 
 For deep detail on each skill, see the
-[Skills Catalog](./recipe-handbook/skills-catalog.md).
+[Repo Skills Catalog](./recipe-handbook/skills-catalog.md).
 
 ---
 

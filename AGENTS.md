@@ -4,9 +4,13 @@ All agents must follow the guidelines below without being reminded.
 ## General
 - Use the term **recipe** instead of **sample** everywhere — responses,
   code comments, commit messages, PR descriptions, docs.
+- Two different things are called "skills"; keep the terms straight:
+  - **Vertical skills** — recipes under `skills/<vertical>/<solution>/`
+    (e.g. `skills/retail/store-ops/`). Shipped to users.
+  - **Repo skills** — AI coding-assistant helpers under `.agents/skills/`
+    (e.g. `prepare-python-recipe`). Used to build this repo.
 - Recipes live under `core/` (curated), `contrib/` (community), or
-  `skills/` (vertical skills). **Tooling skills** (AI coding-assistant
-  helpers) live under `.agents/skills/` — these are a completely separate
+  `skills/` (vertical skills). Repo skills are a completely separate
   concept. Do NOT mix `.agents/skills/` changes and recipe/vertical-skill
   changes in the same PR. If a tool run modifies files outside your task's
   scope (e.g. a repo-wide ruff sweep touching an unrelated recipe), revert
@@ -36,7 +40,11 @@ All agents must follow the guidelines below without being reminded.
 - Do NOT use `gemini-2.0-flash` or `gemini-2.5-flash` — both are deprecated. Use `gemini-3.5-flash` instead.
 
 ## Python
-- Python recipes go under `contrib/python/`, `core/python/`, or `skills/python/`
+- Python recipes go under `contrib/python/` or `core/python/`. Vertical
+  skills go under `skills/<vertical>/<solution>/` (e.g.
+  `skills/retail/store-ops/`) — that middle folder is a **vertical**, not a
+  language, and it is mandatory. A skill's language comes from
+  `manifest.language`.
 - Minimum python version: 3.11
 - Package manager: Use `uv`, not `pip`
 - Formatter/linter: `ruff` — line length 80, double quotes. Config lives

@@ -31,11 +31,14 @@ You **must** have both pieces of information below before running the script. If
 
 ### 1. Output Directory (Required — must ask if not provided)
 
-The user must choose one of these two valid locations:
-- `contrib/`
-- `core/python/`
+The user must choose one of these valid locations:
+- `contrib/python/` — community recipes; preferred for new Python recipes
+- `core/python/` — curated recipes
+- `contrib/` — legacy flat layout, still accepted; prefer `contrib/python/`
 
 If the user has not specified which directory, ask them to choose. Do not proceed until a valid choice is confirmed.
+
+This skill **cannot** scaffold a vertical skill (`skills/<vertical>/<solution>/`). Those have a different shape — `SKILL.md`, `EVAL.yaml`, `scripts/`, `assets/`, `references/`, `tests/unit/` — and no template ships for them yet. If the user asks for one, tell them so rather than scaffolding into the wrong place.
 
 ### 2. Recipe Name (Required — must ask if not provided)
 

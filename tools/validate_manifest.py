@@ -51,6 +51,37 @@ OWNERSHIP_POC_PLACEHOLDER = "TODO: Replace with your GitHub user ID"
 
 LANGUAGE_NAMESPACE_DIRS = {"python", "java", "go", "typescript", "kotlin"}
 
+# Roots whose second path component is ALWAYS a namespace, whatever it is
+# called. core/ and contrib/ take an OPTIONAL language namespace, matched by
+# name against LANGUAGE_NAMESPACE_DIRS. skills/ takes a MANDATORY vertical
+# (retail/, hr/, finance/ …) whose name is free-form, so it can only be
+# recognised by position:
+#
+#     core/<language>/<recipe>   or   core/<recipe>
+#     skills/<vertical>/<solution>
+#
+# The vertical surfaces ownership — it lets a team see its whole surface at
+# a glance — so it is part of the layout rather than a value we enumerate.
+NAMESPACE_REQUIRED_ROOTS = {"skills"}
+
+
+def is_namespace_path(parts: list[str]) -> bool:
+    """True if these repo-relative path components identify a namespace
+    directory — a container of recipes — rather than a recipe itself.
+
+    Depth matters: only the component directly under a recipe root can be a
+    namespace, which is what keeps `skills/retail` (a vertical) distinct
+    from `skills/retail/store-ops` (a solution).
+    """
+    if len(parts) != 2:
+        return False
+    root, name = parts
+    if root not in RECIPE_ROOTS:
+        return False
+    if root in NAMESPACE_REQUIRED_ROOTS:
+        return True
+    return name in LANGUAGE_NAMESPACE_DIRS
+
 
 def is_recipe_dir(path: Path) -> bool:
     """A recipe directory is any immediate subdirectory that contains
@@ -147,10 +178,11 @@ def _collect_scoped_path(scope: str) -> list[Path]:
     if not target.exists():
         print(f"[ERROR] Directory not found: {target}")
         sys.exit(1)
-    # Language namespace directory (e.g. core/python) — recurse one level.
-    # is_recipe_dir() already returns False for these, so we handle them
-    # explicitly here before the generic validity check below.
-    if target.name in LANGUAGE_NAMESPACE_DIRS:
+    # Namespace directory (e.g. core/python, skills/retail) — recurse one
+    # level. Matched on the scope's own components rather than just the
+    # basename, so `skills/retail` is a namespace while the solution beneath
+    # it, `skills/retail/store-ops`, is not.
+    if is_namespace_path(scope.strip("/").split("/")):
         recipe_dirs = sorted(c for c in target.iterdir() if is_recipe_dir(c))
         if not recipe_dirs:
             print(f"[INFO] No recipe directories found under '{scope}/'.")
@@ -165,10 +197,14 @@ def _collect_root(root_name: str) -> list[Path]:
     """Return the recipe directories directly under a top-level root.
 
     Recognised layouts:
-        <root>/<recipe>              — flat
-        <root>/<language>/<recipe>   — language-namespaced
+        <root>/<recipe>              — flat (core/, contrib/)
+        <root>/<language>/<recipe>   — language-namespaced (core/, contrib/)
+        skills/<vertical>/<solution> — vertical-namespaced (skills/)
 
-    where <language> ∈ LANGUAGE_NAMESPACE_DIRS.
+    Under a NAMESPACE_REQUIRED_ROOTS root every child is a namespace, so a
+    solution placed directly at `skills/<solution>` is not collected here.
+    That misplacement is reported by tools/validate_placement.py rather
+    than silently validated at the wrong depth.
     """
     root_path = REPO_ROOT / root_name
     if not root_path.exists():
@@ -179,8 +215,8 @@ def _collect_root(root_name: str) -> list[Path]:
     for p in sorted(root_path.iterdir()):
         if not p.is_dir():
             continue
-        if p.name in LANGUAGE_NAMESPACE_DIRS:
-            # <root>/<language>/<recipe>
+        if is_namespace_path([root_name, p.name]):
+            # <root>/<language>/<recipe> or skills/<vertical>/<solution>
             recipe_dirs.extend(
                 sorted(c for c in p.iterdir() if is_recipe_dir(c))
             )
@@ -273,7 +309,8 @@ def main(scope: str | None = None) -> int:
             "\nFix the manifest.yaml file(s) listed above, then push again."
             "\n"
             "\nReference:"
-            "\n  Schema:  .github/schemas/manifest-schema.json"        )
+            "\n  Schema:  .github/schemas/manifest-schema.json"
+        )
         return 1
 
     checked = len(recipe_dirs)

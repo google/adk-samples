@@ -114,16 +114,15 @@ def test_validate_readme_too_short(tmp_path):
 
 
 def test_validate_readme_missing_setup(tmp_path):
-    content = VALID_README.replace("## Setup", "## Configuration Details")
-    # "configuration" is in the keyword list, so swap to something not in the list
-    content = content.replace("## Configuration Details", "## Prerequisites Info Extra Words")
+    # _SETUP_KEYWORDS matches on word boundaries, and is broad — "setup",
+    # "prerequisites", "configuration", "installation", "requirements",
+    # "environment" and more all count as a setup section. The replacement
+    # heading has to dodge every one of them to reach the missing-setup
+    # path at all.
+    content = VALID_README.replace("## Setup", "## Overview of Dependencies")
     readme = _write(tmp_path / "README.md", content)
     errors = r.validate_readme(readme)
-    # "prerequisites" IS in the keyword list — use a heading that truly isn't
-    content2 = VALID_README.replace("## Setup", "## Overview of Dependencies")
-    readme2 = _write(tmp_path / "README2.md", content2)
-    errors2 = r.validate_readme(readme2)
-    assert any("setup" in e for e in errors2)
+    assert any("setup" in e for e in errors)
 
 
 def test_validate_readme_setup_synonym_prerequisites(tmp_path):
@@ -240,7 +239,9 @@ def test_main_invalid_readme_returns_one(tmp_path, monkeypatch):
     assert r.main("core/bad") == 1
 
 
-def test_main_missing_readme_emits_github_annotation(tmp_path, monkeypatch, capsys):
+def test_main_missing_readme_emits_github_annotation(
+    tmp_path, monkeypatch, capsys
+):
     _make_recipe(tmp_path, "core/no-readme", readme=None)
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(r, "REPO_ROOT", tmp_path)
@@ -252,7 +253,9 @@ def test_main_missing_readme_emits_github_annotation(tmp_path, monkeypatch, caps
     assert "missing" in out
 
 
-def test_main_invalid_readme_emits_github_annotation(tmp_path, monkeypatch, capsys):
+def test_main_invalid_readme_emits_github_annotation(
+    tmp_path, monkeypatch, capsys
+):
     _make_recipe(tmp_path, "core/bad", readme="too short\n")
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(r, "REPO_ROOT", tmp_path)

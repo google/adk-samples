@@ -272,3 +272,56 @@ def test_scaffold_omits_cache_junk(tmp_path, templates_with_junk):
         if p.name in {".ruff_cache", "__pycache__"} or p.suffix == ".pyc"
     ]
     assert leaked == []
+
+
+# ---------------------------------------------------------------------------
+# is_allowed_output_dir / CLI --output-dir allow-list
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "output_dir",
+    [
+        "contrib",
+        "contrib/python",
+        "core/python",
+        "contrib/python/",
+        "core/python/",
+    ],
+)
+def test_allows_documented_output_dirs(output_dir):
+    """contrib/python is the documented home for new Python recipes. It was
+    previously rejected, so scaffolding into it was impossible."""
+    assert m.is_allowed_output_dir(output_dir) is True
+
+
+@pytest.mark.parametrize(
+    "output_dir",
+    [
+        # Vertical skills need a template this skill does not ship — SKILL.md,
+        # EVAL.yaml, scripts/, assets/, references/, tests/unit/ — so they must
+        # be refused rather than filled with a recipe-shaped tree.
+        "skills",
+        "skills/retail",
+        "skills/retail/store-ops",
+        # Retired roots and other stray locations.
+        "python/agents",
+        "core",
+        "docs",
+        "../../other-repo",
+        "",
+    ],
+)
+def test_rejects_everything_else(output_dir):
+    assert m.is_allowed_output_dir(output_dir) is False
+
+
+def test_allow_list_matches_the_skill_docs():
+    """SKILL.md tells the assistant which locations to offer; drift between
+    the prose and the check would send contributors down a dead end."""
+    skill_md = (Path(__file__).resolve().parents[1] / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    for allowed in m.ALLOWED_OUTPUT_DIRS:
+        assert f"`{allowed}/`" in skill_md, allowed
+    assert "skills/<vertical>/<solution>/" in skill_md

@@ -31,14 +31,20 @@ import pytest
         ("contrib/python/bar/pyproject.toml", "contrib/python/bar"),
         ("core/java/hello/pom.xml", "core/java/hello"),
         ("contrib/go/example/main.go", "contrib/go/example"),
-        # Skills root (already listed in RECIPE_ROOTS even though the
-        # directory may not exist yet).
-        ("skills/foo/SKILL.md", "skills/foo"),
-        # A language-namespaced recipe under skills/ (e.g. skills/python/foo)
-        # is recognised too — matches the layout affected_recipes.py accepts
-        # for core/ and contrib/, and the python-validate-recipe.yml
-        # full-scan step (which enumerates core, contrib, and skills).
-        ("skills/python/foo/agent.py", "skills/python/foo"),
+        # Skills use a MANDATORY vertical namespace,
+        # skills/<vertical>/<solution>. The vertical is free-form, so the
+        # solution is identified by position rather than by name.
+        ("skills/retail/store-ops/SKILL.md", "skills/retail/store-ops"),
+        ("skills/hr/onboarding/scripts/run.py", "skills/hr/onboarding"),
+        ("skills/finance/close/eval/cases.jsonl", "skills/finance/close"),
+        # A solution placed directly under skills/, with no vertical, must
+        # NOT be promoted to a recipe — mapping it would validate it at the
+        # wrong depth and hide the misplacement. validate_placement.py is
+        # what reports it.
+        ("skills/foo/SKILL.md", None),
+        ("skills/foo/manifest.yaml", None),
+        # A vertical-level file belongs to no solution.
+        ("skills/retail/README.md", None),
         # Paths that don't sit under a recipe root.
         ("README.md", None),
         (".github/workflows/x.yml", None),
@@ -156,11 +162,20 @@ def test_compute_skips_blank_and_whitespace_lines(tmp_path):
 
 
 def test_compute_handles_skills_root(tmp_path):
-    _make_recipe(tmp_path, "skills/example")
-    changed = ["skills/example/SKILL.md"]
+    _make_recipe(tmp_path, "skills/retail/store-ops")
+    changed = ["skills/retail/store-ops/SKILL.md"]
     assert m.compute_affected_recipes(changed, repo_root=tmp_path) == [
-        "skills/example",
+        "skills/retail/store-ops",
     ]
+
+
+def test_compute_ignores_a_skill_with_no_vertical(tmp_path):
+    """A solution dropped straight under skills/ is not collected here — it
+    would otherwise be validated at the vertical's depth. Reporting it is
+    tools/validate_placement.py's job."""
+    _make_recipe(tmp_path, "skills/no-vertical")
+    changed = ["skills/no-vertical/SKILL.md"]
+    assert m.compute_affected_recipes(changed, repo_root=tmp_path) == []
 
 
 def test_compute_returns_empty_on_no_changes(tmp_path):
@@ -363,18 +378,31 @@ def test_language_filter_case_insensitive_argument(tmp_path):
     ) == ["core/flat-py"]
 
 
-def test_language_filter_skills_python_namespaced(tmp_path):
-    # A Python recipe under skills/python/ is a namespaced Python recipe
-    # by path convention — the language filter must include it without
-    # having to read the manifest. Guards the invariant that
-    # python-validate-recipe.yml's full-scan step (which now enumerates
-    # skills/ too) will actually see skills/python/<recipe> during
-    # workflow_dispatch or infra-change runs.
-    _make_recipe_with_manifest(tmp_path, "skills/python/foo", manifest=None)
-    changed = ["skills/python/foo/SKILL.md"]
+def test_language_filter_skills_uses_the_manifest_not_the_path(tmp_path):
+    # A skill's namespace is a VERTICAL, not a language, so the path cannot
+    # answer the language question the way core/python/<recipe> can. The
+    # filter must fall through to manifest.language — which works because
+    # `language` stays a required manifest field for skills.
+    _make_recipe_with_manifest(
+        tmp_path, "skills/retail/store-ops", manifest="language: python\n"
+    )
+    changed = ["skills/retail/store-ops/SKILL.md"]
     assert m.compute_affected_recipes(
         changed, language="python", repo_root=tmp_path
-    ) == ["skills/python/foo"]
+    ) == ["skills/retail/store-ops"]
+
+
+def test_language_filter_skills_excludes_other_languages(tmp_path):
+    _make_recipe_with_manifest(
+        tmp_path, "skills/retail/store-ops", manifest="language: java\n"
+    )
+    changed = ["skills/retail/store-ops/SKILL.md"]
+    assert (
+        m.compute_affected_recipes(
+            changed, language="python", repo_root=tmp_path
+        )
+        == []
+    )
 
 
 def test_language_filter_mixes_flat_and_namespaced(tmp_path):
