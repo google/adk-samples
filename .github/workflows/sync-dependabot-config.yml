@@ -15,10 +15,12 @@ name: Sync Dependabot Config
 #   2. A maintainer (or CI reminder) runs this workflow manually.
 #   3. This workflow opens a small sync PR that a code owner approves.
 #
-# The PR-time freshness check (.github/workflows/validate-recipe-structure.yml
-# or any workflow that calls generate_dependabot.py --check) will fail the
-# recipe PR itself if the contributor forgot to regenerate the file, giving
-# an earlier signal before this manual step is needed.
+# The PR-time freshness check — the "Check dependabot.yml is up to date" job
+# in .github/workflows/validate-recipe-structure.yml — fails the recipe PR
+# itself if the contributor forgot to regenerate the file, giving an earlier
+# signal before this manual step is needed. That job is what actually keeps
+# the file in sync today; this workflow has not yet been exercised, so verify
+# it end to end before relying on it.
 
 on:
   workflow_dispatch:

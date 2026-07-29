@@ -1,11 +1,14 @@
-# AUTO-GENERATED — do not edit by hand.
-# Owned by .github/scripts/generate_dependabot.py
+# GENERATED FILE — every line below is written by
+# .github/scripts/generate_dependabot.py. Do not edit it by hand.
 #
-# This file is regenerated automatically on every push to main that touches
-# core/, contrib/, or skills/.  To force an immediate refresh, trigger the
-# "Sync Dependabot Config" workflow manually from the Actions tab, or run:
+# Nothing triggers that script for you — there is no push hook, schedule, or
+# bot that keeps this in sync. Whoever adds or removes a recipe has to run it
+# and commit the result in the same pull request:
 #
 #   python .github/scripts/generate_dependabot.py
+#
+# CI enforces this — the "Check dependabot.yml is up to date" job fails the
+# PR if this file no longer matches the recipe tree.
 #
 # Ecosystems tracked: uv (Python), gomod (Go), maven (Java),
 #                     gradle (Kotlin), npm (TypeScript/JS), github-actions
