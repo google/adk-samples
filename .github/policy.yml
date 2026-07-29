@@ -59,6 +59,30 @@ recipe_naming:
   max_folder_name_length: 30
 
 # --------------------------------------------------------------------------
+# Retired recipe roots — enforced by the "Check for work in retired folders"
+# job in .github/workflows/validate-recipe-structure.yml via
+# tools/check_frozen_paths.py.
+#
+# Recipes used to live at <language>/agents/<recipe> in the repo root. Those
+# roots are closed: both new recipes and changes to existing ones belong in
+# contrib/<language>/<recipe>. A pull request that ADDS or MODIFIES any file
+# under a path listed here fails. Deletions and renames are exempt, so
+# migrating a recipe out of a retired folder is never blocked.
+#
+# Scoped to <language>/agents rather than <language> so that the deprecation
+# notice in each <language>/README.md stays editable.
+#
+# Escape hatches: the job skips for bot authors, and for any PR carrying the
+# `allow-legacy-path` label (only users with write access can apply labels).
+# --------------------------------------------------------------------------
+frozen_paths:
+  - python/agents
+  - java/agents
+  - go/agents
+  - kotlin/agents
+  - typescript/agents
+
+# --------------------------------------------------------------------------
 # Excluded paths — files/directories that never count toward size or file
 # count when validating a recipe.
 #
