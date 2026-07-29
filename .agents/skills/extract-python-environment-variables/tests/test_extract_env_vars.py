@@ -2798,3 +2798,314 @@ def test_invariant_appended_entries_are_skill_owned(tmp_path):
     assert (
         entries["DOWNGRADED"].classification == m.EntryClassification.SKILL_TODO
     )
+
+
+# ---------------------------------------------------------------------------
+# _post_header_index — module-docstring detection
+#
+# Regression: the docstring scan was a bare startswith('"""') test, so any
+# legal string prefix (r"""..., u'''...) slipped past it and `import os` was
+# injected ABOVE the docstring. That demotes the docstring to a dead string
+# expression and loses __doc__.
+# ---------------------------------------------------------------------------
+
+
+def _insert_point(source: str) -> str:
+    """Return the line `import os` would be inserted before."""
+    lines = source.splitlines(keepends=True)
+    idx = m._post_header_index(lines)
+    return lines[idx] if idx < len(lines) else "<EOF>"
+
+
+def test_post_header_index_skips_plain_docstring():
+    src = '# license\n\n"""Doc.\n\nMore.\n"""\n\nimport sys\n'
+    assert _insert_point(src) == "\n"
+
+
+def test_post_header_index_skips_raw_prefixed_docstring():
+    src = '# license\n\nr"""Doc.\n\nMore.\n"""\n\nimport sys\n'
+    assert _insert_point(src) == "\n"
+
+
+def test_post_header_index_skips_unicode_prefixed_docstring():
+    src = '# license\n\nu"""Doc.\n"""\n\nimport sys\n'
+    assert _insert_point(src) == "\n"
+
+
+def test_post_header_index_skips_raw_single_quoted_docstring():
+    src = "# license\n\nr'''Doc.\nMore.\n'''\n\nimport sys\n"
+    assert _insert_point(src) == "\n"
+
+
+def test_post_header_index_skips_one_line_raw_docstring():
+    src = '# license\n\nr"""Doc."""\n\nimport sys\n'
+    assert _insert_point(src) == "\n"
+
+
+def test_post_header_index_handles_shebang_and_raw_docstring():
+    src = '#!/usr/bin/env python3\n# license\n\nr"""Doc.\n"""\n\nimport sys\n'
+    assert _insert_point(src) == "\n"
+
+
+def test_post_header_index_without_docstring_lands_after_comments():
+    src = "# license\n\nimport sys\n"
+    assert _insert_point(src) == "import sys\n"
+
+
+def test_post_header_index_unparseable_source_falls_back_to_scan():
+    # The AST path is unavailable, but the textual fallback must still
+    # respect a prefixed docstring.
+    src = '# license\n\nr"""Doc.\n"""\n\nimport sys\ndef (\n'
+    assert _insert_point(src) == "\n"
+
+
+def test_post_header_index_empty_file():
+    assert m._post_header_index([]) == 0
+
+
+def test_os_import_injected_below_raw_docstring(tmp_path):
+    # End-to-end: the module docstring must remain the first statement, so
+    # ast.get_docstring() still finds it after the rewrite.
+    src = (
+        "# Copyright\n"
+        "\n"
+        'r"""Module docstring with a \\d regex mention."""\n'
+        "\n"
+        'DEFAULT_MODEL = "gemini-embedding-001"\n'
+    )
+    py = _write(tmp_path / "ingest.py", src)
+
+    hits = m.extract_hardcoded_models([py])
+    name_map = m.assign_model_var_names({"gemini-embedding-001"})
+    m.replace_hardcoded_models([py], hits, name_map)
+
+    result = py.read_text(encoding="utf-8")
+    tree = ast.parse(result)
+    assert ast.get_docstring(tree) is not None, (
+        f"docstring lost — import injected above it:\n{result}"
+    )
+    assert "import os" in result
+
+
+# ---------------------------------------------------------------------------
+# _insert_before_close — trailing comma must land on the entry, not a comment
+# ---------------------------------------------------------------------------
+
+
+def _deps_after_dotenv(body: str):
+    """Add python-dotenv to a dependencies array and parse the result."""
+    src = '[project]\nname = "x"\n' + body + "\n"
+    out = m._compute_pyproject_with_dotenv(src)
+    assert out is not None
+    return out, m.tomllib.loads(out)["project"]["dependencies"]
+
+
+def test_insert_dotenv_preserves_comment_when_entry_has_comma():
+    out, deps = _deps_after_dotenv(
+        'dependencies = [\n    "requests>=2.28",\n'
+        '    "pyOpenSSL>=23.0",  # mTLS during auth\n]'
+    )
+    assert deps == ["requests>=2.28", "pyOpenSSL>=23.0", "python-dotenv>=1.0.0"]
+    # The comment must be untouched — no comma appended inside it.
+    assert "# mTLS during auth\n" in out
+    assert "# mTLS during auth," not in out
+
+
+def test_insert_dotenv_adds_comma_before_trailing_comment():
+    # Previously produced invalid TOML: the separating comma was written
+    # inside the comment, so the array never closed.
+    out, deps = _deps_after_dotenv(
+        'dependencies = [\n    "requests>=2.28",\n'
+        '    "pyOpenSSL>=23.0"  # no comma here\n]'
+    )
+    assert deps == ["requests>=2.28", "pyOpenSSL>=23.0", "python-dotenv>=1.0.0"]
+    assert '"pyOpenSSL>=23.0",  # no comma here' in out
+
+
+def test_insert_dotenv_with_comment_only_last_line():
+    _out, deps = _deps_after_dotenv(
+        'dependencies = [\n    "requests>=2.28",\n    # a note\n]'
+    )
+    assert deps == ["requests>=2.28", "python-dotenv>=1.0.0"]
+
+
+def test_insert_dotenv_into_empty_array():
+    _out, deps = _deps_after_dotenv("dependencies = [\n]")
+    assert deps == ["python-dotenv>=1.0.0"]
+
+
+def test_insert_dotenv_into_empty_array_with_comment():
+    _out, deps = _deps_after_dotenv("dependencies = [\n    # nothing yet\n]")
+    assert deps == ["python-dotenv>=1.0.0"]
+
+
+def test_insert_dotenv_into_single_line_array():
+    _out, deps = _deps_after_dotenv('dependencies = ["a", "b"]')
+    assert deps == ["a", "b", "python-dotenv>=1.0.0"]
+
+
+def test_insert_dotenv_ignores_hash_inside_string():
+    # A '#' inside a PEP 508 URL is not a comment marker.
+    _out, deps = _deps_after_dotenv(
+        'dependencies = [\n    "pkg @ https://x/y#egg=pkg"\n]'
+    )
+    assert deps == ["pkg @ https://x/y#egg=pkg", "python-dotenv>=1.0.0"]
+
+
+def test_split_trailing_comment_respects_quotes():
+    assert m._split_trailing_comment('"a#b"  # real') == (
+        '"a#b"  ',
+        "# real",
+    )
+    assert m._split_trailing_comment("'a#b'") == ("'a#b'", "")
+    assert m._split_trailing_comment('"esc\\"#q"  # c') == (
+        '"esc\\"#q"  ',
+        "# c",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Model rewrite: bare getenv only when a load_dotenv bootstrap exists
+# ---------------------------------------------------------------------------
+
+
+def test_model_rewrite_keeps_default_when_no_dotenv_bootstrap(tmp_path):
+    py = _write(
+        tmp_path / "ingest.py",
+        'DEFAULT_MODEL = "gemini-embedding-001"\n',
+    )
+    hits = m.extract_hardcoded_models([py])
+    name_map = {"gemini-embedding-001": "EMBEDDING_MODEL"}
+
+    m.replace_hardcoded_models([py], hits, name_map, keep_defaults=True)
+
+    result = py.read_text(encoding="utf-8")
+    assert 'os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")' in result
+    # Still valid Python, and the value can never be None.
+    ast.parse(result)
+
+
+def test_model_rewrite_bare_getenv_by_default(tmp_path):
+    py = _write(
+        tmp_path / "agent.py",
+        'MODEL = "gemini-3.5-flash"\n',
+    )
+    hits = m.extract_hardcoded_models([py])
+    name_map = {"gemini-3.5-flash": "MODEL_NAME"}
+
+    m.replace_hardcoded_models([py], hits, name_map)
+
+    result = py.read_text(encoding="utf-8")
+    assert 'os.getenv("MODEL_NAME")' in result
+    assert "gemini-3.5-flash" not in result
+
+
+def test_run_step_load_dotenv_returns_false_without_package(tmp_path, capsys):
+    assert m.run_step_load_dotenv(tmp_path) is False
+    assert "No Python package" in capsys.readouterr().out
+
+
+def test_run_step_load_dotenv_returns_true_with_package(tmp_path):
+    _write(tmp_path / "app" / "__init__.py", "")
+    _write(tmp_path / "app" / "agent.py", "")
+    assert m.run_step_load_dotenv(tmp_path) is True
+
+
+def test_py_string_literal_escapes():
+    assert m._py_string_literal("plain") == '"plain"'
+    assert m._py_string_literal('has"quote') == '"has\\"quote"'
+    assert m._py_string_literal("back\\slash") == '"back\\\\slash"'
+    assert m._py_string_literal("nl\n") == '"nl\\n"'
+
+
+# ---------------------------------------------------------------------------
+# Model var naming derived from the assignment target
+# ---------------------------------------------------------------------------
+
+
+def test_model_var_hint_from_default_prefixed_constant(tmp_path):
+    py = _write(
+        tmp_path / "ingest.py",
+        'DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001"\n',
+    )
+    assert m.extract_model_var_hints([py]) == {
+        "gemini-embedding-001": "EMBEDDING_MODEL"
+    }
+
+
+def test_model_var_hint_from_nested_call_value(tmp_path):
+    py = _write(
+        tmp_path / "setup.py",
+        'embedding_model = cfg.get("embedding_model", "gemini-embedding-001")\n',
+    )
+    assert m.extract_model_var_hints([py]) == {
+        "gemini-embedding-001": "EMBEDDING_MODEL"
+    }
+
+
+def test_model_var_hint_ignores_target_without_model_in_name(tmp_path):
+    py = _write(tmp_path / "agent.py", 'LLM = "gemini-3.5-flash"\n')
+    assert m.extract_model_var_hints([py]) == {}
+
+
+def test_model_var_hint_bare_model_target_maps_to_model_name(tmp_path):
+    py = _write(tmp_path / "agent.py", 'MODEL = "gemini-3.5-flash"\n')
+    assert m.extract_model_var_hints([py]) == {"gemini-3.5-flash": "MODEL_NAME"}
+
+
+def test_model_var_hint_ignores_docstring_mention(tmp_path):
+    py = _write(
+        tmp_path / "agent.py",
+        '"""Uses gemini-3.5-flash by default."""\n',
+    )
+    assert m.extract_model_var_hints([py]) == {}
+
+
+def test_model_var_hint_deterministic_across_conflicting_targets(tmp_path):
+    a = _write(tmp_path / "a.py", 'EMBEDDING_MODEL = "gemini-embedding-001"\n')
+    b = _write(tmp_path / "b.py", 'VECTOR_MODEL = "gemini-embedding-001"\n')
+    c = _write(tmp_path / "c.py", 'VECTOR_MODEL = "gemini-embedding-001"\n')
+    # VECTOR_MODEL has two votes to EMBEDDING_MODEL's one.
+    assert m.extract_model_var_hints([a, b, c]) == {
+        "gemini-embedding-001": "VECTOR_MODEL"
+    }
+
+
+def test_assign_model_var_names_uses_hint():
+    mapping = m.assign_model_var_names(
+        {"gemini-embedding-001"},
+        existing_vars={"GEMINI_MODEL"},
+        hints={"gemini-embedding-001": "EMBEDDING_MODEL"},
+    )
+    assert mapping == {"gemini-embedding-001": "EMBEDDING_MODEL"}
+
+
+def test_assign_model_var_names_falls_back_when_hint_taken():
+    mapping = m.assign_model_var_names(
+        {"gemini-embedding-001"},
+        existing_vars={"EMBEDDING_MODEL"},
+        hints={"gemini-embedding-001": "EMBEDDING_MODEL"},
+    )
+    assert mapping == {"gemini-embedding-001": "MODEL_NAME"}
+
+
+def test_assign_model_var_names_mixed_hinted_and_unhinted():
+    mapping = m.assign_model_var_names(
+        {"gemini-embedding-001", "gemini-3.5-flash"},
+        hints={"gemini-embedding-001": "EMBEDDING_MODEL"},
+    )
+    assert mapping["gemini-embedding-001"] == "EMBEDDING_MODEL"
+    # The lone remaining model still gets the unsuffixed generic name.
+    assert mapping["gemini-3.5-flash"] == "MODEL_NAME"
+
+
+def test_assign_model_var_names_unchanged_without_hints():
+    # Backwards compatibility with the pre-hint behaviour.
+    assert m.assign_model_var_names({"gemini-3.5-flash"}) == {
+        "gemini-3.5-flash": "MODEL_NAME"
+    }
+    two = m.assign_model_var_names({"gemini-a", "gemini-b"})
+    assert set(two.values()) == {
+        "MODEL_NAME_GENERATED_1",
+        "MODEL_NAME_GENERATED_2",
+    }

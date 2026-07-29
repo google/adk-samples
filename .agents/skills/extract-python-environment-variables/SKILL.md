@@ -13,10 +13,15 @@ description: >
   (`"my-project-id"`, `"changeme"`, `"<...>"`) are downgraded to the TODO
   placeholder but the source string is preserved in the marker comment.
   Also detects hardcoded model-name string literals (e.g.
-  `"gemini-3.5-flash"` in `agent.py`) and rewrites them to bare
-  `os.getenv("MODEL_NAME")` (single model) or
-  `os.getenv("MODEL_NAME_GENERATED_1")` / `MODEL_NAME_GENERATED_2`, …
-  (multiple models) — no fallback default in the Python source. The
+  `"gemini-3.5-flash"` in `agent.py`) and rewrites them to an
+  `os.getenv(...)` call. The variable name is derived from the assignment
+  target when it names a model (`DEFAULT_EMBEDDING_MODEL` →
+  `EMBEDDING_MODEL`), else `MODEL_NAME` (single model) or
+  `MODEL_NAME_GENERATED_1` / `MODEL_NAME_GENERATED_2`, … (multiple models).
+  Normally no fallback default is written into the Python source; the one
+  exception is when no `load_dotenv()` bootstrap could be installed (no
+  package `__init__.py`), where the original literal is kept as the
+  fallback so the lookup cannot evaluate to `None` at runtime. The
   model string is written as the value in `.env.example` with a comment
   prompting a rename.   When re-run against a recipe whose `.env.example` already has entries,
   the writer classifies each entry (skill-authored vs. user-authored,
@@ -46,7 +51,7 @@ description: >
 metadata:
   author: Google
   license: Apache-2.0
-  version: 2.1.0
+  version: 2.2.0
 ---
 
 # Extract Python Environment Variables
@@ -115,6 +120,12 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
 
    If `load_dotenv` is already present the injection is skipped.
 
+   **If no package `__init__.py` exists** (common in vertical skills under
+   `skills/`, where the code lives in a plain `scripts/` directory rather
+   than an importable package) the injection is skipped with a `[WARN]`,
+   and the step reports that no bootstrap is in place. Step 4 below depends
+   on that answer.
+
    **Additionally — always, regardless of whether we injected** — appends
    `# noqa: E402 -- must come after load_dotenv()` to any top-level relative
    import (`from .x import y`) that sits AFTER a non-import module-level
@@ -137,13 +148,38 @@ Runs `scripts/extract_env_vars.py` against a recipe directory. The script:
    Idempotent: a line that already carries `# noqa: E402` is skipped.
 
 4. **Replaces hardcoded model names** in source (e.g. `model="gemini-3.5-flash"`
-   in `agent.py`) with **bare `os.getenv(...)`** — no default argument:
-   - Single model → `os.getenv("MODEL_NAME")`
-   - Multiple models → `os.getenv("MODEL_NAME_GENERATED_1")`, `os.getenv("MODEL_NAME_GENERATED_2")`, … (sorted alphabetically for determinism)
+   in `agent.py`) with an `os.getenv(...)` call.
+
+   **Variable name.** The assignment target that holds the literal is used
+   when it names a model, since it carries far more meaning than a generic
+   fallback — `DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001"` and
+   `embedding_model = cfg.get("embedding_model", "gemini-embedding-001")`
+   both yield `EMBEDDING_MODEL`. This matters in recipes that already read a
+   *different* model var (say `GEMINI_MODEL` for the LLM), where a second
+   bare `MODEL_NAME` would be actively misleading. When a string is assigned
+   to conflicting target names, the most frequent wins, ties broken
+   alphabetically. Otherwise:
+   - A single unnamed model → `MODEL_NAME`
+   - The rest → `MODEL_NAME_GENERATED_1`, `MODEL_NAME_GENERATED_2`, … (sorted
+     alphabetically for determinism)
+
+   **Fallback argument.** Normally the emitted call is **bare** —
+   `os.getenv("EMBEDDING_MODEL")`, no default — because default values are
+   the maintainer's decision, not the skill's. That is only safe when the
+   `load_dotenv()` bootstrap from step 3 is in place to populate the
+   environment.
+
+   **When step 3 could not install a bootstrap** (no package `__init__.py`),
+   nothing reads `.env`, so a bare lookup would evaluate to `None` at runtime
+   and silently break the recipe. In that case the original literal is
+   preserved as the fallback — `os.getenv("EMBEDDING_MODEL",
+   "gemini-embedding-001")` — which keeps behaviour identical to before the
+   rewrite while still lifting the value into the environment. The step logs
+   an `[INFO]` line explaining the choice.
 
    The actual model string is written as the value in `.env.example` (e.g.
-   `MODEL_NAME_GENERATED_1=gemini-3.5-flash`) with a comment prompting the
-   maintainer to rename the variable to something meaningful before shipping.
+   `EMBEDDING_MODEL=gemini-embedding-001`) with a comment prompting the
+   maintainer to rename the variable if the derived name isn't right.
 
 5. **Updates `pyproject.toml`** — adds `python-dotenv>=1.0.0` to `[project]`
    dependencies if it is not already there.
@@ -195,7 +231,9 @@ are LEFT UNTOUCHED. The skill's only writes to Python files are:
   (once, only if not already present).
 - Appending `# noqa: E402` to trailing relative imports that would
   otherwise trip Ruff after the env-bootstrap block.
-- Replacing hardcoded model literals with bare `os.getenv(...)` calls.
+- Replacing hardcoded model literals with `os.getenv(...)` calls — bare
+  when a `load_dotenv()` bootstrap is in place, otherwise retaining the
+  original literal as the fallback (see step 4 above).
 
 Note that scanning `os.environ.setdefault(...)` and lifting its value
 into `.env.example` (v2) does NOT violate Rule 2 — the skill READS from

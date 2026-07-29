@@ -57,12 +57,18 @@ import argparse
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+try:  # tomllib is stdlib from 3.11; this script still supports 3.9.
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - depends on interpreter
+    tomllib = None  # type: ignore[assignment]
 
 # ---------- Constants ------------------------------------------------------
 
@@ -111,6 +117,26 @@ LICENSE_HEADER = """\
 """
 
 
+CONFTEST_BODY = '''"""Put the recipe root on ``sys.path`` for the runnability test.
+
+The test imports ``{module_name}`` from the recipe root, but this recipe
+declares no ``[build-system]``, so nothing installs it as a package. Under
+pytest's default ``prepend`` import mode only the test file's own directory
+goes on ``sys.path``, so the import would fail with ``ModuleNotFoundError``.
+
+Delete this file once the recipe declares a ``[build-system]`` and is
+installed with ``uv sync`` — the shim is then redundant.
+"""
+
+import sys
+from pathlib import Path
+
+RECIPE_ROOT = Path(__file__).resolve().parent.parent
+if str(RECIPE_ROOT) not in sys.path:
+    sys.path.insert(0, str(RECIPE_ROOT))
+'''
+
+
 # ---------- Report dataclasses ---------------------------------------------
 
 
@@ -134,6 +160,13 @@ class Report:
     test_content: str | None = None
     action: str | None = None  # would_write / wrote / refused_overwrite / error
     message: str = ""
+    # How `import <module_name>` is expected to resolve when pytest runs.
+    # One of: installable / pythonpath-ini / existing-conftest /
+    # generated-conftest / unresolved.
+    import_support: str | None = None
+    conftest_path: str | None = None
+    conftest_action: str | None = None  # would_write / wrote / skipped / none
+    warnings: list[str] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(
@@ -144,9 +177,13 @@ class Report:
                 "module_name": self.module_name,
                 "target_path": self.target_path,
                 "detections": asdict(self.detections),
+                "import_support": self.import_support,
+                "conftest_path": self.conftest_path,
+                "conftest_action": self.conftest_action,
                 "test_content": self.test_content,
                 "action": self.action,
                 "message": self.message,
+                "warnings": self.warnings,
             },
             indent=2,
         )
@@ -200,6 +237,117 @@ def module_path_from_file(agent_file: Path, recipe_dir: Path) -> str:
     parts = list(rel.parts)
     parts[-1] = parts[-1].removesuffix(".py")
     return ".".join(parts)
+
+
+# ---------- Import-support detection ---------------------------------------
+#
+# The generated test does `import <module_name>`, which only resolves if the
+# RECIPE ROOT is on sys.path. That is not automatic: under pytest's default
+# `prepend` import mode, only the test file's own basedir (`<recipe>/tests`)
+# is inserted. The recipe root gets there when the project is installed
+# (`uv sync`, which needs a [build-system]) or when something explicitly puts
+# it there.
+#
+# Historical gap: this was assumed rather than checked, so a recipe without a
+# [build-system] — common for vertical skills under skills/, where code lives
+# in a plain scripts/ directory — got a test that always died with
+# ModuleNotFoundError, while the pipeline's py_compile check still reported
+# success.
+
+
+_BUILD_SYSTEM_RE = re.compile(r"^\s*\[build-system\]", re.MULTILINE)
+
+
+def _load_pyproject(pyproject: Path) -> dict[str, Any] | None:
+    """Parse pyproject.toml, or None when unavailable/unparseable."""
+    if tomllib is None or not pyproject.is_file():
+        return None
+    try:
+        return tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+
+
+def _has_build_system(pyproject: Path) -> bool:
+    """Whether pyproject.toml declares a [build-system] table."""
+    data = _load_pyproject(pyproject)
+    if data is not None:
+        return isinstance(data.get("build-system"), dict)
+    # tomllib unavailable (< 3.11) or unparseable — fall back to a text scan
+    # rather than silently claiming the recipe is not installable.
+    try:
+        return bool(_BUILD_SYSTEM_RE.search(pyproject.read_text("utf-8")))
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def _pytest_pythonpath_covers_root(pyproject: Path) -> bool:
+    """Whether [tool.pytest.ini_options].pythonpath puts the root on sys.path."""
+    data = _load_pyproject(pyproject)
+    if not data:
+        return False
+    ini = data.get("tool", {}).get("pytest", {}).get("ini_options", {})
+    entries = ini.get("pythonpath")
+    if isinstance(entries, str):
+        entries = [entries]
+    if not isinstance(entries, list):
+        return False
+    return any(str(e).strip() in {".", "./", ""} for e in entries)
+
+
+def _extends_syspath(path: Path) -> bool:
+    """Whether a file actually touches ``sys.path`` in executable code.
+
+    AST-based on purpose: a substring search counts a comment or docstring
+    that merely *mentions* sys.path (``# does not touch sys.path``), which
+    would wrongly certify a conftest as providing import support. Comments
+    never appear in the AST and a prose mention is an ``ast.Constant``, not
+    an attribute access, so both are excluded for free.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, SyntaxError, ValueError):
+        return False
+    for node in ast.walk(tree):
+        # `sys.path...`
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "path"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "sys"
+        ):
+            return True
+        # `from sys import path`
+        if isinstance(node, ast.ImportFrom) and node.module == "sys":
+            if any(alias.name == "path" for alias in node.names):
+                return True
+    return False
+
+
+def detect_import_support(recipe_dir: Path) -> str:
+    """Classify how the recipe root reaches sys.path under pytest.
+
+    Returns one of ``installable`` / ``pythonpath-ini`` /
+    ``existing-conftest`` / ``unresolved``.
+    """
+    pyproject = recipe_dir / "pyproject.toml"
+    if _has_build_system(pyproject):
+        return "installable"
+    if _pytest_pythonpath_covers_root(pyproject):
+        return "pythonpath-ini"
+    # A conftest.py AT THE RECIPE ROOT is sufficient whatever it contains:
+    # under prepend import mode pytest puts each conftest's own directory on
+    # sys.path, and for this one that directory IS the recipe root. Verified
+    # empirically — an entirely empty root conftest.py makes `import pkg.mod`
+    # resolve.
+    if (recipe_dir / "conftest.py").is_file():
+        return "existing-conftest"
+    # A tests/conftest.py, by the same rule, only adds `<recipe>/tests` — which
+    # does NOT help. It counts only if it explicitly extends sys.path itself.
+    tests_conftest = recipe_dir / "tests" / "conftest.py"
+    if tests_conftest.is_file() and _extends_syspath(tests_conftest):
+        return "existing-conftest"
+    return "unresolved"
 
 
 # ---------- AST detection helpers ------------------------------------------
@@ -734,6 +882,36 @@ def run(
     target = tests_dir / "test_runnability.py"
     report.target_path = str(target)
 
+    # Will `import <module_name>` actually resolve? If not, the test compiles
+    # fine but dies at run time — so provide the missing sys.path shim rather
+    # than emitting a test that cannot pass.
+    report.import_support = detect_import_support(recipe_dir)
+    conftest = tests_dir / "conftest.py"
+    if report.import_support == "unresolved":
+        if conftest.exists():
+            # Never clobber a conftest we did not write; it may already do
+            # something we would break.
+            report.conftest_action = "skipped"
+            report.conftest_path = str(conftest)
+            report.warnings.append(
+                f"{recipe_dir / 'pyproject.toml'} declares no [build-system], "
+                f"so the recipe is not installed and the recipe root is not "
+                f"on sys.path. {conftest} already exists and was left alone — "
+                f"confirm it puts the recipe root on sys.path, or "
+                f"`import {report.module_name}` will fail at run time."
+            )
+        else:
+            report.conftest_action = "would_write" if dry_run else "wrote"
+            report.conftest_path = str(conftest)
+            report.import_support = "generated-conftest"
+            report.warnings.append(
+                f"No [build-system] in pyproject.toml, so nothing installs "
+                f"the recipe and `import {report.module_name}` would fail "
+                f"under pytest. Generated {conftest} to put the recipe root "
+                f"on sys.path. Adding a [build-system] is the better fix; "
+                f"delete the conftest once you do."
+            )
+
     if dry_run:
         report.action = "would_write"
         return report
@@ -754,8 +932,23 @@ def run(
         report.message = f"Failed to write {target}: {e}"
         return report
 
+    if report.conftest_action == "wrote":
+        content = LICENSE_HEADER + CONFTEST_BODY.format(
+            module_name=report.module_name
+        )
+        try:
+            conftest.write_text(content, encoding="utf-8")
+        except OSError as e:
+            # The test itself landed; report the shim failure without
+            # pretending the whole run failed.
+            report.conftest_action = "error"
+            report.warnings.append(f"Failed to write {conftest}: {e}")
+
     report.action = "wrote"
-    report.message = f"Wrote {target}."
+    written = [str(target)]
+    if report.conftest_action == "wrote":
+        written.append(str(conftest))
+    report.message = f"Wrote {', '.join(written)}."
     return report
 
 

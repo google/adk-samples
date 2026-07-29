@@ -79,6 +79,8 @@ Output:
 
 import argparse
 import json
+import os
+import re
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -170,9 +172,7 @@ class Report:
 # ---------- no-local-ruff-config: no [tool.ruff*] tables -------------------
 
 
-def check_no_local_ruff_config(
-    doc: tomlkit.TOMLDocument, apply: bool
-) -> Check:
+def check_no_local_ruff_config(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
     """Remove any [tool.ruff*] table from pyproject.toml.
 
     Assumes doc["tool"] (if present) is a table — run() validates that the
@@ -321,9 +321,7 @@ def _validate_and_apply_python_floor_rewrite(
     )
 
 
-def check_python_version_floor(
-    doc: tomlkit.TOMLDocument, apply: bool
-) -> Check:
+def check_python_version_floor(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
     """Ensure [project].requires-python is compatible with MIN_PYTHON.
 
     Interpretation B (aligned with CI in .github/workflows/
@@ -905,6 +903,224 @@ def check_default_pypi_index(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
     )
 
 
+# ---------- stale-python-version-refs (report-only) ------------------------
+#
+# Raising [project].requires-python is not a self-contained edit. A recipe
+# typically repeats its supported Python version in prose (README, SKILL.md)
+# and — far more importantly — in EXECUTABLE setup code. A bootstrap script
+# that picks an interpreter from an allowlist still containing the old floor
+# will happily build a venv the recipe then refuses to install into:
+#
+#     for py in python3.13 python3.12 python3.11 python3.10 python3; do
+#     ...
+#     ERROR: Package requires a different Python: 3.10.x not in '>=3.11'
+#
+# This check is report-only: which of the hits matter, and how to reword
+# them, is the maintainer's call. Its job is simply that the bump never lands
+# silently.
+
+# Directories that are never the recipe's own source.
+_SCAN_SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".pytest_cache",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "env",
+        "build",
+        "dist",
+        "node_modules",
+    }
+)
+
+# Files whose Python-version mentions are generated, not authored.
+_SCAN_SKIP_NAMES = frozenset({"uv.lock", "poetry.lock", "Pipfile.lock"})
+
+# Two contexts that make "3.x" a Python-version reference rather than a
+# coincidence. Without the context requirement, a model name like
+# "gemini-3.5-flash" would match and drown the report in false positives.
+_PY_REF_PATTERNS = (
+    # python3.10 / python 3.10 / Python 3.10 / python@3.10 / python_3.10, and
+    # the trove classifier "Programming Language :: Python :: 3.10" (hence
+    # ':' in the separator class and a width of 4).
+    re.compile(r"python[\s@._:-]{0,4}3\.(\d+)", re.IGNORECASE),
+    # >=3.10 / ==3.9 / ~=3.10 — version-specifier syntax
+    re.compile(r"[<>=~!]=\s*3\.(\d+)"),
+)
+
+# Cap the reported hits so a pathological recipe can't produce a wall of JSON.
+_MAX_REPORTED_REFS = 40
+
+
+def _iter_scannable_files(recipe_dir: Path) -> list[Path]:
+    """Every text-ish file in the recipe that could carry a version claim."""
+    found: list[Path] = []
+    for root, dirs, files in os.walk(recipe_dir):
+        dirs[:] = [
+            d
+            for d in dirs
+            if d not in _SCAN_SKIP_DIRS and not d.endswith(".egg-info")
+        ]
+        for name in sorted(files):
+            if name in _SCAN_SKIP_NAMES:
+                continue
+            found.append(Path(root) / name)
+    return sorted(found)
+
+
+# `requires-python` is owned by the python-version-floor check, which rewrites
+# it in-memory and persists only at the end of run(). Scanning it here would
+# report the pre-rewrite value as a stale reference in apply mode even though
+# the file on disk ends up correct — a pure false positive either way, since
+# the floor check already reports that key authoritatively.
+_REQUIRES_PYTHON_LINE_RE = re.compile(r"^\s*requires-python\s*=")
+
+
+def _sub_floor_refs_in_text(
+    text: str, skip_requires_python: bool = False
+) -> list[tuple[int, str]]:
+    """Return (line_number, line) for lines claiming a sub-floor Python."""
+    hits: list[tuple[int, str]] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if skip_requires_python and _REQUIRES_PYTHON_LINE_RE.match(line):
+            continue
+        for pattern in _PY_REF_PATTERNS:
+            if any(
+                int(minor) < MIN_PYTHON[1]
+                for minor in pattern.findall(line)
+                if minor.isdigit()
+            ):
+                hits.append((lineno, line.strip()))
+                break
+    return hits
+
+
+def check_stale_python_version_refs(recipe_dir: Path) -> Check:
+    """Report references to a Python version below the enforced floor."""
+    offenders: dict[str, list[dict[str, Any]]] = {}
+    total = 0
+    for path in _iter_scannable_files(recipe_dir):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue  # binary or unreadable — not a prose/version claim
+        rel = str(path.relative_to(recipe_dir))
+        hits = _sub_floor_refs_in_text(
+            text, skip_requires_python=(rel == "pyproject.toml")
+        )
+        if not hits:
+            continue
+        offenders[rel] = [
+            {"line": lineno, "text": line} for lineno, line in hits
+        ]
+        total += len(hits)
+
+    if not offenders:
+        return Check(
+            "stale-python-version-refs",
+            OK,
+            f"No references to a Python version below {MIN_PYTHON_STR}.",
+        )
+
+    # Trim the payload without losing the file list.
+    trimmed = dict(offenders)
+    if total > _MAX_REPORTED_REFS:
+        budget = _MAX_REPORTED_REFS
+        trimmed = {}
+        for rel, hits in offenders.items():
+            if budget <= 0:
+                break
+            trimmed[rel] = hits[:budget]
+            budget -= len(trimmed[rel])
+
+    return Check(
+        "stale-python-version-refs",
+        REPORT_ONLY,
+        f"{total} reference(s) to a Python version below {MIN_PYTHON_STR} "
+        f"across {len(offenders)} file(s): {', '.join(sorted(offenders))}. "
+        f"[project].requires-python is enforced at >={MIN_PYTHON_STR}, so "
+        f"these are now inconsistent. Executable ones matter most — an "
+        f"interpreter-picking loop in a bootstrap script that still accepts "
+        f"the old floor will build a venv the recipe then refuses to install "
+        f"into. This skill does not auto-fix: which references are stale and "
+        f"how to reword them is editorial.",
+        {
+            "floor": MIN_PYTHON_STR,
+            "total": total,
+            "files": sorted(offenders),
+            "hits": trimmed,
+            "truncated": total > _MAX_REPORTED_REFS,
+        },
+    )
+
+
+# ---------- runnability-test-in-testpaths (report-only) --------------------
+
+
+def _testpaths_cover_runnability(entries: list[str]) -> bool:
+    """Whether any testpaths entry collects tests/test_runnability.py."""
+    for raw in entries:
+        entry = str(raw).strip().rstrip("/")
+        if entry in {"", ".", "tests", "tests/test_runnability.py"}:
+            return True
+    return False
+
+
+def check_runnability_test_in_testpaths(doc: tomlkit.TOMLDocument) -> Check:
+    """Report a `testpaths` setting that excludes the runnability test.
+
+    `tests/test_runnability.py` is a required file for Python recipes
+    (.github/policy.yml), but a narrower `testpaths` — e.g.
+    `["tests/unit", "tests/integration"]` — means a bare `uv run pytest`
+    never collects it. The recipe then looks tested while its one
+    import-smoke test silently never runs.
+    """
+    ini = (
+        doc.get("tool", {}).get("pytest", {}).get("ini_options", {})
+        if doc.get("tool") is not None
+        else {}
+    )
+    entries = ini.get("testpaths") if hasattr(ini, "get") else None
+    if entries is None:
+        return Check(
+            "runnability-test-in-testpaths",
+            OK,
+            "No [tool.pytest.ini_options].testpaths — pytest collects the "
+            "whole recipe, including tests/test_runnability.py.",
+        )
+    if isinstance(entries, str):
+        entries = [entries]
+    if not isinstance(entries, (list, tuple)):
+        return Check(
+            "runnability-test-in-testpaths",
+            OK,
+            "testpaths is not a list; nothing to check.",
+        )
+
+    listed = [str(e) for e in entries]
+    if _testpaths_cover_runnability(listed):
+        return Check(
+            "runnability-test-in-testpaths",
+            OK,
+            f"testpaths {listed} collects tests/test_runnability.py.",
+        )
+
+    return Check(
+        "runnability-test-in-testpaths",
+        REPORT_ONLY,
+        f"[tool.pytest.ini_options].testpaths is {listed}, none of which "
+        f"collects tests/test_runnability.py — the required runnability "
+        f'test would never run under a bare `pytest`. Add "tests" to '
+        f"testpaths, or narrow it deliberately and run the file by path. "
+        f"Not auto-fixed: broadening testpaths changes what CI collects, "
+        f"which is the maintainer's call.",
+        {"testpaths": listed, "expected": "tests/test_runnability.py"},
+    )
+
+
 # ---------- Orchestration -------------------------------------------------
 
 
@@ -1081,9 +1297,7 @@ def run(
     report.add(
         _run_check(
             "project-name-matches-folder",
-            lambda: check_project_name_matches_folder(
-                recipe_dir, doc, apply
-            ),
+            lambda: check_project_name_matches_folder(recipe_dir, doc, apply),
         )
     )
     report.add(
@@ -1105,6 +1319,18 @@ def run(
         _run_check(
             "default-pypi-index",
             lambda: check_default_pypi_index(doc, apply),
+        )
+    )
+    report.add(
+        _run_check(
+            "stale-python-version-refs",
+            lambda: check_stale_python_version_refs(recipe_dir),
+        )
+    )
+    report.add(
+        _run_check(
+            "runnability-test-in-testpaths",
+            lambda: check_runnability_test_in_testpaths(doc),
         )
     )
 
