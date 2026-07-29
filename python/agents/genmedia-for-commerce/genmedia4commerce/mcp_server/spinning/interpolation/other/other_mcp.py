@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """MCP tool wrapper for the interpolation spinning pipeline."""
 
 import asyncio
@@ -50,6 +64,7 @@ async def run_spinning_interpolation(
     Returns:
         Dictionary with video_base64 (merged spinning video as base64),
         num_segments, num_valid segments, and the prompt used.
+
     """
     if not images_base64 or len(images_base64) < 2:
         return {"error": "At least 2 product images are required for interpolation."}
@@ -150,7 +165,7 @@ async def run_spinning_interpolation(
         glitch_results = await asyncio.gather(*glitch_tasks)
         glitch_idx = [i for i in range(len(videos)) if i not in needs_regen]
 
-        for i, glitch_result in zip(glitch_idx, glitch_results):
+        for i, glitch_result in zip(glitch_idx, glitch_results, strict=False):
             if glitch_result["is_valid"]:
                 valid_count += 1
             else:
@@ -162,7 +177,7 @@ async def run_spinning_interpolation(
         # Regenerate failed segments
         regen_tasks = [generate_segment(i) for i in needs_regen]
         regen_results = await asyncio.gather(*regen_tasks)
-        for i, new_video in zip(needs_regen, regen_results):
+        for i, new_video in zip(needs_regen, regen_results, strict=False):
             videos[i] = new_video
 
     # Step 5: Merge all segments

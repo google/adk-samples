@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
-"""
-Rotation Direction Classifier V3f - Production Script
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Rotation Direction Classifier V3f - Production Script.
 
 This classifier detects rotation direction in product videos using sparse optical flow.
 It returns one of: "clockwise", "anticlockwise", "invalid", or "unknown".
@@ -72,8 +85,7 @@ DEFAULT_CONFIG = ClassifierConfig()
 def classify_rotation(
     video_path: str, config: ClassifierConfig | None = None
 ) -> Literal["clockwise", "anticlockwise", "invalid", "unknown", "error"]:
-    """
-    Classify the rotation direction of a spinning product video.
+    """Classify the rotation direction of a spinning product video.
 
     Args:
         video_path: Path to the video file (mp4, etc.)
@@ -86,6 +98,7 @@ def classify_rotation(
         - "invalid": Invalid rotation detected (spike, direction change, etc.)
         - "unknown": Could not determine direction
         - "error": Failed to process video
+
     """
     result = classify_rotation_detailed(video_path, config)
     return result["classification"]
@@ -94,8 +107,7 @@ def classify_rotation(
 def classify_rotation_detailed(
     video_path: str, config: ClassifierConfig | None = None
 ) -> dict[str, Any]:
-    """
-    Classify rotation with detailed results.
+    """Classify rotation with detailed results.
 
     Returns dict containing:
         - classification: The final classification
@@ -149,8 +161,7 @@ def classify_rotation_detailed(
 
 
 def _apply_v3f_rules(detection: dict, config: ClassifierConfig) -> tuple:
-    """
-    Apply V3f classification rules.
+    """Apply V3f classification rules.
 
     Rules (in order):
     1. SPIKE: If any |dx| > dx_spike or |dy| > dy_spike → invalid
@@ -161,6 +172,7 @@ def _apply_v3f_rules(detection: dict, config: ClassifierConfig) -> tuple:
 
     Returns:
         Tuple of (classification, reason)
+
     """
     dx_max = detection["dx_max"]
     dx_min = detection["dx_min"]
@@ -232,8 +244,7 @@ def _apply_v3f_rules(detection: dict, config: ClassifierConfig) -> tuple:
 
 
 def c_detect_rotation_segments(video_path: str, config: ClassifierConfig) -> dict:
-    """
-    Detect rotation segments using sparse optical flow.
+    """Detect rotation segments using sparse optical flow.
 
     Returns detection results including segments and statistics.
     """
@@ -289,7 +300,7 @@ def c_detect_rotation_segments(video_path: str, config: ClassifierConfig) -> dic
         frame_idx += 1
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        p1, st, err = cv2.calcOpticalFlowPyrLK(
+        p1, st, _err = cv2.calcOpticalFlowPyrLK(
             old_gray, frame_gray, p0, None, **lk_params
         )
 

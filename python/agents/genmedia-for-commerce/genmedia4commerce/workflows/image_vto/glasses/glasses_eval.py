@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Glasses evaluation for Image VTO using Gemini vision.
+"""Glasses evaluation for Image VTO using Gemini vision.
+
 Compares reference glasses images against generated VTO images to assess
 frame fidelity (size, shape, color, lens properties).
 """
@@ -33,8 +33,7 @@ def evaluate_glasses(
     reference_glasses_bytes: bytes,
     model: str = "gemini-3-flash-preview",
 ) -> dict:
-    """
-    Evaluate how faithfully the glasses in the generated image match the reference.
+    """Evaluate how faithfully the glasses in the generated image match the reference.
 
     Args:
         client: Gemini client instance
@@ -51,6 +50,7 @@ def evaluate_glasses(
             "lenses": int (0-10),
             "score": float (0-100, weighted average),
         }
+
     """
     system_prompt = """You are an expert eyewear quality inspector. Your task is to compare a reference glasses product image against a generated virtual try-on image and evaluate how accurately the glasses were reproduced.
 
@@ -143,8 +143,8 @@ def evaluate_all_glasses(
     glasses_images_bytes_list: list[bytes],
     model: str = "gemini-3-flash-preview",
 ) -> dict:
-    """
-    Evaluate all reference glasses against the generated VTO image.
+    """Evaluate all reference glasses against the generated VTO image.
+
     Uses the first glasses image as the primary reference.
 
     Returns:
@@ -153,6 +153,7 @@ def evaluate_all_glasses(
             "glasses_score": float - Score normalized to 0-100,
             "glasses_details": dict - Detailed evaluation
         }
+
     """
     # Use the first glasses image as the primary reference
     primary_glasses = glasses_images_bytes_list[0]

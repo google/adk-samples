@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """MCP tool wrappers for the clothes video VTO pipeline."""
 
 import base64
@@ -37,6 +51,7 @@ async def run_video_vto_clothes(
     Returns:
         Dictionary with videos (base64), scores, image_base64 (best VTO image),
         and filenames.
+
     """
     if not full_body_image_base64:
         return {"error": "Full body image is required."}
@@ -115,6 +130,7 @@ async def run_animate_model_mcp(
 
     Returns:
         Dictionary with videos_base64, scores, and filenames.
+
     """
     if not model_image_base64:
         return {"error": "Model image is required."}

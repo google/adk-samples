@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Video validation utilities for product spin R2V."""
+
 # Standard library imports
 import logging
 
@@ -32,9 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def is_valid_path(video_path, allowed_path):
-    """
-    Checks if a sequence of nodes represents a valid path through the allowed graph.
-    """
+    """Check if a sequence of nodes represents a valid path through the allowed graph."""
     # A path with 0 or 1 node is technically valid as there are no transitions to violate.
     if len(video_path) <= 1:
         return True, "Path is valid (too short to violate rules)"
@@ -61,9 +61,9 @@ def is_valid_path(video_path, allowed_path):
 
 
 def is_valid_path_lessstrict(video_path, allowed_path, max_consecutive_violations=5):
-    """
-    Checks if a sequence of nodes represents a valid path through the allowed graph,
-    with tolerance for temporary misclassifications and oscillations during transitions.
+    """Check if a sequence of nodes represents a valid path through the allowed graph.
+
+    Allows tolerance for temporary misclassifications and oscillations during transitions.
 
     This function handles:
     1. Random misclassifications (noise)
@@ -83,6 +83,7 @@ def is_valid_path_lessstrict(video_path, allowed_path, max_consecutive_violation
         - is_valid: Whether the path is valid
         - message: Validation message with details
         - corrected_path: Cleaned path with misclassifications/oscillations corrected to valid positions
+
     """
     if len(video_path) <= 1:
         return True, "Path is valid (too short to violate rules)", video_path.copy()
@@ -215,7 +216,16 @@ def is_valid_path_lessstrict(video_path, allowed_path, max_consecutive_violation
 
 
 def is_valid(video_path, strict=True):
+    """Check if the video path is valid.
 
+    Args:
+        video_path: List of class labels for each frame.
+        strict: Whether to use strict path validation. Default: True.
+
+    Returns:
+        Tuple of (is_valid, reversed, message, corrected_path).
+
+    """
     allowed_path = {
         "front": ["front", "front_left"],
         "front_right": ["front_right", "front"],
@@ -270,9 +280,9 @@ def is_valid(video_path, strict=True):
 
 
 def find_second_occurrence_range(classes, original_indices, min_frame_distance=50):
-    """
-    Find the initial and ending original indices where the starting class appears for the second time.
-    If not second appearence return None None
+    """Find the initial and ending original indices where the starting class appears for the second time.
+
+    If not second appearance return None None.
 
     The function reverses through the classes list and finds:
     1. The first occurrence of the starting class (which we skip)
@@ -287,6 +297,7 @@ def find_second_occurrence_range(classes, original_indices, min_frame_distance=5
     Returns:
         tuple: (start_original_index, end_original_index) for the second occurrence,
                or (None, None) if second occurrence not found
+
     """
     if not classes or not original_indices or len(classes) != len(original_indices):
         return None, None
@@ -351,7 +362,17 @@ def find_second_occurrence_range(classes, original_indices, min_frame_distance=5
 
 
 def sample_frames(frame_list, target_samples_per_sec, original_fps=24):
+    """Sample frames from the video at a target rate.
 
+    Args:
+        frame_list: List of frames.
+        target_samples_per_sec: Target number of samples per second.
+        original_fps: Original frames per second. Default: 24.
+
+    Returns:
+        Tuple of (sampled_frames, sampled_indices).
+
+    """
     interval = int(original_fps / target_samples_per_sec)
     sampled_indices = [i for i in range(0, len(frame_list), interval)]
     if len(frame_list) - 1 not in sampled_indices:
@@ -361,6 +382,15 @@ def sample_frames(frame_list, target_samples_per_sec, original_fps=24):
 
 
 def all_classes_present(product_position_frames):
+    """Check if all required classes are present in the frames.
+
+    Args:
+        product_position_frames: List of classified positions.
+
+    Returns:
+        Tuple of (bool, str) indicating if all classes are present and a message.
+
+    """
     class_order = [
         "right",
         "front_right",
@@ -388,12 +418,13 @@ def all_classes_present(product_position_frames):
 def frames_in_extremity_class(
     image_list, frame_classes, client, shoe_classifier_model, position="last"
 ):
-    """
-    Find the range of frames that have the same class as either the first or last image.
+    """Find the range of frames that have the same class as either the first or last image.
+
     Uses binary search, searching only within 60 frames from the target position.
 
     Args:
         image_list: List of images (in original order)
+        frame_classes: List of classes for each frame
         client: Client for classify_shoe
         shoe_classifier_model: Model for classify_shoe
         position: Either 'first' or 'last' - determines which end to search
@@ -401,6 +432,7 @@ def frames_in_extremity_class(
     Returns:
         Number of consecutive frames at the specified position that share the same class,
         or 0 if no match found in the search range
+
     """
     if not image_list:
         return 0
@@ -449,13 +481,12 @@ def frames_in_extremity_class(
 
 
 def validate_and_fix_product_spin_consistency_r2v(
-    video_bytes: bytes = None,
+    video_bytes: bytes | None = None,
     client=None,
     model=None,
-    pre_classified_frames: list[str] = None,
+    pre_classified_frames: list[str] | None = None,
 ) -> tuple[bool, str]:
-    """
-    Validates if a product spin video follows a consistent rotation path.
+    """Validate if a product spin video follows a consistent rotation path.
 
     Args:
         video_bytes: The video as bytes (optional if pre_classified_frames is provided)
@@ -472,8 +503,8 @@ def validate_and_fix_product_spin_consistency_r2v(
         - sampled_indices: List of frame indices that were sampled (in original video order)
         - total_frames: Total number of frames in the video
         - frame_list: List of frame bytes (after processing - reversed/cropped if needed)
-    """
 
+    """
     if pre_classified_frames is not None:
         product_position_frames = pre_classified_frames
         sampled_indices = None
@@ -501,11 +532,11 @@ def validate_and_fix_product_spin_consistency_r2v(
     if sampled_indices is not None:
         filtered = [
             (c, i)
-            for c, i in zip(product_position_frames, sampled_indices)
+            for c, i in zip(product_position_frames, sampled_indices, strict=True)
             if c != "invalid"
         ]
         if filtered:
-            product_position_frames, sampled_indices = zip(*filtered)
+            product_position_frames, sampled_indices = zip(*filtered, strict=True)
             product_position_frames = list(product_position_frames)
             sampled_indices = list(sampled_indices)
     else:
@@ -524,7 +555,7 @@ def validate_and_fix_product_spin_consistency_r2v(
             frame_list,
         )
     else:
-        is_valid_spin, reversed, message_valid, corrected_path = is_valid(
+        is_valid_spin, reversed, message_valid, _corrected_path = is_valid(
             product_position_frames, strict=False
         )
 
@@ -573,11 +604,11 @@ def validate_and_fix_product_spin_consistency_r2v(
 
                     else:
                         valid = True
-                        message = f"Sufficent 360 spin with {combined_number_frames} frames on init and end class"
+                        message = f"Sufficient 360 spin with {combined_number_frames} frames on init and end class"
 
             elif (
                 end_idx - start_idx < 3 and total_frames - end_idx < 3
-            ):  # Makin sure the is at least two frames to pick from and that this happens close to the end
+            ):  # Making sure the is at least two frames to pick from and that this happens close to the end
                 message = (
                     "Spin ends at the same class as initial and no trimming needed"
                 )
@@ -597,7 +628,9 @@ def validate_and_fix_product_spin_consistency_r2v(
                 total_frames = len(frame_list)
                 filtered = [
                     (idx, position)
-                    for idx, position in zip(sampled_indices, product_position_frames)
+                    for idx, position in zip(
+                        sampled_indices, product_position_frames, strict=True
+                    )
                     if idx < cropped_index
                 ]
                 sampled_indices = [idx for idx, _ in filtered]

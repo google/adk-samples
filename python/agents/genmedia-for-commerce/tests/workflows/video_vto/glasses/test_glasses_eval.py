@@ -109,7 +109,7 @@ class TestFindColorDropFrame:
         frames = [green] * 10
 
         target_rgb = (0, 255, 0)
-        drop_index = find_color_drop_frame(frames, target_rgb)
+        find_color_drop_frame(frames, target_rgb)
 
         # No significant drop should occur
         # Result depends on implementation details

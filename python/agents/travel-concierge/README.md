@@ -2,9 +2,9 @@
 
 This sample demonstrates the use of Agent Development Kit to deliver a new user experience for Travelers. A cohort of agents mimics the notion of having a personal travel concierge, taking care of a traveler's needs: from trip conception, planning and booking, to preparing for the trip, getting help to get from point A to B during the trip, while simultaneously acting as an informative guide.
 
-This example includes illustrations with ADK supported tools such as Google Places API, Google Search Grounding and MCP.
+This example includes illustrations with ADK supported tools such as Google Maps Grounding API, Google Search Grounding and MCP.
 
-The [Agent Starter Pack](https://goo.gle/agent-starter-pack) (ASP) is the **recommended** way to create a new project from this sample. The copy in [adk-samples](https://github.com/google/adk-samples) remains the upstream source for browsing and contributions.
+The [Google Agents CLI](https://github.com/google/agents-cli) is the **recommended** way to create a new project from this sample. The copy in [adk-samples](https://github.com/google/adk-samples) remains the upstream source for browsing and contributions.
 
 ## Overview
 
@@ -31,7 +31,7 @@ See section [MCP](#mcp) for an example using Airbnb's MCP search tool.
 ### Agent Architecture
 Travel Concierge Agents Architecture
 
-<img src="travel-concierge-arch.png" alt="Travel Concierge's Multi-Agent Architecture" width="800"/>
+<img src="travel-concierge-arch.webp" alt="Travel Concierge's Multi-Agent Architecture" width="800"/>
 
 ### Component Details
 
@@ -69,16 +69,28 @@ Expand on the "Key Components" from above.
 
 - Python 3.11+
 - Google Cloud project (for Vertex AI)
-- API key for [Google Maps Platform Places API](https://developers.google.com/maps/documentation/places/web-service/get-api-key)
+- An [API key](https://developers.google.com/maps/get-started#api-key) with access to the [Maps Grounding Lite API](https://developers.google.com/maps/ai/grounding-lite)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Google Agent Development Kit 1.0+
 
-### Recommended: Using Agent Starter Pack
+To enable access Maps Grounding Lite API:
+- The API service "Maps Grounding Lite" must be enabled in the Google Cloud project.
+- Make sure "Maps Grounding Lite API" is added to the list of APIs the API key can access.
 
-The Agent Starter Pack is the recommended way to create and deploy a production-ready version of this agent. Start from a new directory (replace `my-travel-concierge` with your project name):
+### Recommended: Using Google Agents CLI
+
+The Google Agents CLI is the recommended way to create and deploy a production-ready version of this agent.
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-travel-concierge -a adk@travel-concierge
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-travel-concierge` with your project name):
+
+```bash
+agents-cli create my-travel-concierge -a adk@travel-concierge
 cd my-travel-concierge
 ```
 
@@ -98,10 +110,10 @@ GOOGLE_GENAI_USE_VERTEXAI=1
 
 # Vertex backend config
 GOOGLE_CLOUD_PROJECT=__YOUR_CLOUD_PROJECT_ID__
-GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_CLOUD_LOCATION=us-east1
 
-# Places API
-GOOGLE_PLACES_API_KEY=__YOUR_API_KEY_HERE__
+# Maps API
+GOOGLE_MAPS_API_KEY=__YOUR_API_KEY_HERE__
 
 # GCS Storage Bucket name - for Agent Engine deployment test
 GOOGLE_CLOUD_STORAGE_BUCKET=YOUR_BUCKET_NAME_HERE
@@ -121,33 +133,19 @@ Authenticate:
 gcloud auth application-default login
 ```
 
-During setup, the starter pack will prompt you for deployment options and adds production-oriented tooling (for example automated CI/CD deployment scripts).
-
-<details>
-<summary>Alternative: install Agent Starter Pack with pip</summary>
-
-```bash
-python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-travel-concierge -a adk@travel-concierge
-cd my-travel-concierge
-```
-
-Then continue with `uv sync --group dev` and the configuration steps above.
-
-</details>
+During setup, the Google Agents CLI will prompt you for deployment options and adds production-oriented tooling (for example automated CI/CD deployment scripts).
 
 <details>
 <summary>Clone this repository directly (contributors and advanced use)</summary>
 
-**New projects should still use the Agent Starter Pack** as described above.
+**New projects should still use the Google Agents CLI** as described above.
 
 ### Folder Structure
 
 ```
 .
 ├── README.md
-├── travel-concierge-arch.png
+├── travel-concierge-arch.webp
 ├── pyproject.toml
 ├── travel_concierge/
 │   ├── shared_libraries/
@@ -285,16 +283,16 @@ uv run pytest eval
 
 ## Deploying the Agent
 
-To deploy the agent to Vertex AI Agent Engine, run the following command under `travel-concierge`:
+To deploy the agent to Agent Runtime, run the following command under `travel-concierge`:
 
 ```bash
 uv sync --group deployment
 uv run python deployment/deploy.py --create
 ```
-When this command returns, if it succeeds it will print an AgentEngine resource
+When this command returns, if it succeeds it will print an Agent Runtime resource
 id that looks something like this:
 ```
-projects/************/locations/us-central1/reasoningEngines/7737333693403889664
+projects/************/locations/us-east1/reasoningEngines/7737333693403889664
 ```
 
 To quickly test that the agent has successfully deployed,

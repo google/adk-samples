@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Product fitting image generation -- single-step generation with
-framing-adapted prompts focused on garment fit (no face correction step).
+"""Product fitting image generation -- single-step generation.
+
+Framing-adapted prompts focused on garment fit (no face correction step).
 """
 
 import logging
@@ -38,8 +38,7 @@ def generate_fitting(
     model_gender=None,
     timeout=NANO_TIMEOUT_SECONDS,
 ):
-    """
-    Generate a product fitting image -- single-step generation (no face correction).
+    """Generate a product fitting image -- single-step generation (no face correction).
 
     Args:
         client: Gemini client instance
@@ -49,11 +48,13 @@ def generate_fitting(
         framing: One of "full_body", "upper_body", "lower_body"
         model: Gemini model to use for generation
         garment_view: "front" or "back" -- which side of the garment is shown
+        garment_description: Pre-extracted description of the garment (default: None)
         model_gender: Gender string or None
         timeout: Timeout in seconds
 
     Returns:
         tuple: (image_bytes, user_message, config) or (None, None, None) if failed
+
     """
     logger.debug(
         f"[Fitting] Starting product fitting generation (framing: {framing}, model: {model}, garment_view: {garment_view}, num_ref_images: {len(garment_images)})"
@@ -106,7 +107,7 @@ def generate_fitting(
         system_instruction=system_prompt,
         image_config={
             "aspect_ratio": aspect_ratio,
-            "image_size": "1K",
+            "image_size": "2K",
             "output_mime_type": "image/png",
         },
     )
@@ -297,11 +298,11 @@ def generate_fitting_back_from_front(
     model_gender=None,
     timeout=NANO_TIMEOUT_SECONDS,
 ):
-    """
-    Generate a back-view fitting image starting from the best front result.
+    """Generate a back-view fitting image starting from the best front result.
 
     Returns:
         tuple: (image_bytes, user_message, config) or (None, None, None) if failed
+
     """
     logger.debug(
         f"[Fitting] Starting back-from-front generation (framing: {framing}, model: {model}, num_back_refs: {len(back_garment_images)})"
@@ -373,9 +374,9 @@ def fix_fitting(
     model,
     timeout=NANO_TIMEOUT_SECONDS,
 ):
-    """
-    Fix a generated fitting image by appending the AI output and fix feedback
-    to the original generation message (multi-turn style conversation).
+    """Fix a generated fitting image by appending the AI output and fix feedback.
+
+    Appends to the original generation message (multi-turn style conversation).
 
     Args:
         client: Gemini client instance
@@ -388,15 +389,14 @@ def fix_fitting(
 
     Returns:
         bytes: Fixed fitting image, or None if generation failed
+
     """
     logger.debug("[Fitting] Starting fix attempt")
 
-    fix_message = original_message + [
+    fix_message = [
+        *original_message,
         generated_image,
-        f"""No, the garment reproduction has issues:
-{eval_feedback}
-
-Fix ONLY the issues described above. Keep everything else identical — same pose, body, composition, setting, complementary garments. Reproduce the garment details exactly as shown in the reference images. Generate the corrected image.""",
+        f"""No, the garment reproduction has issues:\n{eval_feedback}\n\nFix ONLY the issues described above. Keep everything else identical — same pose, body, composition, setting, complementary garments. Reproduce the garment details exactly as shown in the reference images. Generate the corrected image.""",
     ]
 
     result = generate_nano(

@@ -29,7 +29,7 @@ except google.auth.exceptions.DefaultCredentialsError:
     pass
 
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-east1")
 
 from . import agent
 

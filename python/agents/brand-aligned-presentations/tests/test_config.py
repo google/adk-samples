@@ -21,12 +21,15 @@ from pydantic_settings import BaseSettings
 import presentation_agent.shared_libraries.config as config_module
 
 
-def test_app_config_exception():
-    with patch.object(
-        BaseSettings, "__init__", side_effect=Exception("Test config failure")
-    ):
-        with pytest.raises(Exception, match="Test config failure"):
-            importlib.reload(config_module)
+def test_app_config_no_project_does_not_raise_exception():
+    config_module._genai_client = None
+    with patch("os.getenv", return_value=None):
+        with patch("presentation_agent.shared_libraries.config.genai.Client", side_effect=Exception("Test Exception")):
+            # We are testing that initialize_genai_client does not raise an exception,
+            # but returns None. The try/except block in the function handles the
+            # exception.
+            client = config_module.initialize_genai_client()
+            assert client is None
 
 
 def test_initialize_genai_client_success():

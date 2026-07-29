@@ -1,3 +1,19 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Chat API endpoints for the GenMedia application."""
+
 import json
 import logging
 import os
@@ -39,12 +55,15 @@ runner = Runner(
 
 
 class ChatRequest(BaseModel):
+    """Chat request model."""
+
     user_id: str
     session_id: str
     message: str
 
 
 async def chat_streamer(request: ChatRequest):
+    """Stream chat responses from the agent."""
     # Create the session if it doesn't exist
     if not await session_service.get_session(
         app_name="style_advisor", user_id=request.user_id, session_id=request.session_id
@@ -114,6 +133,7 @@ async def chat_streamer(request: ChatRequest):
 
 @router.post("/chat")
 async def chat(request: Request):
+    """Handle chat requests."""
     chat_request_data = await request.json()
     return StreamingResponse(
         chat_streamer(ChatRequest(**chat_request_data)), media_type="text/event-stream"
@@ -127,6 +147,7 @@ async def get_artifact(
     user: str = Query(...),
     session: str = Query(...),
 ):
+    """Retrieve an artifact by name."""
     try:
         artifact = await artifact_service.load_artifact(
             app_name=app,
@@ -148,4 +169,4 @@ async def get_artifact(
         )
     except Exception as e:
         logger.error(f"Error loading artifact: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

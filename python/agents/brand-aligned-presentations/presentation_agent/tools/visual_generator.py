@@ -21,8 +21,8 @@ from google.genai import types
 
 from ..shared_libraries.config import (
     GCS_BUCKET_NAME,
-    LOCATION,
-    PROJECT_ID,
+    GOOGLE_CLOUD_LOCATION,
+    GOOGLE_CLOUD_PROJECT,
     _genai_client,
     get_gcs_client,
     get_logger,
@@ -51,6 +51,7 @@ async def generate_visual(prompt: str) -> str:
     log.info(f"Dispatching to multi-modal model for prompt: '{prompt}'")
 
     try:
+        log.info("Attempting to generate image...")
         # Step 1: Generate the image bytes (same as before)
         global _genai_client
         if _genai_client is None:
@@ -58,7 +59,7 @@ async def generate_visual(prompt: str) -> str:
                 "Global genai client was None. Re-initializing for Vertex AI."
             )
             _genai_client = genai.Client(
-                vertexai=True, project=PROJECT_ID, location=LOCATION
+                vertexai=True, project=GOOGLE_CLOUD_PROJECT, location=GOOGLE_CLOUD_LOCATION
             )
 
         model_name = "gemini-2.5-flash-image"

@@ -3,26 +3,29 @@ name = "brand-search-optimization"
 version = "0.1.0"
 description = "Brand Search Optimization ADK Agent Designed to enhance product titles for retail brand search. It retrieves top keywords, performs searches, and analyzes top results to provide suggestions for enriching product titles"
 authors = [{ name = "Nikhil Kulkarni", email = "nikhilkul@google.com" }]
-license = {text = "Apache License 2.0"}
+license = "Apache-2.0"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 dependencies = [
-    "google-genai>=1.5.0,<2.0.0",
     "selenium>=4.30.0,<5.0.0",
     "webdriver-manager>=4.0.2,<5.0.0",
-    "google-cloud-bigquery>=3.31.0,<4.0.0",
-    "absl-py>=2.2.2,<3.0.0",
-    "google-cloud-aiplatform[agent-engines]>=1.93.0,<2.0.0",
-    "pillow>=11.1.0,<12.0.0",
-    "google-adk>=1.0.0,<2.0.0",
+    "pillow>=12.2.0,<13.0.0",
+    "google-adk>=1.31.0,<2.0.0",
 ]
 
 [dependency-groups]
 dev = [
-    "google-adk[eval]>=1.0.0",
+    "google-adk[eval]>=1.31.0",
     "pytest-asyncio>=0.26.0",
     "pytest>=8.3.5",
+    "agent-starter-pack>=0.32.0",
+    "ruff>=0.12.2",
+    "mypy>=1.17.0",
+]
+
+deployment = [
+    "absl-py>=2.2.2,<3.0.0",
 ]
 
 [tool.ruff]
@@ -34,17 +37,30 @@ extend = "../../../pyproject.toml"
 ignore = ["C901"]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
+"__init__.py" = ["E402", "F401", "I001"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+files = ["brand_search_optimization", "tests", "eval"]
+exclude = ["^deployment/", "^\\.venv/", "__pycache__"]
 
 
 [tool.ruff.lint.isort]
-# Update "brand_search_optimization" to match your actual folder name if it differs
-known-first-party = ["brand_search_optimization", "app"]
+known-first-party = ["brand_search_optimization"]
 
-[tool.hatch.build.targets.wheel]
-# Ensures Hatchling bundles the correct source directories
-packages = ["brand_search_optimization", "app"]
+[tool.pytest.ini_options]
+pythonpath = "."
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.14,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+
+[tool.agent-starter-pack]
+example_question = "Can you help optimize my brand product title for search?"
+
+[tool.agent-starter-pack.settings]
+agent_directory = "brand_search_optimization"

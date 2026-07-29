@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Deployment script for Vertex AI Agent Engine."""
+
 import asyncio
 import datetime
 import importlib
@@ -286,7 +288,6 @@ def deploy_agent_engine_app(
     agent_identity: bool,
 ) -> AgentEngine:
     """Deploy the agent engine app to Vertex AI."""
-
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
 

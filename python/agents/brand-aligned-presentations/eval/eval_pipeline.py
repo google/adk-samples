@@ -280,7 +280,7 @@ async def run_evaluation_with_metrics():
     print("=========================================\n")
 
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-east1")
 
     if not project_id:
         print("Skipping: GOOGLE_CLOUD_PROJECT not set.")

@@ -34,8 +34,7 @@ def agent_app(monkeypatch: pytest.MonkeyPatch) -> AgentEngineApp:
 
 @pytest.mark.asyncio
 async def test_agent_stream_query(agent_app: AgentEngineApp) -> None:
-    """
-    Integration test for the agent stream query functionality.
+    """Integration test for the agent stream query functionality.
     Tests that the agent returns valid streaming responses.
     """
     # Create message and events for the async_stream_query
@@ -62,8 +61,7 @@ async def test_agent_stream_query(agent_app: AgentEngineApp) -> None:
 
 
 def test_agent_feedback(agent_app: AgentEngineApp) -> None:
-    """
-    Integration test for the agent feedback functionality.
+    """Integration test for the agent feedback functionality.
     Tests that feedback can be registered successfully.
     """
     feedback_data = {

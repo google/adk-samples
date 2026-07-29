@@ -18,8 +18,10 @@ from google.adk.agents import Agent
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.google_search_tool import google_search
 
+from travel_concierge import MODEL
+
 _search_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="google_search_grounding",
     description="An agent providing Google-search grounding capability",
     instruction=""",

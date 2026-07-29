@@ -200,7 +200,7 @@ class TestFilterByScoreDistribution:
             (np.zeros((10, 10)), 0.9),
         ]
 
-        result, threshold = filter_by_score_distribution(masks, minumum=1)
+        result, threshold = filter_by_score_distribution(masks, minimum=1)
 
         # Should keep masks with score >= 70th percentile
         assert all(item[1] >= threshold for item in result)
@@ -213,7 +213,7 @@ class TestFilterByScoreDistribution:
             (np.zeros((10, 10)), 0.9),
         ]
 
-        result, _ = filter_by_score_distribution(masks, minumum=2)
+        result, _ = filter_by_score_distribution(masks, minimum=2)
 
         # Should return at least 2 masks even if only 1 is in top 30%
         assert len(result) >= 2

@@ -162,7 +162,6 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
 
     assert events, "No events received from stream"
     # Check for valid content in the response
-    has_text_content = False
     for event in events:
         content = event.get("content")
         if (
@@ -170,7 +169,6 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
             and content.get("parts")
             and any(part.get("text") for part in content["parts"])
         ):
-            has_text_content = True
             break
 
 
@@ -191,8 +189,7 @@ def test_chat_stream_error_handling(server_fixture: subprocess.Popen[str]) -> No
 
 
 def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
-    """
-    Test the feedback collection endpoint (/feedback) to ensure it properly
+    """Test the feedback collection endpoint (/feedback) to ensure it properly
     logs the received feedback.
     """
     # Create sample feedback data

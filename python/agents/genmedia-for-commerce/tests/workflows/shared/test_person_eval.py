@@ -70,7 +70,7 @@ class TestCompareFaces:
         assert result["distance"] == pytest.approx(0.0, abs=0.01)
         assert result["similarity_percentage"] == pytest.approx(100.0, abs=0.5)
         assert result["model"] == "InsightFace-ArcFace"
-        assert result["embeddings_extracted"] == True
+        assert result["embeddings_extracted"]
 
     @patch("workflows.shared.person_eval.get_face_embedding_insightface")
     def test_compares_different_faces(
@@ -177,7 +177,7 @@ class TestCompareFaces:
         # Should return error result
         assert result["similarity_percentage"] == 0.0
         assert result["distance"] == 2.0
-        assert result["embeddings_extracted"] == False
+        assert not result["embeddings_extracted"]
 
 
 class TestEvaluatePersonMatch:
@@ -201,7 +201,7 @@ class TestEvaluatePersonMatch:
 
         result = evaluate_person_match(face_image_bytes, full_body_image_bytes)
 
-        assert result["face_detected"] == True
+        assert result["face_detected"]
         assert result["similarity_percentage"] == 80.0
         assert result["distance"] == 0.2
         mock_crop.assert_called_once()
@@ -217,7 +217,7 @@ class TestEvaluatePersonMatch:
 
         result = evaluate_person_match(face_image_bytes, full_body_image_bytes)
 
-        assert result["face_detected"] == False
+        assert not result["face_detected"]
         assert result["similarity_percentage"] == 0.0
         assert result["distance"] == 2.0
 
@@ -255,7 +255,7 @@ class TestEvaluatePersonMatch:
 
         result = evaluate_person_match(face_image_bytes, full_body_image_bytes)
 
-        assert result["face_detected"] == False
+        assert not result["face_detected"]
         assert result["similarity_percentage"] == 0.0
         assert result["distance"] == 2.0
         assert "error" in result

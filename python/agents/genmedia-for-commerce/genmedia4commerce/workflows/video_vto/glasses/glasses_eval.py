@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Video quality evaluation for glasses VTO.
+"""Video quality evaluation for glasses VTO.
+
 Includes color detection, face detection, and video quality checks.
 """
 
@@ -61,8 +61,7 @@ Your responses must be provided in the following JSON format:
 
 
 def check_video_for_glitches(client, video_bytes):
-    """
-    Uses Gemini to analyze a video for glitches and production artifacts.
+    """Use Gemini to analyze a video for glitches and production artifacts.
 
     Args:
         client: The Gemini client instance
@@ -71,6 +70,7 @@ def check_video_for_glitches(client, video_bytes):
     Returns:
         dict: Dictionary containing 'is_glitched' (bool) and 'reason' (str)
         Returns None if analysis fails
+
     """
     contents = [
         types.Content(
@@ -123,8 +123,7 @@ def detect_color_background(
     saturation_min: float = 0.3,
     value_min: float = 0.3,
 ) -> float:
-    """
-    Detects the percentage of a target color in an image using HSV color space.
+    """Detect the percentage of a target color in an image using HSV color space.
 
     Args:
         image_bytes: Image data as bytes.
@@ -134,6 +133,7 @@ def detect_color_background(
 
     Returns:
         float: The percentage of pixels matching the target color range.
+
     """
     image_array = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
@@ -166,8 +166,7 @@ def find_color_drop_frame(
     target_rgb: tuple[int, int, int, int],
     stability_threshold: float = 0.005,
 ) -> int:
-    """
-    Detects the frame where a target color's ratio drops significantly and stabilizes.
+    """Detect the frame where a target color's ratio drops significantly and stabilizes.
 
     This is useful for finding the first frame after a greenscreen (or any color screen)
     has been removed.
@@ -180,6 +179,7 @@ def find_color_drop_frame(
     Returns:
         int: The index of the first frame after the color drop.
              Returns -1 if no such drop and stabilization is found.
+
     """
     color_ratios = np.array(
         [detect_color_background(img, target_rgb) for img in frame_bytes]
@@ -203,7 +203,7 @@ def find_color_drop_frame(
 
 
 def get_face_detection_request(image):
-    """Creates a face detection request for Vision API batch processing."""
+    """Create a face detection request for Vision API batch processing."""
     features = [
         Feature(
             model="builtin/latest",
@@ -216,19 +216,19 @@ def get_face_detection_request(image):
 
 
 def is_people_ok(number):
-    """Returns True if person count is acceptable (0 or 1)."""
+    """Return True if person count is acceptable (0 or 1)."""
     return number <= 1
 
 
 def count_people(response):
-    """Counts the number of faces detected in a Vision API response."""
+    """Count the number of faces detected in a Vision API response."""
     if not response.face_annotations:
         return 0
     return len(response.face_annotations)
 
 
 def check_multiple_people(response):
-    """Returns True if more than one person is detected in the response."""
+    """Return True if more than one person is detected in the response."""
     if not response.face_annotations:
         return False
     if len(response.face_annotations) == 1:
@@ -237,8 +237,7 @@ def check_multiple_people(response):
 
 
 def is_video_valid(people_counts):
-    """
-    Validates video based on people counts per frame.
+    """Validate video based on people counts per frame.
 
     A video is valid if there is no more than 1 person from a given point onwards.
     Returns the index where the video becomes valid, or -1 if invalid.
@@ -263,14 +262,14 @@ def is_video_valid(people_counts):
 
 
 def get_index_single_person(video_frames) -> int:
-    """
-    Analyzes video frames to find the index where only a single person is visible.
+    """Analyzes video frames to find the index where only a single person is visible.
 
     Args:
         video_frames: List of frame bytes to analyze.
 
     Returns:
         int: Index where video becomes valid, or -1 if invalid.
+
     """
     requests = [get_face_detection_request(img) for img in video_frames]
     client = vision.ImageAnnotatorClient(

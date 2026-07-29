@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Scared utilities for core image processing.
+"""Shared utilities for core image processing.
+
 Includes upscaling, background removal, and product extraction.
 """
 
@@ -38,25 +38,31 @@ from workflows.shared.debug_utils import save_debug_image
 from workflows.shared.llm_utils import retry_with_exponential_backoff
 from workflows.shared.utils import predict_parallel
 
+# Defense-in-depth against decompression-bomb image inputs (e.g. the FITS
+# vector in GHSA-whj4-6x5x-4v2j). 50M pixels (~7000x7000) comfortably covers
+# any legitimate retail-media input. Set after imports to avoid an E402
+# (module-level import not at top of file) violation on the imports below.
+PImage.MAX_IMAGE_PIXELS = 50_000_000
+
 logger = logging.getLogger(__name__)
 
 
 def get_background_mask_rembg(img_bytes):
-    """Generates a background mask using the rembg library."""
+    """Generate a background mask using the rembg library."""
     from rembg import remove
 
     return remove(img_bytes, only_mask=True)
 
 
 def _rgb_to_hsv_array(rgb_array: np.ndarray) -> np.ndarray:
-    """
-    Convert RGB array to HSV using vectorized numpy operations.
+    """Convert RGB array to HSV using vectorized numpy operations.
 
     Args:
         rgb_array: RGB image as numpy array (H, W, 3) with values 0-255
 
     Returns:
         HSV array (H, W, 3) with H: 0-360, S: 0-100, V: 0-100
+
     """
     rgb_normalized = rgb_array.astype(np.float32) / 255.0
     r, g, b = rgb_normalized[:, :, 0], rgb_normalized[:, :, 1], rgb_normalized[:, :, 2]
@@ -88,8 +94,7 @@ def remove_background_hsv(
     saturation_max: float = 24.0,
     value_min: float = 90.0,
 ) -> np.ndarray:
-    """
-    Fast background removal for white/gray backgrounds using HSV color detection.
+    """Fast background removal for white/gray backgrounds using HSV color detection.
 
     This is a fast alternative to ML-based background removal (like rembg) that
     works well for product images on white/gray backgrounds. Uses pure numpy
@@ -102,6 +107,7 @@ def remove_background_hsv(
 
     Returns:
         RGBA numpy array with transparent background
+
     """
     img = PImage.open(io.BytesIO(img_bytes)).convert("RGBA")
     data = np.array(img)
@@ -122,8 +128,7 @@ def calculate_ssim_with_bg_removal(
     saturation_max: float = 24.0,
     value_min: float = 90.0,
 ) -> float:
-    """
-    Calculate SSIM similarity between two images after removing backgrounds.
+    """Calculate SSIM similarity between two images after removing backgrounds.
 
     Removes white/gray backgrounds using fast HSV detection, then computes
     SSIM on the foreground region only. The final score is weighted by IoU
@@ -137,6 +142,7 @@ def calculate_ssim_with_bg_removal(
 
     Returns:
         float: Similarity score between 0 and 1 (SSIM * IoU)
+
     """
     from skimage.metrics import structural_similarity as ssim
 
@@ -194,8 +200,7 @@ def calculate_ssim_with_bg_removal(
 
 @retry_with_exponential_backoff(max_retries=5)
 def get_background_mask_vertex(client, img_bytes, max_dimension=2048):
-    """
-    Generates a background mask using Vertex AI image segmentation.
+    """Generate a background mask using Vertex AI image segmentation.
 
     Automatically resizes large images before segmentation to stay within API limits.
 
@@ -206,6 +211,7 @@ def get_background_mask_vertex(client, img_bytes, max_dimension=2048):
 
     Returns:
         bytes: The mask image as bytes
+
     """
     img = PImage.open(io.BytesIO(img_bytes))
 
@@ -241,8 +247,7 @@ def get_background_mask_vertex(client, img_bytes, max_dimension=2048):
 
 @retry_with_exponential_backoff(max_retries=5)
 def upscale_image_bytes(client, image_bytes, upscale_factor="x4"):
-    """
-    Upscales an image using GCP's Imagen 4.0 Upscale API.
+    """Upscales an image using GCP's Imagen 4.0 Upscale API.
 
     Automatically adjusts upscale factor if the requested factor would exceed
     the maximum allowed output size. Falls back to x3, then x2, or returns
@@ -255,6 +260,7 @@ def upscale_image_bytes(client, image_bytes, upscale_factor="x4"):
 
     Returns:
         bytes: The upscaled image as bytes, or original if too large to upscale
+
     """
     if upscale_factor not in ["x2", "x3", "x4"]:
         raise ValueError("upscale_factor must be 'x2', 'x3', or 'x4'.")
@@ -289,7 +295,10 @@ def upscale_image_bytes(client, image_bytes, upscale_factor="x4"):
     logger.debug(f"Upscaling with factor: {upscale_factor}")
 
     # Debug: save before upscaling
-    save_debug_image(image_bytes, "upscale_input", prefix="upscale")
+    import hashlib
+
+    img_hash = hashlib.md5(image_bytes).hexdigest()[:6]
+    save_debug_image(image_bytes, f"upscale_input_{img_hash}", prefix="upscale")
 
     input_image = types.Image(image_bytes=image_bytes)
 
@@ -306,7 +315,7 @@ def upscale_image_bytes(client, image_bytes, upscale_factor="x4"):
     upscaled_bytes = response.generated_images[0].image.image_bytes
 
     # Debug: save after upscaling
-    save_debug_image(upscaled_bytes, "upscale_output", prefix="upscale")
+    save_debug_image(upscaled_bytes, f"upscale_output_{img_hash}", prefix="upscale")
 
     return upscaled_bytes
 
@@ -319,8 +328,7 @@ def replace_background(
     mask_margin_pixels=0,
     feather_radius=0,
 ):
-    """
-    Extracts the product object from the image and places it on a new background.
+    """Extract the product object from the image and place it on a new background.
 
     Handles EXIF orientation and ensures mask alignment with the original image.
 
@@ -335,6 +343,7 @@ def replace_background(
 
     Returns:
         bytes: The product image on the specified background as PNG bytes
+
     """
     # Open image and handle EXIF orientation
     original_image = PImage.open(io.BytesIO(img_bytes))
@@ -446,8 +455,7 @@ def replace_background_with_mask_return(
     background_color="#FFFFFF",
     mask_margin_pixels=0,
 ):
-    """
-    Extracts the product object and returns both the result image and the mask.
+    """Extract the product object and return both the result image and the mask.
 
     Same as replace_background but also returns the mask for reuse (e.g., after upscaling).
 
@@ -460,6 +468,7 @@ def replace_background_with_mask_return(
 
     Returns:
         tuple: (image_bytes, mask_pil) - The product image as PNG bytes and the PIL mask
+
     """
     original_image = PImage.open(io.BytesIO(img_bytes))
     try:
@@ -544,8 +553,7 @@ def replace_background_with_mask_return(
 def apply_scaled_mask_after_upscale(
     upscaled_bytes, original_mask, background_color="#FFFFFF"
 ):
-    """
-    Apply a scaled-up mask to an upscaled image.
+    """Apply a scaled-up mask to an upscaled image.
 
     Scales the original mask to match the upscaled image size and applies it,
     removing any artifacts introduced during upscaling.
@@ -557,6 +565,7 @@ def apply_scaled_mask_after_upscale(
 
     Returns:
         bytes: The masked image as PNG bytes
+
     """
     upscaled_img = PImage.open(io.BytesIO(upscaled_bytes)).convert("RGBA")
     scaled_mask = original_mask.resize(upscaled_img.size, PImage.Resampling.NEAREST)
@@ -581,8 +590,7 @@ def apply_scaled_mask_after_upscale(
 
 
 def crop_face(img_bytes, padding_ratio=0.3, debug_prefix="crop"):
-    """
-    Detects a face in the image using Google Cloud Vision API and returns the cropped face.
+    """Detect a face in the image using Google Cloud Vision API and return the cropped face.
 
     Padding is calculated as a percentage of the detected face dimensions, ensuring
     consistent cropping regardless of image size or face position.
@@ -595,6 +603,7 @@ def crop_face(img_bytes, padding_ratio=0.3, debug_prefix="crop"):
 
     Returns:
         bytes: The cropped face as PNG bytes, or None if no face is detected.
+
     """
     # Debug: save input image
     save_debug_image(img_bytes, "01_input", prefix=debug_prefix)
@@ -675,12 +684,11 @@ def create_canvas(
     margin_side: int = 0,
     bg_color: tuple = (255, 255, 255, 255),
     zoom_factor: float = 1.0,
-    target_diagonal: float = None,
-    target_height: float = None,
+    target_diagonal: float | None = None,
+    target_height: float | None = None,
     add_shadow: bool = False,
 ) -> bytes:
-    """
-    Create a canvas with a product image centered with configurable margins.
+    """Create a canvas with a product image centered with configurable margins.
 
     Supports three scaling modes:
     - target_diagonal: Scales image to match a specific diagonal size (best for rotation videos)
@@ -701,6 +709,7 @@ def create_canvas(
 
     Returns:
         bytes: The canvas image as PNG bytes
+
     """
     product_img = PImage.open(io.BytesIO(product_image_bytes))
 
@@ -779,8 +788,7 @@ def create_canvas_with_height_scaling(
     margin_top=60,
     margin_side=300,
 ):
-    """
-    Create canvases for multiple images with consistent height scaling.
+    """Create canvases for multiple images with consistent height scaling.
 
     Calculates the maximum safe height that fits all images within the margins,
     then creates canvases for each image using that shared target height.
@@ -794,6 +802,7 @@ def create_canvas_with_height_scaling(
 
     Returns:
         list[bytes]: List of canvas images as PNG bytes
+
     """
     available_height = canvas_height - (2 * margin_top)
     available_width = canvas_width - (2 * margin_side)
@@ -827,8 +836,7 @@ def create_canvas_with_height_scaling(
 
 
 def stack_images_horizontally(img1_bytes, img2_bytes, padding=0.03):
-    """
-    Stack two images horizontally side by side.
+    """Stack two images horizontally side by side.
 
     Resizes both images to have the same height (using the smaller height)
     while maintaining aspect ratios, then combines them with optional padding.
@@ -840,6 +848,7 @@ def stack_images_horizontally(img1_bytes, img2_bytes, padding=0.03):
 
     Returns:
         bytes: Combined image as PNG bytes
+
     """
     img1 = PImage.open(io.BytesIO(img1_bytes))
     img2 = PImage.open(io.BytesIO(img2_bytes))
@@ -879,8 +888,7 @@ def stack_and_canvas_images(
     margin_top=216,
     margin_side=384,
 ):
-    """
-    Create 4K canvases for images, stacking the last two if there are 4 images.
+    """Create 4K canvases for images, stacking the last two if there are 4 images.
 
     For 1-3 images: Creates individual canvases with consistent height scaling.
     For 4 images: Stacks images 3 and 4 horizontally, then creates 3 canvases.
@@ -898,6 +906,7 @@ def stack_and_canvas_images(
         If classes is None: List of canvas images as bytes
         If classes provided: tuple (canvas_images, updated_classes)
             - updated_classes: Class labels (last two combined as tuple if 4 images)
+
     """
     n = len(images)
 
@@ -916,7 +925,7 @@ def stack_and_canvas_images(
     if n == 4:
         stacked_last = stack_images_horizontally(images[2], images[3], padding=0.20)
         canvas_images = create_canvas_with_height_scaling(
-            images[0:2] + [stacked_last],
+            [*images[0:2], stacked_last],
             canvas_height=canvas_height,
             canvas_width=canvas_width,
             margin_top=margin_top,
@@ -933,10 +942,9 @@ def stack_and_canvas_images(
 
 
 def extract_upscale_product(
-    client, upscale_client, img_bytes, clean_after_upscale=True
+    client, upscale_client, img_bytes, clean_after_upscale=True, skip_crop=False
 ):
-    """
-    Extract product from background and upscale it.
+    """Extract product from background and upscale it.
 
     Performs background removal, upscaling, and optionally reapplies the scaled
     original mask to remove artifacts introduced during upscaling.
@@ -947,12 +955,18 @@ def extract_upscale_product(
         img_bytes: Input product image as bytes
         clean_after_upscale: If True, reapplies the scaled original mask after
                              upscaling to clean artifacts (default: True)
+        skip_crop: If True, skips background removal and cropping, only upscaling (default: False)
 
     Returns:
         bytes: Processed product image with white background as PNG bytes.
                Returns original image if processing fails.
+
     """
     try:
+        if skip_crop:
+            # Just upscale directly without background removal or cropping
+            return upscale_image_bytes(upscale_client, img_bytes)
+
         if clean_after_upscale:
             # Extract product and keep mask for reuse
             extracted_bytes, mask = replace_background_with_mask_return(
@@ -981,9 +995,9 @@ def preprocess_images(
     num_workers=16,
     upscale_images=True,
     create_canva=True,
+    skip_crop=False,
 ):
-    """
-    Preprocess images with optional upscaling and canvas creation.
+    """Preprocess images with optional upscaling and canvas creation.
 
     Used by both Interpolation and R2V modes for video generation.
 
@@ -994,15 +1008,24 @@ def preprocess_images(
         num_workers: Number of parallel workers (default: 16)
         upscale_images: If True, extract and upscale products (default: True)
         create_canva: If True, create canvas with consistent sizing (default: True)
+        skip_crop: If True, skips background removal and cropping (default: False)
 
     Returns:
         List of preprocessed image bytes
+
     """
-    if upscale_images:
+    if upscale_images and skip_crop:
+        images_bytes_list = predict_parallel(
+            images_bytes_list,
+            lambda img_bytes: upscale_image_bytes(upscale_client, img_bytes),
+            max_workers=num_workers,
+            show_progress_bar=False,
+        )
+    elif upscale_images:
         images_bytes_list = predict_parallel(
             images_bytes_list,
             lambda img_bytes: extract_upscale_product(
-                client, upscale_client, img_bytes
+                client, upscale_client, img_bytes, skip_crop=False
             ),
             max_workers=num_workers,
             show_progress_bar=False,

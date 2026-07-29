@@ -40,7 +40,7 @@ def main():
     dataset_id = os.environ.get(
         "BQ_ANALYTICS_DATASET_ID", "adk_agent_analytics"
     )
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-east1")
 
     print(
         f"Preparing ADK BigQuery Dataset: {project_id}.{dataset_id} "

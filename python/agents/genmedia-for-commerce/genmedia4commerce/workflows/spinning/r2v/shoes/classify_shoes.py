@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Shoe classification utilities using Gemini or local embeddings."""
+
 # Standard library imports
 import json
 import logging
@@ -49,7 +51,7 @@ The product's position must be classified into one of the following distinct cat
 * **invalid:** Return `invalid` in all other cases including:
     * The image contains no footwear.
     * The image show snowshoes or snowsrackets (ski boot are considered valid)
-    * The image show a shoe but the image is altered (for instance the sole is splitted into the inner parts) or it is a zoom-in detail of the shoe (in this cases one or more of the edges of the picture terminates with a straight line as the product is cut inside the picture)
+    * The image show a shoe but the image is altered (for instance the sole is split into the inner parts) or it is a zoom-in detail of the shoe (in this cases one or more of the edges of the picture terminates with a straight line as the product is cut inside the picture)
     * A person is wearing the footwear (i.e., the footwear is on a human subject).
     * The image is a diagram or a table.
     * A shoe is present against a non-neutral background (for instance, the background is not plain white, black, or gray)
@@ -71,7 +73,7 @@ The product's position must be classified into one of the following distinct cat
 * **invalid:** Return `invalid` in all other cases including:
     * The image contains no footwear.
     * The image show snowshoes or snowsrackets (ski boot are considered valid)
-    * The image show a shoe but the image is altered (for instance the sole is splitted into the inner parts) or it is a zoom-in detail of the shoe (in this cases one or more of the edges of the picture terminates with a straight line as the product is cut inside the picture)
+    * The image show a shoe but the image is altered (for instance the sole is split into the inner parts) or it is a zoom-in detail of the shoe (in this cases one or more of the edges of the picture terminates with a straight line as the product is cut inside the picture)
     * A person is wearing the footwear (i.e., the footwear is on a human subject).
     * The image is a diagram or a table.
     * A shoe is present against a non-neutral background (for instance, the background is not plain white, black, or gray)
@@ -144,7 +146,7 @@ def classify_shoe_closure(
     )
 
     # Build input: user prompt followed by all images
-    text_images_pieces = [VELCRO_USER_PROMPT] + list(image_bytes_list)
+    text_images_pieces = [VELCRO_USER_PROMPT, *list(image_bytes_list)]
 
     result = generate_gemini(
         text_images_pieces=text_images_pieces, client=client, model=model, config=config

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import time
-import warnings
 
 import selenium
 from google.adk.agents.llm_agent import Agent
@@ -21,26 +20,39 @@ from google.adk.tools.load_artifacts_tool import load_artifacts_tool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 from PIL import Image
+from selenium.common.exceptions import (
+    ElementClickInterceptedException,
+    ElementNotInteractableException,
+    NoSuchElementException,
+)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 from ...shared_libraries import constants
 from . import prompt
 
-warnings.filterwarnings("ignore", category=UserWarning)
+_driver_state = {"driver": None}
 
-if not constants.DISABLE_WEB_DRIVER:
-    options = Options()
-    options.add_argument("--window-size=1920x1080")
-    options.add_argument("--verbose")
-    options.add_argument("user-data-dir=/tmp/selenium")
 
-    driver = selenium.webdriver.Chrome(options=options)
+def _get_driver():
+    """Lazily initializes Selenium driver to avoid import-time startup failures."""
+    if constants.DISABLE_WEB_DRIVER:
+        raise RuntimeError(
+            "Web driver is disabled. Set DISABLE_WEB_DRIVER=0 to enable browser tools."
+        )
+    if _driver_state["driver"] is None:
+        options = Options()
+        options.add_argument("--window-size=1920x1080")
+        options.add_argument("--verbose")
+        options.add_argument("user-data-dir=/tmp/selenium")
+        _driver_state["driver"] = selenium.webdriver.Chrome(options=options)
+    return _driver_state["driver"]
 
 
 def go_to_url(url: str) -> str:
     """Navigates the browser to the given URL."""
     print(f"🌐 Navigating to URL: {url}")  # Added print statement
+    driver = _get_driver()
     driver.get(url.strip())
     return f"Navigated to URL: {url}"
 
@@ -50,6 +62,7 @@ async def take_screenshot(tool_context: ToolContext) -> dict:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     filename = f"screenshot_{timestamp}.png"
     print(f"📸 Taking screenshot and saving as: {filename}")
+    driver = _get_driver()
     driver.save_screenshot(filename)
 
     image = Image.open(filename)
@@ -64,13 +77,16 @@ async def take_screenshot(tool_context: ToolContext) -> dict:
 
 def click_at_coordinates(x: int, y: int) -> str:
     """Clicks at the specified coordinates on the screen."""
+    driver = _get_driver()
     driver.execute_script(f"window.scrollTo({x}, {y});")
     driver.find_element(By.TAG_NAME, "body").click()
+    return f"Clicked at coordinates: {x}, {y}"
 
 
 def find_element_with_text(text: str) -> str:
     """Finds an element on the page with the given text."""
     print(f"🔍 Finding element with text: '{text}'")  # Added print statement
+    driver = _get_driver()
 
     try:
         element = driver.find_element(By.XPATH, f"//*[text()='{text}']")
@@ -78,25 +94,26 @@ def find_element_with_text(text: str) -> str:
             return "Element found."
         else:
             return "Element not found."
-    except selenium.common.exceptions.NoSuchElementException:
+    except NoSuchElementException:
         return "Element not found."
-    except selenium.common.exceptions.ElementNotInteractableException:
+    except ElementNotInteractableException:
         return "Element not interactable, cannot click."
 
 
 def click_element_with_text(text: str) -> str:
     """Clicks on an element on the page with the given text."""
     print(f"🖱️ Clicking element with text: '{text}'")  # Added print statement
+    driver = _get_driver()
 
     try:
         element = driver.find_element(By.XPATH, f"//*[text()='{text}']")
         element.click()
         return f"Clicked element with text: {text}"
-    except selenium.common.exceptions.NoSuchElementException:
+    except NoSuchElementException:
         return "Element not found, cannot click."
-    except selenium.common.exceptions.ElementNotInteractableException:
+    except ElementNotInteractableException:
         return "Element not interactable, cannot click."
-    except selenium.common.exceptions.ElementClickInterceptedException:
+    except ElementClickInterceptedException:
         return "Element click intercepted, cannot click."
 
 
@@ -105,6 +122,7 @@ def enter_text_into_element(text_to_enter: str, element_id: str) -> str:
     print(
         f"📝 Entering text '{text_to_enter}' into element with ID: {element_id}"
     )  # Added print statement
+    driver = _get_driver()
 
     try:
         input_element = driver.find_element(By.ID, element_id)
@@ -112,15 +130,16 @@ def enter_text_into_element(text_to_enter: str, element_id: str) -> str:
         return (
             f"Entered text '{text_to_enter}' into element with ID: {element_id}"
         )
-    except selenium.common.exceptions.NoSuchElementException:
+    except NoSuchElementException:
         return "Element with given ID not found."
-    except selenium.common.exceptions.ElementNotInteractableException:
+    except ElementNotInteractableException:
         return "Element not interactable, cannot click."
 
 
 def scroll_down_screen() -> str:
     """Scrolls down the screen by a moderate amount."""
     print("⬇️ scroll the screen")  # Added print statement
+    driver = _get_driver()
     driver.execute_script("window.scrollBy(0, 500)")
     return "Scrolled down the screen."
 
@@ -129,6 +148,7 @@ def get_page_source() -> str:
     LIMIT = 1000000
     """Returns the current page source."""
     print("📄 Getting page source...")  # Added print statement
+    driver = _get_driver()
     return driver.page_source[0:LIMIT]
 
 

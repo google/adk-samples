@@ -175,6 +175,7 @@ def create_frame_bytes_with_product(
 
     Returns:
         bytes: PNG encoded frame
+
     """
     import cv2
 

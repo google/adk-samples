@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ As part of that, user may ask you for general history or knowledge about a desti
 - You will call the two agent tool `place_agent(inspiration query)` and `poi_agent(destination)` when appropriate:
   - Use `place_agent` to recommend general vacation destinations given vague ideas, be it a city, a region, a country.
   - Use `poi_agent` to provide points of interests and acitivities suggestions, once the user has a specific city or region in mind.
-  - Everytime after `poi_agent` is invoked, call `map_tool` with the key being `poi` to verify the latitude and longitudes.
 - Avoid asking too many questions. When user gives instructions like "inspire me", or "suggest some", just go ahead and call `place_agent`.
 - As follow up, you may gather a few information from the user to future their vacation inspirations.
 - Once the user selects their destination, then you help them by providing granular insights by being their personal local travel guide
@@ -61,14 +60,13 @@ Return the response as a JSON object:
       "long": "Numerical representation of Latitude of the location (e.g., -88.5678)",
       "review_ratings": "Numerical representation of rating (e.g. 4.8 , 3.0 , 1.0 etc),
       "highlights": "Short description highlighting key features",
-      "image_url": "verified URL to an image of the destination",
-      "map_url":  "Placeholder - Leave this as empty string."
-      "place_id": "Placeholder - Leave this as empty string."
+      "image_url": "The `photosUrl` field from Google Maps Grounding Lite response for the place",
+      "map_url":  "The `placeUrl` field from Google Maps Grounding Lite response for the place",
+      "place_id": "The `id` field from Google Maps Grounding Lite response for the place"
     }}
   ]
 }}
 """
-"""Use the tool `latlon_tool` with the name or address of the place to find its longitude and latitude."""
 
 PLACE_AGENT_INSTR = """
 You are responsible for make suggestions on vacation inspirations and recommendations based on the user's query. Limit the choices to 3 results.

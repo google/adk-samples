@@ -261,7 +261,7 @@ class TestGenerateVeo:
 
         call_kwargs = mock_veo_client.models.generate_videos.call_args
         config = call_kwargs.kwargs["config"]
-        assert config.enhance_prompt == True
+        assert config.enhance_prompt
 
     @patch("workflows.shared.veo_utils.time.sleep")
     def test_generate_audio_parameter(
@@ -277,7 +277,7 @@ class TestGenerateVeo:
 
         call_kwargs = mock_veo_client.models.generate_videos.call_args
         config = call_kwargs.kwargs["config"]
-        assert config.generate_audio == True
+        assert config.generate_audio
 
 
 class TestGenerateVeoR2V:
@@ -440,4 +440,4 @@ class TestGenerateVeoR2V:
 
         call_kwargs = mock_veo_client.models.generate_videos.call_args
         config = call_kwargs.kwargs["config"]
-        assert config.generate_audio == False
+        assert not config.generate_audio

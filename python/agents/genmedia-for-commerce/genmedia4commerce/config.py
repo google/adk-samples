@@ -133,36 +133,11 @@ def pull_assets():
 # ---------------------------------------------------------------------------
 
 
-def _ensure_media_bucket() -> str:
-    """Create the media bucket if it doesn't exist. Returns bucket name."""
-    project_id = os.getenv("PROJECT_ID", "")
-    default_bucket = (
-        f"{project_id}-genmedia-for-commerce-media-payloads"
-        if project_id
-        else "genmedia-for-commerce-media-payloads"
+if not project_id:
+    raise ValueError(
+        "PROJECT_ID is not set. Check config.env or environment variables."
     )
-    bucket_name = os.getenv("MEDIA_BUCKET", default_bucket)
-    try:
-        from google.cloud import storage
-
-        client = storage.Client(project=project_id)
-        bucket = client.bucket(bucket_name)
-        if not bucket.exists():
-            logger.info(f"Creating media bucket: {bucket_name} in project {project_id}")
-            client.create_bucket(
-                bucket_name,
-                project=project_id,
-                location=os.getenv("DEFAULT_REGION", "us-central1"),
-            )
-            logger.info(f"Created media bucket: {bucket_name}")
-        else:
-            logger.info(f"Media bucket already exists: {bucket_name}")
-    except Exception as e:
-        logger.warning(f"Could not ensure media bucket: {e}")
-    return bucket_name
-
-
-MEDIA_BUCKET = _ensure_media_bucket()
+MEDIA_BUCKET = f"{project_id}-genmedia-for-commerce-media-payloads"
 
 # ---------------------------------------------------------------------------
 # Shared Gemini client (reused across agent utilities)
@@ -205,6 +180,7 @@ class GenMediaConfig:
     Attributes:
         agent_model: Model for the router agent.
         mcp_server_url: URL of the MCP server (SSE endpoint).
+
     """
 
     agent_model: str = "gemini-2.5-flash"

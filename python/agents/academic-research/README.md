@@ -10,7 +10,7 @@ AI-driven agent designed to facilitate the exploration of the academic landscape
 
 This capability aims to provide researchers with valuable insights into the ongoing impact of seminal research and to highlight promising avenues for novel investigation, thereby accelerating the research discovery process.
 
-The [Agent Starter Pack](https://goo.gle/agent-starter-pack) (ASP) is the **recommended** way to create a new project from this sample. The copy in [adk-samples](https://github.com/google/adk-samples) remains the upstream source for browsing and contributions.
+The [Google Agents CLI](https://github.com/google/agents-cli) is the **recommended** way to create a new project from this sample. The copy in [adk-samples](https://github.com/google/adk-samples) remains the upstream source for browsing and contributions.
 
 ## Agent Details
 
@@ -39,12 +39,20 @@ to implement this workflow.
 *   A Google Cloud project (for Vertex / Gemini)
 *   [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) (`gcloud`)
 
-### Recommended: Using Agent Starter Pack
+### Recommended: Using Google Agents CLI
 
-The Agent Starter Pack is the recommended way to create and deploy a production-ready version of this agent. Start from a new directory (replace `my-academic-research` with your project name):
+The Google Agents CLI is the recommended way to create and deploy a production-ready version of this agent.
+
+**Install the CLI** (one-time):
 
 ```bash
-uvx agent-starter-pack create my-academic-research -a adk@academic-research
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-academic-research` with your project name):
+
+```bash
+agents-cli create my-academic-research -a adk@academic-research
 cd my-academic-research
 ```
 
@@ -70,26 +78,12 @@ gcloud auth application-default login
 gcloud auth application-default set-quota-project $GOOGLE_CLOUD_PROJECT
 ```
 
-During setup, the starter pack will prompt you for deployment options and adds production-oriented tooling (for example automated CI/CD deployment scripts).
-
-<details>
-<summary>Alternative: install Agent Starter Pack with pip</summary>
-
-```bash
-python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-academic-research -a adk@academic-research
-cd my-academic-research
-```
-
-Then continue with `uv sync --group dev` and the configuration steps above.
-
-</details>
+During setup, the Google Agents CLI will prompt you for deployment options and adds production-oriented tooling (for example automated CI/CD deployment scripts).
 
 <details>
 <summary>Clone this repository directly (contributors and advanced use)</summary>
 
-Use this workflow when working against the upstream repository (for example to open a pull request). **New projects should still use the Agent Starter Pack** as described above.
+Use this workflow when working against the upstream repository (for example to open a pull request). **New projects should still use the Google Agents CLI** as described above.
 
 ```bash
 git clone https://github.com/google/adk-samples.git
@@ -373,7 +367,7 @@ that the agent's responses match a pre-defined response reasonablly well.
 
 ## Deployment
 
-The Academic Co-Research can be deployed to Vertex AI Agent Engine using the following
+The Academic Co-Research can be deployed to Agent Runtime using the following
 commands:
 
 ```bash

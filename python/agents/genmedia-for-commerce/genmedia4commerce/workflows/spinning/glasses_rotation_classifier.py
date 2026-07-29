@@ -1,5 +1,18 @@
-"""
-Glasses Rotation Classifier - Mask-based shape analysis for symmetric objects.
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Glasses Rotation Classifier - Mask-based shape analysis for symmetric objects.
 
 For glasses and other symmetric objects, optical flow is unreliable because left-right
 symmetry makes flow direction ambiguous. Instead, this classifier:
@@ -32,8 +45,7 @@ def classify_glasses_rotation(
     segmentation_client,
     video_bytes: bytes,
 ) -> str:
-    """
-    Classify rotation direction for glasses/symmetric objects using mask centroids.
+    """Classify rotation direction for glasses/symmetric objects using mask centroids.
 
     Args:
         segmentation_client: Gemini client for image segmentation.
@@ -41,6 +53,7 @@ def classify_glasses_rotation(
 
     Returns:
         "clockwise", "anticlockwise", or "invalid"
+
     """
     try:
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
@@ -83,7 +96,7 @@ def classify_glasses_rotation(
                     total_area = mask_np.shape[0] * mask_np.shape[1]
 
                     if mask_area / total_area > MIN_MASK_AREA_RATIO:
-                        ys, xs = np.where(mask_np > 128)
+                        _ys, xs = np.where(mask_np > 128)
                         cx = float(np.mean(xs))
                         centroids_x.append(cx)
                 except Exception as e:

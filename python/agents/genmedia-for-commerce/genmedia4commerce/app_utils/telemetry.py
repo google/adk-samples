@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Telemetry configuration for the GenMedia application."""
+
 import logging
 import os
 
 
 def setup_telemetry() -> str | None:
     """Configure OpenTelemetry and GenAI telemetry with GCS upload."""
-
     bucket = os.environ.get("LOGS_BUCKET_NAME")
     capture_content = os.environ.get(
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "false"

@@ -10,7 +10,7 @@ license = "Apache-2.0"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "google-adk==1.28.0",
+    "google-adk>=1.31.0",
     "google-genai>=1.67.0",
     "google-cloud-logging>=3.12.0",
     "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",
@@ -20,13 +20,14 @@ dependencies = [
     "tenacity>=9.1.2",
     "pydantic>=2.10.6",
     "python-dotenv>=1.0.1",
+    "opentelemetry-instrumentation-google-genai",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.23.8",
-    "google-adk[eval]==1.28.0",
+    "google-adk[eval]>=1.31.0",
     "nest-asyncio>=1.6.0",
     "agent-starter-pack>=0.14.1",
 ]
@@ -99,7 +100,8 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 pythonpath = "."
-addopts = "-vv -s --ignore=tests/test_deployment.py"
+addopts = "-vv -s --ignore=tests/test_deployment.py --import-mode=importlib"
+asyncio_mode = "strict"
 testpaths = ["tests/"]
 log_level = "DEBUG"
 log_cli = true
@@ -116,5 +118,10 @@ example_question = "Generate an image about a polar bear in the Sahara desert"
 agent_directory = "on_brand_genmedia"
 deployment_targets =["agent_engine"]
 extra_directories = ["eval"]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
 
 

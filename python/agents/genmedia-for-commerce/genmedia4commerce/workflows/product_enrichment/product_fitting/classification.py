@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Garment classification and image selection for product fitting.
-"""
+"""Garment classification and image selection for product fitting."""
 
 import json
 import logging
@@ -53,6 +51,7 @@ def classify_garments(
                 ...
             ]
         }
+
     """
     num_images = len(garment_images_bytes_list)
 
@@ -156,8 +155,7 @@ Only return the JSON object, nothing else."""
 
 
 def get_framing(category: str) -> str:
-    """
-    Determine the image framing based on the garment category.
+    """Determine the image framing based on the garment category.
 
     Returns:
         "full_body": dress or full_body_outer
@@ -165,6 +163,7 @@ def get_framing(category: str) -> str:
         "head": head_accessory
         "footwear": footwear
         "lower_body": bottom (default)
+
     """
     if category in ("dress", "full_body_outer"):
         return "full_body"
@@ -185,9 +184,7 @@ def _select_best_view(
     model: str,
     category: str = "",
 ) -> dict:
-    """
-    Given a list of pre-classified garment images for a specific view,
-    rank them by quality and extract text/logo details.
+    """Rank pre-classified garment images by quality and extract details.
 
     The images have already been validated and classified by classify_garments
     (which sees all images together). This function trusts that classification
@@ -202,6 +199,7 @@ def _select_best_view(
 
     Returns:
         dict: {"best_indices": list[int], "evaluations": list[dict], "view_details": str, "rejected_views": list[dict]}
+
     """
     num_images = len(garment_images)
 
@@ -328,16 +326,19 @@ def describe_garment_detailed(
     back_images: list[bytes],
     model: str = "gemini-3-flash-preview",
 ) -> dict:
-    """
-    Generate a detailed description of the garment including brand identification,
-    text/logo extraction, and construction details. Uses all images together.
+    """Generate a detailed description of the garment including brand identification.
+
+    Extracts text/logo details and construction details using all images together.
 
     Args:
+        client: Gemini client instance
         front_images: Selected front garment images
         back_images: Selected back garment images
+        model: Gemini model to use (default: "gemini-3-flash-preview")
 
     Returns:
         dict with keys: general, front_details, back_details
+
     """
     if not front_images and not back_images:
         return {

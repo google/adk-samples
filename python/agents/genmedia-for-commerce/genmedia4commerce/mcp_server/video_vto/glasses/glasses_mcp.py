@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """MCP tool wrappers for the glasses video VTO pipeline."""
 
 import base64
@@ -53,6 +67,7 @@ async def run_glasses_video_generate(
 
     Returns:
         Dictionary with videos (base64 list), filenames, and collage_data.
+
     """
     model_bytes = None
     product_bytes = None
@@ -125,6 +140,7 @@ async def run_glasses_video_regenerate(
 
     Returns:
         Dictionary with videos (base64 list) and filenames.
+
     """
     from workflows.video_vto.glasses.pipeline import (
         RegenerationRequest,

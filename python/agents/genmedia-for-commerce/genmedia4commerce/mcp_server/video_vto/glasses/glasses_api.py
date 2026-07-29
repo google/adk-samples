@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """REST API endpoints for the glasses video VTO workflow."""
 
 import io
@@ -50,7 +64,7 @@ _glasses_video_dir = os.path.normpath(
 
 @router.get("/get_templates")
 async def get_templates():
-    """Returns a list of available template videos with paths and empty prompts."""
+    """Return a list of available template videos with paths and empty prompts."""
     men_templates_path = os.path.join(_glasses_video_dir, "men_templates.jsonl")
     women_templates_path = os.path.join(_glasses_video_dir, "women_templates.jsonl")
 
@@ -71,7 +85,7 @@ async def get_templates():
 
 @router.post("/generate-prompt")
 async def generate_prompt_from_json(request: Request):
-    """Generates a single prompt string from a JSON object."""
+    """Generate a single prompt string from a JSON object."""
     try:
         prompt_data = await request.json()
 
@@ -91,7 +105,9 @@ async def generate_prompt_from_json(request: Request):
         return JSONResponse(content={"prompt": prompt_text})
     except Exception as e:
         logger.error(f"Error in /generate-prompt: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Internal Server Error: {e}"
+        ) from e
 
 
 @router.post("/generate-custom-prompt")
@@ -101,7 +117,7 @@ async def generate_custom_prompt(
     product_image: UploadFile | None = File(None),
     custom_field_dict: str = Form(None),
 ):
-    """Generates a structured prompt from user's natural language text and images."""
+    """Generate a structured prompt from user's natural language text and images."""
     try:
         model_image_bytes = await model_image.read() if model_image else None
         product_image_bytes = await product_image.read() if product_image else None
@@ -144,14 +160,16 @@ async def generate_custom_prompt(
         return JSONResponse(content=json_response)
     except Exception as e:
         logger.error(f"Error in /generate-custom-prompt: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Internal Server Error: {e}"
+        ) from e
 
 
 @router.post("/generate-animation-prompt")
 async def generate_animation_prompt_endpoint(
     text: str = Form(...), model_image: UploadFile | None = File(None)
 ):
-    """Generates an enhanced animation prompt from user's text and model image."""
+    """Generate an enhanced animation prompt from user's text and model image."""
     try:
         model_image_bytes = await model_image.read() if model_image else None
 
@@ -165,7 +183,9 @@ async def generate_animation_prompt_endpoint(
         return JSONResponse(content={"enhanced_prompt": enhanced_prompt})
     except Exception as e:
         logger.error(f"Error in /generate-animation-prompt: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Internal Server Error: {e}"
+        ) from e
 
 
 @router.post("/generate-video")
@@ -180,7 +200,7 @@ async def generate_video_from_collage(
     zoom_level: int = Form(0),
     is_animation_mode: str = Form("false"),
 ):
-    """Generates videos from a collage of images or animates a single image."""
+    """Generate videos from a collage of images or animate a single image."""
     try:
         model_image_bytes = await model_image.read() if model_image else None
         model_side_image_bytes = (
@@ -212,7 +232,9 @@ async def generate_video_from_collage(
         return JSONResponse(content=result)
     except Exception as e:
         logger.error(f"Error in /generate-video: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Internal Server Error: {e}"
+        ) from e
 
 
 @router.post("/regenerate-video")
@@ -223,12 +245,14 @@ async def regenerate_video(req: RegenerationRequest):
         return JSONResponse(content=result)
     except Exception as e:
         logger.error(f"Error in /regenerate-video: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Internal Server Error: {e}"
+        ) from e
 
 
 @router.post("/merge-videos")
 async def merge_videos(videos: list[UploadFile] = File(...), speeds: str = Form(...)):
-    """Merges multiple video files into one."""
+    """Merge multiple video files into one."""
     if not videos:
         raise HTTPException(status_code=400, detail="No video files provided.")
 
@@ -249,7 +273,7 @@ async def merge_videos(videos: list[UploadFile] = File(...), speeds: str = Form(
         )
     except Exception as e:
         logger.error(f"Error in /merge-videos: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     finally:
         for video in videos:
             video.file.close()

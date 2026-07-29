@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Clothes Video VTO - Reference-to-Video (R2V) pipeline.
+"""Clothes Video VTO - Reference-to-Video (R2V) pipeline.
 
 Uses Veo 3.1 R2V mode with reference images (lower body + upper body + face)
 to generate natural catwalk-style animation videos.
@@ -63,6 +62,7 @@ def _create_three_framings(image_bytes: bytes) -> tuple[bytes, bytes, bytes]:
 
     Returns:
         (lower_body_png, upper_body_png, face_png)
+
     """
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     width, height = img.size
@@ -114,8 +114,7 @@ def run_r2v_pipeline(
     original_model_image_bytes=None,
     first_clip_check=None,
 ):
-    """
-    Run the clothes video VTO R2V pipeline.
+    """Run the clothes video VTO R2V pipeline.
 
     Uses Veo 3.1 R2V mode with three reference images at different framings
     (lower body, upper body, face) from the VTO result to generate natural
@@ -138,6 +137,7 @@ def run_r2v_pipeline(
             - first_frame: lower body reference image bytes (PNG)
             - last_frame: face reference image bytes (PNG)
             - aborted: bool (True if first_clip_check failed and remaining were cancelled)
+
     """
     save_debug_image(model_image_bytes, "00_vto_original", prefix="video_vto_framing")
 

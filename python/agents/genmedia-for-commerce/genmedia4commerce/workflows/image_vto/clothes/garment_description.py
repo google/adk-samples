@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Garment description for Image VTO.
+"""Garment description for Image VTO.
 
 Describes each garment image (brand, type, color, material, logos/details)
 to improve generation accuracy and evaluation. Uses Gemini Flash with
@@ -35,8 +34,7 @@ def describe_garment_for_vto(
     garment_image: bytes | str,
     model: str = "gemini-3-flash-preview",
 ) -> dict:
-    """
-    Describe a single garment image for VTO purposes.
+    """Describe a single garment image for VTO purposes.
 
     Extracts brand, type, color, material, and all visible logos/text/marks
     with EXTERIOR/INTERIOR classification.
@@ -50,6 +48,7 @@ def describe_garment_for_vto(
         dict: {"general": "...", "details": "..."} where:
             - general: Brand, product type, color, material
             - details: EXTERIOR/INTERIOR detail list of all visible logos/text/marks
+
     """
     system_prompt = """You are a fashion product analyst. You will receive a single product image.
 
@@ -113,8 +112,7 @@ def describe_all_garments(
     garment_images: list[bytes | str],
     model: str = "gemini-3-flash-preview",
 ) -> list[dict]:
-    """
-    Describe all garment images in parallel.
+    """Describe all garment images in parallel.
 
     Args:
         client: Gemini client instance
@@ -123,6 +121,7 @@ def describe_all_garments(
 
     Returns:
         list[dict]: List of {"general": "...", "details": "..."} for each garment
+
     """
     if not garment_images:
         return []

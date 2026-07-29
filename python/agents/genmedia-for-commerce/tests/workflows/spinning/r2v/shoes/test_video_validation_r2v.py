@@ -30,19 +30,19 @@ class TestIsValidPath:
     def test_empty_path(self):
         """Empty path should be valid."""
         allowed = {"a": ["b"], "b": ["c"]}
-        is_valid, msg = is_valid_path([], allowed)
+        is_valid, _msg = is_valid_path([], allowed)
         assert is_valid is True
 
     def test_single_node_path(self):
         """Single node path should be valid."""
         allowed = {"a": ["b"]}
-        is_valid, msg = is_valid_path(["a"], allowed)
+        is_valid, _msg = is_valid_path(["a"], allowed)
         assert is_valid is True
 
     def test_valid_transition(self):
         """Valid transitions should pass."""
         allowed = {"a": ["a", "b"], "b": ["b", "c"], "c": ["c"]}
-        is_valid, msg = is_valid_path(["a", "b", "c"], allowed)
+        is_valid, _msg = is_valid_path(["a", "b", "c"], allowed)
         assert is_valid is True
 
     def test_invalid_transition(self):
@@ -62,7 +62,7 @@ class TestIsValidPath:
     def test_self_loop(self):
         """Self-loops should be valid if allowed."""
         allowed = {"a": ["a", "b"]}
-        is_valid, msg = is_valid_path(["a", "a", "a"], allowed)
+        is_valid, _msg = is_valid_path(["a", "a", "a"], allowed)
         assert is_valid is True
 
 
@@ -74,7 +74,7 @@ class TestIsValidPathLessStrict:
         allowed = {"a": ["a", "b"], "b": ["b", "c"], "c": ["c"]}
         # One wrong classification in the middle
         path = ["a", "a", "x", "a", "b"]
-        is_valid, msg, corrected = is_valid_path_lessstrict(
+        is_valid, _msg, corrected = is_valid_path_lessstrict(
             path, allowed, max_consecutive_violations=2
         )
         assert is_valid is True
@@ -84,7 +84,7 @@ class TestIsValidPathLessStrict:
         """Should fail on too many consecutive violations."""
         allowed = {"a": ["a", "b"], "b": ["b"]}
         path = ["a", "x", "x", "x", "x", "x", "x"]  # 6 violations
-        is_valid, msg, corrected = is_valid_path_lessstrict(
+        is_valid, _msg, _corrected = is_valid_path_lessstrict(
             path, allowed, max_consecutive_violations=5
         )
         assert is_valid is False
@@ -95,7 +95,7 @@ class TestIsValidPathLessStrict:
         # Oscillating between a and b
         path = ["a", "b", "a", "b", "c"]
         # This should be tolerated as valid oscillation during transition
-        is_valid, msg, corrected = is_valid_path_lessstrict(path, allowed)
+        is_valid, _msg, _corrected = is_valid_path_lessstrict(path, allowed)
         # Note: Actual behavior depends on implementation details
         assert isinstance(is_valid, bool)
 
@@ -107,7 +107,7 @@ class TestIsValid:
         """Valid clockwise rotation should pass."""
         # Clockwise: right -> front_right -> front -> front_left -> left -> back_left -> back -> back_right
         path = ["right", "front_right", "front", "front_left", "left"]
-        is_valid_result, reversed_flag, msg, corrected = is_valid(path, strict=True)
+        is_valid_result, reversed_flag, msg, _corrected = is_valid(path, strict=True)
         assert is_valid_result is True
         assert reversed_flag is False
         assert "Clockwise" in msg
@@ -116,7 +116,7 @@ class TestIsValid:
         """Valid anti-clockwise rotation should pass (reversed)."""
         # Anti-clockwise is the reverse of clockwise
         path = ["left", "front_left", "front", "front_right", "right"]
-        is_valid_result, reversed_flag, msg, corrected = is_valid(path, strict=True)
+        is_valid_result, reversed_flag, msg, _corrected = is_valid(path, strict=True)
         assert is_valid_result is True
         assert reversed_flag is True
         assert "Anti Clockwise" in msg
@@ -124,7 +124,7 @@ class TestIsValid:
     def test_invalid_path(self):
         """Invalid path should fail."""
         path = ["right", "back"]  # Invalid: can't go right -> back
-        is_valid_result, reversed_flag, msg, corrected = is_valid(path, strict=True)
+        is_valid_result, _reversed_flag, _msg, _corrected = is_valid(path, strict=True)
         assert is_valid_result is False
 
 
@@ -201,7 +201,7 @@ class TestSampleFrames:
         """Should always include the last frame."""
         frames = list(range(50))
 
-        sampled, indices = sample_frames(
+        _sampled, indices = sample_frames(
             frames, target_samples_per_sec=12, original_fps=24
         )
 
@@ -211,7 +211,7 @@ class TestSampleFrames:
         """Single frame should be sampled."""
         frames = [0]
 
-        sampled, indices = sample_frames(
+        sampled, _indices = sample_frames(
             frames, target_samples_per_sec=12, original_fps=24
         )
 
@@ -263,6 +263,6 @@ class TestAllClassesPresent:
             "back_right",
         ]
 
-        is_present, msg = all_classes_present(classes)
+        is_present, _msg = all_classes_present(classes)
 
         assert is_present is True

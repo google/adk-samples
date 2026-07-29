@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""Agent Engine application module."""
+
 import logging
 import os
 from typing import Any
@@ -30,6 +33,8 @@ load_dotenv()
 
 
 class AgentEngineApp(AdkApp):
+    """Agent Engine application wrapping the ADK app."""
+
     def set_up(self) -> None:
         """Initialize the agent engine app with logging and telemetry."""
         vertexai.init()
@@ -49,9 +54,9 @@ class AgentEngineApp(AdkApp):
         self.logger.log_struct(feedback_obj.model_dump(), severity="INFO")
 
     def register_operations(self) -> dict[str, list[str]]:
-        """Registers the operations of the Agent."""
+        """Register the operations of the Agent."""
         operations = super().register_operations()
-        operations[""] = operations.get("", []) + ["register_feedback"]
+        operations[""] = [*operations.get("", []), "register_feedback"]
         return operations
 
 

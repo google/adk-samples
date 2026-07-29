@@ -7,7 +7,7 @@ import random
 import re
 import string
 
-from google.adk.tools import ToolContext
+from google.adk.agents.context import Context as ToolContext
 from google.cloud import storage
 from google.genai import types
 from googleapiclient.discovery import build
@@ -19,24 +19,71 @@ from .config import config
 logger = logging.getLogger(__name__)
 
 
-def get_youtube_client():
-    """Builds and returns the YouTube Data API client."""
-    return build("youtube", "v3", developerKey=config.YOUTUBE_API_KEY)
+def init_or_get_youtube_client(tool_context: ToolContext):
+    """
+    Initializes or retrieves the YouTube Data API client.
+    
+    Priority:
+    1. Session state (onboarded by user)
+    2. Environment variable (pre-configured in config)
+
+    Returns:
+        tuple: (youtube_client, error_message)
+        If client is None, error_message contains the onboarding instructions.
+    """
+    # 1. Check session state first (allows user to override environment key)
+    api_key = tool_context.state.get("youtube_api_key")
+
+    # 2. Fallback to pre-configured environment key
+    if not api_key:
+        api_key = config.YOUTUBE_API_KEY
+
+    if not api_key:
+        error_msg = (
+            "SYSTEM REJECTION: Missing YouTube API Key. "
+            "I cannot access YouTube data without a valid API key. "
+            "SUGGESTED ACTION: "
+            "1. Visit https://developers.google.com/youtube/v3/getting-started to apply for a YouTube Data API v3 key. "
+            "2. Once you have the key, please provide it to me. "
+            "3. I will then use the 'store_youtube_api_key' tool to save it for this session."
+        )
+        return None, error_msg
+
+    try:
+        client = build("youtube", "v3", developerKey=api_key)
+        return client, None
+    except Exception as e:
+        return None, f"ERROR: Failed to initialize YouTube client: {e!s}"
+
+
+def store_youtube_api_key(api_key: str, tool_context: ToolContext) -> str:
+    """
+    Stores the YouTube API key in the persistent tool context state.
+    Call this tool when the user provides a new API key.
+
+    Args:
+        api_key: The YouTube Data API v3 key provided by the user.
+        tool_context: The ADK tool context.
+    """
+    tool_context.state["youtube_api_key"] = api_key
+    return "YouTube API key has been stored successfully. You can now proceed with YouTube data requests."
 
 
 def search_youtube(
     query: str,
+    tool_context: ToolContext,
     max_results: int = 10,
     published_after: str = "",
     region_code: str = "",
     relevance_language: str = "",
     video_duration: str = "any",
-):
+) -> list[dict] | str:
     """
     Searches YouTube for videos matching the query with advanced filtering.
 
     Args:
         query: The search term.
+        tool_context: The ADK tool context.
         max_results: Maximum number of results to return (default 10).
         published_after: Filter for videos published after this date (RFC 3339 format, e.g., '2023-01-01T00:00:00Z').
         region_code: ISO 3166-1 alpha-2 country code (e.g., 'US', 'GB', 'JP'). Returns videos viewable in this region.
@@ -44,10 +91,14 @@ def search_youtube(
         video_duration: Filter by duration. Acceptable values are 'any', 'long' (> 20 mins), 'medium' (4-20 mins), 'short' (< 4 mins).
 
     Returns:
-        A list of dictionaries containing video title, videoId, and channelTitle.
+        A list of dictionaries containing video title, videoId, and channelTitle, or error message.
     """
+    youtube, error = init_or_get_youtube_client(tool_context)
+    if error:
+        return error
+    assert youtube is not None
+
     try:
-        youtube = get_youtube_client()
         kwargs = {
             "q": query,
             "type": "video",
@@ -80,24 +131,29 @@ def search_youtube(
         return results
     except HttpError as e:
         logger.error(f"An HTTP error {e.resp.status} occurred:\n{e.content}")
-        return []
+        return f"ERROR: YouTube API returned {e.resp.status}"
 
 
-def get_video_details(video_ids: list[str]) -> list[dict]:
+def get_video_details(video_ids: list[str], tool_context: ToolContext) -> list[dict] | str:
     """
     Retrieves statistics and snippet details for a list of video IDs.
 
     Args:
         video_ids: A list of video ID strings.
+        tool_context: The ADK tool context.
 
     Returns:
-        A list of dictionaries containing video statistics and details.
+        A list of dictionaries containing video statistics and details, or error message.
     """
     if not video_ids:
         return []
 
+    youtube, error = init_or_get_youtube_client(tool_context)
+    if error:
+        return error
+    assert youtube is not None
+
     try:
-        youtube = get_youtube_client()
         # Join video IDs with comma
         ids_string = ",".join(video_ids)
 
@@ -148,25 +204,30 @@ def get_video_details(video_ids: list[str]) -> list[dict]:
         return results
     except HttpError as e:
         logger.error(f"An HTTP error {e.resp.status} occurred:\n{e.content}")
-        return []
+        return f"ERROR: YouTube API returned {e.resp.status}"
 
 
 def get_trending_videos(
-    region_code: str = "US", video_category_id: str = ""
-) -> list:
+    tool_context: ToolContext, region_code: str = "US", video_category_id: str = ""
+) -> list[dict] | str:
     """
     Retrieves the currently trending/most popular videos natively from YouTube, bypassing keyword search.
     Use this to proactively discover "What matters today" without needing a specific search query.
 
     Args:
+        tool_context: The ADK tool context.
         region_code: ISO 3166-1 alpha-2 country code (e.g., 'US', 'GB', 'HK'). Default is 'US'.
         video_category_id: Optional category ID (e.g., '28' for Science & Technology, '20' for Gaming).
 
     Returns:
-        A list of dictionaries containing trending video details.
+        A list of dictionaries containing trending video details, or error message.
     """
+    youtube, error = init_or_get_youtube_client(tool_context)
+    if error:
+        return error
+    assert youtube is not None
+
     try:
-        youtube = get_youtube_client()
         kwargs = {
             "part": "id,snippet,statistics",
             "chart": "mostPopular",
@@ -195,24 +256,29 @@ def get_trending_videos(
         return results
     except HttpError as e:
         logger.error(f"An HTTP error {e.resp.status} occurred:\n{e.content}")
-        return []
+        return f"ERROR: YouTube API returned {e.resp.status}"
 
 
-def get_channel_details(channel_ids: list[str]):
+def get_channel_details(channel_ids: list[str], tool_context: ToolContext) -> list[dict] | str:
     """
     Retrieves statistics and snippet details for a list of channel IDs.
 
     Args:
         channel_ids: A list of channel ID strings.
+        tool_context: The ADK tool context.
 
     Returns:
-        A list of dictionaries containing channel statistics and details.
+        A list of dictionaries containing channel statistics and details, or error message.
     """
     if not channel_ids:
         return []
 
+    youtube, error = init_or_get_youtube_client(tool_context)
+    if error:
+        return error
+    assert youtube is not None
+
     try:
-        youtube = get_youtube_client()
         ids_string = ",".join(channel_ids)
 
         channel_response = (
@@ -248,25 +314,30 @@ def get_channel_details(channel_ids: list[str]):
         return results
     except HttpError as e:
         logger.error(f"An HTTP error {e.resp.status} occurred:\n{e.content}")
-        return []
+        return f"ERROR: YouTube API returned {e.resp.status}"
 
 
 def get_video_comments(
-    video_id: str, max_results: int = 20, order: str = "time"
-):
+    video_id: str, tool_context: ToolContext, max_results: int = 20, order: str = "time"
+) -> list[str] | str:
     """
     Retrieves top-level comments for a specific video.
 
     Args:
         video_id: The ID of the video.
+        tool_context: The ADK tool context.
         max_results: Maximum number of comments to return.
         order: The order of comments ('time' or 'relevance'). Default is 'time'.
 
     Returns:
-        A list of comment strings.
+        A list of comment strings, or error message.
     """
+    youtube, error = init_or_get_youtube_client(tool_context)
+    if error:
+        return error
+    assert youtube is not None
+
     try:
-        youtube = get_youtube_client()
         comment_response = (
             youtube.commentThreads()
             .list(
@@ -288,7 +359,7 @@ def get_video_comments(
         return comments
     except HttpError as e:
         logger.error(f"An HTTP error {e.resp.status} occurred:\n{e.content}")
-        return []
+        return f"ERROR: YouTube API returned {e.resp.status}"
 
 
 def generate_timestamp_url(video_id: str, timestamp_str: str) -> str:
@@ -308,7 +379,7 @@ def generate_timestamp_url(video_id: str, timestamp_str: str) -> str:
 
 def calculate_engagement_metrics(
     view_count: int, like_count: int, comment_count: int, subscriber_count: int
-):
+) -> dict:
     """
     Calculates engagement rate and active rate based on video statistics.
 
@@ -346,7 +417,7 @@ def calculate_match_score(
     engagement_rate: float,
     active_rate: float,
     sentiment_score: float = 0.0,
-):
+) -> float:
     """
     Calculates a composite match score for a channel/video.
 
@@ -382,7 +453,7 @@ def calculate_match_score(
     return round(total_score, 1)
 
 
-def analyze_sentiment_heuristic(text: str):
+def analyze_sentiment_heuristic(text: str) -> float:
     """
     Simple heuristic sentiment analysis based on keyword matching.
 
@@ -431,14 +502,14 @@ def analyze_sentiment_heuristic(text: str):
     return max(-1, min(1, score))
 
 
-def get_current_date_time():
+def get_current_date_time() -> str:
     """
     Returns the current date and time in UTC (RFC 3339 format).
     """
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return datetime.datetime.now(datetime.UTC).isoformat()
 
 
-def get_date_range(time_span: str):
+def get_date_range(time_span: str) -> str:
     """
     Calculates the date for the start of a time span relative to now.
 
@@ -449,7 +520,7 @@ def get_date_range(time_span: str):
         A string representing the date in RFC 3339 format (e.g., '2023-01-01T00:00:00Z').
         Returns empty string if time_span is not recognized.
     """
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
 
     if time_span == "week":
         delta = datetime.timedelta(weeks=1)
@@ -468,14 +539,14 @@ def get_date_range(time_span: str):
 
 async def render_html(
     html_content: str, filename: str, tool_context: ToolContext
-):
+) -> str:
     """
     Saves HTML content to a file and optionally registers it as an artifact.
 
     Args:
         html_content: The raw HTML string.
         filename: The output filename.
-        tool_context: The ADK tool context (automatically injected if available).
+        tool_context: The ADK tool context.
 
     Returns:
         The path to the saved file.
@@ -492,7 +563,7 @@ async def render_html(
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(html_content)
 
-        # Try to save artifact if context is available
+        # Try to save artifact
         try:
             await tool_context.save_artifact(
                 filename.replace(".", "_"),  # Simple artifact name
@@ -514,19 +585,6 @@ def parse_timestamp_to_seconds(timestamp_str: str) -> int:
     Parses a timestamp string into an integer representing total seconds.
 
     Supports formats: raw seconds ('322'), MM:SS ('05:22'), or HH:MM:SS ('1:05:22').
-
-    >>> parse_timestamp_to_seconds('322')
-    322
-    >>> parse_timestamp_to_seconds('05:22')
-    322
-    >>> parse_timestamp_to_seconds('5:22')
-    322
-    >>> parse_timestamp_to_seconds('1:05:22')
-    3922
-    >>> parse_timestamp_to_seconds('01:05:22')
-    3922
-    >>> parse_timestamp_to_seconds('invalid')
-    0
     """
     try:
         # Match optional HH:, required MM:, required SS
@@ -537,7 +595,10 @@ def parse_timestamp_to_seconds(timestamp_str: str) -> int:
         if not match:
             return 0
 
-        hh, mm, ss = match.groups()
+        groups = match.groups()
+        hh = groups[0]
+        mm = groups[1]
+        ss = groups[2]
 
         # If only the last group matched, it's just raw seconds
         if not hh and not mm:
@@ -560,20 +621,25 @@ def parse_timestamp_to_seconds(timestamp_str: str) -> int:
 # --- NEW METADATA/TEXT TOOLS FOR PR3 ---
 
 
-def get_comment_replies(comment_id: str, max_results: int = 50) -> list[str]:
+def get_comment_replies(comment_id: str, tool_context: ToolContext, max_results: int = 50) -> list[str] | str:
     """
     Retrieves the replies to a specific top-level comment.
     Use this to dig deep into a specific community debate or controversy.
 
     Args:
         comment_id: The ID of the top-level comment (obtained from get_video_comments).
+        tool_context: The ADK tool context.
         max_results: Maximum number of replies to return.
 
     Returns:
-        A list of reply strings.
+        A list of reply strings, or error message.
     """
+    youtube, error = init_or_get_youtube_client(tool_context)
+    if error:
+        return error
+    assert youtube is not None
+
     try:
-        youtube = get_youtube_client()
         reply_response = (
             youtube.comments()
             .list(
@@ -591,52 +657,60 @@ def get_comment_replies(comment_id: str, max_results: int = 50) -> list[str]:
         return replies
     except HttpError as e:
         logger.error(f"An HTTP error {e.resp.status} occurred:\n{e.content}")
-        return []
+        return f"ERROR: YouTube API returned {e.resp.status}"
 
 
 def aggregate_comment_sentiment(
-    video_ids: list[str], comments_per_video: int = 10
-) -> dict:
+    video_ids: list[str], tool_context: ToolContext, comments_per_video: int = 10
+) -> dict | str:
     """
     Fetches comments across multiple videos simultaneously to generate a macro-sentiment view.
     Use this for Product Launch Audits to see what the entire audience is saying across different reviews.
 
     Args:
         video_ids: A list of video IDs to fetch comments for.
+        tool_context: The ADK tool context.
         comments_per_video: How many top comments to pull per video.
 
     Returns:
-        A dictionary mapping videoId to a list of comment strings.
+        A dictionary mapping videoId to a list of comment strings, or error message.
     """
     # We use the synchronous get_video_comments in a loop here.
     aggregated_data = {}
     for vid in video_ids:
         # Get top 'relevance' comments
         comments_data = get_video_comments(
-            vid, max_results=comments_per_video, order="relevance"
+            vid, tool_context=tool_context, max_results=comments_per_video, order="relevance"
         )
+        # Handle cases where get_video_comments might return the error string
+        if isinstance(comments_data, str) and "SYSTEM REJECTION" in comments_data:
+            return comments_data
         aggregated_data[vid] = comments_data
-
     return aggregated_data
 
 
 def search_channel_videos(
-    channel_id: str, max_results: int = 5, published_after: str = ""
-) -> list[dict]:
+    channel_id: str, tool_context: ToolContext, max_results: int = 5, published_after: str = ""
+) -> list[dict] | str:
     """
     Searches for the most recent videos uploaded by a specific channel.
     Use this for Industry Landscape Briefings to track specific 'analyst' or 'competitor' channels.
 
     Args:
         channel_id: The ID of the YouTube channel.
+        tool_context: The ADK tool context.
         max_results: Maximum number of videos to return.
         published_after: Filter for videos published after this date (RFC 3339).
 
     Returns:
-        A list of dictionaries containing video title, videoId, and publishedAt.
+        A list of dictionaries containing video title, videoId, and publishedAt, or error message.
     """
+    youtube, error = init_or_get_youtube_client(tool_context)
+    if error:
+        return error
+    assert youtube is not None
+
     try:
-        youtube = get_youtube_client()
         kwargs = {
             "channelId": channel_id,
             "type": "video",
@@ -663,7 +737,7 @@ def search_channel_videos(
         return results
     except HttpError as e:
         logger.error(f"An HTTP error {e.resp.status} occurred:\n{e.content}")
-        return []
+        return f"ERROR: YouTube API returned {e.resp.status}"
 
 
 def get_video_transcript(video_id: str) -> str:
@@ -679,7 +753,7 @@ def get_video_transcript(video_id: str) -> str:
     """
     try:
         # Fetch the transcript (prioritizes English, but falls back to others)
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        transcript = YouTubeTranscriptApi.get_transcript(video_id) # type: ignore
 
         # Format it into a readable string with basic timestamps
         formatted_transcript = ""
@@ -705,7 +779,7 @@ def get_video_transcript(video_id: str) -> str:
 def submit_feedback(
     feedback_text: str,
     category: str = "general",
-    tool_context: ToolContext = None,
+    tool_context: ToolContext | None = None,
 ) -> str:
     """
     Submits user feedback regarding the agent's performance, accuracy, or content relevance.
@@ -714,7 +788,7 @@ def submit_feedback(
     Args:
         feedback_text: The user's feedback message.
         category: The type of feedback (e.g., 'accuracy', 'feature_request', 'general').
-        tool_context: The ADK tool context (automatically injected).
+        tool_context: The ADK tool context.
 
     Returns:
         A confirmation message.
@@ -735,7 +809,7 @@ def submit_feedback(
         "user_id": user_id,
         "app_name": app_name,
         "feedback_text": feedback_text,
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
     }
 
     # Log it as a WARNING so it stands out from standard INFO traffic
@@ -746,10 +820,10 @@ def submit_feedback(
 
 
 def publish_file(
-    content: str,
+    content: str | bytes,
     filename: str,
     mime_type: str = "text/html",
-    tool_context: ToolContext = None,
+    tool_context: ToolContext | None = None,
 ) -> str:
     """
     Publishes content to a temporary public URL using Google Cloud Storage.
@@ -760,7 +834,7 @@ def publish_file(
         content: The raw string or bytes content to publish.
         filename: The desired filename (e.g., 'report.html' or 'chart.png').
         mime_type: The MIME type of the file (default: 'text/html').
-        tool_context: The ADK tool context (automatically injected).
+        tool_context: The ADK tool context.
 
     Returns:
         A string containing the public URL where the user can view the file, or an error message.
@@ -773,7 +847,7 @@ def publish_file(
         public_url_prefix = f"https://storage.googleapis.com/{bucket_name}"
 
         # Determine path parameters
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         date_str = now.strftime("%Y%m%d")
 
         # Extract session_id if available to group files

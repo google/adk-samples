@@ -33,9 +33,9 @@ def create() -> None:
 
     remote_agent = agent_engines.create(
         adk_app,
-        display_name="sdlc-user-story-refiner",
+        display_name="sdlc-task-planner",
         requirements=[
-            "google-adk (>=1.0.0)",
+            "google-adk (>=1.31.0)",
             "google-cloud-aiplatform[adk,agent_engines] (>=1.93.0)",
             "google-genai (>=1.9.0)",
             "pydantic (>=2.10.6)",

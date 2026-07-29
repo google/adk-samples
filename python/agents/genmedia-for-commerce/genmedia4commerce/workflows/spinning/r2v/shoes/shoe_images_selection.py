@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Selection of shoe images based on classified views."""
+
 import io
 from collections import defaultdict
 
@@ -31,8 +33,7 @@ class_order = [
 
 
 def get_non_white_pixel_count(img_bytes: bytes) -> int:
-    """
-    Count non-white pixels in an image as a quality metric.
+    """Count non-white pixels in an image as a quality metric.
 
     More non-white pixels = more complete shoe (less background).
     This helps select the most complete shoe when multiple shoes
@@ -43,6 +44,7 @@ def get_non_white_pixel_count(img_bytes: bytes) -> int:
 
     Returns:
         int: Number of non-white pixels (higher = better/more complete)
+
     """
     try:
         img = PImage.open(io.BytesIO(img_bytes))
@@ -75,6 +77,15 @@ def get_non_white_pixel_count(img_bytes: bytes) -> int:
 
 
 def can_generate_views(labels):
+    """Check if the labels contain enough views to generate a video.
+
+    Args:
+        labels: List of class labels.
+
+    Returns:
+        bool: True if enough views are present, False otherwise.
+
+    """
     views_set = set()
     for label in labels:
         if "front" in label and label != "top_front":
@@ -91,6 +102,15 @@ def can_generate_views(labels):
 
 
 def classify_video_gen_status(labels):
+    """Classify the video generation status based on available views.
+
+    Args:
+        labels: List of class labels.
+
+    Returns:
+        list or str: List of ordered labels if successful, "exclude" otherwise.
+
+    """
     if can_generate_views(labels):
         order = []
         for label in class_order:
@@ -101,8 +121,7 @@ def classify_video_gen_status(labels):
 
 
 def filer_top_four_views(selected_images):
-    """
-    Filters and returns up to 4 images in order: right, left, front, back.
+    """Filter and return up to 4 images in order: right, left, front, back.
 
     Selection priority:
     - 1st (right): right, front_right, back_right
@@ -144,9 +163,8 @@ def filer_top_four_views(selected_images):
 def pick_images_by_ordered_best_side(
     images_classified: list[tuple[bytes, str]],
 ) -> list[tuple[any, str]]:
-    """
+    """Select the images for each available ordered side.
 
-    The function selects the images for each available ordered side.
     In case of duplication, it selects the most complete image (highest non-white pixel count).
 
     Args:
@@ -162,7 +180,7 @@ def pick_images_by_ordered_best_side(
     for img, side in images_classified:
         side_image_dict[side].append(img)
 
-    available_side = [x for x in class_order + ["top_front"] if x in side_image_dict]
+    available_side = [x for x in [*class_order, "top_front"] if x in side_image_dict]
     for side in available_side:
         # If multiple images for the same side, pick the most complete one
         if len(side_image_dict[side]) > 1:

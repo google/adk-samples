@@ -34,6 +34,7 @@ from google.genai.types import Part, UserContent
 from phoenix.evals import GeminiModel, llm_classify
 
 # Import the travel concierge agent
+from travel_concierge import MODEL
 from travel_concierge.agent import root_agent
 
 load_dotenv()
@@ -42,6 +43,7 @@ load_dotenv()
 ARIZE_API_KEY = os.getenv("ARIZE_API_KEY")
 ARIZE_SPACE_ID = os.getenv("ARIZE_SPACE_ID")
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
 
 if not all([ARIZE_API_KEY, ARIZE_SPACE_ID, GOOGLE_CLOUD_PROJECT]):
     raise ValueError(
@@ -49,16 +51,16 @@ if not all([ARIZE_API_KEY, ARIZE_SPACE_ID, GOOGLE_CLOUD_PROJECT]):
     )
 
 # Initialize Vertex AI
-vertexai.init(project=GOOGLE_CLOUD_PROJECT, location="us-central1")
+vertexai.init(project=GOOGLE_CLOUD_PROJECT, location=GOOGLE_CLOUD_LOCATION)
 
 # Initialize Arize client
 arize_client = ArizeDatasetsClient(api_key=ARIZE_API_KEY)
 
 # Initialize Phoenix model for evaluations
 phoenix_model = GeminiModel(
-    model="gemini-2.5-flash",
+    model=MODEL,
     project=GOOGLE_CLOUD_PROJECT,
-    location="us-central1",
+    location=GOOGLE_CLOUD_LOCATION,
 )
 
 

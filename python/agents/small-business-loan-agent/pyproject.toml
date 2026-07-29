@@ -14,7 +14,7 @@ maintainers = [
     { name = "Neil Desai", email = "nmdesai@google.com" },
 ]
 dependencies = [
-    "google-adk>=1.27.4",
+    "google-adk>=1.31.0",
     "google-cloud-firestore>=2.21.0",
     "reportlab>=4.4.10",
     "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",

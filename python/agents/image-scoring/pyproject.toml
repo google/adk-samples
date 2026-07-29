@@ -23,12 +23,16 @@ dev = [
     "pytest-asyncio>=0.23.8",
     "nest-asyncio>=1.6.0",
     "agent-starter-pack>=0.14.1",
+    "jupyter~=1.1.1",
+]
+
+[project.optional-dependencies]
+lint = [
     "ruff>=0.4.6",
     "mypy~=1.20.0",
     "codespell~=2.4.1",
     "types-pyyaml~=6.0.12.20240917",
     "types-requests~=2.33.0.20260327",
-    "jupyter~=1.1.1",
 ]
 
 [tool.ruff]
@@ -38,7 +42,7 @@ extend = "../../../pyproject.toml"
 ignore = ["C901", "B006"]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
+"__init__.py" = ["F401", "E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["image_scoring", "app", "frontend"]
@@ -77,5 +81,8 @@ example_question = "Generate an image about a polar bear in the Sahara desert"
 agent_directory = "image_scoring"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.14,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""

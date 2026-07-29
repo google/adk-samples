@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Shared evaluation utilities for spinning video generation.
+"""Shared evaluation utilities for spinning video generation.
+
 Uses V3f rotation classifier (optical flow) for most products.
 Uses mask-based shape classifier for glasses (symmetric objects).
 Includes glitch detection using Gemini vision models.
@@ -49,6 +49,7 @@ def classify_product_type(
 
     Returns:
         "glasses" or "other"
+
     """
     system_prompt = """You are a product classifier. Given a product image, determine if the product is glasses or eyewear (sunglasses, optical frames, goggles, etc.) or something else.
 
@@ -87,8 +88,7 @@ def check_spin_direction(
     product_type: str = "other",
     segmentation_client=None,
 ) -> str:
-    """
-    Check the rotation direction of a video.
+    """Check the rotation direction of a video.
 
     For glasses: uses mask-based shape classifier (handles symmetric objects).
     For other products: uses V3f optical flow classifier.
@@ -100,6 +100,7 @@ def check_spin_direction(
 
     Returns:
         str: "clockwise", "anticlockwise", or "invalid"
+
     """
     if product_type == "glasses" and segmentation_client is not None:
         result = classify_glasses_rotation(segmentation_client, video_bytes)
@@ -124,14 +125,14 @@ def check_spin_direction(
 
 
 def get_rotation_classification(video_bytes: bytes) -> str:
-    """
-    Get the full rotation classification for a video.
+    """Get the full rotation classification for a video.
 
     Args:
         video_bytes: Video as bytes
 
     Returns:
         str: One of "clockwise", "anticlockwise", "invalid", "unknown", or "error"
+
     """
     # Write video bytes to a temporary file
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
@@ -148,8 +149,7 @@ def get_rotation_classification(video_bytes: bytes) -> str:
 def glitch_detection(
     client, video_bytes: bytes, model: str = "gemini-3-flash-preview"
 ) -> dict:
-    """
-    Detect visual glitches in a 360-degree product spinning video.
+    """Detect visual glitches in a 360-degree product spinning video.
 
     Uses Gemini vision model to analyze the video for common issues such as:
     - Direction changes (clockwise to anticlockwise or vice versa)
@@ -169,6 +169,7 @@ def glitch_detection(
             "explanation": str - Explanation of why video is valid or invalid
             "is_valid": bool - True if video is valid, False if glitches detected
         }
+
     """
     system_prompt = """You are an expert at analyzing product spinning videos for visual quality and glitches.
 
@@ -212,7 +213,7 @@ Only return the JSON object, nothing else."""
     try:
         text_part = ["Analyze this product spinning video for glitches:"]
         response_text = generate_gemini(
-            text_images_pieces=([video_bytes] + text_part),
+            text_images_pieces=([video_bytes, *text_part]),
             client=client,
             config=config,
             model=model,

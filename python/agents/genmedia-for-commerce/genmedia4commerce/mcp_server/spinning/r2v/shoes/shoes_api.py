@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """REST API endpoints for the shoes spinning R2V workflow."""
 
 import base64
@@ -59,7 +73,7 @@ _products_dir = os.path.join(_shoes_workflow_dir, "images", "products")
 
 @router.get("/config")
 async def get_shoes_config():
-    """Returns shoe spinning configuration status."""
+    """Return shoe spinning configuration status."""
     endpoint = shoe_classifier_model
     using_local = endpoint is None or endpoint == "None" or endpoint == ""
     return JSONResponse(content={"using_local_classifier": using_local})
@@ -67,7 +81,7 @@ async def get_shoes_config():
 
 @router.get("/get_gallery_images")
 async def get_gallery_images():
-    """Returns a list of available gallery images grouped by product folder."""
+    """Return a list of available gallery images grouped by product folder."""
     products = []
 
     if not os.path.exists(_products_dir):
@@ -142,7 +156,7 @@ async def preprocess_images_r2v(images: list[UploadFile] = File(...)):
 
         results = []
         for idx, (img_bytes, classification) in enumerate(
-            zip(reference_images, stacked_classes)
+            zip(reference_images, stacked_classes, strict=False)
         ):
             results.append(
                 {
@@ -162,7 +176,7 @@ async def preprocess_images_r2v(images: list[UploadFile] = File(...)):
         )
     except Exception as e:
         logger.error(f"Error in R2V preprocessing: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     finally:
         for image in images:
             image.file.close()
@@ -170,7 +184,7 @@ async def preprocess_images_r2v(images: list[UploadFile] = File(...)):
 
 @router.post("/generate-prompt-r2v")
 async def generate_prompt_with_position_r2v(all_images: list[UploadFile] = File(...)):
-    """Generates R2V prompt and stacked reference images for video generation."""
+    """Generate R2V prompt and stacked reference images for video generation."""
     all_images_bytes = [await img.read() for img in all_images]
 
     try:
@@ -203,7 +217,7 @@ async def generate_prompt_with_position_r2v(all_images: list[UploadFile] = File(
         logger.error(f"Error during R2V prompt generation: {e}")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate R2V prompt: {e}"
-        )
+        ) from e
 
 
 @router.post("/generate-video-r2v")
@@ -214,7 +228,7 @@ async def generate_video_r2v(
     reference_type: str = Form("asset"),
     max_retries: int = Form(5),
 ):
-    """Generates a single video using reference-to-video (R2V) modality."""
+    """Generate a single video using reference-to-video (R2V) modality."""
     try:
         reference_images_bytes = [await img.read() for img in reference_images]
 
@@ -247,12 +261,14 @@ async def generate_video_r2v(
         logger.error(
             f"Error generating R2V video for index {index}: {e}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Internal Server Error: {e}"
+        ) from e
 
 
 @router.post("/merge-videos")
 async def merge_videos(videos: list[UploadFile] = File(...), speeds: str = Form(...)):
-    """Merges multiple video files into one."""
+    """Merge multiple video files into one."""
     if not videos:
         raise HTTPException(status_code=400, detail="No video files provided.")
 
@@ -271,7 +287,7 @@ async def merge_videos(videos: list[UploadFile] = File(...), speeds: str = Form(
         )
     except Exception as e:
         logger.error(f"Error during merge: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     finally:
         for video in videos:
             video.file.close()
@@ -313,7 +329,7 @@ async def run_pipeline_endpoint_r2v(payload: dict = Body(...)):
                 raise HTTPException(
                     status_code=400,
                     detail=f"Invalid base64 encoding for image {idx}: {e!s}",
-                )
+                ) from e
 
         result = await run_in_threadpool(
             run_video_gen_pipeline_r2v,
@@ -364,7 +380,7 @@ async def run_pipeline_endpoint_r2v(payload: dict = Body(...)):
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error in R2V pipeline: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

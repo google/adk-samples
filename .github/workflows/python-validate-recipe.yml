@@ -1,0 +1,371 @@
+name: Validate Python Recipe
+
+# Python-specific validation for each affected Python recipe:
+# `.env.example` env-key notice, AST-based env-var extraction check,
+# no-local-Ruff-config, `[project]` metadata rules, and a
+# hardcoded-model-name notice. Structural checks live in
+# `validate-recipe-structure.yml`.
+
+on:
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'contrib/**'
+      - 'skills/**'
+      - '.github/workflows/python-validate-recipe.yml'
+      - '.github/scripts/check_env_vars.py'
+      - '.github/scripts/check_recipe_pyproject.py'
+      - 'tools/affected_recipes.py'
+      - 'tools/validate_manifest.py'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-python-recipes:
+    name: Check Python-specific recipe constraints
+    runs-on: ubuntu-latest
+    # 20 minutes covers `uv sync` + a full-repo scan on the workflow_dispatch
+    # / infra-changed path, with headroom. Prevents the default 6-hour job
+    # ceiling from applying when a check hangs.
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: false
+
+      - name: Install validation dependencies
+        # affected_recipes.py imports validate_manifest and needs PyYAML;
+        # `uv sync` installs both (same install step the sibling workflow
+        # validate-recipe-structure.yml uses).
+        run: uv sync
+
+      - name: Detect affected Python recipe directories
+        id: affected
+        env:
+          # Pass GitHub-controlled values through env vars rather than
+          # interpolating them into the shell body (expression injection
+          # hardening — see GitHub Actions security hardening guide).
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          # workflow_dispatch has no PR base ref, so the diff-based
+          # detection can't run. Validate every Python recipe instead
+          # (mirrors the run_all path in python-tests.yml). Without this
+          # short-circuit, `git diff` below would fail loudly.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "workflow_dispatch — validating all Python recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch origin "$BASE_REF"
+          CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # If any infrastructure file that controls this workflow's
+          # behaviour changed (the workflow itself, a checker script, or
+          # a shared tool), validate ALL Python recipes so the new
+          # configuration is applied everywhere and not only to recipes
+          # touched by the same PR.
+          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/(workflows/python-validate-recipe\.yml|scripts/(check_env_vars|check_recipe_pyproject)\.py)|tools/(affected_recipes|validate_manifest)\.py|pyproject\.toml)$" || true)
+          if [ -n "$INFRA_CHANGED" ]; then
+            echo "Workflow or Python-specific tool changed — validating all Python recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Otherwise, translate the file diff into the set of Python
+          # recipes it touched via the shared helper (tested by
+          # tools/tests/test_affected_recipes.py — table-driven, so this
+          # workflow doesn't reimplement the layout matrix in bash).
+          # NOT `--no-project`: affected_recipes.py imports PyYAML and the
+          # `validate_manifest` package, both provided by the project venv
+          # created by `uv sync` above.
+          CHANGED_RECIPES=$(echo "$CHANGED_FILES" | uv run python tools/affected_recipes.py --language python)
+
+          echo "Python recipes to validate:"
+          echo "$CHANGED_RECIPES"
+
+          {
+            echo "changed_recipes<<RECIPES_EOF"
+            echo "$CHANGED_RECIPES"
+            echo "RECIPES_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "validate_all=false" >> "$GITHUB_OUTPUT"
+
+      - name: Collect all Python recipe directories (workflow_dispatch or infra changed)
+        id: all_recipes
+        if: steps.affected.outputs.validate_all == 'true'
+        run: |
+          set -euo pipefail
+
+          # Full-repo enumeration: list every path under core/, contrib/,
+          # and skills/ (any depth), then feed it through the same helper
+          # the diff step uses — with --language python. This keeps one
+          # source of truth for the layout matrix (path → recipe →
+          # language) instead of re-implementing it in shell. `skills/`
+          # is included so that a Python recipe under skills/python/…
+          # (or a flat skills/<recipe>/ with language: python in its
+          # manifest) is picked up by the full scan; missing roots are
+          # tolerated silently via 2>/dev/null.
+          # NOT `--no-project`: see the notes on the sibling invocation
+          # above.
+          ALL=$(find core contrib skills -type f 2>/dev/null | uv run python tools/affected_recipes.py --language python)
+
+          echo "All Python recipes:"
+          echo "$ALL"
+
+          {
+            echo "all_recipes<<RECIPES_EOF"
+            echo "$ALL"
+            echo "RECIPES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Python-specific checks per recipe
+        env:
+          VALIDATE_ALL: ${{ steps.affected.outputs.validate_all }}
+          ALL_RECIPES: ${{ steps.all_recipes.outputs.all_recipes }}
+          CHANGED_RECIPES: ${{ steps.affected.outputs.changed_recipes }}
+        run: |
+          set -euo pipefail
+
+          if [ "$VALIDATE_ALL" = "true" ]; then
+            RECIPES="$ALL_RECIPES"
+          else
+            RECIPES="$CHANGED_RECIPES"
+          fi
+
+          if [ -z "$RECIPES" ]; then
+            echo "[INFO] No Python recipe directories to validate."
+            exit 0
+          fi
+
+          FAILED=0
+
+          # Each recipe is validated in a subshell so a transient failure
+          # inside one recipe (e.g. a `find` error) aborts only that
+          # recipe's checks, not the whole loop. The subshell exits 1
+          # when any check fails; `|| FAILED=1` records the aggregate.
+          while IFS= read -r recipe; do
+            [ -z "$recipe" ] && continue
+            echo ""
+            echo "========================================"
+            echo "Validating: $recipe"
+            echo "========================================"
+            (
+              RECIPE_FAILED=0
+
+              # ------------------------------------------------------------
+              # Check: .env.example — notice keys
+              #
+              # Emits ::notice (never fail) when a common configuration
+              # key is not declared. These are conventionally used by GCP
+              # runtimes or ADK internals and their absence isn't always
+              # an error, so this is advisory only.
+              # ------------------------------------------------------------
+              NOTICE_ENV_KEYS=(
+                "GOOGLE_CLOUD_PROJECT"
+                "GOOGLE_CLOUD_LOCATION"
+                "MODEL_NAME"
+              )
+
+              if [ -f "$recipe/.env.example" ]; then
+                for key in "${NOTICE_ENV_KEYS[@]}"; do
+                  if ! grep -qE "^(export\s+)?${key}(_[A-Z0-9_]*)?\s*=" "$recipe/.env.example"; then
+                    echo "::notice file=$recipe/.env.example::No environment variable starting with '${key}' found in .env.example. Consider adding one if your recipe uses it."
+                    echo "[NOTICE] No env key with prefix '$key' in .env.example (not required)."
+                  else
+                    echo "[PASS] Found env key in .env.example: $key"
+                  fi
+                done
+              fi
+
+              # ------------------------------------------------------------
+              # Check: env vars used in Python source but missing from
+              # .env.example. Delegated to check_env_vars.py, which
+              # AST-parses the recipe's Python source — handles multi-line
+              # calls, import aliases (from os import getenv), and
+              # suppresses false positives for OS/CI variables
+              # (HOME, PATH, GITHUB_*, INTEGRATION_TEST, …).
+              # ------------------------------------------------------------
+              if [ -f "$recipe/.env.example" ]; then
+                set +e
+                env_vars_result=$(uv run --no-project \
+                  python3 .github/scripts/check_env_vars.py "$recipe")
+                env_vars_exit=$?
+                set -e
+
+                if [ "$env_vars_exit" -ne 0 ]; then
+                  echo "::error file=$recipe/.env.example::env-var checker crashed (exit=$env_vars_exit). See job output."
+                  echo "[FAIL] env-var checker crashed (exit=$env_vars_exit)."
+                  RECIPE_FAILED=1
+                fi
+
+                while IFS= read -r line; do
+                  [ -z "$line" ] && continue
+                  kind="${line%%::*}"
+                  rest="${line#*::}"
+                  file="${rest%%::*}"
+                  msg="${rest#*::}"
+                  case "$kind" in
+                    PASS)
+                      echo "[PASS] $msg"
+                      ;;
+                    FAIL)
+                      echo "::error file=$file::$msg"
+                      echo "[FAIL] $msg"
+                      RECIPE_FAILED=1
+                      ;;
+                    *)
+                      echo "$line"
+                      ;;
+                  esac
+                done <<< "$env_vars_result"
+              fi
+
+              # ------------------------------------------------------------
+              # Check: recipe must not carry its own Ruff configuration.
+              # Ruff configuration is centralized in the repo root
+              # pyproject.toml.
+              #
+              # Ruff discovers configuration from three sources (whichever
+              # is nearest walking up from a target file):
+              #   1. `[tool.ruff*]` tables in pyproject.toml
+              #   2. a `ruff.toml`   file
+              #   3. a `.ruff.toml`  file
+              # All three must be blocked in recipe directories, or
+              # centralisation has a hole. `ruff.toml` and `.ruff.toml`
+              # are searched over the whole recipe subtree because ruff
+              # walks up per-file, so a nested copy would still override
+              # the root config for files below it.
+              # ------------------------------------------------------------
+              pyproject="$recipe/pyproject.toml"
+              ruff_check_passed=1
+
+              if [ -f "$pyproject" ] && grep -qE '^\s*\[tool\.ruff(\.|\])' "$pyproject"; then
+                echo "::error file=$pyproject::Recipe pyproject.toml must not declare a [tool.ruff*] block. Ruff configuration is centralized in the repo root pyproject.toml (see [tool.ruff] there). Remove all [tool.ruff*] tables from this file."
+                echo "[FAIL] pyproject.toml contains a [tool.ruff*] block — remove it (see root pyproject.toml)."
+                RECIPE_FAILED=1
+                ruff_check_passed=0
+              fi
+
+              standalone_ruff_configs=$(find "$recipe" -type f \
+                \( -name 'ruff.toml' -o -name '.ruff.toml' \) 2>/dev/null || true)
+              if [ -n "$standalone_ruff_configs" ]; then
+                while IFS= read -r ruff_cfg; do
+                  [ -z "$ruff_cfg" ] && continue
+                  echo "::error file=$ruff_cfg::Recipe must not contain a standalone ruff.toml or .ruff.toml. Ruff configuration is centralized in the repo root pyproject.toml. Delete this file."
+                  echo "[FAIL] Standalone Ruff config found: $ruff_cfg — delete it (see root pyproject.toml)."
+                done <<< "$standalone_ruff_configs"
+                RECIPE_FAILED=1
+                ruff_check_passed=0
+              fi
+
+              if [ "$ruff_check_passed" -eq 1 ]; then
+                echo "[PASS] Recipe carries no local Ruff configuration."
+              fi
+
+              # ------------------------------------------------------------
+              # Check: [project] metadata rules. Delegated to
+              # check_recipe_pyproject.py:
+              #   - project-name-matches-folder: [project].name must
+              #     equal the recipe folder basename.
+              #   - python-version-floor: [project].requires-python must
+              #     not permit Python versions below 3.11.
+              #   - description-matches-manifest: if [project].description
+              #     is set, it must equal manifest.description (after
+              #     .strip(), exact match).
+              # ------------------------------------------------------------
+              if [ -f "$pyproject" ]; then
+                # tomllib is stdlib on Python >= 3.11 (setup-uv installs
+                # 3.11); pyyaml + packaging are pulled into an ephemeral
+                # env via `uv run --with`. `packaging` is used for PEP
+                # 440 version specifier parsing (see
+                # check_requires_python in the checker).
+                set +e
+                pyproject_result=$(uv run --no-project --with pyyaml --with packaging \
+                  python .github/scripts/check_recipe_pyproject.py "$recipe")
+                py_exit=$?
+                set -e
+
+                if [ "$py_exit" -ne 0 ]; then
+                  echo "::error file=$pyproject::pyproject.toml metadata checker crashed (uv/python exit=$py_exit). See job output."
+                  echo "[FAIL] pyproject.toml metadata checker crashed (uv/python exit=$py_exit)."
+                  RECIPE_FAILED=1
+                fi
+
+                while IFS= read -r line; do
+                  [ -z "$line" ] && continue
+                  kind="${line%%::*}"
+                  rest="${line#*::}"
+                  file="${rest%%::*}"
+                  msg="${rest#*::}"
+                  case "$kind" in
+                    PASS)
+                      echo "[PASS] $msg"
+                      ;;
+                    FAIL)
+                      echo "::error file=$file::$msg"
+                      echo "[FAIL] $msg"
+                      RECIPE_FAILED=1
+                      ;;
+                    *)
+                      # Unrecognized line — surface it so it isn't
+                      # silently lost.
+                      echo "$line"
+                      ;;
+                  esac
+                done <<< "$pyproject_result"
+              fi
+
+              # ------------------------------------------------------------
+              # Notice: Possible hardcoded model names in Python files.
+              # Emits ::notice (never fail) when a string literal in a
+              # non-test .py file matches a well-known model prefix.
+              # ------------------------------------------------------------
+              MODEL_PREFIXES="gemini-|gemini-exp-|imagen-|claude-|llama-|meta/llama-|mistral-|codestral-|phi-|grok-|command-|jamba-"
+
+              while IFS= read -r pyfile; do
+                matches=$(grep -onE "['\"]($MODEL_PREFIXES)[^ '\"]{1,35}['\"]" "$pyfile" || true)
+                [ -z "$matches" ] && continue
+                while IFS=: read -r lineno match; do
+                  [ -z "$lineno" ] && continue
+                  echo "::notice file=$pyfile,line=$lineno::Possible hardcoded model name $match detected. If this is a model identifier, consider using an environment variable instead."
+                  echo "[NOTICE] $pyfile:$lineno — possible hardcoded model name: $match"
+                done <<< "$matches"
+              done < <(find "$recipe" -type f -name "*.py" ! -path "*/tests/*")
+
+              if [ "$RECIPE_FAILED" -eq 1 ]; then
+                exit 1
+              fi
+              echo ""
+              echo "[PASS] All Python-specific checks passed for: $recipe"
+            ) || FAILED=1
+          done <<< "$RECIPES"
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  One or more Python recipes failed validation."
+            echo "  See errors above for details."
+            echo "========================================"
+            exit 1
+          fi
+
+          echo ""
+          echo "[PASS] All Python recipes passed Python-specific validation."

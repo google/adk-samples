@@ -134,6 +134,7 @@ def search_by_vector(
 
     Returns:
         List of dicts with keys: id, data, score.
+
     """
     query_vec = np.array(embedding, dtype=np.float32)
 
@@ -182,6 +183,7 @@ def search(
 
     Returns:
         List of dicts with keys: id, data, score.
+
     """
     logger.debug(f"Vector search query: {query}")
     embedding = embed_query(query)
@@ -197,6 +199,7 @@ def search_for_outfit_item(item: dict, k: int = 20) -> dict:
 
     Returns:
         The input item enriched with 'matched_products'.
+
     """
     query = item["description"]
 

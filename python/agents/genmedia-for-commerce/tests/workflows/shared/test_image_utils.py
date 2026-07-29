@@ -260,11 +260,11 @@ class TestCreateCanvasWithHeightScaling:
 # Tests for functions that require external API calls (Vertex AI, Vision, etc.)
 # =============================================================================
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch  # noqa: E402
 
-import numpy as np
+import numpy as np  # noqa: E402
 
-from workflows.shared.image_utils import (
+from workflows.shared.image_utils import (  # noqa: E402
     crop_face,
     extract_upscale_product,
     get_background_mask_vertex,
@@ -418,7 +418,7 @@ class TestReplaceBackground:
             mock_segmentation_client, sample_image_bytes, background_color="#FF0000"
         )
 
-        img = Image.open(io.BytesIO(result))
+        Image.open(io.BytesIO(result))
         # Result should have red background visible
         assert isinstance(result, bytes)
 

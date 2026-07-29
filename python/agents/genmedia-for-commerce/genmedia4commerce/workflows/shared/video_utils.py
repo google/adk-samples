@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Shared utilities for video processing.
+"""Shared utilities for video processing.
+
 Includes frame extraction, video creation, merging, and frame similarity analysis.
 """
 
@@ -32,8 +32,7 @@ from skimage.metrics import structural_similarity as ssim
 
 
 def extract_frames_as_bytes_list(video_bytes, image_format=".png"):
-    """
-    Extracts frames from video bytes and returns them as a list of image bytes.
+    """Extract frames from video bytes and return them as a list of image bytes.
 
     Args:
         video_bytes: The raw byte data of a video file
@@ -41,6 +40,7 @@ def extract_frames_as_bytes_list(video_bytes, image_format=".png"):
 
     Returns:
         list: A list where each element is the byte data of a single frame
+
     """
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_video:
         temp_video.write(video_bytes)
@@ -63,8 +63,7 @@ def extract_frames_as_bytes_list(video_bytes, image_format=".png"):
 
 
 def create_mp4_from_bytes_to_bytes(frames_bytes, fps=24, quality=7):
-    """
-    Creates an MP4 video in memory and returns its raw bytes.
+    """Create an MP4 video in memory and return its raw bytes.
 
     Args:
         frames_bytes: List of frame bytes
@@ -73,6 +72,7 @@ def create_mp4_from_bytes_to_bytes(frames_bytes, fps=24, quality=7):
 
     Returns:
         bytes: The video as bytes
+
     """
     video_buffer = io.BytesIO()
     with imageio.get_writer(
@@ -84,9 +84,9 @@ def create_mp4_from_bytes_to_bytes(frames_bytes, fps=24, quality=7):
 
 
 def merge_videos_from_bytes(videos_bytes, speeds=None, fps=24):
-    """
-    Merges multiple MP4 videos (in bytes) into a single video using temporary files,
-    applying a specific speed to each clip.
+    """Merge multiple MP4 videos (in bytes) into a single video using temporary files.
+
+    Apply a specific speed to each clip.
 
     Args:
         videos_bytes: List of video bytes to merge
@@ -95,6 +95,7 @@ def merge_videos_from_bytes(videos_bytes, speeds=None, fps=24):
 
     Returns:
         bytes: The merged video as bytes
+
     """
     temp_files = []
     clips = []
@@ -157,8 +158,7 @@ def merge_videos_from_bytes(videos_bytes, speeds=None, fps=24):
 
 
 def get_frame_similarity_bytes(frame1_bytes, frame2_bytes):
-    """
-    Calculates the Structural Similarity Index (SSIM) between two images.
+    """Calculate the Structural Similarity Index (SSIM) between two images.
 
     Args:
         frame1_bytes: First image as bytes
@@ -166,6 +166,7 @@ def get_frame_similarity_bytes(frame1_bytes, frame2_bytes):
 
     Returns:
         float: SSIM similarity score between 0 and 1
+
     """
     nparr1 = np.frombuffer(frame1_bytes, np.uint8)
     img1_array = cv2.imdecode(nparr1, cv2.IMREAD_COLOR)
@@ -190,12 +191,11 @@ def get_frame_similarity_bytes(frame1_bytes, frame2_bytes):
 def detect_rotation_direction(
     clip_a_frames: list[bytes],
     clip_b_frames: list[bytes],
-    clip_b_reversed_frames: list[bytes] = None,
+    clip_b_reversed_frames: list[bytes] | None = None,
     saturation_max: float = 24.0,
     value_min: float = 90.0,
 ) -> dict:
-    """
-    Detect if two video clips are rotating in opposite directions.
+    """Detect if two video clips are rotating in opposite directions.
 
     Compares clip_a with both clip_b (normal) and clip_b (reversed) using
     frame-by-frame SSIM with background removal. Uses majority voting
@@ -215,6 +215,7 @@ def detect_rotation_direction(
             - votes_normal: Number of frames favoring normal alignment
             - votes_reversed: Number of frames favoring reversed alignment
             - confidence: Percentage of votes for winning direction (0-100)
+
     """
     from workflows.shared.image_utils import calculate_ssim_with_bg_removal
 
@@ -266,8 +267,7 @@ def is_rotation_clockwise(
     video_fps: int = 24,
     compare_seconds: int = 2,
 ) -> bool:
-    """
-    Determine if two consecutive video clips are rotating in the same direction.
+    """Determine if two consecutive video clips are rotating in the same direction.
 
     Extracts frames from both videos, compares video_a with video_b (normal)
     and video_b (reversed), and uses majority voting to determine rotation
@@ -286,6 +286,7 @@ def is_rotation_clockwise(
 
     Returns:
         bool: True if clockwise (same direction), False if anticlockwise (needs reversal)
+
     """
     # DEBUG: Save videos for inspection (remove later)
     # import time; ts = int(time.time()); open(f"debug_video_a_{ts}.mp4", "wb").write(video_a_bytes); open(f"debug_video_b_{ts}.mp4", "wb").write(video_b_bytes)
@@ -319,8 +320,7 @@ def is_rotation_clockwise(
 def find_most_similar_frame_index(
     all_frames, reference_frame, num_frames_to_check=None
 ):
-    """
-    Find the index of the frame most similar to a reference frame.
+    """Find the index of the frame most similar to a reference frame.
 
     Compares frames against the reference frame using Structural Similarity
     Index (SSIM) and returns the index of the best match.
@@ -335,6 +335,7 @@ def find_most_similar_frame_index(
         int: Index of the most similar frame within the analyzed subset.
              Note: If num_frames_to_check is set, the index is relative to
              the subset (last N frames), not the full list.
+
     """
     frames_to_check = (
         all_frames[-num_frames_to_check:] if num_frames_to_check else all_frames
@@ -348,8 +349,7 @@ def find_most_similar_frame_index(
 
 
 def reverse_video(video_bytes, fps=24, quality=7, return_frames_only=False):
-    """
-    Reverses a video by extracting frames, reversing their order, and creating a new video.
+    """Reverses a video by extracting frames, reversing their order, and creating a new video.
 
     Args:
         video_bytes: The video as bytes
@@ -361,6 +361,7 @@ def reverse_video(video_bytes, fps=24, quality=7, return_frames_only=False):
     Returns:
         bytes: Reversed video as bytes (if return_frames_only is False)
         list: List of reversed frame bytes (if return_frames_only is True)
+
     """
     frames = extract_frames_as_bytes_list(video_bytes)
     reversed_frames = frames[::-1]
@@ -375,8 +376,7 @@ def reverse_video(video_bytes, fps=24, quality=7, return_frames_only=False):
 
 
 def convert_image_to_video_frame(video_frame_bytes, image_bytes):
-    """
-    Resizes and center-crops an image to match the dimensions of a video frame.
+    """Resizes and center-crops an image to match the dimensions of a video frame.
 
     Args:
         video_frame_bytes: Reference video frame as bytes
@@ -384,6 +384,7 @@ def convert_image_to_video_frame(video_frame_bytes, image_bytes):
 
     Returns:
         bytes: Resized and cropped image as bytes
+
     """
     np_arr_video = np.frombuffer(video_frame_bytes, np.uint8)
     video_frame = cv2.imdecode(np_arr_video, cv2.IMREAD_COLOR)

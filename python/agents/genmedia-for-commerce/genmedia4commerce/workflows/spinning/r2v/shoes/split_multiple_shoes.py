@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Utilities for splitting images containing multiple shoes."""
+
 import io
 import logging
 import time
@@ -34,8 +36,7 @@ Segment both footwears in the image with precise definition.
 def sort_masks_by_horizontal_position(
     mask_data_list: list, mode: str = "right", verbose: bool = False
 ) -> list:
-    """
-    Sorts a list of (mask, value) tuples based on the mask's horizontal position.
+    """Sorts a list of (mask, value) tuples based on the mask's horizontal position.
 
     The score is calculated by summing the transformed x-coordinates of
     all positive pixels ('True' values) in the mask. The transformation is:
@@ -58,8 +59,8 @@ def sort_masks_by_horizontal_position(
     Returns:
         A new list containing the same (mask, value) tuples,
         sorted based on the mask's horizontal position.
-    """
 
+    """
     if not mask_data_list:
         return []
 
@@ -74,7 +75,7 @@ def sort_masks_by_horizontal_position(
         # Get the mask from the first tuple to find dimensions
         first_mask = mask_data_list[0][0]
 
-        img_h = len(first_mask)
+        len(first_mask)
         img_w = len(first_mask[0])
         middle_x = img_w / 2.0
 
@@ -90,10 +91,7 @@ def sort_masks_by_horizontal_position(
 
     # --- 3. Define the 'key' function for sorting ---
     def calculate_horizontal_score(mask_data_tuple: tuple) -> float:
-        """
-        Helper function to calculate the score for a single mask
-        extracted from the (mask, value) tuple.
-        """
+        """Calculate the score for a single mask extracted from the (mask, value) tuple."""
         try:
             # Extract the mask (first element) from the tuple
             bool_mask = mask_data_tuple[0]
@@ -135,8 +133,8 @@ def sort_masks_by_horizontal_position(
 
 
 def subtract_masks(mask_a: np.ndarray, mask_b: np.ndarray) -> np.ndarray:
-    """
-    Performs a set subtraction operation on two binary masks.
+    """Perform a set subtraction operation on two binary masks.
+
     Returns a mask containing only the regions present in mask_a that are NOT in mask_b.
 
     Args:
@@ -145,6 +143,7 @@ def subtract_masks(mask_a: np.ndarray, mask_b: np.ndarray) -> np.ndarray:
 
     Returns:
         np.ndarray: The resulting subtracted mask.
+
     """
     subtraction = mask_a & (~mask_b)
 
@@ -152,8 +151,8 @@ def subtract_masks(mask_a: np.ndarray, mask_b: np.ndarray) -> np.ndarray:
 
 
 def _prepare_mask(mask: np.ndarray) -> np.ndarray:
-    """
-    Standardizes a mask into a binary 8-bit, single-channel image (values 0 or 255).
+    """Standardize a mask into a binary 8-bit, single-channel image (values 0 or 255).
+
     Crucial for ensuring OpenCV functions work predictably.
     """
     if mask.ndim > 2:
@@ -170,17 +169,18 @@ def _prepare_mask(mask: np.ndarray) -> np.ndarray:
 
 
 def check_contour_count(mask: np.ndarray, max_allowed: int = 3) -> bool:
-    """
-    Checks if the mask contains exactly one distinct object.
+    """Check if the mask contains exactly one distinct object.
 
     This is useful for discarding empty masks (0 contours) or
     fragmented masks (2+ contours).
 
     Args:
-        mask (np.array): The binary segmentation mask (H, W).
+        mask (np.ndarray): The binary segmentation mask (H, W).
+        max_allowed (int): Maximum allowed number of contours. Default: 3.
 
     Returns:
         bool: True if the mask has exactly one contour, False otherwise.
+
     """
     mask = _prepare_mask(mask)
 
@@ -189,32 +189,33 @@ def check_contour_count(mask: np.ndarray, max_allowed: int = 3) -> bool:
     return len(contours) <= max_allowed
 
 
-def filter_by_score_distribution(masks: list, minumum: int = 3) -> tuple[list, float]:
-    """
-    Filters a list of (mask, score) tuples, keeping only those in the top 30% of scores.
+def filter_by_score_distribution(masks: list, minimum: int = 3) -> tuple[list, float]:
+    """Filter a list of (mask, score) tuples, keeping only those in the top 30% of scores.
+
     Ensures a minimum number of masks are always returned, even if they fall below the threshold.
 
     Args:
         masks (list): A list of tuples, e.g., [(mask_array, score_float), ...].
-        min_count (int): The minimum number of masks to return to avoid returning too few results.
+        minimum (int): The minimum number of masks to return to avoid returning too few results.
 
     Returns:
         tuple: (filtered_masks_list, score_threshold_used)
+
     """
     scores = [item[1] for item in masks]
     score_threshold = np.percentile(scores, 70)
 
     top_results = [item for item in masks if item[1] >= score_threshold]
 
-    if len(top_results) < minumum:
-        top_results = masks[:minumum]
+    if len(top_results) < minimum:
+        top_results = masks[:minimum]
 
     return top_results, score_threshold
 
 
 def construct_image(image: PImage.Image, mask: PImage.Image) -> PImage.Image:
-    """
-    Creates a new image where the masked area is visible and the rest is white.
+    """Create a new image where the masked area is visible and the rest is white.
+
     The image is cropped to the mask's bounding box to center the extracted object.
 
     Args:
@@ -223,6 +224,7 @@ def construct_image(image: PImage.Image, mask: PImage.Image) -> PImage.Image:
 
     Returns:
         PIL.Image: An RGBA image with white background, cropped to mask bounds.
+
     """
     if image.mode != "RGBA":
         image = image.convert("RGBA")
@@ -248,17 +250,17 @@ def construct_image(image: PImage.Image, mask: PImage.Image) -> PImage.Image:
 def divide_duplicate_image(
     image_bytes: bytes, client, verbose: bool = False, return_masks=False
 ) -> list:
-    """
-    Main orchestration function. segments an image based on a prompt, identifies
-    duplicate objects (left vs right), and attempts to cleanly separate them.
+    """Segment an image based on a prompt, identify duplicate objects, and separate them.
 
     Args:
         image_bytes (bytes): Raw image data.
-        prompt (str): Text prompt for the segmentation model (e.g., "shoe").
+        client: GenAI client.
         verbose (bool): If True, displays intermediate debug images.
+        return_masks (bool): If True, returns masks instead of images.
 
     Returns:
-        list: A list of cleaned, non-overlapping final masks (numpy arrays).
+        list: A list of cleaned, non-overlapping final masks or images.
+
     """
     original_image = PImage.open(io.BytesIO(image_bytes))
     source = SegmentImageSource(
@@ -294,7 +296,7 @@ def divide_duplicate_image(
     ]
 
     if verbose:
-        print(f"Number of masks retreived {len(masks)}")
+        print(f"Number of masks retrieved {len(masks)}")
 
     masks, threshold = filter_by_score_distribution(masks)
 

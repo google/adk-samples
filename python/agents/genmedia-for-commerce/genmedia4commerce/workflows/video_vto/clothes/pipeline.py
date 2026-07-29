@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Video VTO pipelines:
+"""Video VTO pipelines.
 
 - run_animate_model: Takes a ready image and generates videos (R2V + face eval).
   Standalone entry point when the image is already prepared.
@@ -144,8 +143,7 @@ async def run_animate_model(
     prompt: str = "",
     reference_face_bytes: bytes | None = None,
 ) -> AsyncGenerator[dict, None]:
-    """
-    Animate a ready model image into catwalk-style videos.
+    """Animate a ready model image into catwalk-style videos.
 
     Takes an image of a model already wearing garments and generates
     videos using Veo 3.1 R2V mode. Skips image VTO entirely.
@@ -161,6 +159,7 @@ async def run_animate_model(
       1. {"status": "generating_videos"}
       2. {"status": "videos", "videos": [...], "scores": [...], "filenames": [...]}
          OR {"status": "error", "detail": "..."}
+
     """
     _ensure_config()
 
@@ -211,13 +210,13 @@ async def run_animate_model(
 
         r2v_result = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: run_r2v_pipeline(
+            lambda e=eval_ref: run_r2v_pipeline(
                 veo_client=veo_client,
                 upscale_client=None,
                 model_image_bytes=model_image,
                 prompt=effective_prompt,
                 number_of_videos=number_of_videos,
-                first_clip_check=_check_first_clip if eval_ref else None,
+                first_clip_check=_check_first_clip if e else None,
             ),
         )
 
@@ -237,7 +236,7 @@ async def run_animate_model(
         logger.info(f"[AnimateModel] Face similarity scores: {scores}")
 
         ranked = sorted(
-            zip(scores, r2v_result["videos"]),
+            zip(scores, r2v_result["videos"], strict=True),
             key=lambda x: x[0],
             reverse=True,
         )
@@ -246,7 +245,7 @@ async def run_animate_model(
 
         filtered = [
             (s, v)
-            for s, v in zip(scores, sorted_videos)
+            for s, v in zip(scores, sorted_videos, strict=True)
             if s >= MIN_SIMILARITY_THRESHOLD
         ]
         rejected = len(sorted_videos) - len(filtered)
@@ -296,8 +295,7 @@ async def run_video_vto(
     number_of_videos: int = 4,
     prompt: str = "",
 ) -> AsyncGenerator[dict, None]:
-    """
-    Run the full video VTO pipeline. Yields dicts suitable for SSE.
+    """Run the full video VTO pipeline. Yields dicts suitable for SSE.
 
     Runs image VTO first to generate the best static VTO image,
     then delegates to run_animate_model for video generation.

@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Garment evaluation for Image VTO using Gemini vision.
+"""Garment evaluation for Image VTO using Gemini vision.
+
 Compares reference garment images against generated VTO images to assess accuracy.
 """
 
@@ -34,8 +34,7 @@ def evaluate_garment(
     view_details: str = "",
     garment_description: str = "",
 ) -> dict:
-    """
-    Evaluate how well a single reference garment was reproduced in the generated product fitting image.
+    """Evaluate how well a single reference garment was reproduced in the generated product fitting image.
 
     Args:
         client: Gemini client instance
@@ -47,6 +46,7 @@ def evaluate_garment(
 
     Returns:
         dict: {"explanation": str, "score": int} where score is 0-10
+
     """
     # Normalize to list
     if isinstance(reference_garment_bytes, bytes):
@@ -203,8 +203,8 @@ def evaluate_footwear(
     model: str = "gemini-3-flash-preview",
     garment_description: str = "",
 ) -> dict:
-    """
-    Evaluate how well footwear was reproduced in a generated fitting image.
+    """Evaluate how well footwear was reproduced in a generated fitting image.
+
     Simpler and less strict than clothing eval — focuses on whether the shoe
     looks like the same product (shape, color, key design elements).
 
@@ -214,6 +214,7 @@ def evaluate_footwear(
             "garments_score": float (0-100),
             "garment_details": [{"explanation": str, "score": int}]
         }
+
     """
     num_refs = len(reference_images)
 
@@ -330,8 +331,8 @@ def evaluate_garments(
     view_details: str = "",
     garment_description: str = "",
 ) -> dict:
-    """
-    Evaluate reference garment images against the generated product fitting image.
+    """Evaluate reference garment images against the generated product fitting image.
+
     All images in garment_images_bytes_list are treated as different views/angles
     of the SAME garment and passed together to a single evaluation call.
 
@@ -341,6 +342,7 @@ def evaluate_garments(
             "garments_score": float - Score normalized to 0-100,
             "garment_details": list[dict] - Garment evaluation (single entry)
         }
+
     """
     # Keep [INTERIOR] details so eval can penalize if they are incorrectly visible in the generated image
 
@@ -381,12 +383,13 @@ def evaluate_wearing_quality(
     generated_image_bytes: bytes,
     model: str = "gemini-3-flash-preview",
 ) -> dict:
-    """
-    Evaluate the wearing quality of a generated VTO image.
+    """Evaluate the wearing quality of a generated VTO image.
+
     No reference garment needed — only assesses how naturally the outfit is worn.
 
     Returns:
         dict: {"explanation": str, "score": int} where score is 0-3
+
     """
     system_prompt = """You are a quality control inspector for AI-generated fashion images. Your task is to evaluate ONLY whether the outfit is worn naturally and realistically — how the garments sit on the body.
 
@@ -476,8 +479,7 @@ def rank_fitting_variations(
     variations: list[tuple[int, bytes]],
     model: str = "gemini-3-flash-preview",
 ) -> list[dict]:
-    """
-    Rank all non-discarded fitting variations for a single view by comparing them side-by-side.
+    """Rank all non-discarded fitting variations for a single view by comparing them side-by-side.
 
     Args:
         client: Gemini client instance
@@ -488,6 +490,7 @@ def rank_fitting_variations(
         list[dict]: Ranked list from best to worst, each entry:
             {"index": int, "rank": int, "realism_score": int, "styling_score": int,
              "overall_score": float, "explanation": str}
+
     """
     if len(variations) <= 1:
         if variations:

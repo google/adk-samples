@@ -1,5 +1,18 @@
-"""
-Image selection for generic product R2V spinning.
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Image selection for generic product R2V spinning.
 
 Uses Gemini to classify product type and view angles in one call,
 then selects the best 4 images for VEO reference image generation.
@@ -36,6 +49,7 @@ def classify_product_images(
             "product_type": "shoes" | "cars" | "other",
             "classifications": [{"index": 0, "view": "right", "quality": 8}, ...]
         }
+
     """
     num_images = len(images_bytes)
 
@@ -158,6 +172,7 @@ def select_best_images(
 
     Returns:
         list[bytes]: Up to 4 images ordered for stack_and_canvas_images
+
     """
     if len(images_bytes) <= 4:
         return images_bytes

@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """REST API endpoints for the interpolation spinning workflow."""
 
 import asyncio
@@ -14,7 +28,10 @@ from google import genai
 
 from workflows.shared.image_utils import preprocess_images
 from workflows.shared.video_utils import merge_videos_from_bytes
-from workflows.spinning.eval import check_spin_direction, glitch_detection
+from workflows.spinning.eval import (
+    check_spin_direction,
+    glitch_detection,
+)
 from workflows.spinning.interpolation.other.interpolation_utils import (
     get_interpolation_prompt,
     process_single_video,
@@ -55,7 +72,7 @@ _products_dir = os.path.join(_interpolation_dir, "images")
 
 @router.get("/get_gallery_images")
 async def get_gallery_images():
-    """Returns available gallery images grouped by product folder."""
+    """Return available gallery images grouped by product folder."""
     products = []
 
     if not os.path.exists(_products_dir):
@@ -110,7 +127,7 @@ async def interpolation_preprocess(images: list[UploadFile] = File(...)):
         return JSONResponse(content={"images": processed_images})
     except Exception as e:
         logger.error(f"[Interpolation Preprocess] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/generate-prompt")
@@ -135,7 +152,7 @@ async def interpolation_generate_prompt(
 @router.post("/generate-all")
 async def interpolation_generate_all(
     images: list[UploadFile] = File(...),
-    prompt: str = Form(...),
+    prompt: str = Form(""),
     backgroundColor: str = Form("#FFFFFF"),
     indices: str = Form(""),
 ):
@@ -148,6 +165,17 @@ async def interpolation_generate_all(
     try:
         images_bytes = [await img.read() for img in images]
         num_videos = len(images_bytes)
+
+        # Auto-generate prompt if not provided
+        if not prompt.strip():
+            logger.info("[Interpolation] No prompt provided, generating from images...")
+            prompt = await run_in_threadpool(
+                get_interpolation_prompt,
+                client=client,
+                gemini_model="gemini-2.5-flash-lite",
+                all_images_bytes=images_bytes,
+            )
+            logger.info(f"[Interpolation] Generated prompt: {prompt[:100]}...")
 
         if indices.strip() == "" or indices.strip() == "[]":
             indices_to_generate = list(range(num_videos))
@@ -188,11 +216,11 @@ async def interpolation_generate_all(
                 if validation_status[i]["is_valid"]:
                     continue
 
-                is_clockwise = await run_in_threadpool(
+                direction = await run_in_threadpool(
                     check_spin_direction, video_bytes=videos[i]
                 )
 
-                if not is_clockwise:
+                if direction != "clockwise":
                     if retry_counts[i] < MAX_CONSISTENCY_RETRIES:
                         retry_counts[i] += 1
                         videos[i] = await generate_video_segment(video_index)
@@ -200,7 +228,7 @@ async def interpolation_generate_all(
                     else:
                         validation_status[i] = {
                             "is_valid": False,
-                            "reason": "Not rotating clockwise after max retries",
+                            "reason": f"{direction} rotation after max retries",
                         }
                     continue
 
@@ -266,7 +294,7 @@ async def interpolation_generate_all(
         raise
     except Exception as e:
         logger.error(f"[Interpolation Generate All] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/merge")
@@ -293,4 +321,4 @@ async def interpolation_merge(
         )
     except Exception as e:
         logger.error(f"[Interpolation Merge] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

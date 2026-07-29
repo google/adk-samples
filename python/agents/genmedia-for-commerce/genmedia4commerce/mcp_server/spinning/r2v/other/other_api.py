@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """REST API endpoints for the other products spinning R2V workflow."""
 
 import base64
@@ -57,7 +71,7 @@ _products_r2v_dir = os.path.join(_r2v_other_dir, "images")
 
 @router.get("/get_gallery_images")
 async def get_gallery_images():
-    """Returns available gallery images grouped by product folder."""
+    """Return available gallery images grouped by product folder."""
     products = []
 
     if not os.path.exists(_products_r2v_dir):
@@ -122,7 +136,7 @@ async def r2v_preprocess(images: list[UploadFile] = File(...)):
         )
     except Exception as e:
         logger.error(f"[R2V Preprocess] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/generate-prompt")
@@ -147,7 +161,7 @@ async def r2v_generate_prompt(images: list[UploadFile] = File(...)):
         )
     except Exception as e:
         logger.error(f"[R2V Generate Prompt] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/generate")
@@ -205,7 +219,7 @@ async def r2v_generate(
         )
     except Exception as e:
         logger.error(f"[R2V Generate] Error for index {index}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/pipeline")
@@ -288,7 +302,7 @@ async def r2v_pipeline(images: list[UploadFile] = File(...)):
         )
     except Exception as e:
         logger.error(f"[R2V Pipeline] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/merge")
@@ -312,4 +326,4 @@ async def r2v_merge(videos: list[UploadFile] = File(...), speeds: str = Form(...
         )
     except Exception as e:
         logger.error(f"[R2V Merge] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

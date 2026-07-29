@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Virtual try-on image generation.
+
+Provides functions to preprocess images and generate virtual try-on images
+using a two-step approach with face correction.
+"""
+
 # Standard library imports
 import logging
 
@@ -34,8 +40,7 @@ VTO_BACKGROUND_COLOR = "#F0F0F0"
 
 
 def preprocess_face_image(client, img_bytes):
-    """
-    Preprocess face image: crop face, upscale, then remove background.
+    """Preprocess face image: crop face, upscale, then remove background.
 
     Args:
         client: Gemini client instance
@@ -46,6 +51,7 @@ def preprocess_face_image(client, img_bytes):
             - reference_face: Cropped and upscaled face (for evaluation)
             - preprocessed_face: Face with background removed (for generation)
             Returns (None, None) if no face is detected.
+
     """
     # Debug: save original input
     save_debug_image(img_bytes, "01_original", prefix="preproc_face")
@@ -98,8 +104,7 @@ def preprocess_face_image(client, img_bytes):
 
 
 def preprocess_model_image(client, img_bytes):
-    """
-    Preprocess full body model image: remove background and upscale.
+    """Preprocess full body model image: remove background and upscale.
 
     Args:
         client: Gemini client instance
@@ -107,6 +112,7 @@ def preprocess_model_image(client, img_bytes):
 
     Returns:
         bytes: The preprocessed image as bytes
+
     """
     try:
         # Debug: save original input
@@ -147,6 +153,7 @@ def _build_description_block(garment_descriptions: list[dict] | None) -> str:
 
     Returns:
         String to insert into the prompt, or empty string if no descriptions.
+
     """
     if not garment_descriptions:
         return ""
@@ -188,8 +195,7 @@ def generate_vto(
     garment_descriptions=None,
     image_size="1K",
 ):
-    """
-    Generate a virtual try-on image using 2-step approach (always full body).
+    """Generate a virtual try-on image using 2-step approach (always full body).
 
     Args:
         client: Gemini client instance
@@ -201,12 +207,14 @@ def generate_vto(
         framing: Kept for API compatibility (always "full_body")
         garment_descriptions: Optional list of garment descriptions from
             describe_all_garments(), each with "general" and "details" keys
+        image_size: Image size to generate (default: "1K")
 
     Returns:
         dict: {
             "step1_image": bytes,  # Image from step 1
             "step2_image": bytes,  # Image from step 2 (or None if failed)
         }
+
     """
     logger.debug("[VTO] Starting virtual try-on generation (full body)")
 
@@ -284,7 +292,8 @@ Generate the high-fidelity image."""
 
     logger.debug("[VTO] Step 2: Face improvement with correction...")
 
-    correction_message = user_message_step1 + [
+    correction_message = [
+        *user_message_step1,
         step1_result,
         "No, the face is different. Use this face:",
         reference_face,
@@ -309,8 +318,7 @@ Generate the high-fidelity image."""
 
 
 def evaluate_vto_image(vto_image_bytes, reference_face_bytes):
-    """
-    Evaluate a generated VTO image against reference face using InsightFace.
+    """Evaluate a generated VTO image against reference face using InsightFace.
 
     Args:
         vto_image_bytes: Generated VTO image bytes
@@ -323,6 +331,7 @@ def evaluate_vto_image(vto_image_bytes, reference_face_bytes):
             "model": str,
             "face_detected": bool
         }
+
     """
     logger.debug("[VTO] Evaluating with InsightFace")
     try:

@@ -1,7 +1,7 @@
 {
   "operation": "create",
   "project_id": "agentspace-demo-1145-b",
-  "location": "us-central1",
+  "location": "us-east1",
   "bucket_name": "agentspace-demo-1145-b-staging",
   "display_name": "on_brand_genmedia_agent",
   "GCS_BUCKET_NAME": "agentspace-demo-1145-b-assets",

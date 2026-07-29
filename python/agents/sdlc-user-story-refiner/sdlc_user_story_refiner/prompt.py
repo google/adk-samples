@@ -56,7 +56,7 @@ Important: Consistently favor choice-based questions to extract precise informat
 ## Final Output Format specification
 You must output the finalized user story using the following exact markdown structure. This mimics a standard Jira/GitLab ticket layout.
 
-# [STORY TITLE: Short, descriptive summary of the feature]
+# [Short, descriptive summary of the feature]
 
 **Issue Type:** User Story
 **Status:** Ready for Development

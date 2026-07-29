@@ -257,7 +257,7 @@ class TestClassifyShoeClosure:
             image_bytes_list=[sample_shoe_image], client=mock_gemini_client
         )
 
-        assert result["has_velcro"] == True
+        assert result["has_velcro"]
         assert "velcro" in result["explanation"].lower()
 
     @patch("workflows.spinning.r2v.shoes.classify_shoes.generate_gemini")
@@ -274,7 +274,7 @@ class TestClassifyShoeClosure:
             image_bytes_list=[sample_shoe_image], client=mock_gemini_client
         )
 
-        assert result["has_velcro"] == False
+        assert not result["has_velcro"]
 
     @patch("workflows.spinning.r2v.shoes.classify_shoes.generate_gemini")
     def test_handles_multiple_images(

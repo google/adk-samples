@@ -27,7 +27,7 @@ This sample demonstrates how to build an agent that interacts directly with Goog
 2.  **Provision the Analytics Dataset**:
     The ADK analytics plugin will automatically provision the underlying logging tables, but the dataset itself must be created first. Run the following command (substituting your dataset name and location if you changed them):
     ```bash
-    bq mk --location=us-central1 --dataset "your-project-id:adk_agent_analytics"
+    bq mk --location=us-east1 --dataset "your-project-id:adk_agent_analytics"
     ```
 
 3.  **Dependencies**:

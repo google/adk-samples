@@ -143,7 +143,7 @@ class PresentationExpertApp:
         if not is_local and os.getenv("GOOGLE_CLOUD_PROJECT"):
             session_service = VertexAiSessionService(
                 project=os.getenv("GOOGLE_CLOUD_PROJECT"),
-                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-east1"),
             )
             get_logger("agent").info(
                 f"Using VertexAiSessionService (Project: {os.getenv('GOOGLE_CLOUD_PROJECT')})"

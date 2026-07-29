@@ -33,7 +33,7 @@ setup_dataset:
 		echo "GOOGLE_CLOUD_PROJECT=$$PROJECT_ID" >> .env; \
 	fi
 	@if ! grep -q "^GOOGLE_CLOUD_LOCATION=" .env; then \
-		echo "GOOGLE_CLOUD_LOCATION=us-central1" >> .env; \
+		echo "GOOGLE_CLOUD_LOCATION=us-east1" >> .env; \
 	fi
 	@if grep -q "^BQ_ANALYTICS_DATASET_ID=" .env; then \
 		if [ -f "agent_observability_bq/shared_libraries/prepare_dataset.py" ]; then \
@@ -95,7 +95,7 @@ grant_permissions:
 	if grep -q "^GOOGLE_CLOUD_LOCATION=" .env; then \
 		LOCATION_VAL=$$(grep "^GOOGLE_CLOUD_LOCATION=" .env | cut -d '=' -f2- | tr -d "'\""); \
 	else \
-		LOCATION_VAL="us-central1"; \
+		LOCATION_VAL="us-east1"; \
 	fi; \
 	echo "Injecting BQ_ANALYTICS_DATASET_ID=$$DATASET_VAL and GOOGLE_CLOUD_LOCATION=$$LOCATION_VAL via --set-env-vars..."; \
 	(uv export --no-hashes --no-header --no-dev --no-emit-project --no-annotate > agent_observability_bq/app_utils/.requirements.txt 2>/dev/null || \

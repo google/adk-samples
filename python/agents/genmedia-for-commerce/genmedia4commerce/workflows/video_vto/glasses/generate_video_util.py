@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Video generation utilities for glasses VTO."""
+
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
@@ -44,9 +46,7 @@ MAX_VIDEOS_PER_BATCH = 4  # Veo API limit
 def _generate_veo_batch(
     client, collage_img_bytes, veo_prompt, number_of_videos, duration_seconds, batch_id
 ):
-    """
-    Helper function to generate a single batch of videos.
-    """
+    """Generate a single batch of videos."""
     logger.info(f"Batch {batch_id}: requesting {number_of_videos} videos")
 
     generated_videos = generate_veo_single(
@@ -69,8 +69,7 @@ def _generate_veo_batch(
 
 
 def generate_veo(client, collage_img, veo_prompt, total_videos=4, duration_seconds=8):
-    """
-    Generate videos using Veo, automatically handling batching for requests > 4 videos.
+    """Generate videos using Veo, automatically handling batching for requests > 4 videos.
 
     Args:
         client: The Veo client
@@ -81,6 +80,7 @@ def generate_veo(client, collage_img, veo_prompt, total_videos=4, duration_secon
 
     Returns:
         list: Combined list of all generated video bytes
+
     """
     # Calculate batch sizes (e.g., 6 videos → [4, 2], 8 → [4, 4], 10 → [4, 4, 2])
     batch_sizes = []
@@ -140,9 +140,7 @@ def create_collage(
     model_vertical_spacing=50,  # Smaller spacing between stacked model images
     bg_color=(0, 215, 6, 255),  # default as green
 ):
-    """
-    Creates a high-quality, centered collage from one to three images.
-
+    """Create a high-quality, centered collage from one to three images.
 
     This function scales images to fit within the specified layout without
     cropping or distorting them, prioritizing image quality.
@@ -160,6 +158,7 @@ def create_collage(
 
     Returns:
         PIL.Image.Image: The final collage image object as bytes, or None on failure.
+
     """
     # --- 1. Validate Inputs ---
     if (
@@ -354,16 +353,19 @@ def create_collage(
 def process_veo_video_model_on_fit(
     video_bytes, bgcolor, fps=24, fps_to_analyze=2, start_secs_to_skip=1
 ):
-    """
-    Processes a video by removing the initial frames that contain a green screen.
+    """Process a video by removing the initial frames that contain a green screen.
 
     Args:
         video_bytes (bytes): The full video file content as a bytes object.
         bgcolor (Tuple[int, int, int, int]): RGBA background color to detect and remove
+        fps (int): Frames per second of the video. Default: 24.
+        fps_to_analyze (int): Number of frames per second to analyze. Default: 2.
+        start_secs_to_skip (int): Number of seconds to skip at the start. Default: 1.
 
     Returns:
         bytes: The new video content with the green screen frames removed,
                in MP4 format.
+
     """
     # 1. Extract frames from the input video
     frame_list = extract_frames_as_bytes_list(video_bytes)

@@ -10,6 +10,10 @@ import cloudpickle
 import vertexai
 from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
+import json
+import datetime
+from typing import Any
+from dotenv import set_key
 
 import economic_research
 from economic_research.agent import ERAAgent
@@ -17,8 +21,32 @@ from economic_research.agent import ERAAgent
 logging.getLogger("google.cloud.aiplatform").setLevel(logging.DEBUG)
 cloudpickle.register_pickle_by_value(economic_research)
 
+def update_env_file(agent_engine_id: str, env_file_path: str):
+    """Updates the .env file with the agent engine ID."""
+    try:
+        set_key(env_file_path, "AGENT_ENGINE_ID", agent_engine_id)
+        print(f"Updated AGENT_ENGINE_ID in {env_file_path} to {agent_engine_id}")
+    except Exception as e:
+        print(f"Error updating .env file: {e}")
 
-def deploy_era_to_vertex(project_id: str, location: str = "us-central1"):
+def write_deployment_metadata(
+    remote_agent: Any,
+    metadata_file: str = "deployment_metadata.json",
+) -> None:
+    """Write deployment metadata to file."""
+    metadata = {
+        "remote_agent_engine_id": remote_agent.resource_name,
+        "deployment_target": "agent_engine",
+        "is_a2a": False,
+        "deployment_timestamp": datetime.datetime.now().isoformat(),
+    }
+
+    with open(metadata_file, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2)
+
+    print(f"Agent Engine ID written to {metadata_file}")
+
+def deploy_era_to_vertex(project_id: str, location: str = "us-east1"):
     print(
         f"🚀 Initializing Modern Agent Engine Deployment for economic-research in {location}..."
     )
@@ -55,7 +83,7 @@ def deploy_era_to_vertex(project_id: str, location: str = "us-central1"):
 
     adk_app = AdkApp(
         agent=root_agent,
-        enable_tracing=False,
+        enable_tracing=True,
     )
 
     # Use the new agent_engines API
@@ -68,6 +96,12 @@ def deploy_era_to_vertex(project_id: str, location: str = "us-central1"):
 
     print("✅ Modern Deployment Successful!")
     print(f"Agent Engine ID: {remote_agent.resource_name}")
+    
+    # Apply fix for automatic ID picking
+    env_file_path = os.path.join(project_root, ".env")
+    update_env_file(remote_agent.resource_name, env_file_path)
+    write_deployment_metadata(remote_agent, os.path.join(project_root, "deployment_metadata.json"))
+    
     return remote_agent.resource_name
 
 

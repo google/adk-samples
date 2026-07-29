@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Shared utilities for Gemini image generation (nano/banana).
+"""Shared utilities for Gemini image generation (nano/banana).
+
 Supports both Flash Image Preview and Pro models.
 """
 
@@ -59,8 +59,7 @@ def generate_nano(
     config=None,
     timeout=NANO_TIMEOUT_SECONDS,
 ):
-    """
-    Generate content using Gemini image generation model.
+    """Generate content using Gemini image generation model.
 
     Args:
         client: Gemini client instance
@@ -74,6 +73,7 @@ def generate_nano(
 
     Raises:
         NanoTimeoutError: If generation takes longer than timeout
+
     """
     thread_id = threading.current_thread().name
     logger.debug(f"[generate_nano] Thread {thread_id}: Preparing API call to {model}")
@@ -113,7 +113,9 @@ def generate_nano(
             )
             # Shutdown without waiting - let the background thread continue/die on its own
             executor.shutdown(wait=False)
-            raise NanoTimeoutError(f"Nano generation timed out after {timeout} seconds")
+            raise NanoTimeoutError(
+                f"Nano generation timed out after {timeout} seconds"
+            ) from None
         finally:
             # Only wait for cleanup if we didn't timeout
             executor.shutdown(wait=False)
@@ -121,5 +123,5 @@ def generate_nano(
     logger.debug(f"[generate_nano] Thread {thread_id}: API call completed")
 
     result = result.candidates[0].content.parts
-    result = [x for x in result if x.text is None][0].inline_data.data
+    result = next(x for x in result if x.text is None).inline_data.data
     return result

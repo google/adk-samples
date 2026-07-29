@@ -36,7 +36,7 @@ setup-env:
 		echo "GOOGLE_CLOUD_PROJECT=$$PROJECT_ID" >> .env; \
 	fi
 	@if ! grep -q "^GOOGLE_CLOUD_LOCATION=" .env; then \
-		echo "GOOGLE_CLOUD_LOCATION=us-central1" >> .env; \
+		echo "GOOGLE_CLOUD_LOCATION=us-east1" >> .env; \
 	fi
 
 enable-services:
@@ -63,7 +63,7 @@ setup-gcs:
 	@echo "==============================================================================="
 	@echo "| Setting up GCS Bucket & Uploading Files                                     |"
 	@echo "==============================================================================="
-	gcloud storage buckets create gs://$(BUCKET_NAME) --location=us-central1 || echo "Bucket might already exist."
+	gcloud storage buckets create gs://$(BUCKET_NAME) --location=us-east1 || echo "Bucket might already exist."
 	gcloud storage cp data/sample_applications/*.pdf gs://$(BUCKET_NAME)/
 
 deploy:

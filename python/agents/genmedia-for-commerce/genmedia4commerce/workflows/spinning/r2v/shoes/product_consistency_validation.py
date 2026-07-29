@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Product Consistency Validation Module
+"""Product Consistency Validation Module.
 
 Validates that generated video frames match the reference product images.
 Used during video generation to detect hallucinations and product inconsistencies.
@@ -41,14 +40,14 @@ logger = logging.getLogger(__name__)
 
 
 def bytes_to_numpy(image_bytes: bytes) -> np.ndarray:
-    """
-    Convert image bytes to numpy array.
+    """Convert image bytes to numpy array.
 
     Args:
         image_bytes: Image as bytes
 
     Returns:
         Numpy array (BGR format)
+
     """
     nparr = np.frombuffer(image_bytes, np.uint8)
     img_array = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -60,8 +59,7 @@ def bytes_to_numpy(image_bytes: bytes) -> np.ndarray:
 
 
 def calculate_ssim(img1_bytes: bytes, img2_bytes: bytes) -> float:
-    """
-    Calculate SSIM similarity between two images.
+    """Calculate SSIM similarity between two images.
 
     Args:
         img1_bytes: First image as bytes
@@ -69,6 +67,7 @@ def calculate_ssim(img1_bytes: bytes, img2_bytes: bytes) -> float:
 
     Returns:
         SSIM score (0-1, higher is more similar)
+
     """
     from skimage.metrics import structural_similarity as ssim
 
@@ -100,8 +99,8 @@ def calculate_ssim(img1_bytes: bytes, img2_bytes: bytes) -> float:
 def forward_fill_labels(
     frame_labels: list[str], frame_indices: list[int]
 ) -> tuple[list[str], list[int]]:
-    """
-    Forward-fill null/None labels with the previous non-null label.
+    """Forward-fill null/None labels with the previous non-null label.
+
     All frames between two consecutive labeled frames get assigned the label of the first one.
 
     Args:
@@ -116,6 +115,7 @@ def forward_fill_labels(
         Input indices: [0, 6, 12, 18, 24]
         Output labels: ["left", "left", "left", "right", "right"]
         Output indices: [0, 6, 12, 18, 24]
+
     """
     if not frame_labels:
         return [], []
@@ -124,7 +124,7 @@ def forward_fill_labels(
     filled_indices = []
     last_valid_label = None
 
-    for idx, label in zip(frame_indices, frame_labels):
+    for idx, label in zip(frame_indices, frame_labels, strict=False):
         if label is not None and label:
             # Valid label found, update last_valid_label
             last_valid_label = label
@@ -145,7 +145,7 @@ def forward_fill_labels(
         f"Forward-filled {filled_count} null labels from {len(frame_labels)} sampled frames"
     )
     logger.info(
-        f"Result: {len(filled_labels)} frames with labels (expanded from {sum(1 for l in frame_labels if l)} labeled)"
+        f"Result: {len(filled_labels)} frames with labels (expanded from {sum(1 for label in frame_labels if label)} labeled)"
     )
 
     return filled_labels, filled_indices
@@ -162,9 +162,9 @@ def find_best_matches_with_ssim(
     reference_frames: list[bytes],
     offset_frames: int = 4,
 ) -> list[dict]:
-    """
-    Find the best matching frame for each reference using SSIM,
-    then pick 3 frames: best match, frame at -offset, and frame at +offset.
+    """Find the best matching frame for each reference using SSIM.
+
+    Then pick 3 frames: best match, frame at -offset, and frame at +offset.
 
     Args:
         matched_pairs: List of matched pairs from match_frames_to_references()
@@ -184,6 +184,7 @@ def find_best_matches_with_ssim(
                 'offset_type': str  # 'best', 'before', or 'after'
             }
         ]
+
     """
     logger.info("Finding best matches using SSIM for each reference...")
 
@@ -298,8 +299,7 @@ def find_best_matches_with_ssim(
 def match_frames_to_references(
     frame_labels: list[str], frame_indices: list[int], reference_labels: list[str]
 ) -> list[dict]:
-    """
-    Match generated frame labels to reference image labels.
+    """Match generated frame labels to reference image labels.
 
     Args:
         frame_labels: List of predicted labels for generated frames
@@ -316,6 +316,7 @@ def match_frames_to_references(
                 'reference_label': str
             }
         ]
+
     """
     # Build reference lookup: label -> first reference index with that label
     reference_lookup = {}
@@ -328,7 +329,7 @@ def match_frames_to_references(
     matched_pairs = []
     skipped = 0
 
-    for frame_idx, frame_label in zip(frame_indices, frame_labels):
+    for frame_idx, frame_label in zip(frame_indices, frame_labels, strict=False):
         # Skip null/empty labels
         if not frame_label or frame_label.strip() == "":
             skipped += 1
@@ -416,8 +417,7 @@ def evaluate_all_views_single_call(
     eval_prompt: str,
     model: str,
 ) -> dict:
-    """
-    Evaluate ALL reference and generated views in a SINGLE API call.
+    """Evaluate ALL reference and generated views in a SINGLE API call.
 
     This provides a multi-view evaluation where:
     - All reference images are shown with their view labels
@@ -435,6 +435,7 @@ def evaluate_all_views_single_call(
 
     Returns:
         Dict with 'is_valid' (bool) and 'explanation' (str)
+
     """
     logger.info("Evaluating all views in a single API call...")
     logger.info(f"  References: {len(reference_images_bytes)} views")
@@ -569,8 +570,7 @@ def validate_product_consistency(
     use_ssim_selection: bool = True,
     offset_frames: int = 4,
 ) -> tuple[bool, str, dict]:
-    """
-    Validate product consistency between generated video frames and reference images.
+    """Validate product consistency between generated video frames and reference images.
 
     New multi-view approach:
     1. Extracts only the sampled frames using indices (reuses sampling from eval_product_spin_consistency_r2v)
@@ -598,6 +598,7 @@ def validate_product_consistency(
         - is_valid: True if all views are valid, False otherwise
         - message: Summary message
         - evaluation_result: Dict with 'is_valid' and 'explanation' for the entire product
+
     """
     logger.info("=== Product Consistency Validation Started ===")
 

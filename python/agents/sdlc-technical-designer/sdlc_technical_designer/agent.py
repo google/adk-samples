@@ -6,7 +6,6 @@ from google.genai import types
 
 from .config import config
 from .prompt import get_prompt
-from .tools.artifact_tools import save_artifact
 from .tools.spanner_query_tools import SpannerQueryTools
 
 logger = logging.getLogger(__name__)
@@ -23,6 +22,7 @@ else:
 
 instruction_text = get_prompt(tools_enabled=tools_enabled)
 
+
 root_agent = LlmAgent(
     name="sdlc_technical_designer_agent",
     model=config.default_llm,
@@ -34,5 +34,5 @@ root_agent = LlmAgent(
             thinking_budget=-1,
         )
     ),
-    tools=[*SpannerQueryTools.get_toolset(), save_artifact],
+    tools=[*SpannerQueryTools.get_toolset()] if tools_enabled else [],
 )

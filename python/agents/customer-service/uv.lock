@@ -576,7 +576,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agent-starter-pack", specifier = ">=0.14.1" },
+    { name = "agent-starter-pack", specifier = ">=0.32.0" },
     { name = "codespell", specifier = ">=2.2.0" },
     { name = "google-cloud-aiplatform", extras = ["evaluation"], specifier = ">=1.93.0" },
     { name = "mypy", specifier = ">=1.15.0" },

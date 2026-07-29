@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Local shoe classifier using Gemini embeddings + a numpy neural network.
+"""Local shoe classifier using Gemini embeddings + a numpy neural network.
 
 Uses a V2 primary model (5 views + 27 features) with a V1 fallback model
 (4 views) to guard against false "invalid" predictions on OOD images.
@@ -33,6 +32,7 @@ import numpy as np
 from google import genai
 from PIL import Image
 
+from genmedia4commerce.config import BACKEND_ASSETS_DIR
 from workflows.shared.gemini import embed_gemini
 from workflows.shared.utils import predict_parallel
 
@@ -55,8 +55,6 @@ CLASSES = [
 _INVALID_IDX = CLASSES.index("invalid")
 _V1_OVERRIDE_CONF = 0.99
 
-from genmedia4commerce.config import BACKEND_ASSETS_DIR
-
 _SHOES_ASSETS = BACKEND_ASSETS_DIR / "spinning" / "r2v" / "shoes"
 _WEIGHTS_V2_PATH = str(_SHOES_ASSETS / "shoe_classifier_numpy_v2.npz")
 _WEIGHTS_V1_PATH = str(_SHOES_ASSETS / "shoe_classifier_numpy.npz")
@@ -78,7 +76,7 @@ The product's position must be classified into one of the following distinct cat
 * **invalid:** Return `invalid` in all other cases including:
     * The image contains no footwear.
     * The image show snowshoes or snowsrackets
-    * The image show a shoe but the image is altered (for instance the sole is splitted into the inner parts) or it is a zoom-in detail of the shoe (in this cases one or more of the edges of the picture terminates with a straight line as the product is cut inside the picture)
+    * The image show a shoe but the image is altered (for instance the sole is split into the inner parts) or it is a zoom-in detail of the shoe (in this cases one or more of the edges of the picture terminates with a straight line as the product is cut inside the picture)
     * A person is wearing the footwear (i.e., the footwear is on a human subject).
     * The image is a diagram or a table.
     * A shoe is present against a non-neutral background (for instance, the background is not plain white, black, or gray)
@@ -94,6 +92,7 @@ class ShoeClassifierV1:
     """
 
     def __init__(self, weights_path: str):
+        """Initialize the classifier with weights from a file."""
         self.weights = dict(np.load(weights_path))
         self.classes = CLASSES
 
@@ -139,12 +138,14 @@ class ShoeClassifierV2:
     """
 
     def __init__(self, weights_path: str):
+        """Initialize the classifier with weights from a file."""
         self.weights = dict(np.load(weights_path))
         self.classes = CLASSES
         self.class_emb_matrix = self.weights.pop("class_emb_matrix")  # (12, 3072)
         self.class_desc_matrix = self.weights.pop("class_desc_matrix")  # (12, 3072)
 
     def compute_features(self, original, left_crop, right_crop):
+        """Compute features from image embeddings."""
         dot_simple = original @ self.class_emb_matrix.T
         dot_desc = original @ self.class_desc_matrix.T
         dot_lr = np.sum(left_crop * right_crop, axis=-1, keepdims=True)
@@ -189,7 +190,7 @@ class ShoeClassifierV2:
             branch_outs.append(out)
         feat_out = features @ w["feat_proj_W"].T + w["feat_proj_b"]
         np.maximum(feat_out, 0, feat_out)
-        concat = np.concatenate(branch_outs + [feat_out], axis=-1)
+        concat = np.concatenate([*branch_outs, feat_out], axis=-1)
         h = concat @ w["head_W1"].T + w["head_b1"]
         np.maximum(h, 0, h)
         return h @ w["head_W2"].T + w["head_b2"]
@@ -205,6 +206,7 @@ def _ensemble_predict(probs_v2, probs_v1):
 
     Returns:
         (label, probs) where probs are from the chosen model.
+
     """
     pred_v2 = np.argmax(probs_v2)
     if pred_v2 == _INVALID_IDX:
@@ -222,6 +224,7 @@ def _ensemble_predict_batch(probs_v2, probs_v1):
 
     Returns:
         (labels, probs) lists.
+
     """
     preds_v2 = np.argmax(probs_v2, axis=-1)
     preds_v1 = np.argmax(probs_v1, axis=-1)
@@ -331,6 +334,7 @@ def classify_shoe_local(image_bytes: bytes, client) -> str:
 
     Returns:
         Predicted class label string.
+
     """
     clf_v2 = _get_classifier_v2()
     clf_v1 = _get_classifier_v1()
@@ -366,6 +370,7 @@ def classify_shoe_local_batch(
 
     Returns:
         List of predicted class label strings.
+
     """
     clf_v2 = _get_classifier_v2()
     clf_v1 = _get_classifier_v1()

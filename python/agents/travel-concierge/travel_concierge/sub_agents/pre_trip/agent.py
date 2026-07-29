@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,12 +17,13 @@
 from google.adk.agents import Agent
 from google.adk.tools.agent_tool import AgentTool
 
+from travel_concierge import MODEL
 from travel_concierge.shared_libraries import types
 from travel_concierge.sub_agents.pre_trip import prompt
 from travel_concierge.tools.search import google_search_grounding
 
 what_to_pack_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="what_to_pack_agent",
     description="Make suggestion on what to bring for the trip",
     instruction=prompt.WHATTOPACK_INSTR,
@@ -33,7 +34,7 @@ what_to_pack_agent = Agent(
 )
 
 pre_trip_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="pre_trip_agent",
     description="Given an itinerary, this agent keeps up to date and provides relevant travel information to the user before the trip.",
     instruction=prompt.PRETRIP_AGENT_INSTR,

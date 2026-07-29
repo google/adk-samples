@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Evaluate all Gemini LoRA fine-tuned endpoints on the validation set.
 
 Lists all endpoints matching the display name pattern, runs inference on each,
@@ -128,7 +142,7 @@ def compute_metrics(y_true, y_pred):
     acc = accuracy_score(y_true, y_pred)
     f1m = f1_score(y_true, y_pred, labels=CLASSES, average="macro", zero_division=0)
     f1w = f1_score(y_true, y_pred, labels=CLASSES, average="weighted", zero_division=0)
-    errors = int(sum(1 for a, b in zip(y_true, y_pred) if a != b))
+    errors = int(sum(1 for a, b in zip(y_true, y_pred, strict=False) if a != b))
 
     # Side-to-side errors
     s2s = sum(
@@ -193,6 +207,7 @@ def update_config_env(endpoint_name):
 
 
 def main():
+    """Evaluate Gemini LoRA model."""
     # Use the system prompt from the codebase
     sys.path.insert(
         0, os.path.join(os.path.dirname(__file__), "..", "..", "genmedia4commerce")

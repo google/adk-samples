@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Person/face evaluation utilities for comparing faces in generated images.
+"""Person/face evaluation utilities for comparing faces in generated images.
+
 Used by VTO (Virtual Try-On) and Background Changer features.
 """
 
@@ -43,13 +43,12 @@ _insightface_app = None
 
 
 def _now():
-    """Return current time as HH:MM:SS.mmm"""
+    """Return current time as HH:MM:SS.mmm."""
     return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
 
 def get_insightface_app() -> FaceAnalysis:
-    """
-    Get or create the InsightFace FaceAnalysis app.
+    """Get or create the InsightFace FaceAnalysis app.
 
     Uses buffalo_l model for highest accuracy, running on CPU via ONNX.
     """
@@ -65,8 +64,7 @@ def get_insightface_app() -> FaceAnalysis:
 
 
 def _mask_eye_regions(img_bgr: np.ndarray, face) -> np.ndarray:
-    """
-    Mask both eye regions with skin-colored ellipses.
+    """Mask both eye regions with skin-colored ellipses.
 
     Uses InsightFace's 5-point keypoints (left_eye, right_eye, nose,
     mouth_left, mouth_right) to compute ellipse size from inter-eye distance,
@@ -79,6 +77,7 @@ def _mask_eye_regions(img_bgr: np.ndarray, face) -> np.ndarray:
 
     Returns:
         A new BGR image with eye regions masked.
+
     """
     masked = img_bgr.copy()
     kps = face.kps  # shape (5, 2): left_eye, right_eye, nose, mouth_l, mouth_r
@@ -134,9 +133,9 @@ def get_eval_pool() -> ThreadPoolExecutor:
 def validate_model_photo(
     img_bytes: bytes, max_yaw: float = 30.0, max_pitch: float = 25.0
 ) -> dict:
-    """
-    Validate that the uploaded model photo shows a person looking at the camera
-    with eyes open. Uses InsightFace pose estimation and eye aspect ratio.
+    """Validate that the uploaded model photo shows a person looking at the camera.
+
+    Uses InsightFace pose estimation and eye aspect ratio to ensure eyes are open.
 
     Args:
         img_bytes: Image as bytes.
@@ -145,6 +144,7 @@ def validate_model_photo(
 
     Returns:
         dict: {"valid": bool, "reason": str or None}
+
     """
     app = get_insightface_app()
 
@@ -204,8 +204,7 @@ def validate_model_photo(
 def get_face_embedding_insightface(
     img_bytes: bytes, mask_eyes: bool = False
 ) -> np.ndarray | None:
-    """
-    Extract face embedding from an image using InsightFace.
+    """Extract face embedding from an image using InsightFace.
 
     Args:
         img_bytes: Image as bytes.
@@ -215,6 +214,7 @@ def get_face_embedding_insightface(
 
     Returns:
         np.ndarray: 512-dimensional normalized face embedding, or None if no face detected
+
     """
     app = get_insightface_app()
 
@@ -252,8 +252,7 @@ def compare_faces_insightface(
     generated_face_bytes: bytes,
     mask_eyes: bool = False,
 ) -> dict:
-    """
-    Compare two face images using InsightFace embeddings.
+    """Compare two face images using InsightFace embeddings.
 
     Args:
         reference_face_bytes: Reference face image as bytes.
@@ -267,6 +266,7 @@ def compare_faces_insightface(
             "model": str,
             "embeddings_extracted": bool
         }
+
     """
     logger.info(f"[InsightFace] Comparing faces [{_now()}]")
 
@@ -307,8 +307,7 @@ def compare_faces_insightface(
 
 
 def evaluate_person_match(reference_face_bytes, generated_vto_bytes, mask_eyes=False):
-    """
-    Evaluates if the person in a generated image matches the reference face.
+    """Evaluate if the person in a generated image matches the reference face.
 
     This is the main function to use. It handles:
     1. Cropping face from generated image
@@ -327,6 +326,7 @@ def evaluate_person_match(reference_face_bytes, generated_vto_bytes, mask_eyes=F
             "model": str,
             "face_detected": bool
         }
+
     """
     logger.info(f"[InsightFace Eval] Starting person evaluation [{_now()}]")
 
@@ -370,8 +370,7 @@ def evaluate_person_match(reference_face_bytes, generated_vto_bytes, mask_eyes=F
 def submit_evaluation(
     reference_face_bytes: bytes, generated_vto_bytes: bytes, mask_eyes: bool = False
 ):
-    """
-    Submit an evaluation task to the shared thread pool.
+    """Submit an evaluation task to the shared thread pool.
 
     Args:
         reference_face_bytes: Reference face image as bytes.
@@ -380,6 +379,7 @@ def submit_evaluation(
 
     Returns:
         Future: A Future that resolves to the evaluation result dict
+
     """
     pool = get_eval_pool()
     return pool.submit(

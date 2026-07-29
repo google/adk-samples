@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@ from google.adk.agents import Agent
 from google.adk.tools.agent_tool import AgentTool
 from google.genai.types import GenerateContentConfig
 
+from travel_concierge import MODEL
 from travel_concierge.sub_agents.booking import prompt
 
 create_reservation = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="create_reservation",
     description="""Create a reservation for the selected item.""",
     instruction=prompt.CONFIRM_RESERVATION_INSTR,
@@ -29,14 +30,14 @@ create_reservation = Agent(
 
 
 payment_choice = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="payment_choice",
     description="""Show the users available payment choices.""",
     instruction=prompt.PAYMENT_CHOICE_INSTR,
 )
 
 process_payment = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="process_payment",
     description="""Given a selected payment choice, processes the payment, completing the transaction.""",
     instruction=prompt.PROCESS_PAYMENT_INSTR,
@@ -44,7 +45,7 @@ process_payment = Agent(
 
 
 booking_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="booking_agent",
     description="Given an itinerary, complete the bookings of items by handling payment choices and processing.",
     instruction=prompt.BOOKING_AGENT_INSTR,

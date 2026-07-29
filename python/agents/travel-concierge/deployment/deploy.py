@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ flags.DEFINE_string(
     None,
     "Relative path to the initial state file, .e.g eval/itinerary_empty_default.json",
 )
-flags.DEFINE_string("map_key", None, "API Key for Google Places API")
+flags.DEFINE_string("map_key", None, "API Key for Google Maps Grounding API")
 
 flags.DEFINE_string("resource_id", None, "ReasoningEngine resource ID.")
 flags.DEFINE_bool("create", False, "Creates a new deployment.")
@@ -50,8 +50,7 @@ def create(env_vars: dict[str, str]) -> None:
     print(env_vars)
     app = AdkApp(
         agent=root_agent,
-        enable_tracing=True,
-        env_vars=env_vars,
+        enable_tracing=True
     )
 
     remote_agent = agent_engines.create(
@@ -59,17 +58,26 @@ def create(env_vars: dict[str, str]) -> None:
         display_name="Travel-Concierge-ADK",
         description="An Example AgentEngine Deployment",
         requirements=[
-            "google-adk (>=1.16.0)",
+            "google-adk (>=1.31.0,<2.0.0)",
             "google-cloud-aiplatform[agent_engines] (>=1.93.1)",
-            "google-genai (>=1.16.1)",
+            "google-genai (>=1.9.0)",
             "pydantic (>=2.10.6,<3.0.0)",
             "absl-py (>=2.2.1,<3.0.0)",
             "pydantic (>=2.10.6,<3.0.0)",
             "requests (>=2.32.3,<3.0.0)",
+            "python-dotenv>=1.0.1",
+            "arize-otel>=0.8.2; python_version >= '3.11' and python_version < '3.13'",
+            "openinference-instrumentation-google-adk>=0.1.0; python_version >= '3.11' and python_version < '3.14'",
+            "openinference-instrumentation>=0.1.34",
+            "arize>=7.36.0",
+            "arize-phoenix-evals>=0.20.8",
+            "scikit-learn>=1.7.0",
+            "pandas>=2.3.0",            
         ],
         extra_packages=[
             "./travel_concierge",  # The main package
         ],
+        env_vars=env_vars,        
     )
     print(f"Created remote agent: {remote_agent.resource_name}")
 
@@ -104,7 +112,7 @@ def send_message(
 
 
 def main(argv: list[str]) -> None:
-    load_dotenv()
+    load_dotenv(override=True)
     env_vars = {}
 
     project_id = (
@@ -112,6 +120,7 @@ def main(argv: list[str]) -> None:
         if FLAGS.project_id
         else os.getenv("GOOGLE_CLOUD_PROJECT")
     )
+
     location = (
         FLAGS.location if FLAGS.location else os.getenv("GOOGLE_CLOUD_LOCATION")
     )
@@ -130,9 +139,9 @@ def main(argv: list[str]) -> None:
     map_key = (
         FLAGS.initial_states_path
         if FLAGS.initial_states_path
-        else os.getenv("GOOGLE_PLACES_API_KEY")
+        else os.getenv("GOOGLE_MAPS_API_KEY")
     )
-    env_vars["GOOGLE_PLACES_API_KEY"] = map_key
+    env_vars["GOOGLE_MAPS_API_KEY"] = map_key
 
     print(f"PROJECT: {project_id}")
     print(f"LOCATION: {location}")
@@ -157,7 +166,7 @@ def main(argv: list[str]) -> None:
         )
         return
     elif not map_key:
-        print("Missing required environment variable: GOOGLE_PLACES_API_KEY")
+        print("Missing required environment variable: GOOGLE_MAPS_API_KEY")
         return
 
     vertexai.init(
@@ -181,7 +190,7 @@ def main(argv: list[str]) -> None:
         send_message(
             session_service,
             FLAGS.resource_id,
-            "Looking for inspirations around the Americas",
+            "Tell me more about activities I can do around Machu Picchu",
         )
     else:
         print("Unknown command")

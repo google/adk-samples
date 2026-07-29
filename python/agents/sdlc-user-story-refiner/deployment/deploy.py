@@ -35,7 +35,7 @@ def create() -> None:
         adk_app,
         display_name="sdlc-user-story-refiner",
         requirements=[
-            "google-adk (>=1.0.0)",
+            "google-adk (>=1.31.0)",
             "google-cloud-aiplatform[adk,agent_engines] (>=1.93.0)",
             "google-genai (>=1.9.0)",
             "pydantic (>=2.10.6)",

@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,12 +18,13 @@ from google.adk.agents import Agent
 from google.adk.tools.agent_tool import AgentTool
 from google.genai.types import GenerateContentConfig
 
+from travel_concierge import MODEL
 from travel_concierge.shared_libraries import types
 from travel_concierge.sub_agents.planning import prompt
 from travel_concierge.tools.memory import memorize
 
 itinerary_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="itinerary_agent",
     description="Create and persist a structured JSON representation of the itinerary",
     instruction=prompt.ITINERARY_AGENT_INSTR,
@@ -36,7 +37,7 @@ itinerary_agent = Agent(
 
 
 hotel_room_selection_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="hotel_room_selection_agent",
     description="Help users with the room choices for a hotel",
     instruction=prompt.HOTEL_ROOM_SELECTION_INSTR,
@@ -48,7 +49,7 @@ hotel_room_selection_agent = Agent(
 )
 
 hotel_search_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="hotel_search_agent",
     description="Help users find hotel around a specific geographic area",
     instruction=prompt.HOTEL_SEARCH_INSTR,
@@ -61,7 +62,7 @@ hotel_search_agent = Agent(
 
 
 flight_seat_selection_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="flight_seat_selection_agent",
     description="Help users with the seat choices",
     instruction=prompt.FLIGHT_SEAT_SELECTION_INSTR,
@@ -73,7 +74,7 @@ flight_seat_selection_agent = Agent(
 )
 
 flight_search_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="flight_search_agent",
     description="Help users find best flight deals",
     instruction=prompt.FLIGHT_SEARCH_INSTR,
@@ -86,7 +87,7 @@ flight_search_agent = Agent(
 
 
 planning_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     description="""Helps users with travel planning, complete a full itinerary for their vacation, finding best deals for flights and hotels.""",
     name="planning_agent",
     instruction=prompt.PLANNING_AGENT_INSTR,

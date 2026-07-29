@@ -1503,41 +1503,46 @@ dependencies = [
     { name = "pillow" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "agent-starter-pack" },
+[package.optional-dependencies]
+lint = [
     { name = "codespell" },
-    { name = "jupyter" },
     { name = "mypy" },
-    { name = "nest-asyncio" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "ruff" },
     { name = "types-pyyaml" },
     { name = "types-requests" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "agent-starter-pack" },
+    { name = "jupyter" },
+    { name = "nest-asyncio" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
 [package.metadata]
 requires-dist = [
+    { name = "codespell", marker = "extra == 'lint'", specifier = "~=2.4.1" },
     { name = "google-adk", specifier = ">=1.5.0" },
     { name = "google-cloud-aiplatform", extras = ["adk", "agent-engines"], specifier = ">=1.93.0" },
     { name = "google-cloud-logging", specifier = ">=3.12.0" },
+    { name = "mypy", marker = "extra == 'lint'", specifier = "~=1.20.0" },
     { name = "pandas", specifier = ">=2.1.1" },
     { name = "pillow", specifier = ">=10.3.0" },
+    { name = "ruff", marker = "extra == 'lint'", specifier = ">=0.4.6" },
+    { name = "types-pyyaml", marker = "extra == 'lint'", specifier = "~=6.0.12.20240917" },
+    { name = "types-requests", marker = "extra == 'lint'", specifier = "~=2.33.0.20260327" },
 ]
+provides-extras = ["lint"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "agent-starter-pack", specifier = ">=0.14.1" },
-    { name = "codespell", specifier = "~=2.4.1" },
     { name = "jupyter", specifier = "~=1.1.1" },
-    { name = "mypy", specifier = "~=1.20.0" },
     { name = "nest-asyncio", specifier = ">=1.6.0" },
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", specifier = ">=0.23.8" },
-    { name = "ruff", specifier = ">=0.4.6" },
-    { name = "types-pyyaml", specifier = "~=6.0.12.20240917" },
-    { name = "types-requests", specifier = "~=2.33.0.20260327" },
 ]
 
 [[package]]

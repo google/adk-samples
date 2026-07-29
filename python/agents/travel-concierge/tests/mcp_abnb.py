@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,36 +17,37 @@
 import asyncio
 import json
 
-from dotenv import load_dotenv
 from google.adk.artifacts.in_memory_artifact_service import (
     InMemoryArtifactService,
 )
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools.agent_tool import AgentTool
-from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
-    StdioServerParameters,
-)
+from google.adk.tools.mcp_tool import McpToolset
+from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 from google.genai import types
+from mcp import StdioServerParameters
 
 from travel_concierge.agent import root_agent
 
-load_dotenv()
+ABNB_MCP_COMMAND = "npx"
+ABNB_MCP_ARGS = ["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
 
 
-async def get_tools_async():
-    """Gets tools from MCP Server."""
-    tools, exit_stack = await MCPToolset.from_server(
-        connection_params=StdioServerParameters(
-            command="npx",
-            args=["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"],
+def get_abnb_toolset() -> McpToolset:
+    """Return an MCP toolset connected to the Airbnb MCP server.
+
+    The toolset includes tools for interacting with Airbnb data.
+    This uses a local stdio-based MCP server.
+    """
+    return McpToolset(
+        connection_params=StdioConnectionParams(
+            server_params=StdioServerParameters(
+                command=ABNB_MCP_COMMAND,
+                args=ABNB_MCP_ARGS,
+            )
         )
     )
-    # MCP requires maintaining a connection to the local MCP Server.
-    # Using exit_stack to clean up server connection before exit.
-    return tools, exit_stack
-
 
 def find_agent(agent, targat_name):
     """A convenient function to find an agent from an existing agent graph."""
@@ -66,24 +67,24 @@ def find_agent(agent, targat_name):
     return result
 
 
-async def get_agent_async():
-    """Creates an ADK Agent with tools from MCP Server."""
-    tools, exit_stack = await get_tools_async()
+def get_agent_with_abnb_tools():
+    """Creates an ADK Agent with tools from Airbnb MCP Server."""
+    tools = get_abnb_toolset()
     print("\nInserting Airbnb MCP tools into Travel-Concierge...")
     planner = find_agent(root_agent, "planning_agent")
     if planner:
         print("FOUND", planner.name)
-        planner.tools.extend(tools)
+        planner.tools.extend([tools])
     else:
         print("NOT FOUND")
-    return root_agent, exit_stack
+    return root_agent
 
 
 async def async_main(question):
     """Executes one turn of the travel_concierge agents with a query that would trigger the MCP tool."""
     session_service = InMemorySessionService()
     artifacts_service = InMemoryArtifactService()
-    session = session_service.create_session(
+    session = await session_service.create_session(
         state={}, app_name="travel-concierge", user_id="traveler0115"
     )
 
@@ -91,7 +92,7 @@ async def async_main(question):
     print("[user]: ", query)
     content = types.Content(role="user", parts=[types.Part(text=query)])
 
-    agent, exit_stack = await get_agent_async()
+    agent = get_agent_with_abnb_tools()
     runner = Runner(
         app_name="travel-concierge",
         agent=agent,
@@ -136,18 +137,19 @@ async def async_main(question):
 
         elif function_responses:
             for function_response in function_responses:
+                print(f"\n[{author}]: {function_call.name} responds")
                 function_name = function_response.name
                 # Detect different payloads and handle accordingly
                 application_payload = function_response.response
                 if function_name == "airbnb_search":
                     application_payload = (
-                        application_payload["result"].content[0].text
+                        application_payload["content"][0]["text"]
                     )
                 print(
                     f"\n[{author}]: {function_name} responds -> {application_payload}"
                 )
-
-    await exit_stack.aclose()
+    
+    await runner.close()
 
 
 if __name__ == "__main__":

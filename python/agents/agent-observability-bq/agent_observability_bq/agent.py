@@ -49,7 +49,7 @@ if not PROJECT_ID:
 
 DATASET_ID = os.environ.get("BQ_ANALYTICS_DATASET_ID", "adk_agent_analytics")
 TABLE_ID = os.environ.get("BQ_ANALYTICS_TABLE_ID", "agent_events")
-LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-east1")
 
 # --- Initialize the Plugin ---
 plugins = []

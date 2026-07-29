@@ -17,7 +17,7 @@
 name = "brand-aligned-presentations"
 authors = [
     {name = "Renee Zhang", email = "xiaolizhang@google.com"},
-    {name = "Nishant Nayak", email = "nishantnayak@google.com"}
+    {name = "Neil Desai", email = "nmdesai@google.com" }
 ]
 version = "0.1.0"
 description = "Generate a brand-adherent deck that integrates custom research."
@@ -26,7 +26,7 @@ license = "Apache-2.0"
 requires-python = ">=3.11,<3.14"
 
 dependencies = [
-    "google-adk>=1.27.4",
+    "google-adk>=1.31.0",
     "google-auth>=2.45.0",
     "google-cloud-aiplatform[agent-engines]>=1.142.0",
     "google-cloud-modelarmor>=0.4.0",
@@ -56,7 +56,7 @@ dev = [
     "httpx>=0.28.1",
     "requests>=2.32.5",
     "agent-starter-pack>=0.14.1",
-    "google-adk[eval]>=1.27.4",
+    "google-adk[eval]>=1.31.0",
 ]
 
 # This configuration file is used by goo.gle/agent-starter-pack to power remote templating.

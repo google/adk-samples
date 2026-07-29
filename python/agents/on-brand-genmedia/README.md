@@ -18,7 +18,7 @@ This diagram shows the detailed architecture of the agents and tools used to imp
 
 **Visual Key:** Rounded Boxes = **Agents** (Logic) | Dotted Ovals = **Tools** (Actions)
 
-![Agent Architecture](agent_pattern.png)
+![Agent Architecture](agent_pattern.webp)
 
 The Guidelines Driven Media Gen Agent implements a sequential workflow using specialized sub-agents:
 
@@ -69,18 +69,19 @@ The Guidelines Driven Media Gen Agent implements a sequential workflow using spe
     git clone https://github.com/google/adk-samples.git
     cd adk-samples/python/agents/on-brand-genmedia
     # Install the package and dependencies.
-    uv sync --dev
+    uv sync
     ```
 
 3.  **Configuration**
 
     *   Set up Google Cloud credentials.
 
-        *   There is a `.env-example` file included in the repository. Update this file with the values appropriate to your project, and save it as `.env`. The values in this file will be read into the environment of your application.
+        *   Copy the `.env.example` file and save it as `.env`. Open `.env` and fill in the values appropriate to your project (e.g., `GOOGLE_CLOUD_PROJECT`, `GCS_BUCKET_NAME`). The values in this file will be read into the environment of your application.
 
     *   Authenticate your GCloud account.
 
         ```bash
+        gcloud auth login
         gcloud auth application-default login
         gcloud auth application-default set-quota-project $GOOGLE_CLOUD_PROJECT
         ```
@@ -113,35 +114,27 @@ a chatbot interface will appear on the right. The conversation is initially
 blank. 
 
 For a comprehensive user guide with example prompts, generated images, and customization instructions for digital assets and search logic, please refer to [User Guide and Customization](User_Guide_and_Customization.md). 
-### Alternative: Using Agent Starter Pack
+### Alternative: Using Google Agents CLI
 
-You can also use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options:
+You can also use the [Google Agents CLI](https://github.com/google/agents-cli) to create a production-ready version of this agent with additional deployment options.
+
+**Install the CLI** (one-time):
 
 ```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-on-brand-genmedia -a adk@on-brand-genmedia
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
+**Create the project from this sample** (replace `my-on-brand-genmedia` with your project name):
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and set up your project with a single command:
 ```bash
-uvx agent-starter-pack create my-on-brand-genmedia -a adk@on-brand-genmedia
+agents-cli create my-on-brand-genmedia -a adk@on-brand-genmedia
 ```
-This command handles creating the project without needing to pre-install the package into a virtual environment.
 
-</details>
+The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
+## Deployment on Agent Runtime
 
-## Deployment on Vertex AI Agent Engine
-
-You can deploy the Guidelines Driven Media Gen Agent directly to Google Cloud's Reasoning Engine (Agent Engine) using the provided deployment scripts.
+You can deploy the Guidelines Driven Media Gen Agent directly to Google Cloud's Reasoning Engine (Agent Runtime) using the provided deployment scripts.
 
 1.  **Build the Agent Package:**
     Create a `.whl` file from the project root directory (where `pyproject.toml` is located):
@@ -155,7 +148,7 @@ You can deploy the Guidelines Driven Media Gen Agent directly to Google Cloud's 
     {
       "operation": "create",
       "project_id": "YOUR_GCP_PROJECT",
-      "location": "us-central1",
+      "location": "us-east1",
       "bucket_name": "YOUR_STAGING_BUCKET"
     }
     ```
@@ -165,7 +158,7 @@ You can deploy the Guidelines Driven Media Gen Agent directly to Google Cloud's 
     ```bash
     uv run python deployment/deploy.py
     ```
-    This script verifies the built wheel, creates staging buckets, deploys the agent securely to Agent Engine, and saves the resulting `AGENT_ENGINE_ID` into your `.env` file!
+    This script verifies the built wheel, creates staging buckets, deploys the agent securely to Agent Runtime, and saves the resulting `AGENT_ENGINE_ID` into your `.env` file!
 
 4.  **Test the deployment:**
     Chat with your deployed agent (reads from `.env` and `deploy_config.json`):

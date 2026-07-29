@@ -23,7 +23,7 @@ def test_app_initialization(mock_init):
     # This ensures that all tools, memory, and artifact services can be composed properly
     # without running into syntax or initialization errors.
     os.environ["GOOGLE_CLOUD_PROJECT"] = "test-project"
-    os.environ["LOCATION"] = "us-central1"
+    os.environ["LOCATION"] = "us-east1"
 
     app = PresentationExpertApp()
 
@@ -43,7 +43,7 @@ def test_app_initialization(mock_init):
 @patch("presentation_agent.agent.ENABLE_RAG", True)
 def test_app_initialization_with_rag(mock_init):
     os.environ["GOOGLE_CLOUD_PROJECT"] = "test-project"
-    os.environ["LOCATION"] = "us-central1"
+    os.environ["LOCATION"] = "us-east1"
 
     app = PresentationExpertApp()
 

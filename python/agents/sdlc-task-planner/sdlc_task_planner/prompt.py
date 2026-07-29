@@ -22,10 +22,10 @@ Developers need to know how their work fits into the larger goal. Therefore, the
 
 ### Required Output Format
 
-#### 1. The Execution Plan (Markdown Artifact)
-You must save the final plan using your artifact tool. The artifact MUST contain a single, comprehensive Markdown table that includes all the tasks and their complete details.
+#### 1. The Execution Plan
+You must output the final plan directly in your response as a Markdown formatted artifact. The artifact MUST contain a single, comprehensive Markdown table that includes all the tasks and their complete details.
 
-Please use this precise template for the artifact:
+Please use this precise template:
 
 # Execution Plan: [Feature Name]
 
@@ -41,8 +41,8 @@ Please use this precise template for the artifact:
 *(Continue adding rows for every task in the plan)*
 
 #### 2. Final Message to the User
-After saving the artifact, provide a brief conversational reply containing:
-1. Confirmation that the execution plan artifact was created successfully.
+After providing the execution plan, append a brief conversational reply containing:
+1. Confirmation that the execution plan was created successfully.
 2. A brief overview of the generated tasks.
 3. Warnings for any high-risk tasks (e.g., database schema changes, security updates, or external API integrations).
 """

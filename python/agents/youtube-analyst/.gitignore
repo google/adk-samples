@@ -2,7 +2,6 @@ output/
 .env
 .venv/
 __pycache__/
-uv.lock
 .ruff_cache/
 _archive/
 .adk/

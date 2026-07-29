@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Core VTO pipeline as an async generator.
+"""Core VTO pipeline as an async generator.
 
 This module is the single source of truth for the image VTO orchestration.
 It is consumed by:
@@ -48,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 def _now():
-    """Return current time as HH:MM:SS.mmm"""
+    """Return current time as HH:MM:SS.mmm."""
     return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
 
@@ -146,8 +145,7 @@ async def run_image_vto(
     face_image: bytes | None = None,
     image_size: str = "1K",
 ) -> AsyncGenerator[VTOResult, None]:
-    """
-    Run the full image VTO pipeline.  Yields results as each variation completes.
+    """Run the full image VTO pipeline.  Yields results as each variation completes.
 
     Yield order:
       1. A single VTOResult with status="reference_face" (carries reference_face_base64)

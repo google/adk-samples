@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Fashion Curation System.
+"""Fashion Curation System.
 
 Composed of:
 1. Style Advisor (Searcher): Handles retrieval and catalog queries.
@@ -57,6 +56,7 @@ MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8081/sse")
 async def extract_uploaded_images(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> None:
+    """Extract uploaded images from the LLM request and store them in state."""
     if "uploaded_images_base64" not in callback_context.state:
         callback_context.state["uploaded_images_base64"] = []
     images_b64 = []
@@ -89,6 +89,7 @@ async def extract_uploaded_images(
 async def inject_uploaded_images(
     tool: BaseTool, args: dict, tool_context: ToolContext
 ) -> dict | None:
+    """Inject uploaded images into tool arguments."""
     uploaded = tool_context.state.get("uploaded_images_base64", [])
 
     def _resolve_index(val: str) -> str | None:
@@ -264,7 +265,7 @@ async def _fetch_image_data(url: str) -> tuple[bytes, str] | tuple[None, None]:
 async def process_text_for_gcs_urls(
     text: str, runner_or_context, user_id="test_user", session_id="test_session"
 ) -> str:
-    """Replaces GCS URLs in a string with Proxy or Signed URLs."""
+    """Replace GCS URLs in a string with Proxy or Signed URLs."""
     if not text or not ("storage" in text or "gs://" in text):
         return text
 
@@ -300,6 +301,7 @@ async def process_text_for_gcs_urls(
 async def handle_tool_response(
     tool: BaseTool, args: dict, tool_context: ToolContext, tool_response: dict
 ) -> dict | None:
+    """Handle tool response by stripping large base64 blobs and saving them as artifacts."""
     if tool_response is None:
         return None
 

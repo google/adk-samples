@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 """Basic tests for individual tools."""
 
-import os
+import importlib
 import unittest
 
 import pytest
@@ -26,7 +26,7 @@ from google.adk.tools import ToolContext
 
 from travel_concierge.agent import root_agent
 from travel_concierge.tools.memory import memorize
-from travel_concierge.tools.places import map_tool
+from travel_concierge.tools.places import get_places_toolset
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -70,20 +70,39 @@ class TestAgents(unittest.TestCase):
             self.tool_context.state["itinerary_datetime"], "12/31/2025 11:59:59"
         )
 
-    @pytest.mark.skipif(
-        not os.getenv("GOOGLE_PLACES_API_KEY"),
-        reason="Google Places API key not available",
+
+def test_maps_toolset_requires_api_key(monkeypatch):
+    monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
+    with pytest.raises(EnvironmentError, match="GOOGLE_MAPS_API_KEY must be set"):
+        get_places_toolset()
+
+
+def test_maps_toolset_with_api_key(monkeypatch):
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-key")
+    toolset = get_places_toolset()
+    assert toolset is not None
+    from google.adk.tools.mcp_tool import McpToolset # noqa: PLC0415, I001
+
+    assert isinstance(toolset, McpToolset)
+
+
+def test_poi_agent_omits_maps_tool_without_api_key(monkeypatch):
+    monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
+    import travel_concierge.sub_agents.inspiration.agent as insp_agent # noqa: PLC0415, I001
+    importlib.reload(insp_agent)
+
+    assert not any(
+        tool.__class__.__name__ == "McpToolset"
+        for tool in insp_agent.poi_agent.tools
     )
-    def test_places(self):
-        self.tool_context.state["poi"] = {
-            "places": [
-                {"place_name": "Machu Picchu", "address": "Machu Picchu, Peru"}
-            ]
-        }
-        result = map_tool(key="poi", tool_context=self.tool_context)
-        print(result)
-        self.assertIn("place_id", result["places"][0])
-        self.assertEqual(
-            self.tool_context.state["poi"]["places"][0]["place_id"],
-            "ChIJVVVViV-abZERJxqgpA43EDo",
-        )
+
+
+def test_poi_agent_includes_maps_tool_with_api_key(monkeypatch):
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-key")
+    import travel_concierge.sub_agents.inspiration.agent as insp_agent # noqa: PLC0415, I001
+    importlib.reload(insp_agent)
+
+    assert any(
+        tool.__class__.__name__ == "McpToolset"
+        for tool in insp_agent.poi_agent.tools
+    )

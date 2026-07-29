@@ -2,7 +2,10 @@
 name = "cyber-guardian"
 version = "0.1.0"
 description = "AI-driven agent for cybersecurity incident response"
-authors = [{ name = "Cyber Guardian Team" }]
+authors = [
+    { name = "Cyber Guardian Team" },
+    { name = "Google POC", email = "aanas@google.com" }
+]
 license = "Apache-2.0"
 readme = "README.md"
 dependencies = [
@@ -10,7 +13,7 @@ dependencies = [
     "google-genai>=1.9.0",
     "pydantic>=2.10.6",
     "python-dotenv>=1.0.1",
-    "google-adk>=1.0.0",
+    "google-adk>=1.31.0",
     "google-cloud-bigquery>=3.29.0",
     "pandas",
     "pandas-gbq",
@@ -22,7 +25,7 @@ requires-python = ">=3.10,<3.13"
 dev = [
     "pytest>=8.3.2",
     "pytest-asyncio>=0.23.7",
-    "google-adk[eval]>=1.0.0",
+    "google-adk[eval]>=1.31.0",
     "nest-asyncio>=1.6.0",
     "agent-starter-pack>=0.14.1",
 ]
@@ -98,3 +101,13 @@ example_question = "Run triage for hostname kvm01 and alert IOC_MATCH"
 
 [tool.agent-starter-pack.settings]
 agent_directory = "cyber_guardian"
+
+[tool.agents-cli]
+example_question = "Run triage for hostname kvm01 and alert IOC_MATCH"
+agent_directory = "cyber_guardian"
+
+[tool.agents-cli.create_params]
+deployment_target = "cloud_run"
+
+
+

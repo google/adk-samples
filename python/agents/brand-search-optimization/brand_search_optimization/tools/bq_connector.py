@@ -19,12 +19,22 @@ from google.cloud import bigquery
 
 from ..shared_libraries import constants
 
-# Initialize the BigQuery client outside the function
-try:
-    client = bigquery.Client()  # Initialize client once
-except Exception as e:
-    print(f"Error initializing BigQuery client: {e}")
-    client = None  # Set client to None if initialization fails
+client = None
+_client_state = {"init_error": None}
+
+
+def _get_client():
+    """Initializes a BigQuery client on demand to avoid import-time failures."""
+    if client is not None:
+        return client
+    if _client_state["init_error"] is not None:
+        return None
+    try:
+        return bigquery.Client()
+    except Exception as e:
+        print(f"Error initializing BigQuery client: {e}")
+        _client_state["init_error"] = e
+        return None
 
 
 def get_product_details_for_brand(tool_context: ToolContext):
@@ -43,8 +53,13 @@ def get_product_details_for_brand(tool_context: ToolContext):
         >>> get_product_details_for_brand(tool_context)
         '| Title | Description | Attributes | Brand |\\n|---|---|---|---|\\n| Nike Air Max | Comfortable running shoes | Size: 10, Color: Blue | Nike\\n| Nike Sportswear T-Shirt | Cotton blend, short sleeve | Size: L, Color: Black | Nike\\n| Nike Pro Training Shorts | Moisture-wicking fabric | Size: M, Color: Gray | Nike\\n'
     """
-    brand = tool_context.user_content.parts[0].text
-    if client is None:  # Check if client initialization failed
+    user_content = tool_context.user_content
+    if user_content is None or not user_content.parts:
+        return "No brand provided."
+
+    brand = user_content.parts[0].text
+    bq_client = client if client is not None else _get_client()
+    if bq_client is None:
         return "BigQuery client initialization failed. Cannot execute query."
 
     query = f"""
@@ -54,8 +69,8 @@ def get_product_details_for_brand(tool_context: ToolContext):
             Attributes,
             Brand
         FROM
-            {constants.PROJECT}.{constants.DATASET_ID}.{constants.TABLE_ID}
-        WHERE brand LIKE '%{brand}%'
+            `{constants.PROJECT}.{constants.DATASET_ID}.{constants.TABLE_ID}`
+        WHERE Brand LIKE CONCAT('%', @parameter1, '%')
         LIMIT 3
     """
     query_job_config = bigquery.QueryJobConfig(
@@ -64,8 +79,7 @@ def get_product_details_for_brand(tool_context: ToolContext):
         ]
     )
 
-    query_job = client.query(query, job_config=query_job_config)
-    query_job = client.query(query)
+    query_job = bq_client.query(query, job_config=query_job_config)
     results = query_job.result()
 
     markdown_table = "| Title | Description | Attributes | Brand |\n"

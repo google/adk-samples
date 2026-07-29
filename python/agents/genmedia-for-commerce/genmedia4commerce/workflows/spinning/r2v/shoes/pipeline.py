@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Pipeline for generating shoe spinning videos using R2V."""
+
 # Standard library imports
 import logging
 import multiprocessing
@@ -70,8 +72,8 @@ def generate_single_clip_r2v(
     disable_logging=False,
     product_consistency_model="gemini-3-flash-preview",
 ):
-    """
-    Generate a single video clip using reference-to-video (R2V) modality.
+    """Generate a single video clip using reference-to-video (R2V) modality.
+
     Uses reference images instead of start/end frames.
 
     Args:
@@ -93,6 +95,7 @@ def generate_single_clip_r2v(
 
     Returns:
         dict: Metadata about the generated clip
+
     """
     # Save current logger level and disable if requested
     original_level = logger.level
@@ -256,7 +259,21 @@ def preprocess_classify_images(
     upscale_images=True,
     create_canva=True,
 ):
+    """Preprocess and classify input images.
 
+    Args:
+        images_bytes_list: List of image bytes.
+        client: Gemini client.
+        upscale_client: Client for upscaling.
+        shoe_classifier_model: Model for shoe classification.
+        num_workers: Number of workers for parallel processing. Default: 32.
+        upscale_images: Whether to upscale images. Default: True.
+        create_canva: Whether to create a canvas. Default: True.
+
+    Returns:
+        Tuple of (processed_images, video_gen_status, has_velcro).
+
+    """
     # STEP 1: Classify images (same logic as /classify-images endpoint)
     logger.info("Step 1: Classifying images...")
 
@@ -281,19 +298,19 @@ def preprocess_classify_images(
 
     images_to_split = [
         img_bytes
-        for img_bytes, pred in zip(images_bytes_list, initial_predictions)
+        for img_bytes, pred in zip(images_bytes_list, initial_predictions, strict=True)
         if pred.strip().lower() == "multiple"
     ]
 
     single_images_valid = [
         img_bytes
-        for img_bytes, pred in zip(images_bytes_list, initial_predictions)
+        for img_bytes, pred in zip(images_bytes_list, initial_predictions, strict=True)
         if pred.strip().lower() not in ["multiple", "invalid"]
     ]
 
     single_images_pred = [
         pred.strip().lower()
-        for _, pred in zip(images_bytes_list, initial_predictions)
+        for _, pred in zip(images_bytes_list, initial_predictions, strict=True)
         if pred.strip().lower() not in ["multiple", "invalid"]
     ]
 
@@ -318,7 +335,7 @@ def preprocess_classify_images(
             for image_bytes in splitted_result_list
         ]
         logger.info(
-            f"Step 1.2: Classifying {len(split_images_bytes_list)} splitted images..."
+            f"Step 1.2: Classifying {len(split_images_bytes_list)} split images..."
         )
         splitted_predictions = predict_parallel(
             split_images_bytes_list,
@@ -335,15 +352,19 @@ def preprocess_classify_images(
                 "The classification service may be temporarily unavailable. Please try again later."
             )
 
-        logger.info(f"✓ Splitted predictions: {splitted_predictions}")
+        logger.info(f"✓ Split predictions: {splitted_predictions}")
         splitted_valid = [
             img_bytes
-            for img_bytes, pred in zip(split_images_bytes_list, splitted_predictions)
+            for img_bytes, pred in zip(
+                split_images_bytes_list, splitted_predictions, strict=True
+            )
             if pred.strip().lower() not in ["multiple", "invalid"]
         ]
         splitted_pred = [
             pred.strip().lower()
-            for _, pred in zip(split_images_bytes_list, splitted_predictions)
+            for _, pred in zip(
+                split_images_bytes_list, splitted_predictions, strict=True
+            )
             if pred.strip().lower() not in ["multiple", "invalid"]
         ]
 
@@ -359,7 +380,7 @@ def preprocess_classify_images(
             f"Video generation status is 'exclude', skipping upscaling. Classifications: {final_classifications}"
         )
         return (
-            list(zip(all_valid_images, final_classifications)),
+            list(zip(all_valid_images, final_classifications, strict=True)),
             video_gen_status,
             False,
         )
@@ -378,7 +399,7 @@ def preprocess_classify_images(
                 f"{final_classifications}"
             )
             return (
-                list(zip(all_valid_images, final_classifications)),
+                list(zip(all_valid_images, final_classifications, strict=True)),
                 video_gen_status,
                 True,
             )
@@ -425,7 +446,7 @@ def preprocess_classify_images(
     logger.info(f"Final classifications: {final_classifications}")
 
     return (
-        list(zip(all_valid_images, final_classifications)),
+        list(zip(all_valid_images, final_classifications, strict=True)),
         video_gen_status,
         has_velcro,
     )
@@ -441,15 +462,14 @@ def run_video_gen_pipeline_r2v(
     veo_model: str = "veo-3.1-generate-001",
     reference_type: str = "asset",
     product_consistency_model: str = "gemini-3-flash-preview",
-    product_id: str = None,
-    gcs_bucket: str = None,
+    product_id: str | None = None,
+    gcs_bucket: str | None = None,
     gcs_destination_prefix: str = "shoe_spinning_outputs",
-    gcs_project_id: str = None,
+    gcs_project_id: str | None = None,
     upscale_images: bool = True,
     disable_logging: bool = True,
 ):
-    """
-    Reference-to-Video (R2V) pipeline that generates a single spinning video using reference images.
+    """Reference-to-Video (R2V) pipeline that generates a single spinning video using reference images.
 
     This function:
     1. Classifies images to determine shoe positions and split multi-shoe images
@@ -487,6 +507,7 @@ def run_video_gen_pipeline_r2v(
 
     Raises:
         ValueError/Exception: If error occurs and gcs_bucket is set
+
     """
     # Save current logger level and disable if requested
     original_level = logger.level

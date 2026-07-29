@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """MCP tool wrappers for the glasses image VTO pipeline."""
 
 import asyncio
@@ -48,6 +62,7 @@ async def run_glasses_vto_tool(
     Returns:
         Dictionary with best result including image_base64, final_score,
         face_score, and glasses_evaluation.
+
     """
     if not model_image_base64:
         return {"error": "Model face image is required."}
@@ -115,6 +130,7 @@ async def run_glasses_enhance(
 
     Returns:
         Dictionary with enhanced_images list of base64-encoded images.
+
     """
     try:
         image_bytes = base64.b64decode(image_base64)
@@ -152,6 +168,7 @@ async def run_glasses_edit_frame(
 
     Returns:
         Dictionary with edited_frame_image as base64-encoded image.
+
     """
     try:
         image_bytes = base64.b64decode(generated_image_base64)

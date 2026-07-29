@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,11 +16,12 @@
 
 from google.adk.agents import Agent
 
+from travel_concierge import MODEL
 from travel_concierge.sub_agents.post_trip import prompt
 from travel_concierge.tools.memory import memorize
 
 post_trip_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="post_trip_agent",
     description="A follow up agent to learn from user's experience; In turn improves the user's future trips planning and in-trip experience.",
     instruction=prompt.POSTTRIP_INSTR,

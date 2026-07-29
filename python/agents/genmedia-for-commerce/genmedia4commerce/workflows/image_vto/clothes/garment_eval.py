@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Garment evaluation for Image VTO.
+"""Garment evaluation for Image VTO.
 
 Uses the product fitting's detailed evaluate_garment (0-10 scale with
 EXTERIOR/INTERIOR awareness) instead of the old simple 0-3 scale.
@@ -37,8 +36,7 @@ def evaluate_garments(
     model: str = "gemini-3-flash-preview",
     garment_descriptions: list[dict] | None = None,
 ) -> dict:
-    """
-    Evaluate all reference garments against the generated VTO image in parallel.
+    """Evaluate all reference garments against the generated VTO image in parallel.
 
     Uses the product fitting's evaluate_garment (0-10 scale) with
     EXTERIOR/INTERIOR detail awareness when descriptions are provided.
@@ -57,6 +55,7 @@ def evaluate_garments(
             "garments_score": float - Average score normalized to 0-100,
             "garment_details": list[dict] - Individual garment evaluations
         }
+
     """
     if garment_descriptions is None:
         garment_descriptions = [{}] * len(garment_images_bytes_list)
@@ -73,7 +72,7 @@ def evaluate_garments(
                 garment_description=desc.get("general", ""),
             )
             for garment_bytes, desc in zip(
-                garment_images_bytes_list, garment_descriptions
+                garment_images_bytes_list, garment_descriptions, strict=False
             )
         ]
         garment_details = [f.result() for f in futures]
@@ -106,8 +105,8 @@ def evaluate_wearing_quality(
     generated_image_bytes: bytes,
     model: str = "gemini-3-flash-preview",
 ) -> dict:
-    """
-    Evaluate the wearing quality of a generated VTO image.
+    """Evaluate the wearing quality of a generated VTO image.
+
     No reference garment needed — only assesses how naturally the outfit is worn.
 
     Args:
@@ -121,6 +120,7 @@ def evaluate_wearing_quality(
             1: poor — significant structural issues (large asymmetry, garment merging/melting, major clipping)
             2: acceptable — minor imperfections (small texture artifacts, slight asymmetry, minor AI artifacts)
             3: excellent — outfit looks natural and properly worn, indistinguishable from a real photo
+
     """
     system_prompt = """You are a quality control inspector for AI-generated fashion images. Your task is to evaluate whether the outfit in the image is worn naturally, realistically, and as a customer would expect to see the garments displayed.
 

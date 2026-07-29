@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """MCP tool wrapper for the clothes image VTO pipeline."""
 
 import base64
@@ -36,6 +50,7 @@ async def run_image_vto_clothes(
     Returns:
         Dictionary with best result including image_base64, final_score,
         face_score, evaluation details, and garments_evaluation.
+
     """
     if not full_body_image_base64:
         return {"error": "Full body image is required."}
@@ -49,7 +64,7 @@ async def run_image_vto_clothes(
         try:
             return base64.b64decode(val)
         except Exception as e:
-            raise ValueError(f"Invalid base64 for {label}: {e}")
+            raise ValueError(f"Invalid base64 for {label}: {e}") from e
 
     try:
         full_body_bytes = _decode_image(full_body_image_base64, "full body image")

@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """REST API endpoint for the product fitting workflow (catalogue enrichment)."""
 
 import logging
@@ -7,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from mcp_server.product_enrichment.product_fitting.product_fitting_mcp import (
     run_product_fitting,
+    run_product_fitting_animation,
 )
 
 logger = logging.getLogger(__name__)
@@ -18,6 +33,8 @@ router = APIRouter(
 
 
 class ProductFittingRequest(BaseModel):
+    """Request schema for product fitting generation."""
+
     garment_images_base64: list[str] = Field(
         ..., description="List of base64-encoded garment product images"
     )
@@ -91,4 +108,31 @@ async def generate_fitting_pipeline(request: ProductFittingRequest) -> dict:
         raise HTTPException(status_code=422, detail=result["error"])
 
     logger.info(f"[REST product_fitting] Complete. Keys: {list(result.keys())}")
+    return result
+
+
+class ProductFittingVideoRequest(BaseModel):
+    """Request schema for product fitting video generation."""
+
+    front_image_base64: str = Field(..., description="Base64 front image")
+    back_image_base64: str | None = Field(default=None, description="Base64 back image")
+    framing: str = Field(default="full_body", description="Framing")
+    prompt: str = Field(default="", description="Custom prompt")
+
+
+@router.post("/generate-video")
+async def generate_video(request: ProductFittingVideoRequest) -> dict:
+    """Generate product fitting video."""
+    logger.info(
+        f"[REST product_fitting] Called /generate-video, framing={request.framing}"
+    )
+    result = await run_product_fitting_animation(
+        front_image_base64=request.front_image_base64,
+        back_image_base64=request.back_image_base64,
+        framing=request.framing,
+        number_of_videos=1,
+        prompt=request.prompt,
+    )
+    if result.get("error"):
+        raise HTTPException(status_code=422, detail=result["error"])
     return result

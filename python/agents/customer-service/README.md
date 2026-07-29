@@ -20,7 +20,7 @@ The key features of the Customer Service Agent include:
 
 ### Agent Architecture
 
-![Customer Service Agent Workflow](customer_service_workflow.png)
+![Customer Service Agent Workflow](customer_service_workflow.webp)
 
 The agent is built using a multi-modal architecture, combining text and video inputs to provide a rich and interactive experience. It mocks interactions with various tools and services, including a product catalog, inventory management, order processing, and appointment scheduling systems. The agent also utilizes a session management system to maintain context across interactions and personalize the customer experience.
 
@@ -82,19 +82,62 @@ The agent has access to the following tools:
 - `send_care_instructions(customer_id: str, plant_type: str, delivery_method: str) -> dict`: Sends plant care information.
 - `generate_qr_code(customer_id: str, discount_value: float, discount_type: str, expiration_days: int) -> dict`: Creates a discount QR code.
 
-## Setup and Installations
+## Setup and Installation
 
 ### Prerequisites
 
 - Python 3.10+
-- uv (for dependency management)
-- Google ADK SDK (installed via uv)
-- Google Cloud Project (for Vertex AI Gemini integration)
+- uv for dependency management and packaging
+  - See the official [uv website](https://docs.astral.sh/uv/) for installation.
 
-### Installation
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+
+## Google Agents CLI (recommended)
+
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to scaffold a production-ready project and choose your deployment target ([Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features.
+
+**Install the CLI** (one-time):
+
+```bash
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-customer-service` with your project name):
+
+```bash
+agents-cli create my-customer-service -a adk@customer-service
+```
+
+The Google Agents CLI will prompt you to select deployment options and set up your Google Cloud project.
+
+From your newly created project directory (e.g. `my-customer-service`), run:
+
+```bash
+cd my-customer-service
+uv sync --dev
+uv run adk run customer_service
+```
+
+For the web UI:
+
+```bash
+uv run adk web
+```
+
+Then select `customer_service` from the dropdown menu.
+
+---
+
+<details>
+<summary>Alternative: Local development (run from this sample repo)</summary>
+
+### Agent Setup
+
 1.  **Prerequisites:**
 
-    For the Agent Engine deployment steps, you will need
+    For the Agent Runtime deployment steps, you will need
     a Google Cloud Project. Once you have created your project,
     [install the Google Cloud SDK](https://cloud.google.com/sdk/docs/install).
     Then run the following command to authenticate with your project:
@@ -105,11 +148,6 @@ The agent has access to the following tools:
     the required APIs:
     ```bash
     gcloud services enable aiplatform.googleapis.com
-    ```
-
-    Install uv for dependency management:
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
     ```
 
 1.  Clone the repository:
@@ -139,10 +177,9 @@ The agent has access to the following tools:
     export GOOGLE_CLOUD_LOCATION=us-central1
     ```
 
-## Running the Agent
+### Running the Agent Locally
 
-You can run the agent using the ADK commant in your terminal.
-from the root project directory:
+You can run the agent using the ADK command in your terminal.
 
 1.  Run agent in CLI:
 
@@ -156,7 +193,77 @@ from the root project directory:
     ```
     Select the customer_service from the dropdown
 
-### Example Interaction
+### Evaluating the Agent
+
+Evaluation tests assess the overall performance and capabilities of the agent in a holistic manner.
+
+```bash
+uv sync --dev
+uv run pytest eval
+```
+
+### Unit Tests
+
+Unit tests focus on testing individual units or components of the code in isolation.
+
+```bash
+uv run pytest tests/unit
+```
+
+### Configuration
+
+You can find further configuration parameters in [customer_service/config.py](./customer_service/config.py). This incudes parameters such as agent name, app name and llm model used by the agent.
+
+### Deployment on Agent Runtime
+
+In order to inherit all dependencies of your agent you can build the wheel file of the agent and run the deployment.
+
+1.  **Build Customer Service Agent WHL file**
+
+    ```bash
+    uv build --wheel --out-dir deployment
+    ```
+
+1.  **Deploy the agent to agents engine**
+    It is important to run deploy.py from within deployment folder so paths are correct
+
+    ```bash
+    cd deployment
+    uv run python deploy.py
+    ```
+
+#### Testing deployment
+
+This code snippet is an example of how to test the deployed agent.
+
+```python
+import vertexai
+from customer_service.config import Config
+from vertexai.preview.reasoning_engines import AdkApp
+
+
+configs = Config()
+
+vertexai.init(
+    project="<GOOGLE_CLOUD_LOCATION_PROJECT_ID>",
+    location="<GOOGLE_CLOUD_LOCATION>"
+)
+
+# get the agent based on resource id
+agent_engine = vertexai.agent_engines.get('DEPLOYMENT_RESOURCE_NAME') # looks like this projects/PROJECT_ID/locations/LOCATION/reasoningEngines/REASONING_ENGINE_ID
+
+for event in remote_agent.stream_query(
+    user_id=USER_ID,
+    session_id=session["id"],
+    message="Hello!",
+):
+    print(event)
+
+```
+
+</details>
+
+## Example Interaction
 
 Here's a quick example of how a user might interact with the agent:
 
@@ -195,112 +302,6 @@ Yes I can see you Alex! Can you go ahead and point the camera at your plants so 
 **User**:
 Yes of course!
 ...
-
-## Evaluating the Agent
-
-Evaluation tests assess the overall performance and capabilities of the agent in a holistic manner.
-
-**Steps:**
-
-1.  **Run Evaluation Tests:**
-
-    ```bash
-    uv sync --dev
-    uv run pytest eval
-    ```
-
-    - This command executes all test files within the `eval` directory.
-
-## Unit Tests
-
-Unit tests focus on testing individual units or components of the code in isolation.
-
-**Steps:**
-
-1.  **Run Unit Tests:**
-
-    ```bash
-    uv run pytest tests/unit
-    ```
-
-    - This command executes all test files within the `tests/unit` directory.
-
-## Configuration
-
-You can find further configuration parameters in [customer_service/config.py](./customer_service/config.py). This incudes parameters such as agent name, app name and llm model used by the agent.
-
-## Deployment on Google Agent Engine
-
-In order to inherit all dependencies of your agent you can build the wheel file of the agent and run the deployment.
-
-1.  **Build Customer Service Agent WHL file**
-
-    ```bash
-    uv build --wheel --out-dir deployment
-    ```
-
-1.  **Deploy the agent to agents engine**
-    It is important to run deploy.py from within deployment folder so paths are correct
-
-    ```bash
-    cd deployment
-    uv run python deploy.py
-    ```
-
-### Testing deployment
-
-This code snippet is an example of how to test the deployed agent.
-
-```python
-import vertexai
-from customer_service.config import Config
-from vertexai.preview.reasoning_engines import AdkApp
-
-
-configs = Config()
-
-vertexai.init(
-    project="<GOOGLE_CLOUD_LOCATION_PROJECT_ID>",
-    location="<GOOGLE_CLOUD_LOCATION>"
-)
-
-# get the agent based on resource id
-agent_engine = vertexai.agent_engines.get('DEPLOYMENT_RESOURCE_NAME') # looks like this projects/PROJECT_ID/locations/LOCATION/reasoningEngines/REASONING_ENGINE_ID
-
-for event in remote_agent.stream_query(
-    user_id=USER_ID,
-    session_id=session["id"],
-    message="Hello!",
-):
-    print(event)
-
-```
-
-### Alternative: Using Agent Starter Pack
-
-You can also use the [Agent Starter Pack](https://goo.gle/agent-starter-pack) to create a production-ready version of this agent with additional deployment options:
-
-```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate # On Windows: .venv\Scripts\activate
-
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-customer-service -a adk@customer-service
-```
-
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
-
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and set up your project with a single command:
-```bash
-uvx agent-starter-pack create my-customer-service -a adk@customer-service
-```
-This command handles creating the project without needing to pre-install the package into a virtual environment.
-
-</details>
-
-The starter pack will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.
 
 ## Disclaimer
 

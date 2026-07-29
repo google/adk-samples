@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Shared utilities for Gemini text generation and embeddings.
-"""
+"""Shared utilities for Gemini text generation and embeddings."""
 
 # Standard library imports
 import os
@@ -40,8 +38,7 @@ def generate_gemini(
     model="gemini-2.5-flash",
     video_metadata=None,
 ):
-    """
-    Generate text content using Gemini.
+    """Generate text content using Gemini.
 
     Args:
         text_images_pieces: List of text strings, image bytes, or GCS paths
@@ -54,6 +51,7 @@ def generate_gemini(
 
     Returns:
         str: Generated text response (stripped)
+
     """
     parts = [get_part(x, video_metadata=video_metadata) for x in text_images_pieces]
     contents = [types.Content(role="user", parts=parts)]
@@ -80,8 +78,7 @@ def embed_gemini(
     client,
     model=None,
 ):
-    """
-    Generate embeddings using Gemini embedding models.
+    """Generate embeddings using Gemini embedding models.
 
     Args:
         content_pieces: List of text strings, image bytes, or GCS paths
@@ -91,6 +88,7 @@ def embed_gemini(
 
     Returns:
         np.ndarray: Embedding vector as float32 numpy array
+
     """
     if model is None:
         model = os.getenv("MULTIMODAL_EMBEDDING_MODEL", "gemini-embedding-2-preview")

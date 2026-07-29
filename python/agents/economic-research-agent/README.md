@@ -1,11 +1,11 @@
 # 🧠 Economic Research Agent (ERA)
 
-[![Level 3 Maturity](https://img.shields.io/badge/Maturity-Level%203%20Structural-blueviolet)](https://github.com/GoogleCloudPlatform/agent-starter-pack)
-[![Framework-Atomic Agents](https://img.shields.io/badge/Framework-Atomic%20Agents-blue)](https://github.com/GoogleCloudPlatform/agent-starter-pack)
+[![Level 3 Maturity](https://img.shields.io/badge/Maturity-Level%203%20Structural-blueviolet)](https://github.com/google/agents-cli)
+[![Framework-Atomic Agents](https://img.shields.io/badge/Framework-Atomic%20Agents-blue)](https://github.com/google/agents-cli)
 [![ADK-Enabled](https://img.shields.io/badge/ADK-v2.0-green)](https://github.com/google/adk)
 [![Live-API](https://img.shields.io/badge/Live--API-Grounded-orange)](#)
 
-An enterprise-grade, **Multi-Agent intelligence** for high-fidelity regional economic analysis, labor market evaluation, and cross-industry site selection. Upgraded to **Vertex AI Agent Engine (ADK 2.0 / AdkApp)** with a 100% Live-API grounded architecture and **Zero LangChain/LangGraph dependencies** for massive speed-up.
+An enterprise-grade, **Multi-Agent intelligence** for high-fidelity regional economic analysis, labor market evaluation, and cross-industry site selection. Upgraded to **Agent Runtime (ADK 2.0 / AdkApp)** with a 100% Live-API grounded architecture and **Zero LangChain/LangGraph dependencies** for massive speed-up.
 
 ---
 
@@ -47,7 +47,15 @@ The **Economic Research Agent (ERA)** is a production-grade site-selection and m
 | **EIA** | "Compare industrial electricity rates in Texas vs. Ohio for a data center." | Operational Utility Benchmarking |
 | **Register** | "Are there any recent regulatory notices regarding semiconductors in Texas?" | Live Regulatory Drift & Compliance |
 | **Tax F.** | "What are the corporate income tax brackets for North Carolina in 2024?" | Fiscal Competitiveness |
+| **Workforce** | "Analyze the workforce AI exposure and automation potential for Customer Service Representatives vs. Software Developers." | AI Workforce Adaptation Strategy |
+| **MLS Sourcing** | "Find multifamily investment properties in Columbus, OH and estimate their Cap Rates using HUD rents." | Real Estate Sourcing & Yield Yields |
+| **USPS Cross.** | "Find the county FIPS code for ZIP code 78702 using USPS crosswalk." | Dynamic ZIP-to-FIPS Lookup |
+| **CHAS** | "What is the percentage of cost-burdened households in Travis County, TX (FIPS 48453) using CHAS data?" | Regional Housing Problems & Supply Burden |
+| **Labor Shifts** | "Compare Austin and Columbus for AI-driven labor market disruption and forecast their 3-year displacement outlook." | Labor Market Disruption Forecasting |
 | **Combined** | "Create a Metro Matrix comparing Denver and Seattle for a new Tech Hub." | 360-Degree Site Selection (Level 3) |
+
+
+
 
 ### 📡 Consultative Capabilities
 
@@ -70,11 +78,22 @@ The **Economic Research Agent (ERA)** is a production-grade site-selection and m
 - **Relocation COLA**: Precise cost-of-living benchmarking for talent retention strategy.
 - **Demographic Depth**: Hyper-localized education and age-bucket analysis (Census ACS).
 
+#### 🤖 AI Labor Exposure & MLS Investment Sourcing (New!)
+- **AI Task Exposure & Automation Risk**: Maps job categories against O*NET tasks to determine displacement risk (automation) vs. augmentation support potential.
+- **MLS Sourcing & Cap Rate Calculation**: Fetches active property listings from MLS data and correlates them with local HUD FMR rents to calculate Estimated Cap Rates and price-to-rent yield ratios.
+
+#### 🧮 Quantitative Decision-Support & Econometrics (New!)
+- **Isolated Econometrics Sandbox (`run_econometric_regression`)**: Executes formal OLS regressions, Pearson/Spearman correlations, and ADF stationarity tests on live vectors in a secure Python environment.
+- **Acquisitions Deal Underwriting (`underwrite_deal_leverage`)**: Models compound real estate amortization, Net Operating Income (NOI), Debt Service Coverage Ratio (DSCR), and Debt Yield tables from HUD/MLS inputs.
+- **Location Scorecard Generator (`generate_location_scorecard`)**: Normalizes and scores candidate states based on weighted criteria (corporate tax, electricity cost, wages).
+- **Employee Relocation Estimator (`estimate_employee_relocation`)**: Compares state income tax brackets and HUD FMR rents between counties to project net disposable income changes for relocating talent.
+- **FRED Series Search (`search_macro_series`)**: Maps semantic keywords directly to valid FRED Series IDs to prevent lookup errors.
+
 ---
 
 ## B. Architecture Visuals
 
-![ERA Architecture](economic_research_agent_architecture.png)
+![ERA Architecture](economic_research_agent_architecture.webp)
 
 ```mermaid
 graph TD
@@ -153,30 +172,24 @@ Before deploying to the Vertex AI Reasoning Engine, ensure your local environmen
    gcloud auth application-default login
    ```
 
-### 📦 Using Agent Starter Pack (Recommended)
+### 📦 Using Google Agents CLI (Recommended)
 
-We highly recommend setting up and deploying this agent using the [Agent Starter Pack (ASP)](https://goo.gle/agent-starter-pack). ASP provides a production-ready framework that includes:
+We highly recommend setting up and deploying this agent using the [Google Agents CLI](https://github.com/google/agents-cli). Google Agents CLI provides a production-ready framework that includes:
 - **Automated CI/CD Pipelines**: Pre-configured GitHub Actions for streamlined Vertex AI deployments.
 - **Standardized Structure**: Adheres to Google Cloud best practices for modular agent repositories.
 - **Interactive CLI Setup**: Guides you through provisioning staging buckets and Vertex AI resources automatically.
 
-```bash
-# Create and activate a virtual environment
-python -m venv .venv && source .venv/bin/activate
+**Install the CLI** (one-time):
 
-# Install the starter pack and create your project
-pip install --upgrade agent-starter-pack
-agent-starter-pack create my-economic-research-agent -a adk@economic-research-agent
+```bash
+uvx google-agents-cli setup
 ```
 
-<details>
-<summary>⚡️ Alternative: Using uv</summary>
+**Create the project from this sample** (replace `my-economic-research-agent` with your project name):
 
-If you have [`uv`](https://github.com/astral-sh/uv) installed, you can create and setup your project with a single command:
 ```bash
-uvx agent-starter-pack create my-economic-research-agent -a adk@economic-research-agent
+agents-cli create my-economic-research-agent -a adk@economic-research-agent
 ```
-</details>
 
 ### 🚀 Running the Agent
 

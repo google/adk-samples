@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Custom template generation for glasses commercials."""
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -21,8 +22,10 @@ from workflows.shared.llm_utils import get_generate_content_config
 
 
 class StructuredPrompt(BaseModel):
+    """Structured prompt schema for glasses commercials."""
+
     subject: str = Field(
-        description="The description of the model appearance. Be specific on gender, optional on ethnicity and include details about the face traits, the hair and the model clothes. Use the following template: A beautiful [gender] model is wearing the same [acccurate glasses description up to 10 words] [eyeglasses|sunglasses] as in the picture. [She|He] [Appearance and clothing description]. If the user specify any characteristics of the model, for instance appearance or clothes, these have the preference with respect to what you see in the image; in this case enhance the user input. Return up to three sentences."
+        description="The description of the model appearance. Be specific on gender, optional on ethnicity and include details about the face traits, the hair and the model clothes. Use the following template: A beautiful [gender] model is wearing the same [accurate glasses description up to 10 words] [eyeglasses|sunglasses] as in the picture. [She|He] [Appearance and clothing description]. If the user specify any characteristics of the model, for instance appearance or clothes, these have the preference with respect to what you see in the image; in this case enhance the user input. Return up to three sentences."
     )
     action: str = Field(
         description="The action description of what the model is doing. Use your expertise in commercials to comeup with amazing expressions and actions or poses."
@@ -43,7 +46,7 @@ class StructuredPrompt(BaseModel):
         description="The lighting settings. If nothing is specified in the text prompt, always return: 'Uniform lighting and no reflection on the (eyeglasses|sunglasses) lenses.'. Use eyeglasses or sunglasses based on the classification of the images."
     )
     custom_field: str | None = Field(
-        description="A custom field that we want to generate using the existing contexual information of the field itself and the prompt draft text. If the field contains instructions from the user on how to generate the field itself, follow them; if it contains a draft from the user improve it. Return None if no custom field is provided in input."
+        description="A custom field that we want to generate using the existing contextual information of the field itself and the prompt draft text. If the field contains instructions from the user on how to generate the field itself, follow them; if it contains a draft from the user improve it. Return None if no custom field is provided in input."
     )
 
 
@@ -54,9 +57,7 @@ def generate_custom_template(
     model_image_bytes: bytes,
     product_image_bytes: bytes,
 ) -> dict:
-    """
-    Generates a structured prompt for glasses commercials using Gemini.
-    """
+    """Generate a structured prompt for glasses commercials using Gemini."""
     system_prompt = """You are an expert of glasses and video director. You have run glasses commercials for your whole life.
 Your role is to create clear and well written structured prompt to define the next glasses commercial.
 The user is going to send a text draft that you need to improve and extend.
@@ -65,7 +66,7 @@ Your output should be a valid JSON that follows the schema provided.
 """
 
     user_prompt = """Create the structured prompt given my text draft and the images in input.
-If some information are not provided withing the draft, return some fields that make sense based on the context provided. If some information are very general like: 'an asian woman', extend this description according to the JSON schema field definition.
+If some information are not provided within the draft, return some fields that make sense based on the context provided. If some information are very general like: 'an asian woman', extend this description according to the JSON schema field definition.
 The following images are useful to further customize the prompt and to understand if we have sunglasses or eyeglasses in input. Here are the images:\n"""
 
     custom_field_dict_text = ""
@@ -101,15 +102,17 @@ The following images are useful to further customize the prompt and to understan
             config=config,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate prompt: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate prompt: {e}"
+        ) from e
 
 
 def generate_animation_prompt(
-    genai_client, text_prompt: str, model_image_bytes: bytes = None
+    genai_client, text_prompt: str, model_image_bytes: bytes | None = None
 ) -> str:
-    """
-    Enhances an animation prompt using AI expertise in video and glasses commercials.
-    Returns a plain text enhanced prompt.
+    """Enhance an animation prompt using AI expertise in video and glasses commercials.
+
+    Return a plain text enhanced prompt.
     """
     system_prompt = """You are an expert copy writer and editor.
 Your role is to enhance and improve the user's prompt about generating an animation from a frame.
@@ -145,4 +148,4 @@ Original prompt: {text_prompt}"""
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate animation prompt: {e}"
-        )
+        ) from e

@@ -241,6 +241,6 @@ class TestPickImagesByOrderedBestSide:
         result = pick_images_by_ordered_best_side(images_classified)
 
         # Find the right image in result
-        right_img = [r for r in result if r[1] == "right"][0]
+        right_img = next(r for r in result if r[1] == "right")
         # Should be the all_red one (more complete)
         assert right_img[0] == all_red_image_bytes

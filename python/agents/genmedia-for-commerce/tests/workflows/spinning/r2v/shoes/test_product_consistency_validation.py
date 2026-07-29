@@ -161,7 +161,7 @@ class TestForwardFillLabels:
         labels = ["left", "", "right"]
         indices = [0, 10, 20]
 
-        filled_labels, filled_indices = forward_fill_labels(labels, indices)
+        filled_labels, _filled_indices = forward_fill_labels(labels, indices)
 
         assert filled_labels == ["left", "left", "right"]
 
@@ -181,7 +181,7 @@ class TestMatchFramesToReferences:
 
         assert len(result) == 3
         # Check that matches are correct
-        right_match = [m for m in result if m["frame_label"] == "right"][0]
+        right_match = next(m for m in result if m["frame_label"] == "right")
         assert right_match["reference_index"] == 0
 
     def test_skips_unmatched_labels(self):

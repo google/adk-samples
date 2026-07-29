@@ -106,7 +106,7 @@ class TestUploadBytesToGcs:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_sets_content_type(self, mock_get_client, mock_storage_client):
         """Should set content type when provided."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, blob = mock_storage_client
         mock_get_client.return_value = client
 
         upload_bytes_to_gcs(
@@ -121,7 +121,7 @@ class TestUploadBytesToGcs:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_passes_project_id(self, mock_get_client, mock_storage_client):
         """Should pass project ID to client."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
 
         upload_bytes_to_gcs(
@@ -136,7 +136,7 @@ class TestUploadBytesToGcs:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_returns_gcs_uri(self, mock_get_client, mock_storage_client):
         """Should return correct GCS URI."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
 
         result = upload_bytes_to_gcs(
@@ -154,7 +154,7 @@ class TestUploadFileToGcs:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_uploads_file(self, mock_get_client, mock_storage_client):
         """Should upload file from path."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, blob = mock_storage_client
         mock_get_client.return_value = client
 
         # Create temp file
@@ -177,7 +177,7 @@ class TestUploadFileToGcs:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_raises_on_missing_file(self, mock_get_client, mock_storage_client):
         """Should raise ValueError for non-existent file."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
 
         with pytest.raises(ValueError, match="Invalid source file"):
@@ -190,7 +190,7 @@ class TestUploadFileToGcs:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_raises_on_directory(self, mock_get_client, mock_storage_client):
         """Should raise ValueError when source is a directory."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -204,7 +204,7 @@ class TestUploadFileToGcs:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_sets_content_type(self, mock_get_client, mock_storage_client):
         """Should set content type when provided."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, blob = mock_storage_client
         mock_get_client.return_value = client
 
         with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
@@ -250,7 +250,7 @@ class TestDownloadFileFromGcs:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_creates_parent_directories(self, mock_get_client, mock_storage_client):
         """Should create parent directories if they don't exist."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -268,7 +268,7 @@ class TestDownloadFileFromGcs:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_passes_project_id(self, mock_get_client, mock_storage_client):
         """Should pass project ID to client."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -297,7 +297,7 @@ class TestUploadFolderToGcs:
         temp_folder_with_files,
     ):
         """Should upload all files in folder."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
         mock_upload_many.return_value = [
             None,
@@ -306,7 +306,7 @@ class TestUploadFolderToGcs:
             None,
         ]  # Success for each file
 
-        temp_dir, files = temp_folder_with_files
+        temp_dir, _files = temp_folder_with_files
 
         result = upload_folder_to_gcs(
             bucket_name="test-bucket",
@@ -327,13 +327,13 @@ class TestUploadFolderToGcs:
         temp_folder_with_files,
     ):
         """Should filter files by extension."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
         mock_upload_many.return_value = [None, None]  # Success for txt files only
 
-        temp_dir, files = temp_folder_with_files
+        temp_dir, _files = temp_folder_with_files
 
-        result = upload_folder_to_gcs(
+        upload_folder_to_gcs(
             bucket_name="test-bucket",
             source_folder_path=temp_dir,
             include_extensions=[".txt"],
@@ -353,11 +353,11 @@ class TestUploadFolderToGcs:
         temp_folder_with_files,
     ):
         """Should exclude files by extension."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
         mock_upload_many.return_value = [None, None, None]
 
-        temp_dir, files = temp_folder_with_files
+        temp_dir, _files = temp_folder_with_files
 
         upload_folder_to_gcs(
             bucket_name="test-bucket",
@@ -392,7 +392,7 @@ class TestUploadFolderToGcs:
         mock_get_client.return_value = client
         mock_upload_many.return_value = [None, None, None, None]
 
-        temp_dir, files = temp_folder_with_files
+        temp_dir, _files = temp_folder_with_files
 
         result = upload_folder_to_gcs(
             bucket_name="test-bucket",
@@ -432,7 +432,7 @@ class TestUploadFolderToGcs:
         self, mock_get_client, mock_upload_many, mock_storage_client
     ):
         """Should return empty list for empty folder."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -454,11 +454,11 @@ class TestUploadFolderToGcs:
         temp_folder_with_files,
     ):
         """Should raise exception when upload fails."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
         mock_upload_many.return_value = [None, Exception("Upload failed"), None, None]
 
-        temp_dir, files = temp_folder_with_files
+        temp_dir, _files = temp_folder_with_files
 
         with pytest.raises(Exception, match="Failed to upload"):
             upload_folder_to_gcs(
@@ -476,11 +476,11 @@ class TestUploadFolderToGcs:
         temp_folder_with_files,
     ):
         """Should pass max_workers to transfer manager."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, _blob = mock_storage_client
         mock_get_client.return_value = client
         mock_upload_many.return_value = [None, None, None, None]
 
-        temp_dir, files = temp_folder_with_files
+        temp_dir, _files = temp_folder_with_files
 
         upload_folder_to_gcs(
             bucket_name="test-bucket",
@@ -498,7 +498,7 @@ class TestUploadBytesToGcsIntegration:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_upload_image_bytes(self, mock_get_client, mock_storage_client):
         """Should upload PNG image bytes correctly."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, blob = mock_storage_client
         mock_get_client.return_value = client
 
         # Create actual PNG bytes
@@ -525,7 +525,7 @@ class TestUploadBytesToGcsIntegration:
     @patch("workflows.shared.gcs_utils.get_storage_client")
     def test_upload_video_bytes(self, mock_get_client, mock_storage_client):
         """Should upload video bytes correctly."""
-        client, bucket, blob = mock_storage_client
+        client, _bucket, blob = mock_storage_client
         mock_get_client.return_value = client
 
         video_bytes = b"fake_video_mp4_content"

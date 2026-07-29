@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Glasses VTO image generation.
+
+Provides functions to preprocess images, describe glasses, and generate
+virtual try-on images for glasses using a two-step approach.
+"""
+
 import logging
 
 from workflows.shared.gemini import generate_gemini
@@ -69,14 +75,14 @@ RULES:
 
 
 def preprocess_face_image(client, img_bytes):
-    """
-    Preprocess face image: crop face, upscale, then remove background.
+    """Preprocess face image: crop face, upscale, then remove background.
 
     Returns:
         tuple: (reference_face, preprocessed_face)
             - reference_face: Cropped and upscaled face (for evaluation)
             - preprocessed_face: Face with background removed (for generation)
             Returns (None, None) if no face is detected.
+
     """
     try:
         logger.info("[Glasses VTO Face Preprocessing] Cropping face...")
@@ -105,11 +111,11 @@ def preprocess_face_image(client, img_bytes):
 
 
 def preprocess_glasses_image(client, img_bytes):
-    """
-    Preprocess glasses image: remove background to isolate the product.
+    """Preprocess glasses image: remove background to isolate the product.
 
     Returns:
         bytes: The preprocessed glasses image with background removed.
+
     """
     try:
         logger.info("[Glasses VTO Product Preprocessing] Removing background...")
@@ -129,13 +135,14 @@ def preprocess_glasses_image(client, img_bytes):
 
 
 def describe_glasses(client, glasses_image_bytes: bytes) -> str | None:
-    """
-    Use Gemini vision to generate a short product description of the glasses.
+    """Use Gemini vision to generate a short product description of the glasses.
+
     Captures brand name, frame shape, frame color, lens type, and any visible
     text/logos so that the generation model can reproduce them.
 
     Returns:
         A short description string, or None on failure.
+
     """
     prompt = (
         "Look carefully at this eyewear product image. Your job is to describe it for an image generation model that needs to reproduce it exactly.\n\n"
@@ -182,20 +189,21 @@ def create_frame_nano(
     reference_face,
     glasses_description=None,
 ):
-    """
-    Generate a glasses VTO image using 2-step approach with face correction.
+    """Generate a glasses VTO image using 2-step approach with face correction.
 
     Args:
         client: Gemini client instance
         glasses_images: List of glasses image bytes
         preprocessed_face: Preprocessed face (bg removed) for generation
         reference_face: Original reference face for correction step
+        glasses_description: Optional text description of the glasses
 
     Returns:
         dict: {
             "step1_image": bytes,
             "step2_image": bytes | None,
         }
+
     """
     logger.info("[Glasses VTO] Starting generation (2-step)")
 
@@ -231,7 +239,8 @@ def create_frame_nano(
     logger.info("[Glasses VTO] Step 1 complete")
 
     logger.info("[Glasses VTO] Step 2: Face correction...")
-    correction_message = user_message_step1 + [
+    correction_message = [
+        *user_message_step1,
         step1_result,
         "No, the face is different. Use this face:",
         reference_face,
@@ -260,8 +269,7 @@ def create_frame_nano(
 
 
 def evaluate_vto_image(vto_image_bytes, reference_face_bytes):
-    """
-    Evaluate a generated VTO image against reference face using InsightFace.
+    """Evaluate a generated VTO image against reference face using InsightFace.
 
     Returns:
         dict: {
@@ -270,6 +278,7 @@ def evaluate_vto_image(vto_image_bytes, reference_face_bytes):
             "model": str,
             "face_detected": bool
         }
+
     """
     logger.info("[Glasses VTO] Evaluating with InsightFace")
     try:
@@ -294,8 +303,7 @@ def evaluate_vto_image(vto_image_bytes, reference_face_bytes):
 
 
 def enhance_photo_nano(client, image_bytes, view_type="front"):
-    """
-    Enhance a photo to studio quality using Gemini image generation.
+    """Enhance a photo to studio quality using Gemini image generation.
 
     Args:
         client: Gemini client instance
@@ -304,6 +312,7 @@ def enhance_photo_nano(client, image_bytes, view_type="front"):
 
     Returns:
         bytes: Enhanced image data, or None if generation fails
+
     """
     if view_type == "side" or view_type == "model_side":
         prompt = """A 4K studio-quality image shows the subject's side profile, facing toward the right or left. The subject is not wearing any glasses and maintains a neutral, natural expression. The lighting is bright and even, highlighting the facial contours and casting no shadows. The background is a simple, clean white, and the photograph is exceptionally sharp, free of any motion blur. When generating the image, Keep the person's hair and face intact."""
@@ -316,8 +325,7 @@ def enhance_photo_nano(client, image_bytes, view_type="front"):
 
 
 def edit_frame_nano(client, prompt, generated_image):
-    """
-    Edit a generated image using Gemini image generation.
+    """Edit a generated image using Gemini image generation.
 
     Args:
         client: Gemini client instance
@@ -326,6 +334,7 @@ def edit_frame_nano(client, prompt, generated_image):
 
     Returns:
         bytes: Edited image data, or None if generation fails
+
     """
     parts = [prompt]
     parts.extend(["\nHere is the image to modify:\n", generated_image])

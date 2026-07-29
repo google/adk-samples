@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Utilities for Interpolation mode video generation.
+"""Utilities for Interpolation mode video generation.
+
 Generates videos by interpolating between consecutive frames.
 """
 
@@ -33,10 +33,9 @@ from workflows.shared.video_utils import (
 def generate_generic_product_title(
     client,
     gemini_model: str = "gemini-2.5-flash-lite",
-    all_images_bytes: list[bytes] = None,
+    all_images_bytes: list[bytes] | None = None,
 ) -> str:
-    """
-    Generate a very generic product title from images.
+    """Generate a very generic product title from images.
 
     Args:
         client: Gemini client for generation
@@ -45,6 +44,7 @@ def generate_generic_product_title(
 
     Returns:
         str: Generic product title (e.g., "a smartphone", "a t-shirt", "a discovery SUV")
+
     """
     system_prompt = """You are an expert in product categorization. Your role is to return a very generic, short title for the product you see in the images.
 
@@ -86,10 +86,9 @@ Return ONLY the generic title starting with "a" or "an", nothing else.
 def get_interpolation_prompt(
     client,
     gemini_model: str = "gemini-2.5-flash-lite",
-    all_images_bytes: list[bytes] = None,
+    all_images_bytes: list[bytes] | None = None,
 ):
-    """
-    Generates the prompt used for interpolation video generation with a generic product title.
+    """Generate the prompt used for interpolation video generation with a generic product title.
 
     Args:
         client: Gemini client for title generation
@@ -98,6 +97,7 @@ def get_interpolation_prompt(
 
     Returns:
         str: Complete interpolation prompt with generated product title
+
     """
     product_title = generate_generic_product_title(
         client, gemini_model=gemini_model, all_images_bytes=all_images_bytes
@@ -111,8 +111,7 @@ def get_interpolation_prompt(
 
 
 def generate_veo(client, start_img, end_img, veo_prompt):
-    """
-    Generate video using Veo interpolation mode.
+    """Generate video using Veo interpolation mode.
 
     Creates a video that transitions smoothly from start_img to end_img
     using Veo's interpolation capabilities.
@@ -125,6 +124,7 @@ def generate_veo(client, start_img, end_img, veo_prompt):
 
     Returns:
         bytes: Generated video as bytes, or None if generation fails
+
     """
     videos = generate_veo_shared(
         client=client,
@@ -144,8 +144,7 @@ def post_process_single_video(
     num_frames_for_similarity=15,
     is_first_video=False,
 ):
-    """
-    Post-process a generated video by trimming to the most similar end frame.
+    """Post-process a generated video by trimming to the most similar end frame.
 
     Finds the frame most similar to the target end image and trims the video
     at that point. Optionally removes the first frame for seamless concatenation.
@@ -163,6 +162,7 @@ def post_process_single_video(
 
     Raises:
         ValueError: If no frames could be extracted from the video
+
     """
     try:
         frames_list = extract_frames_as_bytes_list(video_bytes)
@@ -202,8 +202,7 @@ def process_single_video(
     num_frames_for_similarity=15,
     background_color: str = "#FFFFFF",
 ):
-    """
-    Generate and post-process a single video segment.
+    """Generate and post-process a single video segment.
 
     Combines video generation and post-processing into a single operation.
     Used for creating individual segments in a multi-segment video pipeline.
@@ -220,6 +219,7 @@ def process_single_video(
 
     Returns:
         bytes: Processed video segment as MP4 bytes
+
     """
     veo_video = generate_veo(client, start_image, end_image, prompt)
     video = post_process_single_video(

@@ -34,8 +34,8 @@ def get_https(uri: str) -> str:
 
 
 def get_storage_client(project_id: str | None = None) -> storage.Client:
-    """
-    Returns a standard GCS client.
+    """Return a standard GCS client.
+
     Transfer Manager handles connection pooling internally, so custom adapters are rarely needed.
     """
     return storage.Client(project=project_id)
@@ -50,8 +50,7 @@ def upload_folder_to_gcs(
     exclude_extensions: list[str] | None = None,
     max_workers: int = 50,
 ) -> list[str]:
-    """
-    Upload an entire folder to GCS using the High-Performance Transfer Manager.
+    """Upload an entire folder to GCS using the High-Performance Transfer Manager.
 
     Args:
         bucket_name: Name of the GCS bucket
@@ -64,6 +63,7 @@ def upload_folder_to_gcs(
 
     Returns:
         List of GCS URIs for all uploaded files.
+
     """
     source_path = Path(source_folder_path)
 
@@ -111,7 +111,7 @@ def upload_folder_to_gcs(
 
     # Create blob objects with explicit names
     blob_file_pairs = []
-    for file_path, blob_name in zip(file_paths, blob_names):
+    for file_path, blob_name in zip(file_paths, blob_names, strict=False):
         blob = bucket.blob(blob_name)
         blob_file_pairs.append((file_path, blob))
 
@@ -124,7 +124,7 @@ def upload_folder_to_gcs(
     uploaded_uris = []
     errors = []
 
-    for (file_path, blob), result in zip(blob_file_pairs, results):
+    for (file_path, blob), result in zip(blob_file_pairs, results, strict=False):
         if isinstance(result, Exception):
             errors.append(f"Failed to upload {file_path}: {result}")
         else:
@@ -214,11 +214,10 @@ def save_and_upload_to_gcs(
     bucket_name: str,
     gcs_destination_prefix: str = "shoe_spinning_outputs",
     project_id: str | None = None,
-    pre_sampled_frames: list[bytes] = None,
+    pre_sampled_frames: list[bytes] | None = None,
     image_format: str = "png",
 ) -> list[str]:
-    """
-    Orchestrates saving video results locally and uploading to GCS.
+    """Orchestrates saving video results locally and uploading to GCS.
 
     Args:
         result: Dictionary containing video and clip data
@@ -227,9 +226,11 @@ def save_and_upload_to_gcs(
         gcs_destination_prefix: GCS prefix path
         project_id: Optional GCP project ID
         pre_sampled_frames: Pre-extracted and processed frames (REQUIRED - no extraction done here)
+        image_format: Image format for saved frames (default: "png")
 
     Returns:
         List of uploaded file URIs
+
     """
     if pre_sampled_frames is None:
         raise ValueError(
@@ -381,7 +382,7 @@ def save_and_upload_to_gcs(
 def _build_manifest(
     product_id, bucket, prefix, result, clips_meta, pre_sampled_frames, temp_dir
 ):
-    """Helper to construct the complicated manifest dictionary."""
+    """Construct the complicated manifest dictionary."""
     base_uri = f"gs://{bucket}/{prefix}/"
     manifest = {
         "product_id": product_id,
@@ -398,7 +399,7 @@ def _build_manifest(
         "metadata": f"{base_uri}clips/clips_metadata.json",
     }
 
-    for clip, meta in zip(result["clips"], clips_meta):
+    for clip, meta in zip(result["clips"], clips_meta, strict=False):
         clip_name = f"{product_id}_clip_{clip['index']}"
         clip_base = f"{base_uri}clips/{clip_name}"
 
@@ -414,7 +415,11 @@ def _build_manifest(
         frame_map = {}
         if "sampled_frame_indices" in clip and "frame_classifications" in clip:
             frame_map = dict(
-                zip(clip["sampled_frame_indices"], clip["frame_classifications"])
+                zip(
+                    clip["sampled_frame_indices"],
+                    clip["frame_classifications"],
+                    strict=False,
+                )
             )
 
         for i in range(num_frames):

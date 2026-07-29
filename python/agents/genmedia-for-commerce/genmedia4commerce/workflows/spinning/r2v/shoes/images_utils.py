@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Image processing utilities for shoe spinning R2V."""
+
 # Standard library imports
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -29,8 +31,8 @@ logger = logging.getLogger(__name__)
 
 
 def detect_background_color(frame):
-    """
-    Detects the background color by sampling pixels from the borders of the frame.
+    """Detect the background color by sampling pixels from the borders of the frame.
+
     Returns the median color value (BGR format).
 
     Args:
@@ -38,6 +40,7 @@ def detect_background_color(frame):
 
     Returns:
         tuple: (B, G, R) color values
+
     """
     height, width = frame.shape[:2]
 
@@ -67,13 +70,14 @@ def detect_background_color(frame):
 
 
 def detect_product_bounds_from_frames(frames, sample_frames=30):
-    """
-    Analyzes a sample of frames to detect the actual product boundaries.
+    """Analyze a sample of frames to detect the actual product boundaries.
+
     Returns the bounding box that encompasses the product across all sampled frames.
 
     Args:
         frames: List of numpy arrays (decoded frames)
         sample_frames: Number of frames to sample for detection
+
     """
     if not frames:
         return None
@@ -139,9 +143,9 @@ def detect_product_bounds_from_frames(frames, sample_frames=30):
 
 
 def process_frames_to_target_size(frame_bytes_list, target_size=(1000, 1000)):
-    """
-    Processes a list of frame bytes, detects product boundaries, crops to maximize product size,
-    and returns the processed frames as a bytelist at the specified dimensions.
+    """Process a list of frame bytes, detect product boundaries, and crop to maximize product size.
+
+    Returns the processed frames as a bytelist at the specified dimensions.
 
     Args:
         frame_bytes_list: List of bytes objects, each representing an encoded frame (e.g., JPEG, PNG)
@@ -149,6 +153,7 @@ def process_frames_to_target_size(frame_bytes_list, target_size=(1000, 1000)):
 
     Returns:
         List of bytes objects representing the processed frames (encoded as PNG)
+
     """
     if not frame_bytes_list:
         logger.error("❌ Error: Empty frame list")
@@ -259,7 +264,18 @@ def process_frames_to_target_size(frame_bytes_list, target_size=(1000, 1000)):
 
 
 def classify_frames(sampled_frames, client, model, mode="normal"):
+    """Classify a list of sampled frames using parallel processing.
 
+    Args:
+        sampled_frames: List of sampled frame bytes.
+        client: Gemini client.
+        model: Model for classification.
+        mode: Classification mode. Default: "normal".
+
+    Returns:
+        List of classification labels.
+
+    """
     max_workers = min(20, len(sampled_frames))
     product_position_frames = [None] * len(sampled_frames)
 
@@ -279,15 +295,14 @@ def classify_frames(sampled_frames, client, model, mode="normal"):
 def sample_and_process_frames(
     frame_list: list[bytes],
     target_num_frames: int = 50,
-    target_size: tuple[int, int] = None,
-    initial_class: str = None,
-    reference_images: list[bytes] = None,
-    reference_labels: list[str] = None,
+    target_size: tuple[int, int] | None = None,
+    initial_class: str | None = None,
+    reference_images: list[bytes] | None = None,
+    reference_labels: list[str] | None = None,
     client=None,
     gemini_model=None,
 ) -> list[bytes]:
-    """
-    Sample frames evenly from a frame list and optionally resize them.
+    """Sample frames evenly from a frame list and optionally resize them.
 
     This utility avoids re-extracting frames from video when they're already available.
 
@@ -295,9 +310,15 @@ def sample_and_process_frames(
         frame_list: List of frame bytes (already extracted from video)
         target_num_frames: Number of frames to sample (default: 50)
         target_size: Optional target size as (width, height) to resize frames
+        initial_class: Optional initial class to start the video with.
+        reference_images: Optional list of reference image bytes.
+        reference_labels: Optional list of reference labels.
+        client: Optional client for classification.
+        gemini_model: Optional model for classification.
 
     Returns:
         List of sampled (and optionally resized) frame bytes
+
     """
     total_frames = len(frame_list)
 
@@ -327,7 +348,7 @@ def sample_and_process_frames(
             sampled_frames_initial_class = [
                 (idx, frame)
                 for idx, (frame, position) in enumerate(
-                    zip(sampled_frames, product_position)
+                    zip(sampled_frames, product_position, strict=True)
                 )
                 if position == initial_class
             ]
@@ -410,6 +431,16 @@ def sample_and_process_frames(
 
 
 def image_closure_selection(bytes_list, images_classes):
+    """Select images for closure classification based on desirable views.
+
+    Args:
+        bytes_list: List of image bytes.
+        images_classes: List of class labels for the images.
+
+    Returns:
+        List of selected image bytes.
+
+    """
     desirable_classifications = [
         "top_front",
         "front",

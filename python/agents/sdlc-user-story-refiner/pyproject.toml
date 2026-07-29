@@ -14,7 +14,7 @@ dependencies = [
     "pydantic>=2.10.6",
     "pydantic-settings>=2.7.1",
     "python-dotenv>=1.0.1",
-    "google-adk>=1.0.0",
+    "google-adk>=1.31.0",
     "sqlalchemy>=2.0.38",
     "google-cloud-spanner>=3.49.0",
 ]
@@ -23,7 +23,7 @@ dependencies = [
 dev = [
     "pytest>=8.3.2",
     "pytest-asyncio>=0.23.7",
-    "google-adk[eval]>=1.0.0",
+    "google-adk[eval]>=1.31.0",
     "nest-asyncio>=1.6.0",
     "agent-starter-pack>=0.14.1",
 ]
@@ -57,11 +57,7 @@ ignore = ["C901", "PLR0915"]
 known-first-party = ["app", "bidi_demo"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
-
-[tool.hatch.build.targets.wheel.shared-data]
-"app/static" = "share/bidi-demo/static"
-"app/.env" = "share/bidi-demo/.env.template"
+packages = ["sdlc_user_story_refiner"]
 
 [build-system]
 requires = ["hatchling"]
@@ -73,3 +69,7 @@ example_question = "I want to build a Slack integration for our notification sys
 
 [tool.agent-starter-pack.settings]
 agent_directory = "sdlc_user_story_refiner"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true

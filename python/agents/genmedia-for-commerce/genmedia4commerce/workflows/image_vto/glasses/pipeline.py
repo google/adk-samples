@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Core glasses VTO pipeline as an async generator.
+"""Core glasses VTO pipeline as an async generator.
 
 Follows the same pattern as the clothes VTO pipeline (clothes/pipeline.py).
 Yields results as SSE events for progressive display.
@@ -133,8 +132,7 @@ async def run_glasses_vto(
     glasses_images: list[bytes],
     num_variations: int = 3,
 ) -> AsyncGenerator[VTOResult, None]:
-    """
-    Run the full glasses VTO pipeline.  Yields results as each variation completes.
+    """Run the full glasses VTO pipeline.  Yields results as each variation completes.
 
     Yield order:
       1. A single VTOResult with status="reference_face"

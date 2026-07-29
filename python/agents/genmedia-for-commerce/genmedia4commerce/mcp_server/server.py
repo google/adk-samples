@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-GenMedia MCP Server.
+"""GenMedia MCP Server.
 
 Exposes each media generation workflow as an MCP tool.
 Can be run standalone via stdio or connected to by the ADK agent.
@@ -38,7 +37,7 @@ if genmedia_dir not in sys.path:
     sys.path.insert(0, genmedia_dir)
 
 # Load environment variables
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
 
 project_root = Path(__file__).parent.parent.parent
 config_path = Path(__file__).parent.parent / "config.env"
@@ -62,21 +61,21 @@ root_logger.addHandler(_console_handler)
 logger = logging.getLogger("mcp_server")
 logger.info("MCP server starting")
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP  # noqa: E402
 
-from mcp_server.image_vto.image_vto_mcp import run_image_vto
-from mcp_server.other.background_changer.background_changer_mcp import (
+from mcp_server.image_vto.image_vto_mcp import run_image_vto  # noqa: E402
+from mcp_server.other.background_changer.background_changer_mcp import (  # noqa: E402
     run_background_changer,
 )
 
 # Import all MCP tool functions
-from mcp_server.product_enrichment.product_fitting.product_fitting_mcp import (
+from mcp_server.product_enrichment.product_fitting.product_fitting_mcp import (  # noqa: E402
     run_product_fitting,
 )
-from mcp_server.shared.catalog.catalog_mcp import run_catalog_search
-from mcp_server.spinning.spinning_mcp import run_product_spinning
-from mcp_server.video_vto.clothes.clothes_mcp import run_animate_model_mcp
-from mcp_server.video_vto.video_vto_mcp import run_video_vto
+from mcp_server.shared.catalog.catalog_mcp import run_catalog_search  # noqa: E402
+from mcp_server.spinning.spinning_mcp import run_product_spinning  # noqa: E402
+from mcp_server.video_vto.clothes.clothes_mcp import run_animate_model_mcp  # noqa: E402
+from mcp_server.video_vto.video_vto_mcp import run_video_vto  # noqa: E402
 
 server = FastMCP(
     "genmedia-retail",
@@ -114,6 +113,7 @@ async def product_fitting(
 
     Returns:
         JSON string with front and back fitting results including base64 images.
+
     """
     import random
 
@@ -166,6 +166,7 @@ async def image_vto(
 
     Returns:
         JSON with best result: image_base64, scores, evaluation.
+
     """
     logger.info(
         f"[image_vto] Called with {len(product_images_base64)} images, is_glasses={is_glasses}"
@@ -219,6 +220,7 @@ async def video_vto(
 
     Returns:
         JSON with videos (base64), scores, and metadata.
+
     """
     logger.info(
         f"[video_vto] Called with {len(product_images_base64)} images, is_glasses={is_glasses}"
@@ -262,6 +264,7 @@ async def background_changer(
 
     Returns:
         JSON with best image_base64, evaluation score.
+
     """
     logger.info("[background_changer] Called")
     try:
@@ -310,6 +313,7 @@ async def product_spinning(
 
     Returns:
         JSON with video_base64 and metadata.
+
     """
     logger.info(
         f"[product_spinning] Called with {len(images_base64)} images, is_shoes={is_shoes}"
@@ -355,6 +359,7 @@ async def animate_model(
 
     Returns:
         JSON with videos (base64), scores, and filenames.
+
     """
     logger.info("[animate_model] Called")
     try:
@@ -387,6 +392,7 @@ async def catalog_search(
 
     Returns:
         JSON list of product data fields.
+
     """
     logger.info(f"[catalog_search] Query: {query}")
     try:

@@ -13,15 +13,14 @@
 # limitations under the License.
 
 import logging
+import os
 import sys
 
 from google import genai
 from google.cloud import storage
-from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ==============================================================================
-# Configuration Logic (Pydantic)
+# Configuration Logic (Direct Env Reading)
 # ==============================================================================
 
 # Configure logging
@@ -31,81 +30,35 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 
-
 def get_logger(name: str):
     """Returns a standard Python logger."""
     return logging.getLogger(name)
 
-
 log = get_logger("config")
 
-
-class AppConfig(BaseSettings):
-    google_cloud_project: str = Field(
-        default=None,
-        validation_alias=AliasChoices("GOOGLE_CLOUD_PROJECT", "GCP_PROJECT"),
-    )
-    google_cloud_location: str = Field(
-        default="us-central1",
-        validation_alias=AliasChoices("GOOGLE_CLOUD_LOCATION", "GCP_LOCATION"),
-    )
-    gemini_model_name: str = Field(
-        default="gemini-2.5-flash", alias="GEMINI_MODEL_NAME"
-    )
-    image_generation_model: str = Field(
-        default="imagen-3.0-generate-002", alias="IMAGE_GENERATION_MODEL"
-    )
-    google_cloud_project_number: str | None = None
-    gcp_staging_bucket: str | None = Field(
-        default=None, alias="GCP_STAGING_BUCKET"
-    )
-    default_template_uri: str | None = Field(
-        default=None, alias="DEFAULT_TEMPLATE_URI"
-    )
-    datastore_id: str | None = Field(default=None, alias="DATASTORE_ID")
-
-    enable_rag: bool = Field(default=False, alias="ENABLE_RAG")
-    enable_deep_research: bool = Field(
-        default=False, alias="ENABLE_DEEP_RESEARCH"
-    )
-    model_armor_template_id: str | None = Field(
-        default=None, alias="MODEL_ARMOR_TEMPLATE_ID"
-    )
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-        case_sensitive=False,
-    )
-
-
-# Initialize configuration
-try:
-    config = AppConfig()
-except Exception as e:
-    log.error(f"Configuration validation failed: {e}")
-    raise
-
-# Exported Config Variables
-PROJECT_ID = config.google_cloud_project
-PROJECT_NUMBER = config.google_cloud_project_number
-LOCATION = config.google_cloud_location
-ROOT_MODEL = config.gemini_model_name
-IMAGE_GENERATION_MODEL = config.image_generation_model
-ENABLE_RAG = config.enable_rag
-ENABLE_DEEP_RESEARCH = config.enable_deep_research
-MODEL_ARMOR_TEMPLATE_ID = config.model_armor_template_id
-DATASTORE_ID = config.datastore_id
-DEFAULT_TEMPLATE_URI = config.default_template_uri
+# Exported Config Variables (Directly read from environment)
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT") 
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-east1") 
+ROOT_MODEL = os.getenv("GEMINI_MODEL_NAME","gemini-2.5-flash")
+IMAGE_GENERATION_MODEL = os.getenv("IMAGE_GENERATION_MODEL", "imagen-3.0-generate-002")
+PROJECT_NUMBER = os.getenv("GOOGLE_CLOUD_PROJECT_NUMBER","")
+DATASTORE_ID = os.getenv("DATASTORE_ID","")
+DEFAULT_TEMPLATE_URI = os.getenv("DEFAULT_TEMPLATE_URI", "")
+ENABLE_RAG = os.getenv("ENABLE_RAG", "false")
+ENABLE_DEEP_RESEARCH = os.getenv("ENABLE_DEEP_RESEARCH", "false")
+MODEL_ARMOR_TEMPLATE_ID = os.getenv("MODEL_ARMOR_TEMPLATE_ID")
 
 # Format GCS Bucket Name
-GCS_BUCKET_NAME = config.gcp_staging_bucket
+GCS_BUCKET_NAME = os.getenv("GCP_STAGING_BUCKET",f"{GOOGLE_CLOUD_PROJECT}-staging-bucket")
+
+    
 if GCS_BUCKET_NAME:
     # Safely strip prefix and trailing slashes
     GCS_BUCKET_NAME = GCS_BUCKET_NAME.replace("gs://", "").strip("/")
+    
     # Ensure we only take the root bucket name if a path was provided
     GCS_BUCKET_NAME = GCS_BUCKET_NAME.split("/")[0]
+    
 
 PRESENTATION_SPEC_ARTIFACT = "presentation_spec.json"
 RESEARCH_SUMMARY_ARTIFACT = "research_summary.txt"
@@ -117,17 +70,16 @@ _genai_client = None
 # Client Initialization and Logging Utilities
 # ==============================================================================
 
-
 def initialize_genai_client():
     """Initializes and returns the global Vertex AI GenAI client."""
     global _genai_client
     if _genai_client is None:
         try:
             _genai_client = genai.Client(
-                vertexai=True, project=PROJECT_ID, location=LOCATION
+                vertexai=True, project=GOOGLE_CLOUD_PROJECT, location=GOOGLE_CLOUD_LOCATION
             )
             log.info(
-                f"Vertex AI client initialized for project '{PROJECT_ID}' in location '{LOCATION}'."
+                f"Vertex AI client initialized for project '{GOOGLE_CLOUD_PROJECT}' in location '{GOOGLE_CLOUD_LOCATION}'."
             )
         except Exception as e:
             log.error(f"CRITICAL: Failed to initialize Vertex AI client: {e}")
@@ -138,9 +90,9 @@ def initialize_genai_client():
 def get_gcs_client():
     """Initializes and returns a GCS client with robust project detection."""
     try:
-        # If PROJECT_ID is provided, use it; otherwise, let the SDK auto-detect
-        if PROJECT_ID:
-            client = storage.Client(project=PROJECT_ID)
+        # If GOOGLE_CLOUD_PROJECT is provided, use it; otherwise, let the SDK auto-detect
+        if GOOGLE_CLOUD_PROJECT:
+            client = storage.Client(project=GOOGLE_CLOUD_PROJECT)
         else:
             client = storage.Client()
         return client

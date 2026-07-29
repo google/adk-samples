@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Background changer for images.
+
+Provides functions to preprocess images and place a person in a new background
+using a two-step approach with face correction.
+"""
+
 # Standard library imports
 import logging
 
@@ -34,8 +40,7 @@ BG_CHANGER_BACKGROUND_COLOR = "#F0F0F0"
 
 
 def preprocess_face_image(client, upscale_client, img_bytes):
-    """
-    Preprocess face image: crop face, upscale, then remove background.
+    """Preprocess face image: crop face, upscale, then remove background.
 
     Args:
         client: Gemini client instance for background removal
@@ -47,6 +52,7 @@ def preprocess_face_image(client, upscale_client, img_bytes):
             - reference_face: Cropped and upscaled face (for evaluation)
             - preprocessed_face: Face with background removed (for generation correction)
             Returns (None, None) if no face is detected.
+
     """
     try:
         save_debug_image(img_bytes, "01_original", prefix="bg_preproc_face")
@@ -86,8 +92,7 @@ def preprocess_face_image(client, upscale_client, img_bytes):
 
 
 def preprocess_person_image(client, upscale_client, img_bytes):
-    """
-    Preprocess person image: remove background and upscale.
+    """Preprocess person image: remove background and upscale.
 
     Args:
         client: Gemini client instance for background removal
@@ -96,6 +101,7 @@ def preprocess_person_image(client, upscale_client, img_bytes):
 
     Returns:
         bytes: The preprocessed person image as bytes
+
     """
     try:
         logger.info("[Background Changer] Removing person background...")
@@ -123,8 +129,7 @@ def generate_background_change(
     background_description=None,
     background_image=None,
 ):
-    """
-    Generate an image with the person placed in a new background using 2-step approach.
+    """Generate an image with the person placed in a new background using 2-step approach.
 
     Args:
         client: Gemini client instance
@@ -135,6 +140,7 @@ def generate_background_change(
 
     Returns:
         bytes: Generated image with person in new background
+
     """
     logger.info("[Background Changer] Starting generation")
 
@@ -228,7 +234,8 @@ Generate the image.""",
 
     logger.info("[Background Changer] Step 2: Face improvement with correction...")
 
-    correction_message = user_message + [
+    correction_message = [
+        *user_message,
         step1_result,
         "No, the face is different. Use this face:",
         reference_face,
@@ -257,8 +264,7 @@ def generate_background_change_only(
     background_description=None,
     background_image=None,
 ):
-    """
-    Generate a background change image without evaluation.
+    """Generate a background change image without evaluation.
 
     Args:
         client: Gemini client instance
@@ -269,6 +275,7 @@ def generate_background_change_only(
 
     Returns:
         bytes: The generated image
+
     """
     return generate_background_change(
         client,
@@ -282,8 +289,8 @@ def generate_background_change_only(
 def evaluate_background_change_image(
     _client, generated_image_bytes, reference_face_bytes, model_name="ArcFace"
 ):
-    """
-    Evaluate a generated background change image against reference face.
+    """Evaluate a generated background change image against reference face.
+
     Uses shared process pool from person_eval to avoid DeepFace threading issues.
 
     Args:
@@ -299,6 +306,7 @@ def evaluate_background_change_image(
             "model": str,
             "face_detected": bool
         }
+
     """
     logger.info("[Background Changer] Submitting evaluation to shared process pool")
     try:

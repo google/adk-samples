@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """REST API endpoints for the glasses image VTO workflow."""
 
 import asyncio
@@ -49,7 +63,7 @@ _images_dir = os.path.normpath(os.path.join(_glasses_workflow_dir, "images"))
 
 @router.get("/get_gallery_images")
 async def get_gallery_images():
-    """Returns a list of available gallery images."""
+    """Return a list of available gallery images."""
     image_files = []
     if os.path.exists(_images_dir):
         for filename in os.listdir(_images_dir):
@@ -64,7 +78,7 @@ async def get_gallery_images():
 async def enhance_image_endpoint(
     image: UploadFile = File(...), view_type: str = Form("front")
 ):
-    """Generates 4 enhanced variations of the uploaded image using AI."""
+    """Generate 4 enhanced variations of the uploaded image using AI."""
     try:
         image_bytes = await image.read()
 
@@ -91,7 +105,9 @@ async def enhance_image_endpoint(
         )
     except Exception as e:
         logger.error(f"Error in /enhance-image: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Internal Server Error: {e}"
+        ) from e
 
 
 @router.post("/generate-vto")
@@ -113,7 +129,7 @@ async def generate_vto_endpoint(
         logger.error(f"Error reading uploaded files: {e}")
         raise HTTPException(
             status_code=400, detail=f"Error reading uploaded files: {e}"
-        )
+        ) from e
 
     if not glasses_images:
         raise HTTPException(
@@ -162,4 +178,6 @@ async def edit_frame_endpoint(
         return JSONResponse(content={"edited_frame_image": edited_frame_b64})
     except Exception as e:
         logger.error(f"Error in /edit-frame: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Internal Server Error: {e}"
+        ) from e

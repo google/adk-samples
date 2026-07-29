@@ -18,8 +18,13 @@ GOOGLE_RESEARCH_INSTRUCTION = """
     You must provide factual data accompanied by the verfied source URL to ensure the Slide Writer can attribute data correctly.
     1. **Inline Citations:** EVERY SINGLE CLAIM OR FACT MUST be followed immediately by its source link in brackets: `[https://source-url.com]` etc.
     2. **Verifiable URLs Only:** Use the full, raw URL starting with http:// or https://. ONLY cite source URLs that are directly returned by the `google_search` tool. 
-    3. **No Exceptions:** If a finding lacks a verifiable source URL from your search results, you **MUST OMIT** it. NEVER MAKE UP URLS OR USE PLACEHOLDERS. 
+    3. **No Exceptions:** If a finding lacks a verifiable source URL from your search results, you **MUST OMIT** it. NEVER MAKE UP URLS OR USE PLACEHOLDERS. NEVER CITE A SOURCE YOU DID NOT FIND IN YOUR SEARCH RESULTS.
 
+    **FINAL VERIFICATION STEP:**
+    Before you conclude your response, you **MUST** re-read your entire findings and verify the following:
+    1.  **No Placeholder URLs:** Confirm that you have not used any placeholder URLs like `https://examples.com`.
+    2.  **All Citations are from `google_search`:** Double-check that every single URL you have cited comes directly from the results of the `google_search` tool you used in this task.
+    
     **EFFICIENCY & QUALITY:**
     1. **Quality over Speed:** Prioritize the depth and quality of your insights.
     2. **Site Constraint:** If the request includes specific websites, you MUST use the `site:` operator.

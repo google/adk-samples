@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 from google.adk.agents import Agent
 from google.adk.tools.agent_tool import AgentTool
 
+from travel_concierge import MODEL
 from travel_concierge.sub_agents.in_trip import prompt
 from travel_concierge.sub_agents.in_trip.tools import (
     event_booking_check,
@@ -28,7 +29,7 @@ from travel_concierge.tools.memory import memorize
 
 # This sub-agent is expected to be called every day closer to the trip, and frequently several times a day during the trip.
 day_of_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="day_of_agent",
     description="Day_of agent is the agent handling the travel logistics of a trip.",
     instruction=transit_coordination,
@@ -36,7 +37,7 @@ day_of_agent = Agent(
 
 
 trip_monitor_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="trip_monitor_agent",
     description="Monitor aspects of a itinerary and bring attention to items that necessitate changes",
     instruction=prompt.TRIP_MONITOR_INSTR,
@@ -46,7 +47,7 @@ trip_monitor_agent = Agent(
 
 
 in_trip_agent = Agent(
-    model="gemini-2.5-flash",
+    model=MODEL,
     name="in_trip_agent",
     description="Provide information about what the users need as part of the tour.",
     instruction=prompt.INTRIP_INSTR,

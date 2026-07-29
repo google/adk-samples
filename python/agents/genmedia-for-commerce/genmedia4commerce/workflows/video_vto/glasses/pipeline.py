@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Glasses Video VTO pipeline functions."""
 
 import base64
@@ -61,6 +75,8 @@ def post_process_video(video_bytes, bgcolor=[0, 215, 6, 255]):
 
 
 class RegenerationRequest(BaseModel):
+    """Request schema for video regeneration."""
+
     prompt: str
     collage_data: str
     number_of_videos: int = 1
@@ -69,7 +85,7 @@ class RegenerationRequest(BaseModel):
 
 
 def run_regeneration_pipeline(req: RegenerationRequest):
-    """Synchronous helper for video regeneration."""
+    """Run the video regeneration pipeline."""
     collage_bytes = base64.b64decode(req.collage_data)
 
     try:
@@ -134,7 +150,7 @@ def run_generation_pipeline(
     zoom_level=0,
     is_animation_mode=False,
 ):
-    """Synchronous helper for initial video generation."""
+    """Run the initial video generation pipeline."""
     if is_animation_mode and model_image_bytes:
         logger.info("Animation mode: using model image directly")
         collage_bytes = model_image_bytes

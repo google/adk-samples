@@ -1,3 +1,19 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Utility functions for the GenMedia agent."""
+
 import asyncio
 import base64
 import json
@@ -32,10 +48,12 @@ def _history_blob_path(global_session_id: str) -> str:
 
 
 def user_upload_path(global_session_id: str, filename: str) -> str:
+    """Get the GCS blob path for a user upload."""
     return f"{_session_prefix(global_session_id)}/user_uploads/{filename}"
 
 
 def generated_asset_path(global_session_id: str, filename: str) -> str:
+    """Get the GCS blob path for a generated asset."""
     return f"{_session_prefix(global_session_id)}/generated_assets/{filename}"
 
 
@@ -64,6 +82,7 @@ def append_to_history(global_session_id: str, data) -> None:
     Args:
         global_session_id: The stable session UUID.
         data: A types.Content, or an LlmResponse (has .content attribute).
+
     """
     if hasattr(data, "content"):
         content = data.content
@@ -113,6 +132,7 @@ async def upload_asset_to_gcs(
 
     Returns:
         The GCS URI if successful, None otherwise.
+
     """
     try:
 
@@ -146,6 +166,7 @@ async def copy_gcs_asset(
 
     Returns:
         The destination GCS URI if successful, None otherwise.
+
     """
     src_path = source_uri[len("gs://") :]
     src_bucket_name, src_blob_name = src_path.split("/", 1)

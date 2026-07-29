@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Shared LLM utilities for creating Gemini content parts.
+"""Shared LLM utilities for creating Gemini content parts.
+
 Used by both text generation (gemini) and image generation (nano_banana).
 """
 
@@ -49,8 +49,7 @@ def retry_with_exponential_backoff(
     max_delay: float = 60.0,
     exceptions: tuple = _DEFAULT_RETRYABLE_EXCEPTIONS,
 ):
-    """
-    Decorator for retrying a function with exponential backoff.
+    """Retry a function with exponential backoff.
 
     Args:
         max_retries: Maximum number of retry attempts (default: 5)
@@ -62,6 +61,7 @@ def retry_with_exponential_backoff(
 
     Returns:
         Decorated function that retries on failure with exponential backoff
+
     """
 
     def decorator(func: Callable) -> Callable:
@@ -122,14 +122,14 @@ def retry_with_exponential_backoff(
 
 
 def get_mime_type_from_bytes(data):
-    """
-    Detect MIME type from file signature (magic bytes).
+    """Detect MIME type from file signature (magic bytes).
 
     Args:
         data: Bytes to analyze
 
     Returns:
         str: Detected MIME type (e.g., "image/png", "video/mp4", "image/jpeg")
+
     """
     if len(data) < 12:
         return "application/octet-stream"
@@ -171,14 +171,14 @@ def get_mime_type_from_bytes(data):
 
 
 def get_mime_type_from_path(path):
-    """
-    Detect MIME type from file extension in path.
+    """Detect MIME type from file extension in path.
 
     Args:
         path: File path or URL
 
     Returns:
         str: Detected MIME type
+
     """
     path_lower = path.lower()
 
@@ -209,8 +209,8 @@ def get_mime_type_from_path(path):
 
 
 def get_part(input_piece, return_dict=False, video_metadata=None):
-    """
-    Convert input to appropriate Part type (text, image/video bytes, or GCS path).
+    """Convert input to appropriate Part type (text, image/video bytes, or GCS path).
+
     Auto-detects MIME type from bytes or file extension.
 
     Args:
@@ -221,6 +221,7 @@ def get_part(input_piece, return_dict=False, video_metadata=None):
 
     Returns:
         Part object or dict representation
+
     """
     if isinstance(input_piece, bytes):
         mime_type = get_mime_type_from_bytes(input_piece)
@@ -255,8 +256,7 @@ def get_generate_content_config(
     safety_off: bool = True,
     image_config: dict | None = None,
 ) -> types.GenerateContentConfig:
-    """
-    Create standard configuration for Gemini content generation.
+    """Create standard configuration for Gemini content generation.
 
     Args:
         temperature: Temperature for generation (default: 1)
@@ -276,6 +276,7 @@ def get_generate_content_config(
 
     Returns:
         GenerateContentConfig object
+
     """
     config_params = {
         "temperature": temperature,
