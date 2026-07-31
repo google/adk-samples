@@ -30,6 +30,11 @@ on:
       # recipe roots (.github/policy.yml `frozen_paths`) that PRs may not
       # modify anyway, so linting them would only produce unactionable
       # findings.
+      #
+      # This list alone is NOT sufficient to exclude them: `paths:` decides
+      # whether the workflow RUNS, not which files the diff below returns.
+      # Both jobs therefore also scope `git diff` to `-- core contrib
+      # skills`. Keep the two in sync.
 
 permissions:
   contents: read
@@ -102,17 +107,55 @@ jobs:
         run: |
           set -euo pipefail
 
-          export PATH="$(go env GOPATH)/bin:$PATH"
+          # Plain assignment first, NOT `export PATH="$(go env GOPATH)/bin:…"`.
+          # In `export VAR=$(cmd)` the export builtin's own status (0) is what
+          # `set -e` sees, so a failing `go env` is masked and resurfaces much
+          # later as an inscrutable `golangci-lint: command not found`.
+          GOBIN="$(go env GOPATH)/bin"
+          export PATH="$GOBIN:$PATH"
+
+          WORK="$(mktemp -d)"
+          trap 'rm -rf "$WORK"' EXIT
 
           # 1. Fetch the target branch reference commits
           git fetch origin "$BASE_REF"
 
-          # 2. Resolve Go files modified in this PR diff. Use an array so
-          #    filenames with spaces stay intact when passed to the formatter.
-          mapfile -t CHANGED_FILES < <(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" | grep '\.go$' || true)
+          # 2. Resolve Go files modified in this PR diff.
+          #
+          #    Redirect to a file rather than `< <(git … | grep … || true)`.
+          #    That idiom loses git's exit status twice over — `mapfile` never
+          #    inspects a process substitution's status, and the `|| true`
+          #    needed for grep's exit-1-on-no-match also swallows git's 128 —
+          #    so a failed diff (no merge base, unreachable base tip) read as
+          #    "no Go files changed" and reported a GREEN job having checked
+          #    nothing. Here `set -e` sees the failure.
+          #
+          #    `-z` rather than a newline scan: git C-quotes any path with a
+          #    non-ASCII byte, a quote, a backslash or a tab (core.quotePath),
+          #    and the resulting trailing `"` made such a file invisible to a
+          #    `grep '\.go$'` filter — silently never formatted, never
+          #    reported. NUL-delimited output is never quoted.
+          #
+          #    `-- core contrib skills` is load-bearing: `on.paths` above
+          #    controls only whether this workflow RUNS. Without this scope a
+          #    triggered run also collects the retired `go/agents/**` roots,
+          #    and llm-auditor (5 .go files, no go.mod) would hard-fail the
+          #    job demanding a go.mod in a frozen path.
+          git diff -z --name-only --diff-filter=d "origin/$BASE_REF...HEAD" \
+            -- core contrib skills > "$WORK/changed"
+
+          ALL_CHANGED=()
+          mapfile -d '' -t ALL_CHANGED < "$WORK/changed"
+
+          CHANGED_FILES=()
+          for f in "${ALL_CHANGED[@]}"; do
+            if [[ "$f" == *.go ]]; then
+              CHANGED_FILES+=("$f")
+            fi
+          done
 
           if [ ${#CHANGED_FILES[@]} -eq 0 ]; then
-            echo "No Go files were modified in this pull request. Skipping formatting."
+            echo "No Go files were modified under core/, contrib/ or skills/. Skipping formatting."
             exit 0
           fi
 
@@ -137,13 +180,21 @@ jobs:
           #    validate-recipe-structure.yml's failure to report, not this
           #    workflow's.
           UNMAPPED=0
+          UNMAPPED_MSG="One or more changed Go files could not be attributed to a Go module and were skipped. Add a go.mod to the recipe."
           declare -a PAIRS=()
           for file in "${CHANGED_FILES[@]}"; do
             dir="$(dirname "$file")"
             found=""
-            while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+            # Terminate AFTER testing "." / "/", not before. The previous
+            # `while [ "$dir" != "." ]` form could never see a repo-root
+            # go.mod, and for a depth-1 file (dirname → ".") it ran ZERO
+            # iterations — not one directory was probed.
+            while :; do
               if [ -f "$dir/go.mod" ]; then
                 found="$dir"
+                break
+              fi
+              if [ "$dir" = "." ] || [ "$dir" = "/" ]; then
                 break
               fi
               dir="$(dirname "$dir")"
@@ -162,6 +213,14 @@ jobs:
 
           if [ ${#PAIRS[@]} -eq 0 ]; then
             echo "No changed Go file belongs to a Go module. Nothing to format."
+            # The UNMAPPED gate at the end of this step is AFTER this return,
+            # so it has to be repeated here. Otherwise the worst case — not a
+            # single file could be attributed to a module, so nothing was
+            # formatted at all — exits 0 and reports a green job.
+            if [ "$UNMAPPED" -eq 1 ]; then
+              echo "::error::$UNMAPPED_MSG"
+              exit 1
+            fi
             exit 0
           fi
 
@@ -170,16 +229,32 @@ jobs:
           #    from inside the module).
           mapfile -t MODULES < <(printf '%s\n' "${PAIRS[@]}" | cut -f1 | sort -u)
 
+          # A fatal formatter error in one module must not abort the whole
+          # step: the modules already formatted have pending changes that are
+          # worth surfacing as suggestions, and bailing here would skip
+          # step 5 entirely so the PR got no comments at all. Record and
+          # report at the end instead.
+          FMT_STATUS=0
           for mod in "${MODULES[@]}"; do
-            mapfile -t MOD_FILES < <(printf '%s\n' "${PAIRS[@]}" | awk -F'\t' -v m="$mod" '$1 == m { print $2 }')
+            # ENVIRON[] rather than `awk -v m="$mod"`: awk escape-processes
+            # -v assignments, so a module path containing a backslash escape
+            # would never match and every file in it would silently vanish
+            # from REL_FILES — an empty `fmt` invocation, i.e. a silent skip.
+            mapfile -t MOD_FILES < <(printf '%s\n' "${PAIRS[@]}" | m="$mod" awk -F'\t' '$1 == ENVIRON["m"] { print $2 }')
 
+            # Module-relative paths. When $mod is "." this is a no-op strip
+            # and `cd .` keeps the paths valid, so a repo-root go.mod needs
+            # no special case.
             declare -a REL_FILES=()
             for f in "${MOD_FILES[@]}"; do
               REL_FILES+=("${f#"$mod"/}")
             done
 
             echo "Formatting module '$mod': ${REL_FILES[*]}"
-            ( cd "$mod" && golangci-lint fmt "${REL_FILES[@]}" )
+            if ! ( cd "$mod" && golangci-lint fmt "${REL_FILES[@]}" ); then
+              echo "::error::golangci-lint fmt failed in module '$mod'."
+              FMT_STATUS=1
+            fi
           done
 
           # 5. Post formatting suggestion comments strictly targeting the
@@ -195,19 +270,35 @@ jobs:
           #    internally maps it to exactly FailLevelAny for the
           #    github-pr-review reporter). Same behaviour, without writing
           #    new code against a flag that is already on the way out.
-          git diff --no-color -- "${CHANGED_FILES[@]}" | reviewdog -f=diff \
-                                                                   -name="golangci-fmt" \
-                                                                   -reporter=github-pr-review \
-                                                                   -filter-mode=added \
-                                                                   -fail-level=any
+          #
+          #    Staged through a file rather than `git diff … | reviewdog`:
+          #    under `pipefail` the LAST non-zero status wins, so reviewdog's
+          #    1-on-findings would mask a git failure. Split, `set -e` catches
+          #    git directly and reviewdog's status is captured on its own.
+          git diff --no-color -- "${CHANGED_FILES[@]}" > "$WORK/fmt.diff"
+
+          RD_STATUS=0
+          reviewdog -f=diff \
+                    -name="golangci-fmt" \
+                    -reporter=github-pr-review \
+                    -filter-mode=added \
+                    -fail-level=any < "$WORK/fmt.diff" || RD_STATUS=1
 
           # A file we could not attribute to a module was never formatted,
           # so a clean reviewdog result above does not mean the PR is clean.
-          # Surface that rather than reporting a misleading green.
+          # Surface that rather than reporting a misleading green. Captured
+          # above rather than left to `set -e` at the reviewdog call, which
+          # would abort before this diagnostic ever printed.
           if [ "$UNMAPPED" -eq 1 ]; then
-            echo "::error::One or more changed Go files could not be attributed to a Go module and were skipped. Add a go.mod to the recipe."
+            echo "::error::$UNMAPPED_MSG"
             exit 1
           fi
+
+          if [ "$FMT_STATUS" -ne 0 ]; then
+            exit 1
+          fi
+
+          exit "$RD_STATUS"
 
   go-lint:
     name: Go Lint Suggestions
@@ -250,16 +341,34 @@ jobs:
         run: |
           set -euo pipefail
 
-          export PATH="$(go env GOPATH)/bin:$PATH"
+          # See the go-format job for why this is a plain assignment.
+          GOBIN="$(go env GOPATH)/bin"
+          export PATH="$GOBIN:$PATH"
+
+          WORK="$(mktemp -d)"
+          trap 'rm -rf "$WORK"' EXIT
 
           # 1. Fetch the target branch reference commits
           git fetch origin "$BASE_REF"
 
-          # 2. Resolve Go files modified in this PR diff
-          mapfile -t CHANGED_FILES < <(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" | grep '\.go$' || true)
+          # 2. Resolve Go files modified in this PR diff. Identical to the
+          #    go-format job — see there for why this is `-z` into a file
+          #    scoped to `-- core contrib skills` rather than a piped grep.
+          git diff -z --name-only --diff-filter=d "origin/$BASE_REF...HEAD" \
+            -- core contrib skills > "$WORK/changed"
+
+          ALL_CHANGED=()
+          mapfile -d '' -t ALL_CHANGED < "$WORK/changed"
+
+          CHANGED_FILES=()
+          for f in "${ALL_CHANGED[@]}"; do
+            if [[ "$f" == *.go ]]; then
+              CHANGED_FILES+=("$f")
+            fi
+          done
 
           if [ ${#CHANGED_FILES[@]} -eq 0 ]; then
-            echo "No Go files were modified in this pull request. Skipping lint."
+            echo "No Go files were modified under core/, contrib/ or skills/. Skipping lint."
             exit 0
           fi
 
@@ -271,9 +380,12 @@ jobs:
           declare -a MODULES=()
           for file in "${CHANGED_FILES[@]}"; do
             dir="$(dirname "$file")"
-            while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+            while :; do
               if [ -f "$dir/go.mod" ]; then
                 MODULES+=("$dir")
+                break
+              fi
+              if [ "$dir" = "." ] || [ "$dir" = "/" ]; then
                 break
               fi
               dir="$(dirname "$dir")"
@@ -310,11 +422,15 @@ jobs:
           #    a failure — step 7 is the stage that gates the PR. (The
           #    equivalent of python-format.yml's -fail-on-error=false, which
           #    is deprecated; see the go-format job for the full rationale.)
-          git diff --no-color -- "${CHANGED_FILES[@]}" | reviewdog -f=diff \
-                                                                   -name="golangci-lint-suggestions" \
-                                                                   -reporter=github-pr-review \
-                                                                   -filter-mode=added \
-                                                                   -fail-level=none
+          #    Staged through a file for the same reason as the go-format
+          #    job: piping would let reviewdog's status mask git's.
+          git diff --no-color -- "${CHANGED_FILES[@]}" > "$WORK/fix.diff"
+
+          reviewdog -f=diff \
+                    -name="golangci-lint-suggestions" \
+                    -reporter=github-pr-review \
+                    -filter-mode=added \
+                    -fail-level=none < "$WORK/fix.diff"
 
           # 6. Restore files so the diagnostic pass below runs against the
           #    original user commits, not the auto-fixed versions.
@@ -344,6 +460,16 @@ jobs:
           #
           #    checkstyle rather than rdjson: golangci-lint has no rdjson
           #    output format.
+          #
+          #    golangci-lint writes to a file and reviewdog reads it, rather
+          #    than the two being piped. Piping made `-fail-level=any`'s
+          #    exit-1-on-findings the loop body's last status, so `set -e`
+          #    killed the step at the FIRST module with findings and modules
+          #    2..N were never linted — one module per CI round-trip. It also
+          #    lets golangci-lint's own status be checked directly: with
+          #    --issues-exit-code 0 a non-zero there can only be a crash
+          #    (unresolvable dep, broken go.mod), which stays fatal.
+          RD_STATUS=0
           for mod in "${MODULES[@]}"; do
             echo "Linting module '$mod'"
             ( cd "$mod" && golangci-lint run \
@@ -351,9 +477,13 @@ jobs:
                 --show-stats=false \
                 --output.text.path "" \
                 --output.checkstyle.path stdout \
-                ./... ) | reviewdog -f=checkstyle \
-                                    -name="golangci-lint" \
-                                    -reporter=github-pr-review \
-                                    -filter-mode=added \
-                                    -fail-level=any
+                ./... ) > "$WORK/lint.xml"
+
+            reviewdog -f=checkstyle \
+                      -name="golangci-lint" \
+                      -reporter=github-pr-review \
+                      -filter-mode=added \
+                      -fail-level=any < "$WORK/lint.xml" || RD_STATUS=1
           done
+
+          exit "$RD_STATUS"
