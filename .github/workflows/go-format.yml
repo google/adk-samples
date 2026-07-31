@@ -1,0 +1,359 @@
+name: 🐹 Go Format PR Checks
+
+# Runs golangci-lint's formatters and linters on the Go files changed in a
+# PR and posts diff-style suggestion comments via reviewdog. The Go
+# counterpart to python-format.yml.
+#
+# Style configuration (formatter set, line length, import grouping, linter
+# set) lives in the root `.golangci.yml` and is the repo's single source of
+# truth for Go style — the same contract python-format.yml has with
+# `[tool.ruff]` in the root pyproject.toml. This workflow deliberately does
+# NOT pass -E/--enable, --default, or any max-len on the CLI, so
+# golangci-lint discovers configuration by walking up from the module it
+# runs in. Update `.golangci.yml` (not this file) to change the standard.
+
+on:
+  pull_request:
+    paths:
+      - "core/**/*.go"
+      - "contrib/**/*.go"
+      - "skills/**/*.go"
+      - "core/**/go.mod"
+      - "core/**/go.sum"
+      - "contrib/**/go.mod"
+      - "contrib/**/go.sum"
+      - "skills/**/go.mod"
+      - "skills/**/go.sum"
+      - ".golangci.yml"
+      - ".github/workflows/go-format.yml"
+      # NOTE: `go/agents/**` is deliberately absent. Those are retired
+      # recipe roots (.github/policy.yml `frozen_paths`) that PRs may not
+      # modify anyway, so linting them would only produce unactionable
+      # findings.
+
+permissions:
+  contents: read
+  pull-requests: write # Essential for posting reviewdog suggestion comments
+
+# Cancel superseded runs on the same PR to save runner minutes and avoid
+# stale suggestion comments from an older commit lingering on the PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Pinned rather than `latest` so a golangci-lint release cannot turn every
+  # open PR red without warning. Bump deliberately, and re-run the formatter
+  # over existing Go recipes when you do — a new gofumpt rule will otherwise
+  # surface as suggestion noise on the next unrelated PR.
+  # Must be a v2.x release: `.golangci.yml` uses the v2-only schema.
+  GOLANGCI_LINT_VERSION: v2.12.2
+
+jobs:
+  go-format:
+    name: Go Format Suggestions
+    runs-on: ubuntu-latest
+    # Formatting is syntactic — no compilation, no module download — so it
+    # is fast. 10 min is a generous ceiling that still protects against a
+    # stuck reviewdog HTTP call to the GitHub API.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
+
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # ratchet:actions/setup-go@v7.0.0
+        with:
+          go-version: "1.26"
+          # Disabled deliberately: setup-go's cache keys off go.sum, and it
+          # FAILS the step when the glob resolves to nothing. A Go recipe
+          # with no third-party dependencies has no go.sum, so caching here
+          # would break the very first Go recipe. This job never downloads
+          # modules anyway (formatting is syntactic). Revisit for the lint
+          # job once Go recipes reliably ship a go.sum.
+          cache: false
+
+      - name: Install golangci-lint
+        env:
+          VERSION: ${{ env.GOLANGCI_LINT_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" "$VERSION"
+          "$(go env GOPATH)/bin/golangci-lint" --version
+
+      - name: Install Reviewdog
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # ratchet:reviewdog/action-setup@v1
+        with:
+          # Pinned rather than `latest` so a reviewdog release cannot turn
+          # every open PR red without warning. Bump deliberately. Matches
+          # the pin in python-format.yml.
+          reviewdog_version: v0.21.0
+
+      - name: Run golangci-lint fmt & Suggest Changes
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pass the PR base ref through env instead of interpolating a
+          # GitHub expression directly into the shell script (security
+          # hardening — see GitHub Actions security hardening guide).
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          export PATH="$(go env GOPATH)/bin:$PATH"
+
+          # 1. Fetch the target branch reference commits
+          git fetch origin "$BASE_REF"
+
+          # 2. Resolve Go files modified in this PR diff. Use an array so
+          #    filenames with spaces stay intact when passed to the formatter.
+          mapfile -t CHANGED_FILES < <(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" | grep '\.go$' || true)
+
+          if [ ${#CHANGED_FILES[@]} -eq 0 ]; then
+            echo "No Go files were modified in this pull request. Skipping formatting."
+            exit 0
+          fi
+
+          echo "Changed Go files: ${CHANGED_FILES[*]}"
+
+          # 3. Map each changed file to the Go module that owns it — the
+          #    nearest ancestor directory containing a go.mod.
+          #
+          #    This grouping is MANDATORY, not an optimisation. The `gci`
+          #    formatter's `localmodule` section (see .golangci.yml) reads
+          #    ./go.mod from the working directory, and golangci-lint exits
+          #    with a FATAL error when it is missing:
+          #      gci: creating formatter: finding local modules for
+          #      `localModule` configuration: reading go.mod
+          #    So the formatter must be invoked from inside each module
+          #    rather than once over a flat cross-module file list.
+          #
+          #    Files with no owning go.mod are reported and skipped rather
+          #    than crashing the job. Recipes are required to ship a go.mod
+          #    (.github/policy.yml `required_files.by_language.go`), so this
+          #    path means the recipe is malformed — and that is
+          #    validate-recipe-structure.yml's failure to report, not this
+          #    workflow's.
+          UNMAPPED=0
+          declare -a PAIRS=()
+          for file in "${CHANGED_FILES[@]}"; do
+            dir="$(dirname "$file")"
+            found=""
+            while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+              if [ -f "$dir/go.mod" ]; then
+                found="$dir"
+                break
+              fi
+              dir="$(dirname "$dir")"
+            done
+            if [ -z "$found" ]; then
+              echo "::warning file=$file::No go.mod found in any parent directory — skipping. A Go recipe must ship a go.mod."
+              UNMAPPED=1
+              continue
+            fi
+            # printf rather than an embedded literal tab: a tab-expanding
+            # editor would otherwise silently break the `cut -f1` / `awk
+            # -F'\t'` parsing below, and the failure mode is a false green
+            # (no modules resolved → nothing formatted → job passes).
+            PAIRS+=("$(printf '%s\t%s' "$found" "$file")")
+          done
+
+          if [ ${#PAIRS[@]} -eq 0 ]; then
+            echo "No changed Go file belongs to a Go module. Nothing to format."
+            exit 0
+          fi
+
+          # 4. Format each affected module in turn, passing only the files
+          #    this PR touched (module-relative — golangci-lint is invoked
+          #    from inside the module).
+          mapfile -t MODULES < <(printf '%s\n' "${PAIRS[@]}" | cut -f1 | sort -u)
+
+          for mod in "${MODULES[@]}"; do
+            mapfile -t MOD_FILES < <(printf '%s\n' "${PAIRS[@]}" | awk -F'\t' -v m="$mod" '$1 == m { print $2 }')
+
+            declare -a REL_FILES=()
+            for f in "${MOD_FILES[@]}"; do
+              REL_FILES+=("${f#"$mod"/}")
+            done
+
+            echo "Formatting module '$mod': ${REL_FILES[*]}"
+            ( cd "$mod" && golangci-lint fmt "${REL_FILES[@]}" )
+          done
+
+          # 5. Post formatting suggestion comments strictly targeting the
+          #    modified files. Scoping the diff to CHANGED_FILES keeps a
+          #    suggestion from ever appearing on a file the PR didn't touch.
+          #    --no-color is defensive: CI git doesn't colorize by default,
+          #    but a self-hosted runner or global git config could break the
+          #    diff parser.
+          #
+          #    -fail-level=any rather than python-format.yml's
+          #    -fail-on-error=true: the latter is DEPRECATED as of reviewdog
+          #    v0.21.0 (cmd/reviewdog/main.go emits a deprecation warning and
+          #    internally maps it to exactly FailLevelAny for the
+          #    github-pr-review reporter). Same behaviour, without writing
+          #    new code against a flag that is already on the way out.
+          git diff --no-color -- "${CHANGED_FILES[@]}" | reviewdog -f=diff \
+                                                                   -name="golangci-fmt" \
+                                                                   -reporter=github-pr-review \
+                                                                   -filter-mode=added \
+                                                                   -fail-level=any
+
+          # A file we could not attribute to a module was never formatted,
+          # so a clean reviewdog result above does not mean the PR is clean.
+          # Surface that rather than reporting a misleading green.
+          if [ "$UNMAPPED" -eq 1 ]; then
+            echo "::error::One or more changed Go files could not be attributed to a Go module and were skipped. Add a go.mod to the recipe."
+            exit 1
+          fi
+
+  go-lint:
+    name: Go Lint Suggestions
+    runs-on: ubuntu-latest
+    # Longer than go-format: `golangci-lint run` type-checks, so it must
+    # download the module graph and build the package. The ADK Go client
+    # pulls ~50 transitive modules.
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
+
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # ratchet:actions/setup-go@v7.0.0
+        with:
+          go-version: "1.26"
+          cache: false # See the rationale in the go-format job above.
+
+      - name: Install golangci-lint
+        env:
+          VERSION: ${{ env.GOLANGCI_LINT_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" "$VERSION"
+          "$(go env GOPATH)/bin/golangci-lint" --version
+
+      - name: Install Reviewdog
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # ratchet:reviewdog/action-setup@v1
+        with:
+          # Pinned rather than `latest` — see go-format job for rationale.
+          reviewdog_version: v0.21.0
+
+      - name: Run golangci-lint & Suggest Fixes
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          export PATH="$(go env GOPATH)/bin:$PATH"
+
+          # 1. Fetch the target branch reference commits
+          git fetch origin "$BASE_REF"
+
+          # 2. Resolve Go files modified in this PR diff
+          mapfile -t CHANGED_FILES < <(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" | grep '\.go$' || true)
+
+          if [ ${#CHANGED_FILES[@]} -eq 0 ]; then
+            echo "No Go files were modified in this pull request. Skipping lint."
+            exit 0
+          fi
+
+          # 3. Resolve the set of Go modules touched by this PR. Same
+          #    walk-up as the go-format job, but here only the module list
+          #    matters: `golangci-lint run` type-checks whole packages, so
+          #    it cannot be handed an arbitrary cross-module file list the
+          #    way the formatter can.
+          declare -a MODULES=()
+          for file in "${CHANGED_FILES[@]}"; do
+            dir="$(dirname "$file")"
+            while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+              if [ -f "$dir/go.mod" ]; then
+                MODULES+=("$dir")
+                break
+              fi
+              dir="$(dirname "$dir")"
+            done
+          done
+
+          if [ ${#MODULES[@]} -eq 0 ]; then
+            # go-format is the job that reports this as an error; staying
+            # quiet here avoids two failures for one root cause.
+            echo "No changed Go file belongs to a Go module. Nothing to lint."
+            exit 0
+          fi
+
+          mapfile -t MODULES < <(printf '%s\n' "${MODULES[@]}" | sort -u)
+          echo "Modules to lint: ${MODULES[*]}"
+
+          # 4. Apply auto-fixes, module by module.
+          #    `|| true` absorbs a non-zero exit on findings — we WANT the
+          #    working tree changes to survive so reviewdog can suggest them.
+          #    Note this necessarily runs over the WHOLE module (./...), not
+          #    just the changed files, because the linters are
+          #    package-scoped. Step 5 scopes the resulting diff back down.
+          for mod in "${MODULES[@]}"; do
+            echo "Auto-fixing module '$mod'"
+            ( cd "$mod" && go mod download && golangci-lint run --fix ./... ) || true
+          done
+
+          # 5. Post auto-fix suggestion comments strictly targeting modified
+          #    files. The `-- "${CHANGED_FILES[@]}"` scope is load-bearing:
+          #    step 4 may have rewritten files elsewhere in the module that
+          #    this PR never touched, and suggesting edits to those would be
+          #    both confusing and out of scope.
+          #    -fail-level=none: an auto-fixable finding is a suggestion, not
+          #    a failure — step 7 is the stage that gates the PR. (The
+          #    equivalent of python-format.yml's -fail-on-error=false, which
+          #    is deprecated; see the go-format job for the full rationale.)
+          git diff --no-color -- "${CHANGED_FILES[@]}" | reviewdog -f=diff \
+                                                                   -name="golangci-lint-suggestions" \
+                                                                   -reporter=github-pr-review \
+                                                                   -filter-mode=added \
+                                                                   -fail-level=none
+
+          # 6. Restore files so the diagnostic pass below runs against the
+          #    original user commits, not the auto-fixed versions.
+          git checkout -- .
+
+          # 7. Run the strict diagnostic linter and hand the findings to
+          #    reviewdog as checkstyle XML.
+          #
+          #    Flag notes, each of which is load-bearing:
+          #      --issues-exit-code 0  the `ruff --exit-zero` analogue: exit
+          #        0 on FINDINGS so reviewdog receives the full report and
+          #        can annotate them. `set -o pipefail` still catches a
+          #        golangci-lint CRASH (unresolvable dep, broken go.mod),
+          #        which exits non-zero and would otherwise be swallowed by
+          #        reviewdog's success exit.
+          #      --show-stats=false    the trailing "N issues:" summary is
+          #        written to stdout and would otherwise corrupt the XML
+          #        stream reviewdog is parsing.
+          #      --output.text.path "" suppresses the default text report,
+          #        for the same reason.
+          #      NO --path-prefix      golangci-lint already reports paths
+          #        relative to the directory holding the discovered config —
+          #        the repo root, since .golangci.yml lives there. Adding a
+          #        prefix here yields core/go/foo/core/go/foo/main.go, and
+          #        reviewdog then silently drops every annotation because no
+          #        such file exists in the diff.
+          #
+          #    checkstyle rather than rdjson: golangci-lint has no rdjson
+          #    output format.
+          for mod in "${MODULES[@]}"; do
+            echo "Linting module '$mod'"
+            ( cd "$mod" && golangci-lint run \
+                --issues-exit-code 0 \
+                --show-stats=false \
+                --output.text.path "" \
+                --output.checkstyle.path stdout \
+                ./... ) | reviewdog -f=checkstyle \
+                                    -name="golangci-lint" \
+                                    -reporter=github-pr-review \
+                                    -filter-mode=added \
+                                    -fail-level=any
+          done

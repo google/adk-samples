@@ -21,6 +21,11 @@ on:
       - "Validate Recipe Structure"
       - "🐍 Python Format PR Checks"
       - "Python Dependency Policy"
+      # Go. .github/scripts/generate_dependabot.py already ships a live
+      # `gomod` detector, so Dependabot starts opening Go dependency PRs as
+      # soon as the first go.mod lands under core/ or contrib/. Without this
+      # entry those PRs would never be re-evaluated for auto-merge.
+      - "🐹 Go Format PR Checks"
     types:
       - completed
 
