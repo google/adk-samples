@@ -1,0 +1,20 @@
+# Keep the build context small and reproducible.
+**/node_modules
+**/out
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.venv
+.env*
+.git
+.vscode
+.idea
+*.db
+*.sqlite
+tests/
+test-results/
+playwright-report/
+web/test-results
+web/playwright-report
