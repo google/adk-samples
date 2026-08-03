@@ -16,7 +16,7 @@ dependencies = [
     "google-cloud-logging>=3.12.0,<4.0.0",
     "fastapi>=0.136.1",
     "uvicorn>=0.47.0",
-    "pyjwt>=2.12.1",
+    "pyjwt>=2.13.0",
     "python-multipart>=0.0.29",
     "email-validator>=2.3.0",
     # pyopenssl 26 added strict Context immutability after first use, which
