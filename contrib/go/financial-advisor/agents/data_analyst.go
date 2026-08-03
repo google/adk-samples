@@ -22,12 +22,7 @@ func NewDataAnalyst(ctx context.Context) agent.Agent {
 	}
 	dataAnalyst, err := llmagent.New(llmagent.Config{
 		Name:        "data_analyst_agent",
-		Model:       model,
-		Description: "Analyze financial data and provide insights.",
-		Instruction: dataAnalystInstruction,
-		Tools:       []tool.Tool{geminitool.GoogleSearch{}},
-		OutputKey:   "market_data_analysis_output",
-	})
+		Model:       model, Description: "Analyze financial data and provide insights.", Instruction: dataAnalystInstruction, Tools:       []tool.Tool{geminitool.GoogleSearch{}}, OutputKey:   "market_data_analysis_output",})
 	if err != nil {
 		log.Fatalf("Failed to create data analyst agent: %v", err)
 	}
