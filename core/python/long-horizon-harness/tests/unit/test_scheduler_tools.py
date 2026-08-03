@@ -19,9 +19,8 @@ Surfaces validated:
 * ``when`` accepts ISO 8601 and natural language ("tomorrow 9pm",
   "in 1 hour"). All resolved to UTC.
 * Identity is pulled from ``tool_context._invocation_context``
-  (``user_id`` / ``app_name``); channel + recipient_id from
-  ``tool_context.state["gateway_channel"]`` / ``["gateway_recipient_id"]``
-  with a CLI fallback when absent.
+  (``user_id`` / ``app_name``); channel + recipient_id are fixed to
+  ``"cli"`` / ``user_id``.
 * ``action='list'`` returns only the calling user's items.
 * ``action='cancel'`` is user-scoped — user A cannot cancel user B's id.
 * ``recurrence`` validation: ``None`` or one of ``daily|weekly|hourly``.
@@ -41,11 +40,10 @@ def _ctx(
     *,
     user_id: str = "u1",
     app_name: str = "lha",
-    state: dict | None = None,
 ):
     return SimpleNamespace(
         _invocation_context=SimpleNamespace(user_id=user_id, app_name=app_name),
-        state=state if state is not None else {},
+        state={},
     )
 
 
@@ -157,27 +155,7 @@ class TestScheduleReminder:
         assert result["success"] is False
         assert "recurrence" in result["error"].lower()
 
-    async def test_channel_and_recipient_from_state(self):
-        from horizon.scheduler.store import get_reminder_store
-        from horizon.scheduler.tools import reminder
-
-        ctx = _ctx(
-            state={
-                "gateway_channel": "telegram",
-                "gateway_recipient_id": "chat-99",
-            }
-        )
-        await reminder(
-            action="schedule",
-            when="2026-12-25T09:00:00Z",
-            message="x",
-            tool_context=ctx,
-        )
-        items = await get_reminder_store().list_for_user("u1")
-        assert items[0].channel == "telegram"
-        assert items[0].recipient_id == "chat-99"
-
-    async def test_channel_falls_back_to_cli(self):
+    async def test_channel_is_cli_and_recipient_is_user(self):
         from horizon.scheduler.store import get_reminder_store
         from horizon.scheduler.tools import reminder
 
