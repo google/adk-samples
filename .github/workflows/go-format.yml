@@ -173,14 +173,44 @@ jobs:
           #    So the formatter must be invoked from inside each module
           #    rather than once over a flat cross-module file list.
           #
-          #    Files with no owning go.mod are reported and skipped rather
-          #    than crashing the job. Recipes are required to ship a go.mod
-          #    (.github/policy.yml `required_files.by_language.go`), so this
-          #    path means the recipe is malformed — and that is
-          #    validate-recipe-structure.yml's failure to report, not this
-          #    workflow's.
+          #    Files with no owning go.mod are skipped rather than crashing
+          #    the job, but WHY there is no go.mod decides whether that is
+          #    fatal, and the two cases are not the same:
+          #
+          #      a) The file lives in a Go recipe root (<root>/go/…, or
+          #         skills/ — see below). A Go recipe is required to ship a
+          #         go.mod (.github/policy.yml `required_files.by_language.go`),
+          #         so the recipe is malformed. Fatal, as before.
+          #
+          #      b) The file lives anywhere else — a .go helper inside a
+          #         recipe written in another language. Recipes here are
+          #         routinely multi-language (core/python/deep-search is a
+          #         Python recipe that is mostly TypeScript), so an
+          #         incidental .go file is legitimate and its recipe has no
+          #         business shipping a go.mod. Skipped with a notice.
+          #
+          #    Treating (b) as fatal — which this step used to do — failed
+          #    the PR with "Add a go.mod to the recipe" aimed at a recipe
+          #    that must not have one, and there is no edit the author could
+          #    make to satisfy it short of deleting the file.
+          #
+          #    Note that even in case (a) validate-recipe-structure.yml is
+          #    the authoritative reporter: it resolves required files from
+          #    `manifest.language` (tools/validate_structure.py
+          #    `check_required_files`), so it catches a FLAT Go recipe
+          #    (contrib/<recipe>/ with `language: go`) that the path test
+          #    below cannot recognise. The check here is the fast, local
+          #    echo of that verdict for the common namespaced layout, not a
+          #    replacement for it.
+          #
+          #    skills/ counts as (a) deliberately: a vertical skill's
+          #    language comes from its manifest, not its path
+          #    (validate_manifest.py `NAMESPACE_REQUIRED_ROOTS`), so the
+          #    path cannot tell us whether skills/retail/foo/main.go belongs
+          #    to a Go skill. Fail closed. skills/ is empty today, so this
+          #    costs nothing now and errs toward reporting over silence.
           UNMAPPED=0
-          UNMAPPED_MSG="One or more changed Go files could not be attributed to a Go module and were skipped. Add a go.mod to the recipe."
+          UNMAPPED_MSG="One or more changed Go files sit in a Go recipe but could not be attributed to a Go module, and were skipped. Add a go.mod to the recipe."
           declare -a PAIRS=()
           for file in "${CHANGED_FILES[@]}"; do
             dir="$(dirname "$file")"
@@ -200,8 +230,18 @@ jobs:
               dir="$(dirname "$dir")"
             done
             if [ -z "$found" ]; then
-              echo "::warning file=$file::No go.mod found in any parent directory — skipping. A Go recipe must ship a go.mod."
-              UNMAPPED=1
+              # Case (a) vs (b) — see the comment above. The `*/` suffix is
+              # load-bearing: without it `contrib/gold-recipe/x.go` would
+              # match a `contrib/go*` prefix and be misfiled as a Go recipe.
+              case "$file" in
+                core/go/*|contrib/go/*|skills/*)
+                  echo "::warning file=$file::No go.mod found in any parent directory — skipping. A Go recipe must ship a go.mod."
+                  UNMAPPED=1
+                  ;;
+                *)
+                  echo "::notice file=$file::Not part of a Go module (no go.mod in any parent directory) — skipping. This is expected for an incidental .go file inside a recipe written in another language."
+                  ;;
+              esac
               continue
             fi
             # printf rather than an embedded literal tab: a tab-expanding
@@ -284,11 +324,15 @@ jobs:
                     -filter-mode=added \
                     -fail-level=any < "$WORK/fmt.diff" || RD_STATUS=1
 
-          # A file we could not attribute to a module was never formatted,
-          # so a clean reviewdog result above does not mean the PR is clean.
-          # Surface that rather than reporting a misleading green. Captured
-          # above rather than left to `set -e` at the reviewdog call, which
-          # would abort before this diagnostic ever printed.
+          # A Go-recipe file we could not attribute to a module was never
+          # formatted, so a clean reviewdog result above does not mean the
+          # PR is clean. Surface that rather than reporting a misleading
+          # green. Captured above rather than left to `set -e` at the
+          # reviewdog call, which would abort before this diagnostic ever
+          # printed.
+          #
+          # Only case (a) reaches here — an incidental .go file outside a Go
+          # recipe is a notice, not a failure. See step 3.
           if [ "$UNMAPPED" -eq 1 ]; then
             echo "::error::$UNMAPPED_MSG"
             exit 1
