@@ -1,5 +1,5 @@
 .PHONY: dev dev-backend dev-web dev-local dev-backend-local dev-sandbox dev-backend-sandbox \
-        dev-preflight dev-stop \
+        dev-preflight dev-ready dev-stop \
         setup build-web deploy deploy-web deploy-backend deploy-all destroy commands-catalog help
 
 BACKEND_PORT             ?= 8001
@@ -107,7 +107,25 @@ dev: dev-preflight
 	@trap 'kill 0' INT TERM EXIT; \
 	{ $(MAKE) --no-print-directory $(DEV_BACKEND_TARGET) 2>&1 | sed -u 's/^/[backend] /'; echo "[backend] exited — stopping dev stack"; kill 0; } & \
 	{ $(MAKE) --no-print-directory dev-web               2>&1 | sed -u 's/^/[web]     /'; echo "[web]     exited — stopping dev stack"; kill 0; } & \
+	$(MAKE) --no-print-directory dev-ready & \
 	wait
+
+# The first run interleaves npm install + uv sync output for minutes, so vite's
+# own URL banner scrolls away long before the stack is usable. Any HTTP reply
+# (404 included) means the port is bound, so plain `curl -s` is the readiness
+# probe. Dies with the stack via `dev`'s `kill 0` trap.
+dev-ready:
+	@command -v curl >/dev/null 2>&1 || exit 0; \
+	i=0; \
+	while [ $$i -lt 600 ]; do \
+	  if curl -s -o /dev/null http://127.0.0.1:$(BACKEND_PORT) && curl -s -o /dev/null http://127.0.0.1:$(WEB_PORT); then \
+	    echo ""; \
+	    echo ">> ready — open http://localhost:$(WEB_PORT)  (backend http://127.0.0.1:$(BACKEND_PORT))"; \
+	    echo ""; \
+	    exit 0; \
+	  fi; \
+	  i=$$((i+1)); sleep 1; \
+	done
 
 # .env wins; the -local/-sandbox variants below force a value instead.
 DEV_BACKEND_ENV ?= $${LHA_ENVIRONMENT_BACKEND:-$(LHA_ENVIRONMENT_BACKEND)}
