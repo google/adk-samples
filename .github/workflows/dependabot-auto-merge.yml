@@ -37,11 +37,20 @@ permissions:
 jobs:
   auto-approve:
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]' && github.event_name == 'pull_request'
+    # `github.event.pull_request.user.login`, NOT `github.actor`.
+    # github.actor is the LAST actor to touch the triggering context, not
+    # the one that created the PR, so an attacker can open a PR whose HEAD
+    # commit makes github.actor read as dependabot[bot] while the rest of
+    # the branch is attacker-controlled — bypassing the check and earning a
+    # free approval. The pull_request.user is the PR's author and cannot be
+    # spoofed this way. (zizmor `bot-conditions`, a mandatory check.)
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event_name == 'pull_request'
     steps:
       - name: Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # ratchet:dependabot/fetch-metadata@v2.5.0
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
@@ -107,7 +116,7 @@ jobs:
 
       - name: Checkout code
         if: steps.check.outputs.is_dependabot == 'true'
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5.1.0
         with:
           ref: refs/pull/${{ steps.pr.outputs.number }}/head
           fetch-depth: 0

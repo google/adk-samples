@@ -36,9 +36,18 @@ on:
       # Both jobs therefore also scope `git diff` to `-- core contrib
       # skills`. Keep the two in sync.
 
-permissions:
-  contents: read
-  pull-requests: write # Essential for posting reviewdog suggestion comments
+# Declared per job rather than here. `pull-requests: write` at the workflow
+# level is inherited by EVERY job, including any added later that only need
+# to read — which is what zizmor's `excessive-permissions` audit flagged
+# (High confidence; it is what pushed the GitHub Actions Scan over its
+# Medium/High severity threshold). Both jobs below happen to need the same
+# two scopes today; keeping them job-local means a future read-only job does
+# not silently acquire write access to pull requests.
+#
+# NOTE: python-format.yml still declares these at the workflow level. It is
+# not flagged today only because the scan reports non-mandatory findings on
+# changed files, and that file is untouched here. Worth fixing separately.
+permissions: {}
 
 # Cancel superseded runs on the same PR to save runner minutes and avoid
 # stale suggestion comments from an older commit lingering on the PR.
@@ -58,6 +67,9 @@ jobs:
   go-format:
     name: Go Format Suggestions
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # Checkout
+      pull-requests: write # Post reviewdog suggestion comments
     # Formatting is syntactic — no compilation, no module download — so it
     # is fast. 10 min is a generous ceiling that still protects against a
     # stuck reviewdog HTTP call to the GitHub API.
@@ -347,6 +359,9 @@ jobs:
   go-lint:
     name: Go Lint Suggestions
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # Checkout
+      pull-requests: write # Post reviewdog suggestion comments
     # Longer than go-format: `golangci-lint run` type-checks, so it must
     # download the module graph and build the package. The ADK Go client
     # pulls ~50 transitive modules.
