@@ -52,7 +52,7 @@ Long Horizon shows how to build a long-horizon harness on ADK with capabilities 
 | **Frontend** | Vite 8 + TanStack Router/Query + React 18 |
 | **Surface** | Cloud Run + Cloud SQL + Cloud Scheduler — Cloud Run scales to zero between turns (Cloud SQL bills continuously) |
 
-Custom code earns its keep in a handful of **interfaces** on top of the managed primitives: the tool-guardrail chain, the `Environment` ContextVar sandbox layer, the per-user secret store, the dynamic delegate + HITL resurfacing, the three-tier system-prompt assembler, and the self-improvement loop layered on managed Memory Bank (throttled judge fork, pre-compaction flush, nightly dream-review; see [`docs/memory.md`](docs/memory.md)). Compaction, resumability, and prefix caching are ADK/Vertex knobs Horizon only configures; routines and the scheduler are applications composed from the interfaces. (Those interfaces are the rows in [`AGENTS.md`](AGENTS.md).)
+Custom code earns its keep in a handful of **interfaces** on top of the managed primitives: the tool-guardrail chain, the `Environment` ContextVar sandbox layer, the per-user secret store, the dynamic delegate + HITL resurfacing, the three-tier system-prompt assembler, and the self-improvement loop layered on managed Memory Bank (throttled judge fork, pre-compaction flush, nightly dream-review; see [`docs/memory.md`](docs/memory.md)). Compaction, resumability, and prefix caching are ADK/Agent Platform knobs Horizon only configures; routines and the scheduler are applications composed from the interfaces. (Those interfaces are the rows in [`AGENTS.md`](AGENTS.md).)
 
 Full subsystem walkthrough: [`docs/architecture.md`](docs/architecture.md).
 
@@ -66,12 +66,12 @@ Full subsystem walkthrough: [`docs/architecture.md`](docs/architecture.md).
 
 [uv](https://docs.astral.sh/uv/getting-started/installation/), [google-agents-cli](https://pypi.org/project/google-agents-cli/) (`uv tool install google-agents-cli` — provides the `agents-cli` command), [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), `make`, and Node.js 20.19+ or 22.12+ (Vite 8 — web UI only). On Windows, use WSL.
 
-Plus a **GCP project with billing enabled** — inference runs on Vertex. These are one-time setup; skip any you've already done:
+Plus a **GCP project with billing enabled**. These are one-time setup; skip any you've already done:
 
 ```bash
-gcloud auth application-default login             # local credentials for Vertex
+gcloud auth application-default login             # local credentials for inference
 gcloud config set project YOUR_PROJECT_ID         # skip if your gcloud default is already the right project
-gcloud services enable aiplatform.googleapis.com  # the Vertex AI API
+gcloud services enable aiplatform.googleapis.com  # the API Agent Platform serves from
 ```
 
 ### Setup and run
@@ -86,15 +86,20 @@ cd core/python/long-horizon-harness
 make dev-local
 ```
 
-Open <http://localhost:3000>, or run one-shot from the terminal with `agents-cli run "your prompt"`. To install without starting servers: `make setup`.
+`make dev-local` is the simplest start: tools run on your host, sessions stay in memory, nothing is provisioned in GCP. The trade-off is **no cross-session memory** and **no sandbox isolation** — tools run directly on your machine. Inference goes to Agent Platform either way; there is no local model, `local` only moves *tool execution* to your host.
 
-> **Cost:** the test suites (`tests/unit` / `tests/integration`) run free with no GCP. Everything else calls **Vertex, which is billed per token**, so you need a project with billing enabled. `make deploy` additionally stands up always-on resources (Cloud SQL, Cloud Scheduler) — see [Deploy](#deploy) for teardown.
+Other ways to run it:
 
-`make dev-local` is the simplest way to start: tools run on your host, sessions stay in-process, and no sandbox, Agent Platform Sessions, or Cloud SQL is provisioned. The trade-off is **no cross-session memory** and **no isolated sandbox** (tools run directly on your machine); inference still calls Vertex (there is no local model — `local` only moves **tool execution** to your host). If `GOOGLE_CLOUD_PROJECT` is blank in `.env`, `make dev` falls back to your active `gcloud` project; switch to the Agent Platform sandbox with `LHA_ENVIRONMENT_BACKEND=sandbox` (or `make dev-sandbox`).
+- `agents-cli run "your prompt"` — one shot from the terminal, no web UI
+- `make dev-sandbox` — tools run in the per-user Agent Platform sandbox
+
+`make setup` installs deps and seeds `.env` without starting anything. The project comes from `GOOGLE_CLOUD_PROJECT` in `.env`, falling back to your active `gcloud` project.
+
+> **Cost:** every turn is billed per token; only the test suites (`tests/unit` / `tests/integration`) are free. `make deploy` additionally stands up always-on resources (Cloud SQL, Cloud Scheduler) — see [Deploy](#deploy) for teardown.
 
 ### Testing
 
-Deterministic tests need no GCP; evals hit Vertex and are billed like any other call.
+Deterministic tests need no GCP; evals hit Agent Platform and are billed like any other call.
 
 ```bash
 uv run pytest tests/unit tests/integration   # deterministic — no GCP needed
