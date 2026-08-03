@@ -17,7 +17,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "uvicorn>=0.47.0",
     "pyjwt>=2.12.1",
-    "python-multipart>=0.0.29",
+    "python-multipart>=0.0.31",
     "email-validator>=2.3.0",
     # pyopenssl 26 added strict Context immutability after first use, which
     # breaks urllib3.contrib.pyopenssl (still mutates verify_mode post-use)
