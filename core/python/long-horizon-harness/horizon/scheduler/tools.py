@@ -22,11 +22,10 @@ A single ``reminder(action=...)`` dispatch over three operations:
 * ``cancel``: same scoping, so user A cannot remove user B's reminder
   even if they guess the id.
 
-Channel + recipient_id come from ``tool_context.state``
-(``gateway_channel`` / ``gateway_recipient_id`` keys, set by the gateway
-on inbound messages). When unset (local CLI / playground use), we fall
-back to ``channel="cli"`` and ``recipient_id=user_id`` so the local
-end-to-end path works without the gateway.
+A row's ``channel`` / ``recipient_id`` are the out-of-band push address
+(``horizon/tools/push_to_user.py``). No inbound gateway exists — alternate
+gateways are out of scope — so they are fixed to ``"cli"`` / ``user_id``;
+delivery the user actually sees is the tagged session the tick creates.
 """
 
 from __future__ import annotations
@@ -42,6 +41,8 @@ from horizon.scheduler.store import (
 )
 
 logger = logging.getLogger(__name__)
+
+_CHANNEL = "cli"
 
 
 def _parse_when(value: str) -> datetime | None:
@@ -76,7 +77,7 @@ def _parse_when(value: str) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
-def _identity(tool_context: Any) -> tuple[str, str, str, str] | None:
+def _identity(tool_context: Any) -> tuple[str, str] | None:
     invocation = getattr(tool_context, "_invocation_context", None)
     if invocation is None:
         return None
@@ -84,12 +85,7 @@ def _identity(tool_context: Any) -> tuple[str, str, str, str] | None:
     app_name = getattr(invocation, "app_name", "") or ""
     if not user_id or not app_name:
         return None
-    state = getattr(tool_context, "state", None)
-    if state is None:
-        state = {}
-    channel = state.get("gateway_channel") or "cli"
-    recipient_id = state.get("gateway_recipient_id") or user_id
-    return user_id, app_name, str(channel), str(recipient_id)
+    return user_id, app_name
 
 
 async def _schedule(
@@ -124,7 +120,7 @@ async def _schedule(
     identity = _identity(tool_context)
     if identity is None:
         return {"success": False, "error": "no active invocation context"}
-    user_id, app_name, channel, recipient_id = identity
+    user_id, app_name = identity
 
     store = get_reminder_store()
     now = datetime.now(UTC)
@@ -132,8 +128,8 @@ async def _schedule(
         id="",
         user_id=user_id,
         app_name=app_name,
-        channel=channel,
-        recipient_id=recipient_id,
+        channel=_CHANNEL,
+        recipient_id=user_id,
         message=message.strip(),
         fire_at=fire_at,
         recurrence=recurrence,  # type: ignore[arg-type]
@@ -145,7 +141,7 @@ async def _schedule(
         "id": rid,
         "fire_at": fire_at.isoformat(),
         "recurrence": recurrence,
-        "channel": channel,
+        "channel": _CHANNEL,
     }
 
 
@@ -153,7 +149,7 @@ async def _list(tool_context: Any) -> dict[str, Any]:
     identity = _identity(tool_context)
     if identity is None:
         return {"success": False, "error": "no active invocation context"}
-    user_id, _app_name, _channel, _recipient_id = identity
+    user_id, _app_name = identity
     store = get_reminder_store()
     items = await store.list_for_user(user_id)
     return {
@@ -178,7 +174,7 @@ async def _cancel(id: str, tool_context: Any) -> dict[str, Any]:
     identity = _identity(tool_context)
     if identity is None:
         return {"success": False, "error": "no active invocation context"}
-    user_id, _app_name, _channel, _recipient_id = identity
+    user_id, _app_name = identity
     store = get_reminder_store()
     ok = await store.cancel(id, user_id)
     if not ok:
