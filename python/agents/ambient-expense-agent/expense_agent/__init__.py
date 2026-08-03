@@ -14,5 +14,5 @@
 
 """Ambient expense agent for processing expense reports via triggers."""
 
-from .config import config  # noqa: F401 — auth setup runs on import
-from .agent import root_agent  # noqa: F401
+from .agent import root_agent
+from .config import config

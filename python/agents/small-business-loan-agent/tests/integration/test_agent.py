@@ -18,7 +18,6 @@ import dotenv
 import pytest
 from google.adk.runners import InMemoryRunner
 from google.genai.types import Part, UserContent
-
 from small_business_loan_agent.agent import root_agent
 
 pytest_plugins = ("pytest_asyncio",)

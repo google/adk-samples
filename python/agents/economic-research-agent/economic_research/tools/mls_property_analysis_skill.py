@@ -2,6 +2,7 @@
 """MLS Property Analysis and Real Estate Investment Yield Calculator Skill."""
 
 import json
+
 from economic_research.tools.hud_skill import fetch_hud_fmr_data
 
 # Grounded city-to-county FIPS mappings for HUD integration

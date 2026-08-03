@@ -1,11 +1,12 @@
 # Copyright 2025 Google LLC. This software is provided as-is, without warranty or representation.
 """Unit tests for Dynamic routing and self-measurement of economic primitives."""
 
-import os
-import json
 import glob
+import json
+import os
 import shutil
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 
@@ -57,7 +58,7 @@ def test_query_routing_and_primitives_low_complexity(mock_run):
     log_files = glob.glob(os.path.join(log_dir, "*.json"))
     assert len(log_files) == 1
     
-    with open(log_files[0], "r") as f:
+    with open(log_files[0]) as f:
         log_data = json.load(f)
         assert log_data["query"] == "What is the electricity rate in Ohio?"
         assert log_data["primitives"]["interaction_type"] == "directive"
@@ -105,7 +106,7 @@ def test_query_routing_and_primitives_high_complexity_with_rejection(mock_run):
     log_files = glob.glob(os.path.join(log_dir, "*.json"))
     assert len(log_files) == 1
     
-    with open(log_files[0], "r") as f:
+    with open(log_files[0]) as f:
         log_data = json.load(f)
         assert log_data["primitives"]["interaction_type"] == "task_iteration"
         assert log_data["primitives"]["autonomy_level"] == 4
@@ -115,7 +116,9 @@ def test_query_routing_and_primitives_high_complexity_with_rejection(mock_run):
 
 
 def test_analyze_workforce_exposure():
-    from economic_research.tools.workforce_exposure_skill import analyze_workforce_exposure
+    from economic_research.tools.workforce_exposure_skill import (
+        analyze_workforce_exposure,
+    )
     
     result = analyze_workforce_exposure(["Software Developers", "Customer Service Representatives"])
     data = json.loads(result)
@@ -134,7 +137,9 @@ def test_analyze_workforce_exposure():
 
 
 def test_fetch_anthropic_economic_index_data():
-    from economic_research.tools.economic_index_skill import fetch_anthropic_economic_index_data
+    from economic_research.tools.economic_index_skill import (
+        fetch_anthropic_economic_index_data,
+    )
     
     result_model = fetch_anthropic_economic_index_data("model_selection")
     data_model = json.loads(result_model)
@@ -152,7 +157,9 @@ def test_fetch_anthropic_economic_index_data():
 
 
 def test_fetch_mls_property_listings():
-    from economic_research.tools.mls_property_analysis_skill import fetch_mls_property_listings
+    from economic_research.tools.mls_property_analysis_skill import (
+        fetch_mls_property_listings,
+    )
     
     result = fetch_mls_property_listings("Columbus")
     data = json.loads(result)
@@ -240,7 +247,9 @@ def test_model_labor_shifts():
 
 
 def test_run_econometric_regression():
-    from economic_research.tools.econometrics_skill import run_econometric_regression
+    from economic_research.tools.econometrics_skill import (
+        run_econometric_regression,
+    )
     
     y = [1.0, 2.0, 3.0, 4.0, 5.0]
     x = [2.0, 4.0, 6.0, 8.0, 10.0]
@@ -265,7 +274,9 @@ def test_run_econometric_regression():
 
 
 def test_underwrite_deal_leverage():
-    from economic_research.tools.underwriting_skill import underwrite_deal_leverage
+    from economic_research.tools.underwriting_skill import (
+        underwrite_deal_leverage,
+    )
     
     result = underwrite_deal_leverage(
         purchase_price=1000000.0,
@@ -283,7 +294,9 @@ def test_underwrite_deal_leverage():
 
 
 def test_generate_location_scorecard():
-    from economic_research.tools.scorecard_skill import generate_location_scorecard
+    from economic_research.tools.scorecard_skill import (
+        generate_location_scorecard,
+    )
     
     result = generate_location_scorecard(["TX", "NC"])
     data = json.loads(result)
@@ -293,7 +306,9 @@ def test_generate_location_scorecard():
 
 
 def test_estimate_employee_relocation():
-    from economic_research.tools.relocation_skill import estimate_employee_relocation
+    from economic_research.tools.relocation_skill import (
+        estimate_employee_relocation,
+    )
     
     result = estimate_employee_relocation("CA", "NC", "48453", "37183", 150000.0)
     data = json.loads(result)

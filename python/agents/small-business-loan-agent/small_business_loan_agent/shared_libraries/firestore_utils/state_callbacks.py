@@ -20,10 +20,10 @@ before agent execution, and enable resume capability after human intervention.
 """
 
 import json
-
 from pathlib import Path
 
 from google.adk.agents.callback_context import CallbackContext
+
 from small_business_loan_agent.shared_libraries.firestore_utils.state_service import (
     ProcessStateService,
 )

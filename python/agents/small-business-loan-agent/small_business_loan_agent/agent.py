@@ -22,18 +22,18 @@ Orchestrator-based agent architecture with 4 specialized sub-agents:
   4. LoanDecisionAgent - Finalizes decision after human approval
 """
 
-from small_business_loan_agent.gemini_custom import GeminiPreview
 from google.adk.agents import LlmAgent
 from google.adk.apps import App
 from google.adk.planners import BuiltInPlanner
 from google.adk.tools.agent_tool import AgentTool
-from google.genai.types import ThinkingConfig, GenerateContentConfig, HttpOptions, HttpRetryOptions
+from google.genai.types import GenerateContentConfig, HttpOptions, HttpRetryOptions, ThinkingConfig
 
 from small_business_loan_agent.callbacks import (
     before_tool_callback_check_process_status,
     extract_request_id_from_request,
     llm_judge_gate,
 )
+from small_business_loan_agent.gemini_custom import GeminiPreview
 from small_business_loan_agent.prompt import ORCHESTRATOR_PROMPT
 from small_business_loan_agent.sub_agents.document_extraction import (
     document_extraction_agent,

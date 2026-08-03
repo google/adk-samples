@@ -7,6 +7,7 @@ import os
 import requests
 from pydantic import BaseModel, Field
 
+
 class FECRequest(BaseModel):
     state_abbr: str = Field(
         ..., description="Two-letter state abbreviation (e.g., 'TX')."

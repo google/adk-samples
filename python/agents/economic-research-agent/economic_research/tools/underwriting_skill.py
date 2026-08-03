@@ -96,4 +96,4 @@ def underwrite_deal_leverage(
         }, indent=2)
 
     except Exception as e:
-        return json.dumps({"ERROR": f"Underwriting calculation failed: {str(e)}"}, indent=2)
+        return json.dumps({"ERROR": f"Underwriting calculation failed: {e!s}"}, indent=2)

@@ -3,7 +3,6 @@ from google.adk.agents import LlmAgent
 from .config import config
 from .prompt import get_prompt
 
-
 root_agent = LlmAgent(
     name="sdlc_task_planner_agent",
     model=config.default_llm,

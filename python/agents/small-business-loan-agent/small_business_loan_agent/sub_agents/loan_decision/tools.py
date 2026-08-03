@@ -15,6 +15,7 @@
 """Tools for the Loan Decision Agent — mock decision finalization."""
 
 from google.adk.tools.tool_context import ToolContext
+
 from small_business_loan_agent.shared_libraries.logging_config import get_logger
 
 logger = get_logger(__name__)

@@ -20,11 +20,11 @@ capability after human intervention for each loan_request_id.
 """
 
 import os
-
 from datetime import UTC, datetime
 from typing import Any
 
 from google.cloud import firestore
+
 from small_business_loan_agent.shared_libraries.logging_config import get_logger
 
 logger = get_logger(__name__)
