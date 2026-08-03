@@ -66,20 +66,24 @@ Full subsystem walkthrough: [`docs/architecture.md`](docs/architecture.md).
 
 [uv](https://docs.astral.sh/uv/getting-started/installation/), [google-agents-cli](https://pypi.org/project/google-agents-cli/) (`uv tool install google-agents-cli` — provides the `agents-cli` command), [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), `make`, and Node.js 20.19+ or 22.12+ (Vite 8 — web UI only). On Windows, use WSL.
 
+Plus a **GCP project with billing enabled** — inference runs on Vertex. These are one-time setup; skip any you've already done:
+
+```bash
+gcloud auth application-default login             # local credentials for Vertex
+gcloud config set project YOUR_PROJECT_ID         # skip if your gcloud default is already the right project
+gcloud services enable aiplatform.googleapis.com  # the Vertex AI API
+```
+
 ### Setup and run
 
 ```bash
-# 1. Clone and enter this sample
-git clone https://github.com/google/adk-samples.git
-cd adk-samples/core/python/long-horizon-harness
+# 1. Clone just this sample
+git clone --depth 1 --filter=blob:none --sparse https://github.com/google/adk-samples.git
+cd adk-samples && git sparse-checkout set core/python/long-horizon-harness
+cd core/python/long-horizon-harness
 
-# 2. GCP access for Vertex inference (needs a project with BILLING enabled)
-gcloud auth application-default login
-gcloud config set project <your-project-id>          # or leave your gcloud default
-gcloud services enable aiplatform.googleapis.com     # the Vertex AI API
-
-# 3. Run — the first run installs deps and seeds .env from .env.example
-make dev-local                                 # backend :8001 + web UI :3000
+# 2. Run — the first run installs deps and seeds .env from .env.example
+make dev-local
 ```
 
 Open <http://localhost:3000>, or run one-shot from the terminal with `agents-cli run "your prompt"`. To install without starting servers: `make setup`.
