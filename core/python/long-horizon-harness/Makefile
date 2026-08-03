@@ -1,5 +1,5 @@
 .PHONY: dev dev-backend dev-web dev-local dev-backend-local dev-sandbox dev-backend-sandbox \
-        dev-preflight dev-ready dev-stop \
+        dev-preflight dev-ready dev-web-wait dev-stop \
         setup build-web deploy deploy-web deploy-backend deploy-all destroy commands-catalog help
 
 BACKEND_PORT             ?= 8001
@@ -104,9 +104,13 @@ dev-stop:
 # web server down with it instead of leaving a stack that only looks alive.
 # (`wait -n` would be the one-liner, but /bin/sh here is bash 3.2.)
 dev: dev-preflight
+	@echo ""
+	@echo ">> starting the dev stack — ready in ~30s (a first run installs deps first, so longer)"
+	@echo ">> the web UI starts once the backend is listening on :$(BACKEND_PORT)"
+	@echo ""
 	@trap 'kill 0' INT TERM EXIT; \
 	{ $(MAKE) --no-print-directory $(DEV_BACKEND_TARGET) 2>&1 | sed -u 's/^/[backend] /'; echo "[backend] exited — stopping dev stack"; kill 0; } & \
-	{ $(MAKE) --no-print-directory dev-web               2>&1 | sed -u 's/^/[web]     /'; echo "[web]     exited — stopping dev stack"; kill 0; } & \
+	{ $(MAKE) --no-print-directory dev-web-wait          2>&1 | sed -u 's/^/[web]     /'; echo "[web]     exited — stopping dev stack"; kill 0; } & \
 	$(MAKE) --no-print-directory dev-ready & \
 	wait
 
@@ -120,12 +124,34 @@ dev-ready:
 	while [ $$i -lt 600 ]; do \
 	  if curl -s -o /dev/null http://127.0.0.1:$(BACKEND_PORT) && curl -s -o /dev/null http://127.0.0.1:$(WEB_PORT); then \
 	    echo ""; \
-	    echo ">> ready — open http://localhost:$(WEB_PORT)  (backend http://127.0.0.1:$(BACKEND_PORT))"; \
+	    echo "=================================================================="; \
+	    echo ""; \
+	    echo "   READY — open the web UI:"; \
+	    echo ""; \
+	    echo "       http://localhost:$(WEB_PORT)"; \
+	    echo ""; \
+	    echo "   backend   http://127.0.0.1:$(BACKEND_PORT)"; \
+	    echo "   stop      Ctrl-C"; \
+	    echo ""; \
+	    echo "=================================================================="; \
 	    echo ""; \
 	    exit 0; \
 	  fi; \
 	  i=$$((i+1)); sleep 1; \
 	done
+
+# vite proxies /.well-known, /a2a and /lha to the backend from the moment it
+# boots, so starting it first buries the terminal in ECONNREFUSED stack traces
+# until uvicorn binds. npm install still runs in parallel (the prerequisite);
+# only the server start waits.
+dev-web-wait: web/node_modules
+	@if command -v curl >/dev/null 2>&1; then \
+	  i=0; \
+	  while [ $$i -lt 600 ] && ! curl -s -o /dev/null http://127.0.0.1:$(BACKEND_PORT); do \
+	    i=$$((i+1)); sleep 1; \
+	  done; \
+	fi; \
+	$(MAKE) --no-print-directory dev-web
 
 # .env wins; the -local/-sandbox variants below force a value instead.
 DEV_BACKEND_ENV ?= $${LHA_ENVIRONMENT_BACKEND:-$(LHA_ENVIRONMENT_BACKEND)}
