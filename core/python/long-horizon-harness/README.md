@@ -52,7 +52,16 @@ Long Horizon shows how to build a long-horizon harness on ADK with capabilities 
 | **Frontend** | Vite 8 + TanStack Router/Query + React 18 |
 | **Surface** | Cloud Run + Cloud SQL + Cloud Scheduler — Cloud Run scales to zero between turns (Cloud SQL bills continuously) |
 
-Custom code earns its keep in a handful of **interfaces** on top of the managed primitives: the tool-guardrail chain, the `Environment` ContextVar sandbox layer, the per-user secret store, the dynamic delegate + HITL resurfacing, the three-tier system-prompt assembler, and the self-improvement loop layered on managed Memory Bank (throttled judge fork, pre-compaction flush, nightly dream-review; see [`docs/memory.md`](docs/memory.md)). Compaction, resumability, and prefix caching are ADK/Agent Platform knobs Horizon only configures; routines and the scheduler are applications composed from the interfaces. (Those interfaces are the rows in [`AGENTS.md`](AGENTS.md).)
+On top of those managed primitives, Horizon adds a handful of **interfaces** — the rows in [`AGENTS.md`](AGENTS.md):
+
+- the tool-guardrail chain
+- the `Environment` ContextVar sandbox layer
+- the per-user secret store
+- the dynamic delegate + HITL resurfacing
+- the three-tier system-prompt assembler
+- the self-improvement loop over managed Memory Bank — throttled judge fork, pre-compaction flush, nightly dream-review (see [`docs/memory.md`](docs/memory.md))
+
+Compaction, resumability, and prefix caching are ADK/Agent Platform knobs Horizon only configures; routines and the scheduler are applications composed from those interfaces.
 
 Full subsystem walkthrough: [`docs/architecture.md`](docs/architecture.md).
 
