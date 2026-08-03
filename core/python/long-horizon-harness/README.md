@@ -4,7 +4,7 @@
   <h3>A reference implementation of an agent harness on ADK and Google's Agent Platform.</h3>
 </div>
 
-Long Horizon shows how to build a long-horizon harness on ADK with capabilities like cross-session memory, a per-user sandbox, tool guardrails, sub-agents, and a self-improvement loop. Read it, then lift the patterns into your own agent.
+This sample shows how to build a long-horizon harness on ADK with capabilities like cross-session memory, a per-user sandbox, tool guardrails, sub-agents, and a self-improvement loop. Read it, then lift the patterns into your own agent.
 
 > **Not an officially supported Google product** — sample code for demonstration only.
 
