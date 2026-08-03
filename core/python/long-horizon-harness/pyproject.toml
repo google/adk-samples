@@ -1,0 +1,153 @@
+[project]
+# Distribution name + Cloud Run service name (agents-cli derives the service
+# from this — a deploy contract: web proxy, IAP, APP_URL all target `lha`).
+# The IMPORT package is `horizon` (see [tool.hatch...] packages + the horizon/
+# dir); a distribution name that differs from the import name is normal.
+name = "long-horizon-harness"
+version = "0.1.0"
+description = "Horizon — a self-improving long-horizon agent on Google ADK + Vertex AI"
+# Core runtime — what `import horizon` + the default Gemini agent need. Provider
+# and subsystem deps live in [project.optional-dependencies] extras below so an
+# external harness can install a minimal slice; this repo's own dev/test env
+# pulls them all back via the `long-horizon-harness[full]` self-reference in [dependency-groups].
+dependencies = [
+    "google-adk[mcp,otel-gcp,a2a]>=2.5.0,<3.0.0",
+    "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
+    "google-cloud-logging>=3.12.0,<4.0.0",
+    "fastapi>=0.136.1",
+    "uvicorn>=0.47.0",
+    "pyjwt>=2.12.1",
+    "python-multipart>=0.0.29",
+    "email-validator>=2.3.0",
+    # pyopenssl 26 added strict Context immutability after first use, which
+    # breaks urllib3.contrib.pyopenssl (still mutates verify_mode post-use)
+    # that google-auth injects on import. Manifests as a TLS handshake
+    # ValueError on Vertex calls.
+    "pyopenssl<25.0",
+    "dateparser>=1.4.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.0.0",
+    "opentelemetry-exporter-gcp-trace>=1.0.0",
+    "opentelemetry-exporter-gcp-monitoring>=1.0.0",
+    "opentelemetry-exporter-gcp-logging>=1.0.0",
+    "google-cloud-storage>=3.10.1",
+    "google-cloud-aiplatform[agent-engines]>=1.153.1",
+    "google-api-python-client>=2.0.0,<3.0.0",
+    "google-auth-oauthlib>=1.2.0,<2.0.0",
+    "a2a-sdk[http-server,sqlite]>=1.0,<2",
+    "google-cloud-secret-manager>=2.20.0,<3.0.0",
+    "packaging>=24.0",
+    "croniter>=6.2.2",
+]
+requires-python = ">=3.11,<3.14"
+
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4,<9.0.0",
+    "pytest-asyncio>=0.23.8,<1.0.0",
+    "nest-asyncio>=1.6.0,<2.0.0",
+    "respx>=0.23.1",
+    # Dev/test runs the whole agent, so pull every optional extra back in. uv
+    # installs the `dev` group by default, so `uv run`/`uv sync` stay complete.
+    "long-horizon-harness[full]",
+]
+
+[project.optional-dependencies]
+# Postgres-backed durable stores (reminders, routines, resilient sessions).
+postgres = [
+    "asyncpg>=0.31.0",
+    "yoyo-migrations>=9.0.0",
+    "bcrypt>=5.0.0",
+]
+# Scheduler (reminders/routines/dream-review) durability rides the postgres store.
+scheduler = [
+    "long-horizon-harness[postgres]",
+]
+# In-sandbox data-analysis libraries (not imported by the harness itself).
+data = [
+    "pandas>=3.0.3",
+    "matplotlib>=3.10.9",
+    "seaborn>=0.13.2",
+]
+# Everything: the full deployed surface. `all` is an alias.
+full = [
+    "long-horizon-harness[postgres,scheduler,data]",
+]
+all = [
+    "long-horizon-harness[full]",
+]
+eval = [
+    "google-adk[eval]>=2.5.0,<3.0.0",
+]
+lint = [
+    "ruff>=0.4.6,<1.0.0",
+    "ty>=0.0.1a0",
+    "codespell>=2.2.0,<3.0.0",
+]
+
+[tool.ty]
+# ty is Astral's Rust-based type checker (same team as ruff/uv)
+# See: https://docs.astral.sh/ty/
+
+[tool.ty.environment]
+python-version = "3.11"
+
+[tool.ty.src]
+exclude = [".venv/**"]
+
+[tool.ty.rules]
+# Ignore common issues with third-party libraries and dynamic code patterns
+unresolved-import = "ignore"
+unresolved-attribute = "ignore"
+invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+invalid-return-type = "ignore"
+possibly-missing-attribute = "ignore"
+not-subscriptable = "ignore"
+deprecated = "ignore"
+
+# Tests assert on ADK's loosely-typed return values (Content | None,
+# list[Part] | None, wide ContentUnion) and deliberately call constructors with
+# wrong arity inside pytest.raises(TypeError); pytest.skip's stub also reads as
+# zero-arg to ty. None of these are real defects, so relax the affected rules in
+# tests only — app code stays strict.
+[[tool.ty.overrides]]
+include = ["tests/**"]
+[tool.ty.overrides.rules]
+unsupported-operator = "ignore"
+not-iterable = "ignore"
+no-matching-overload = "ignore"
+too-many-positional-arguments = "ignore"
+missing-argument = "ignore"
+unknown-argument = "ignore"
+
+[tool.codespell]
+ignore-words-list = "rouge,couldn,ot,ans,unparseable,trun,hda"
+skip = "./locust_env/*,./adk-python/*,uv.lock,.venv,**/package-lock.json,**/node_modules/**,./web/out/**,./web/dist/**,**/*.tsbuildinfo"
+
+
+
+
+# Public PyPI as the default index, so `uv sync` works without corp Airlock
+# auth. No trailing slash: uv records the registry verbatim in uv.lock, and a
+# mismatch here makes `uv lock --check` treat the lockfile as stale.
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[tool.pytest.ini_options]
+pythonpath = "."
+asyncio_default_fixture_loop_scope = "function"
+# tests/live/ is excluded by default — those tests hit real Vertex / spawn
+# real uvicorn and require GCP credentials. Run them explicitly with
+# `uv run pytest tests/live`. See tests/live/README.md.
+testpaths = ["tests/unit", "tests/integration"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["horizon"]
