@@ -23,7 +23,7 @@ dependencies = [
     # breaks urllib3.contrib.pyopenssl (still mutates verify_mode post-use)
     # that google-auth injects on import. Manifests as a TLS handshake
     # ValueError on Vertex calls.
-    "pyopenssl<25.0",
+    "pyopenssl<27.0",
     "dateparser>=1.4.0",
     "opentelemetry-exporter-otlp-proto-http>=1.0.0",
     "opentelemetry-exporter-gcp-trace>=1.0.0",
