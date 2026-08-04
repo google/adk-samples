@@ -6,9 +6,9 @@ requires-python = ">=3.11,<3.13"
 license = "Apache-2.0"
 
 dependencies = [
-    "fastapi>=0.115.0",
-    "uvicorn>=0.34.0",
+    "fastapi>=0.140.13",
+    "uvicorn>=0.51.0",
     "httpx>=0.27.0",
-    "google-auth>=2.29.0",
-    "requests>=2.31.0",
+    "google-auth>=2.56.2",
+    "requests>=2.34.2",
 ]
