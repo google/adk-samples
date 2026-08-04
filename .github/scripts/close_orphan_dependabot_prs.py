@@ -40,10 +40,33 @@ DEPENDABOT_YML = REPO_ROOT / ".github" / "dependabot.yml"
 
 # Dependabot renames a few ecosystems in the branch prefix relative to the
 # `package-ecosystem` value used in dependabot.yml. Everything not listed here
-# uses the same string in both places.
+# uses the same string in both places. Mirrors dependabot-core's
+# `PACKAGE_MANAGER_LOOKUP` in config/file.rb.
 BRANCH_PREFIX = {
     "npm": "npm_and_yarn",
     "github-actions": "github_actions",
+    # generate_dependabot.py emits `gomod` (its `_is_gomod` detector fires on
+    # a recipe's go.mod); Dependabot names the branch `go_modules`. Without
+    # this entry every Go dependency PR is classified as an orphan and closed
+    # with --delete-branch on the next Sync Dependabot Config run.
+    "gomod": "go_modules",
+}
+
+# Ecosystems whose package identifiers legitimately contain a slash:
+#   go_modules      module paths        github.com/spf13/cobra
+#   npm_and_yarn    scoped packages     @types/node -> types/node
+#   github-actions  owner/repo          actions/checkout
+# See head_ref_matches for why the usual single-segment rule is dropped here.
+#
+# Every entry generate_dependabot.py emits uses a `groups: patterns: ["*"]`
+# block, so routine version updates arrive pre-grouped with a single-segment
+# tail (`all-dependencies-<hash>`) and never hit this path. Dependabot
+# SECURITY updates are not grouped, though — they open one PR per package,
+# which is where a slash-bearing identifier actually shows up.
+MULTI_SEGMENT_PACKAGE_ECOSYSTEMS = {
+    "go_modules",
+    "npm_and_yarn",
+    "github_actions",
 }
 
 # The GitHub repo to operate on. Set by Actions automatically; fall back to
@@ -86,10 +109,23 @@ def head_ref_matches(head_ref: str, pair: tuple[str, str]) -> bool:
       - Root directory ("/"):  dependabot/<eco>/<package>
       - Non-root:              dependabot/<eco>/<dir-no-leading-slash>/<package>
 
-    The tail after the directory prefix must be a single path segment (the
-    package identifier), so we require no further slashes. That prevents a
-    tracked pair for "/x" from spuriously claiming a branch that actually
-    belongs to the untracked subdirectory "/x/y".
+    For most ecosystems the tail after the directory prefix must be a single
+    path segment (the package identifier), so we require no further slashes.
+    That prevents a tracked pair for "/x" from spuriously claiming a branch
+    that actually belongs to the untracked subdirectory "/x/y".
+
+    That rule cannot hold for the ecosystems in
+    MULTI_SEGMENT_PACKAGE_ECOSYSTEMS, whose package identifiers contain
+    slashes of their own — a Go branch looks like
+    `dependabot/go_modules/contrib/go/my-recipe/github.com/spf13/cobra-1.8.0`.
+    Applying the strict rule there marks every such PR an orphan and closes
+    it. For those the slash check is dropped.
+
+    The trade-off is deliberate and asymmetric: a nested module (a tracked
+    "/x" with an untracked "/x/y" beneath it) can now have its stranded PR go
+    unrecognised and linger. That is the safe direction to fail — a lingering
+    PR is noise, whereas the strict rule's failure mode is closing a valid PR
+    and deleting its branch.
     """
     eco, directory = pair
     if directory == "/":
@@ -99,7 +135,11 @@ def head_ref_matches(head_ref: str, pair: tuple[str, str]) -> bool:
     if not head_ref.startswith(prefix):
         return False
     tail = head_ref[len(prefix) :]
-    return bool(tail) and "/" not in tail
+    if not tail:
+        return False
+    if eco in MULTI_SEGMENT_PACKAGE_ECOSYSTEMS:
+        return True
+    return "/" not in tail
 
 
 def is_orphan(head_ref: str, tracked: set[tuple[str, str]]) -> bool:

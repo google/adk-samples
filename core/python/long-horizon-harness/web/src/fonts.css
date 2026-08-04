@@ -1,0 +1,24 @@
+/* Geist fonts for the Vite build: we load the variable WOFF2s directly and
+   expose the --font-geist-{sans,mono} CSS vars that tailwind.config.ts
+   references. */
+
+@font-face {
+  font-family: "Geist Sans";
+  src: url("/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-geist-sans: "Geist Sans";
+  --font-geist-mono: "Geist Mono";
+}

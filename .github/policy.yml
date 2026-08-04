@@ -246,10 +246,27 @@ required_files:
       - uv.lock
       - .env.example
       - tests/test_runnability.py
+    go:
+      # Every Go recipe is its own module. go.mod is required for three
+      # reasons, in increasing order of subtlety:
+      #   1. Without it the recipe cannot be built, tested, or versioned.
+      #   2. .github/scripts/generate_dependabot.py detects Go recipes by
+      #      the presence of go.mod (`_is_gomod`), so a recipe without one
+      #      silently receives no dependency updates.
+      #   3. .github/workflows/go-format.yml groups changed files by their
+      #      owning go.mod and SKIPS any file it cannot attribute to a
+      #      module — because gci's `localmodule` import section reads
+      #      ./go.mod and golangci-lint aborts outright when it is missing.
+      #      A recipe with no go.mod would therefore be silently unformatted
+      #      and unlinted. This entry is what turns that into a loud,
+      #      actionable structural failure instead.
+      #
+      # go.sum is deliberately NOT required: a recipe with no third-party
+      # dependencies legitimately has none.
+      - go.mod
     # Placeholders for languages that don't have recipes yet. Filling these
     # in later requires no workflow change.
     java: []
-    go: []
     kotlin: []
     typescript: []
 
