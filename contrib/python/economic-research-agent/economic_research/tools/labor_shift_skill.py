@@ -187,7 +187,7 @@ def model_labor_shifts(city_names: list[str]) -> str:
                                 elif vulnerability_index > 50:
                                     displacement = "Medium (10-12%)"
                                     affected_roles = ["Financial Clerks", "Insurance Underwriters", "Operations Assistants"]
-                                    driver = f"Balanced economy with corporate operations presence. Moderate displacement risk in back-office processing."
+                                    driver = "Balanced economy with corporate operations presence. Moderate displacement risk in back-office processing."
                                 else:
                                     displacement = "Low (<4%)"
                                     affected_roles = ["Software Developers", "Data Analysts", "Digital Marketing"]

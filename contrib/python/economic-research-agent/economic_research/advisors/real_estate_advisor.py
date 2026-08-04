@@ -1,3 +1,16 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Evolved Real Estate Portfolio & Investment Advisor Module.
 Integrates live RentCast MLS listings, HUD FMR rents, and HUD AMI limits with advanced pro-forma RE investment math (50% Rule, Cash-on-Cash Return).
 """
@@ -10,14 +23,6 @@ import re
 import requests
 import urllib.request
 from typing import Any, Mapping
-from dotenv import load_dotenv
-
-# Load ERA Environment
-env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
-load_dotenv(env_path)
-
-if not os.getenv("GOOGLE_CLOUD_PROJECT"):
-    os.environ["GOOGLE_CLOUD_PROJECT"] = os.getenv("PROJECT_ID", "project-maui")
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +211,7 @@ class RealEstatePortfolioAdvisor:
             """
             
             response = client.models.generate_content(
-                model='gemini-2.5-pro',
+                model=os.getenv("MODEL_NAME_GENERATED_1"),
                 contents=comparison_prompt
             )
             report_text = response.text

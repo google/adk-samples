@@ -23,7 +23,7 @@ dependencies:
     - US Census Bureau API
     - RentCast API
 ownership:
-  team: ADK Samples Team
+  team: Delta AI Activation Team AMER <delta-ai-activation-team-AMER@google.com>
   poc: enriquekalven
 license: Apache-2.0
 tags:

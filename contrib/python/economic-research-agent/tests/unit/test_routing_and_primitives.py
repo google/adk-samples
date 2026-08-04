@@ -25,7 +25,8 @@ def mock_keys(monkeypatch):
 def test_query_routing_and_primitives_low_complexity(mock_run_async):
     from economic_research.agent import export_agent
     
-    log_dir = "/Users/enriq/.gemini/jetski/scratch/observability"
+    import tempfile
+    log_dir = os.getenv("OBSERVABILITY_LOG_DIR", os.path.join(tempfile.gettempdir(), "observability"))
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
         
@@ -75,7 +76,8 @@ def test_query_routing_and_primitives_low_complexity(mock_run_async):
 def test_query_routing_and_primitives_high_complexity_with_rejection(mock_run_async):
     from economic_research.agent import export_agent
     
-    log_dir = "/Users/enriq/.gemini/jetski/scratch/observability"
+    import tempfile
+    log_dir = os.getenv("OBSERVABILITY_LOG_DIR", os.path.join(tempfile.gettempdir(), "observability"))
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
         

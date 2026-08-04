@@ -100,7 +100,9 @@ fi
 
 
 echo "🚀 Executing Agent Runtime deployment..."
-echo "Command: $DEPLOY_CMD"
+# Mask secret values in logged output to avoid exposing keys
+SANITIZED_CMD=$(echo "$DEPLOY_CMD" | sed -E 's/(=)[^,"]+/\1[REDACTED]/g')
+echo "Command: $SANITIZED_CMD"
 eval "$DEPLOY_CMD"
 
 # Step 4: Execute registration to Gemini Enterprise (Unless skipped or dry-run)

@@ -1,3 +1,16 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Universal Whitepaper Generation Orchestrator.
 Features an Adaptive LLM Router that classifies the user's research topic into one of 4 Strategic Pillars and dispatches tailored, high-fidelity data harvesting and synthesis prompts to generate premium corporate whitepapers for ANY 'Wow Factor' query in the README.
 """
@@ -9,16 +22,6 @@ import os
 import re
 import sys
 from typing import Any, Mapping
-from dotenv import load_dotenv
-
-# Load ERA Environment
-env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
-load_dotenv(env_path)
-
-if not os.getenv("GOOGLE_CLOUD_PROJECT"):
-    os.environ["GOOGLE_CLOUD_PROJECT"] = os.getenv("PROJECT_ID", "project-maui")
-if not os.getenv("GOOGLE_GENAI_USE_VERTEXAI"):
-    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +51,7 @@ def classify_topic(topic: str) -> dict:
         Do not include markdown tags.
         """
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=os.getenv("MODEL_NAME"),
             contents=router_prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"
@@ -214,4 +217,4 @@ def solve(eval_inputs: Mapping[str, Any]) -> str:
         import traceback
         tb_str = traceback.format_exc()
         logger.error(f"Failed Universal Whitepaper Orchestration: {tb_str}")
-        return f"Error executing universal whitepaper pipeline: {tb_str}"
+        return f"Error executing universal whitepaper pipeline: {e}"

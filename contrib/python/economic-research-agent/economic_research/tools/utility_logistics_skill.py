@@ -25,9 +25,9 @@ def get_industrial_infrastructure_stats(state_names: list[str]) -> str:
         from economic_research.tools.eia_skill import fetch_state_electricity_rates
         
         state_obj = us.states.lookup(state)
-        state_code = state_obj.abbr if state_obj else "TX"
+        state_code = state_obj.abbr if state_obj else state.upper().strip()
         
-        raw_eia = fetch_state_electricity_rates([state_code], sector="industrial")
+        raw_eia = fetch_state_electricity_rates([state_code], sector="industrial") if len(state_code) == 2 else "{}"
         try:
             parsed_eia = json.loads(raw_eia)
             if isinstance(parsed_eia, list) and len(parsed_eia) > 0 and "Avg Price (cents/kWh)" in parsed_eia[0]:

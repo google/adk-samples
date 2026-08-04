@@ -1,4 +1,16 @@
-#  Copyright 2025 Google LLC. This software is provided as-is, without warranty or representation.
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """ADK Skill: Logistics & Transit Efficiency (DOT/BTS). Supply Chain Grounding."""
 
 import json
@@ -30,10 +42,6 @@ def get_logistics_efficiency(city_names: list[str]) -> str:
     return json.dumps(results, indent=2)
 
 
-#  Copyright 2025 Google LLC.
-"""ADK Skill: Lifestyle Density & Amenity Scoring (Google Places/WalkScore). Talent Retention."""
-
-
 class LifestyleRequest(BaseModel):
     city_names: list[str] = Field(
         ..., description="List of city names to fetch lifestyle benchmarks for."
@@ -55,10 +63,6 @@ def get_cultural_amenity_score(city_names: list[str]) -> str:
         results.append(harvested)
 
     return json.dumps(results, indent=2)
-
-
-#  Copyright 2025 Google LLC.
-"""ADK Skill: Economic Incentives & Subsidy Discovery (Good Jobs First)."""
 
 
 class IncentiveRequest(BaseModel):

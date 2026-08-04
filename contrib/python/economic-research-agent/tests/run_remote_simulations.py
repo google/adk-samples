@@ -7,9 +7,9 @@ import subprocess
 import google.auth
 
 # Deployed Agent Engine ID
-REMOTE_ENGINE_ID = "https://us-east1-aiplatform.googleapis.com/v1beta1/projects/697625214430/locations/us-east1/reasoningEngines/8517890192101605376"
+REMOTE_ENGINE_ID = os.getenv("REMOTE_ENGINE_ID", "projects/YOUR_PROJECT_ID/locations/us-east1/reasoningEngines/YOUR_REASONING_ENGINE_ID")
 
-# A selection of 100 unique representative queries (from FRED, BLS, CENSUS, HUD, etc. + README WOW queries)
+# A selection of 100 representative queries (from FRED, BLS, CENSUS, HUD, etc. + README WOW queries)
 WOW_QUERIES = [
     "Compare Austin, TX and Raleigh, NC using a custom scorecard weighted 40% on corporate tax, 30% on industrial electricity rates, and 30% on software developer wage trends.",
     "Retrieve state-level unionization density from BLS and average weekly wages from FRED, then run a formal OLS regression in the sandbox to see if there is a statistically significant correlation.",
@@ -40,9 +40,11 @@ def generate_simulation_set():
                 if txt not in sim_queries:
                     sim_queries.append(txt)
                     
-    # Fallback to make sure we have 100
+    # Fallback padding if needed
+    fallback_idx = 1
     while len(sim_queries) < 100:
-        sim_queries.append("What is the unemployment rate in Austin for the last year?")
+        sim_queries.append(f"What is the unemployment rate in Austin for year {2020 + fallback_idx}?")
+        fallback_idx += 1
         
     return sim_queries[:100]
 
@@ -50,7 +52,8 @@ def run_simulations(project_id: str):
     print(f"📡 Initializing connection via CLI targeting project '{project_id}'...")
     
     queries = generate_simulation_set()
-    print(f"🚀 Prepared {len(queries)} unique simulation queries. Starting remote run via agents-cli...\n")
+    unique_count = len(set(queries))
+    print(f"🚀 Prepared {len(queries)} simulation queries ({unique_count} unique). Starting remote run via agents-cli...\n")
     
     results = []
     for idx, q in enumerate(queries):
@@ -99,7 +102,7 @@ def run_simulations(project_id: str):
 if __name__ == "__main__":
     try:
         _, project = google.auth.default()
-        active_project = project or os.getenv("GOOGLE_CLOUD_PROJECT", "project-maui")
+        active_project = project or os.getenv("GOOGLE_CLOUD_PROJECT", "your-project-id")
         run_simulations(project_id=active_project)
     except Exception as e:
         print(f"❌ Simulation execution failed: {e}")

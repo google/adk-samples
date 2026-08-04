@@ -112,7 +112,7 @@ class ERAAgent:
         """Standard container for the Reasoning Engine. State-free to ensure cloud pickling stability."""
         pass
 
-    def get_app(self, model_name: str = "gemini-2.5-flash") -> App:
+    def get_app(self, model_name: str = os.getenv("MODEL_NAME")) -> App:
         """Lazily instantiates the ADK App and Agent only when needed."""
         tools = [
             labor_force_stats_skill,
@@ -229,7 +229,7 @@ class ERAAgent:
                 os.environ[k] = v
 
         # Classify complexity of input query
-        model_name = "gemini-2.5-flash"
+        model_name = os.getenv("MODEL_NAME")
         # Check if we should bypass supervisor & judge loops (e.g. to save API quota/rate limits)
         bypass_loops = os.getenv("ERA_BYPASS_SUPERVISOR") == "true"
 
@@ -241,7 +241,7 @@ class ERAAgent:
                 
                 classifier_agent = Agent(
                     name="router_supervisor",
-                    model=Gemini(model_name="gemini-2.5-flash"),
+                    model=Gemini(model_name=os.getenv("MODEL_NAME")),
                     instruction=prompts.complexity_classifier_instructions()
                 )
                 classifier_app = App(root_agent=classifier_agent, name="Router_Supervisor")
@@ -265,12 +265,12 @@ class ERAAgent:
                 data = json.loads(cleaned_text)
                 complexity = data.get("complexity", "LOW")
                 if complexity == "HIGH":
-                    model_name = "gemini-2.5-pro"
-                    print("🧠 [Router] Detected high complexity task. Routing to gemini-2.5-pro.")
+                    model_name = os.getenv("MODEL_NAME_GENERATED_1")
+                    print("🧠 [Router] Detected high complexity task. Routing to gemini-3.1-pro.")
                 else:
-                    print("⚡ [Router] Detected low complexity task. Routing to gemini-2.5-flash.")
+                    print("⚡ [Router] Detected low complexity task. Routing to gemini-3.6-flash.")
             except Exception as e:
-                print(f"⚠️ [Router] Routing failed: {e}. Falling back to gemini-2.5-flash.")
+                print(f"⚠️ [Router] Routing failed: {e}. Falling back to gemini-3.6-flash.")
 
         # Instantiate App & Runner at runtime rather than deploy-time
         app = self.get_app(model_name=model_name)
@@ -295,8 +295,8 @@ class ERAAgent:
                             full_text += part.text
         except Exception as e:
             if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
-                print("⚠️ [Quota] gemini-2.5-pro exhausted. Falling back to gemini-2.5-flash for synthesis...")
-                app = self.get_app(model_name="gemini-2.5-flash")
+                print("⚠️ [Quota] gemini-3.1-pro exhausted. Falling back to gemini-3.6-flash for synthesis...")
+                app = self.get_app(model_name=os.getenv("MODEL_NAME"))
                 runner = InMemoryRunner(app=app)
                 runner.auto_create_session = True
                 responses = runner.run_async(
@@ -368,8 +368,8 @@ class ERAAgent:
                                         corrected_text += part.text
                     except Exception as e:
                         if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
-                            print("⚠️ [Quota] gemini-2.5-pro exhausted on correction. Falling back to gemini-2.5-flash...")
-                            app = self.get_app(model_name="gemini-2.5-flash")
+                            print("⚠️ [Quota] gemini-3.1-pro exhausted on correction. Falling back to gemini-3.6-flash...")
+                            app = self.get_app(model_name=os.getenv("MODEL_NAME"))
                             runner = InMemoryRunner(app=app)
                             runner.auto_create_session = True
                             retry_responses = runner.run_async(
@@ -403,7 +403,7 @@ class ERAAgent:
                 
                 evaluator_agent = Agent(
                     name="primitives_evaluator",
-                    model=Gemini(model_name="gemini-2.5-flash"),
+                    model=Gemini(model_name=os.getenv("MODEL_NAME")),
                     instruction="""
                     You are an economic operations analyst. Evaluate the completed interaction between the user and the economic research agent.
                     
@@ -439,8 +439,8 @@ class ERAAgent:
                 cleaned_eval = eval_text.replace("```json", "").replace("```", "").strip()
                 primitives = json.loads(cleaned_eval)
                 
-                # Write to a session metadata log file
-                log_dir = "/Users/enriq/.gemini/jetski/scratch/observability"
+                import tempfile
+                log_dir = os.getenv("OBSERVABILITY_LOG_DIR", os.path.join(tempfile.gettempdir(), "observability"))
                 os.makedirs(log_dir, exist_ok=True)
                 import uuid
                 session_id = str(uuid.uuid4())

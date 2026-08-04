@@ -1,7 +1,7 @@
 [project]
-name = "economic-research"
+name = "economic-research-agent"
 version = "0.1.0"
-description = ""
+description = "Autonomous Economic Research Agent (ERA) built with Google ADK. Integrates live economic primitives (FRED, BEA, Census, RentCast), dynamic county/MSA entity resolution, Private Equity real estate portfolio yield advisors, and universal whitepaper generation."
 authors = [
     {name = "Enrique Chan", email = "enriq@google.com"},
     {name = "Casey Justus", email = "caseynjustus@google.com"},
@@ -35,7 +35,7 @@ dependencies = [
 
 
 
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 
 [dependency-groups]
@@ -66,24 +66,9 @@ lint = [
     "types-requests~=2.32.0.20240914",
 ]
 
-[tool.ruff]
-# extends the ruff rules established in the root .toml
-extend = "../../../pyproject.toml"
-
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
 default = true
-
-[tool.ruff.lint]
-# Ignores function complication rule throughout sample
-ignore = ["C901", "PLR0915", "PLR2004", "PLC0415", "PLW2901", "PLR0912"]
-
-[tool.ruff.lint.per-file-ignores]
-# ignores unused import rule exclusively for this sample’s __init__.py files
-"__init__.py" = ["F401"]
-
-[tool.ruff.lint.isort]
-known-first-party = ["economic_research"]
 
 [tool.mypy]
 disallow_untyped_calls = true

@@ -1,3 +1,5 @@
+import os
+
 from google.adk.agents import Agent
 from google.adk.models import Gemini
 
@@ -21,7 +23,7 @@ class JudgeAgent:
         # We use Gemini 2.5 flash as a lightweight, fast auditor
         return Agent(
             name="Auditor_Judge",
-            model=Gemini(model_name="gemini-2.5-flash"),
+            model=Gemini(model_name=os.getenv("MODEL_NAME")),
             instruction=JUDGE_INSTRUCTIONS,
             tools=tools,
         )

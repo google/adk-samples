@@ -75,7 +75,7 @@ def harvest_semantic_schema(query: str, schema_instruction: str, expected_keys: 
         """
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=os.getenv("MODEL_NAME"),
             contents=extraction_prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"

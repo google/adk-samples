@@ -33,7 +33,7 @@ def get_real_estate_roi(
         city_clean = city.split(",")[0].strip()
 
         from economic_research.tools.dynamic_search_harvester import harvest_real_estate_roi
-        harvested = harvest_real_estate_roi(city, property_type)
+        harvested = harvest_real_estate_roi(city_clean, property_type)
         results.append(harvested)
 
     return json.dumps(results, indent=2)

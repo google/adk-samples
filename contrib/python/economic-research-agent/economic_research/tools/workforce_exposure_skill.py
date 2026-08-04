@@ -1,4 +1,16 @@
-# Copyright 2025 Google LLC. This software is provided as-is, without warranty or representation.
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Workforce & AI Task Exposure Analysis Skill."""
 
 import os
@@ -11,7 +23,7 @@ def classify_onet_tasks_with_gemini(title: str, tasks: list[str]) -> dict:
     """Classifies O*NET occupational tasks using Vertex AI / Gemini."""
     try:
         # Load GCP project metadata from environment or fall back to default
-        project = os.getenv("GCP_PROJECT", "project-maui")
+        project = os.getenv("GCP_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT", "your-project-id")
         location = os.getenv("GCP_LOCATION", "us-central1")
         
         client = genai.Client(vertexai=True, project=project, location=location)
@@ -39,7 +51,7 @@ def classify_onet_tasks_with_gemini(title: str, tasks: list[str]) -> dict:
         """
         
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=os.getenv("MODEL_NAME"),
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"

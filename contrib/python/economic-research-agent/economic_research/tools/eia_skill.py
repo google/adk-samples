@@ -31,7 +31,7 @@ def fetch_state_electricity_rates(
         "commercial": "COM",
         "residential": "RES",
     }
-    s_id = sector_map.get(sector.lower(), "industrial")
+    s_id = sector_map.get(sector.lower(), "IND")
 
     for state in state_codes:
         state = state.upper().strip()

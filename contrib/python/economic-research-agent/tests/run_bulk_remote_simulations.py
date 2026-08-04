@@ -7,7 +7,10 @@ import threading
 import google.auth
 import google.auth.transport.requests
 
-REMOTE_ENGINE_ID = "https://us-east1-aiplatform.googleapis.com/v1beta1/projects/697625214430/locations/us-east1/reasoningEngines/8517890192101605376"
+REMOTE_ENGINE_ID = os.getenv(
+    "REMOTE_ENGINE_ID",
+    "https://us-east1-aiplatform.googleapis.com/v1beta1/projects/YOUR_PROJECT_ID/locations/us-east1/reasoningEngines/YOUR_REASONING_ENGINE_ID"
+)
 CONCURRENCY = 3  # Reduced from 10 to avoid API rate limits
 
 credentials, _ = google.auth.default()
