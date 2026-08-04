@@ -108,6 +108,29 @@ updates:
           - "*"
 
   - package-ecosystem: "uv"
+    directory: "/contrib/python/financial-advisor"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:00"
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+    open-pull-requests-limit: 1
+    # Wait a few days after a release before opening a PR, so the community
+    # catches broken releases before we auto-merge them. Security updates
+    # bypass this cooldown and fire immediately.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "uv"
     directory: "/contrib/python/market-research-agent"
     schedule:
       interval: weekly
