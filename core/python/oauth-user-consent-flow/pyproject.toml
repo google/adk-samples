@@ -4,12 +4,12 @@ version = "0.1.0"
 dependencies = [
     "google-adk==1.31.0",
     "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
-    "gcsfs>=2024.11.0",
-    "google-cloud-logging>=3.12.0,<4.0.0",
-    "google-cloud-aiplatform[evaluation,agent-engines]>=1.130.0",
+    "gcsfs>=2026.7.0",
+    "google-cloud-logging>=3.16.1,<4.0.0",
+    "google-cloud-aiplatform[evaluation,agent-engines]>=1.163.0",
     "protobuf>=6.31.1,<7.0.0",
-    "google-api-python-client>=2.190.0",
-    "google-auth-httplib2>=0.3.0",
+    "google-api-python-client>=2.198.0",
+    "google-auth-httplib2>=0.4.0",
     "python-dotenv>=1.0.0",
 ]
 requires-python = ">=3.11,<3.14"
@@ -18,7 +18,7 @@ requires-python = ">=3.11,<3.14"
 [dependency-groups]
 dev = [
     "pytest>=8.3.4,<9.0.0",
-    "pytest-asyncio>=0.23.8,<1.0.0",
+    "pytest-asyncio>=1.4.0,<2.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",
     "agent-starter-pack>=0.14.1",
 ]
@@ -31,9 +31,9 @@ eval = [
     "google-adk[eval]==1.31.0",
 ]
 lint = [
-    "ruff>=0.4.6,<1.0.0",
-    "ty>=0.0.1a0",
-    "codespell>=2.2.0,<3.0.0",
+    "ruff>=0.16.0,<1.0.0",
+    "ty>=0.0.64",
+    "codespell>=2.4.3,<3.0.0",
 ]
 
 [tool.ty]
@@ -63,7 +63,7 @@ skip = "./locust_env/*,uv.lock,.venv,./frontend,**/*.ipynb,**/package-lock.json"
 
 
 [build-system]
-requires = ["uv_build>=0.8.14,<0.9.0"]
+requires = ["uv_build>=0.12.0,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
