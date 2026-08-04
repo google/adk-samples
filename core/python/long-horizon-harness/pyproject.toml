@@ -13,30 +13,30 @@ description = "Horizon — a self-improving long-horizon agent on Google ADK + V
 dependencies = [
     "google-adk[mcp,otel-gcp,a2a]>=2.5.0,<3.0.0",
     "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
-    "google-cloud-logging>=3.12.0,<4.0.0",
-    "fastapi>=0.136.1",
-    "uvicorn>=0.47.0",
-    "pyjwt>=2.12.1",
-    "python-multipart>=0.0.29",
+    "google-cloud-logging>=3.16.1,<4.0.0",
+    "fastapi>=0.140.13",
+    "uvicorn>=0.51.0",
+    "pyjwt>=2.13.0",
+    "python-multipart>=0.0.32",
     "email-validator>=2.3.0",
     # pyopenssl 26 added strict Context immutability after first use, which
     # breaks urllib3.contrib.pyopenssl (still mutates verify_mode post-use)
     # that google-auth injects on import. Manifests as a TLS handshake
     # ValueError on Vertex calls.
-    "pyopenssl<25.0",
-    "dateparser>=1.4.0",
+    "pyopenssl<27.0",
+    "dateparser>=1.4.1",
     "opentelemetry-exporter-otlp-proto-http>=1.0.0",
     "opentelemetry-exporter-gcp-trace>=1.0.0",
     "opentelemetry-exporter-gcp-monitoring>=1.0.0",
     "opentelemetry-exporter-gcp-logging>=1.0.0",
-    "google-cloud-storage>=3.10.1",
-    "google-cloud-aiplatform[agent-engines]>=1.153.1",
-    "google-api-python-client>=2.0.0,<3.0.0",
+    "google-cloud-storage>=3.13.0",
+    "google-cloud-aiplatform[agent-engines]>=1.163.0",
+    "google-api-python-client>=2.198.0,<3.0.0",
     "google-auth-oauthlib>=1.2.0,<2.0.0",
-    "a2a-sdk[http-server,sqlite]>=1.0,<2",
-    "google-cloud-secret-manager>=2.20.0,<3.0.0",
+    "a2a-sdk[http-server,sqlite]>=1.1.2,<2",
+    "google-cloud-secret-manager>=2.30.0,<3.0.0",
     "packaging>=24.0",
-    "croniter>=6.2.2",
+    "croniter>=6.2.4",
 ]
 requires-python = ">=3.11,<3.14"
 
@@ -44,7 +44,7 @@ requires-python = ">=3.11,<3.14"
 [dependency-groups]
 dev = [
     "pytest>=8.3.4,<9.0.0",
-    "pytest-asyncio>=0.23.8,<1.0.0",
+    "pytest-asyncio>=1.4.0,<2.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",
     "respx>=0.23.1",
     # Dev/test runs the whole agent, so pull every optional extra back in. uv
@@ -65,8 +65,8 @@ scheduler = [
 ]
 # In-sandbox data-analysis libraries (not imported by the harness itself).
 data = [
-    "pandas>=3.0.3",
-    "matplotlib>=3.10.9",
+    "pandas>=3.0.5",
+    "matplotlib>=3.11.1",
     "seaborn>=0.13.2",
 ]
 # Everything: the full deployed surface. `all` is an alias.
@@ -80,9 +80,9 @@ eval = [
     "google-adk[eval]>=2.5.0,<3.0.0",
 ]
 lint = [
-    "ruff>=0.4.6,<1.0.0",
-    "ty>=0.0.1a0",
-    "codespell>=2.2.0,<3.0.0",
+    "ruff>=0.16.0,<1.0.0",
+    "ty>=0.0.64",
+    "codespell>=2.4.3,<3.0.0",
 ]
 
 [tool.ty]
