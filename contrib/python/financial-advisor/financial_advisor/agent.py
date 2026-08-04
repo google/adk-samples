@@ -25,7 +25,7 @@ from .sub_agents.execution_analyst import execution_analyst_agent
 from .sub_agents.risk_analyst import risk_analyst_agent
 from .sub_agents.trading_analyst import trading_analyst_agent
 
-MODEL = os.getenv("MODEL_NAME")
+MODEL = os.getenv("MODEL_NAME", "gemini-3.6-flash")
 
 
 financial_coordinator = LlmAgent(
