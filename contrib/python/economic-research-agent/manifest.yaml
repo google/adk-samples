@@ -1,0 +1,34 @@
+type: standalone
+status: active
+language: python
+deployable: true
+large: true
+description: "Autonomous Economic Research Agent (ERA) built with Google ADK. Integrates live economic primitives (FRED, BEA, Census, RentCast), dynamic county/MSA entity resolution, Private Equity real estate portfolio yield advisors, and universal whitepaper generation."
+architecture:
+  agent: multi
+  stateful: false
+  datasources:
+    - external
+dependencies:
+  libraries:
+    - google-adk
+    - google-genai
+    - pydantic
+    - tenacity
+    - httpx
+  services:
+    - Vertex AI
+    - FRED API
+    - BEA API
+    - US Census Bureau API
+    - RentCast API
+ownership:
+  team: Delta AI Activation Team AMER <delta-ai-activation-team-AMER@google.com>
+  poc: enriquekalven
+license: Apache-2.0
+tags:
+  - economic-research
+  - finance
+  - real-estate
+  - alphaevolve
+  - whitepaper-generator
