@@ -171,13 +171,18 @@ jobs:
           # Get all changed files
           CHANGED_FILES=$(git diff --name-only origin/$BASE_BRANCH...HEAD)
 
-          # Check if all changed files are in python/agents/** directories using agent starter pack for testing
+          # Only auto-merge when every changed recipe has automated tests.
+          # (This comment used to say python/agents/**, which policy.yml
+          # lists under frozen_paths and the grep below has never matched.)
           HAS_AUTOMATED_TESTS=true
 
           # Get all changed recipe directories across all supported locations:
-          #   core/<lang>/<recipe>   contrib/<lang>/<recipe>   skills/<lang>/<recipe>
-          # The pattern captures exactly 3 path segments so sub-directories
-          # (e.g. core/python/deep-search/frontend) map back to the recipe root.
+          #   core/<language>/<recipe>       contrib/<language>/<recipe>
+          #   skills/<vertical>/<solution>
+          # Note the middle segment differs: a LANGUAGE under core/ and
+          # contrib/, a VERTICAL under skills/. The pattern captures exactly
+          # 3 path segments either way, so sub-directories (e.g.
+          # core/python/deep-search/frontend) map back to the recipe root.
           CHANGED_AGENT_DIRS=$(echo "$CHANGED_FILES" \
             | grep -oE '(core|contrib|skills)/[^/]+/[^/]+' \
             | sort -u || true)

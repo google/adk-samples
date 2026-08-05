@@ -282,7 +282,7 @@ def test_github_actions_entry_declares_no_semver_cooldown(config):
     assert "semver-major-days" not in entry.get("cooldown", {})
 
 
-def test_group_by_is_not_set_anywhere(globbed_entries):
+def test_group_by_is_not_set_anywhere(config):
     """Without `group-by`, Dependabot opens one PR per directory, matching the
     behaviour the previous per-directory config had. Setting
     `group-by: dependency-name` would collapse a bump across every recipe
@@ -293,8 +293,13 @@ def test_group_by_is_not_set_anywhere(globbed_entries):
     so an entry-level `group-by` is rejected outright. Both levels are
     checked anyway, so the test's scope matches its name and a reader does
     not have to go and confirm that against the schema.
+
+    Takes `config` rather than `globbed_entries`: that fixture drops the
+    github-actions entry, which carries a `groups: all-actions` block of its
+    own. Iterating it would have let `groups.all-actions.group-by` slip
+    through a test called "not set anywhere".
     """
-    for entry in globbed_entries:
+    for entry in config["updates"]:
         assert "group-by" not in entry, (
             f"{entry['package-ecosystem']}: `group-by` at entry level is not "
             "valid config and would have Dependabot reject the whole file"

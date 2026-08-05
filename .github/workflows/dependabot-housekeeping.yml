@@ -45,13 +45,11 @@ on:
         required: false
         default: ""
 
-permissions:
-  # `contents: write` is required by `--delete-branch`, not by the checkout:
-  # deleting a branch is a git-ref write. Without it every close fails with
-  # "Resource not accessible by integration" after the PR has already been
-  # closed, leaving the branch behind.
-  contents: write
-  pull-requests: write
+# Nothing granted at workflow level; each job asks for what it needs. With a
+# single job the effective scope is identical either way, but a job added
+# later would silently inherit `contents: write`. dependabot-auto-merge.yml
+# and go-format.yml use the same shape, for zizmor's `excessive-permissions`.
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}
@@ -62,6 +60,14 @@ jobs:
     name: Close orphaned Dependabot PRs
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      # `contents: write` is required by `--delete-branch`, not by the
+      # checkout: deleting a branch is a git-ref write. Without it every
+      # close fails with "Resource not accessible by integration" AFTER the
+      # PR has already been closed, leaving the branch behind.
+      contents: write
+      # `gh pr close` itself.
+      pull-requests: write
 
     steps:
       - name: Checkout repository

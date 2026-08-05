@@ -76,7 +76,7 @@ BRANCH_PREFIX = {
 # Ecosystems whose package identifiers legitimately contain a slash:
 #   go_modules      module paths        github.com/spf13/cobra
 #   npm_and_yarn    scoped packages     @types/node -> types/node
-#   github-actions  owner/repo          actions/checkout
+#   github_actions  owner/repo          actions/checkout
 # See head_ref_matches for why the usual single-segment rule is dropped here.
 #
 # Every entry in dependabot.yml uses a `groups: patterns: ["*"]` block, so
@@ -116,9 +116,11 @@ def live_pairs(
     recipe_manifests.STATIC_ENTRIES are folded in unconditionally. They are
     configured rather than discovered, so nothing in the tree would keep their
     PRs from looking orphaned. Reading them from the shared module rather than
-    restating them here is what stops this set and the generator's output from
-    drifting: an entry added on only one side would have its PRs closed with
-    --delete-branch, at a rate too low for --max-close to notice.
+    restating them here is what keeps this set aligned with dependabot.yml —
+    tests/test_dependabot_config.py asserts the two agree, in both directions.
+    An entry present in the config but missing from that list has its PRs
+    closed with --delete-branch, at roughly one grouped PR a week, which is
+    far too slow for --max-close to notice.
     """
     if discovered is None:
         discovered = recipe_manifests.scan()
