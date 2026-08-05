@@ -19,7 +19,7 @@ Engine, no Cloud SQL. Inference still calls Vertex (there is no local model).
 ## 1. Prerequisites
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- [google-agents-cli](https://pypi.org/project/google-agents-cli/) — `uv tool install google-agents-cli`
+- [google-agents-cli](https://pypi.org/project/google-agents-cli/) — `uvx google-agents-cli setup`
 - [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (for Vertex inference)
 - Node.js 20.19+ or 22.12+ (Vite 8 requirement — only for the web UI)
 
