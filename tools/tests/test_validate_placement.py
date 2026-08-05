@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 import validate_placement as m
+from ci_message import Doc
 
 MANIFEST = "manifest.yaml"
 
@@ -42,31 +43,53 @@ def test_correctly_placed_returns_none(rel_parts):
 
 def test_flat_skill_is_rejected():
     """The case that matters: a solution dropped straight under skills/."""
-    message = m.describe_violation(["skills", "foo", MANIFEST])
-    assert message is not None
-    assert "no vertical" in message
-    assert "skills/<vertical>/foo" in message
+    diag = m.describe_violation(["skills", "foo", MANIFEST])
+    assert diag is not None
+    assert "no vertical" in diag.what
+    assert "skills/<vertical>/foo" in diag.how
+    # The fix is the command, not a description of the destination.
+    assert "git mv skills/foo" in diag.how
+    assert diag.doc is Doc.PLACEMENT
+    assert diag.file == f"skills/foo/{MANIFEST}"
 
 
 def test_flat_skill_message_names_the_offending_dir():
-    message = m.describe_violation(["skills", "store-ops", MANIFEST])
-    assert "'skills/store-ops'" in message
-    assert "skills/retail/store-ops" in message
+    diag = m.describe_violation(["skills", "store-ops", MANIFEST])
+    assert "'skills/store-ops'" in diag.what
+    assert "skills/retail/store-ops" in diag.how
 
 
 def test_manifest_at_root_of_skills_is_rejected():
-    message = m.describe_violation(["skills", MANIFEST])
-    assert message is not None
-    assert "no vertical" in message
+    diag = m.describe_violation(["skills", MANIFEST])
+    assert diag is not None
+    assert "no vertical" in diag.what
 
 
 def test_too_deep_is_rejected():
-    message = m.describe_violation(
+    diag = m.describe_violation(
         ["skills", "retail", "store-ops", "subproject", MANIFEST]
     )
-    assert message is not None
-    assert "too deeply" in message
-    assert "skills/retail/store-ops/subproject" in message
+    assert diag is not None
+    assert "too deeply" in diag.what
+    assert "skills/retail/store-ops/subproject" in diag.what
+    # The suggested destination must be a path that does not already
+    # exist — moving onto its own ancestor is not a fix.
+    assert (
+        "git mv skills/retail/store-ops/subproject skills/retail/subproject"
+        in diag.how
+    )
+
+
+def test_every_violation_explains_why_the_vertical_exists():
+    """ "Move it" without the reason invites the next contributor to make
+    the same choice again."""
+    for parts in (
+        ["skills", "foo", MANIFEST],
+        ["skills", "retail", "store-ops", "deep", MANIFEST],
+    ):
+        diag = m.describe_violation(parts)
+        assert "ownership" in diag.why
+        assert "mandatory" in diag.why
 
 
 # ---------------------------------------------------------------------------
@@ -100,13 +123,15 @@ def test_check_root_accepts_valid_tree(tmp_path, capsys):
     assert "::error" not in capsys.readouterr().out
 
 
-def test_check_root_flags_flat_skill(tmp_path, capsys):
+def test_check_root_flags_flat_skill(tmp_path):
     _make_manifest(tmp_path, "skills/retail/store-ops")
     _make_manifest(tmp_path, "skills/oops")
-    errors = m.check_root("skills", repo_root=tmp_path)
-    assert len(errors) == 1
-    out = capsys.readouterr().out
-    assert f"::error file=skills/oops/{MANIFEST}::" in out
+    (diag,) = m.check_root("skills", repo_root=tmp_path)
+    # check_root collects; main() renders. Emitting the annotation from
+    # inside the scan is what made "one annotation per problem" hard to
+    # guarantee in the first place.
+    assert diag.file == f"skills/oops/{MANIFEST}"
+    assert f"::error file=skills/oops/{MANIFEST}::" in diag.render_annotation()
 
 
 def test_check_root_flags_every_offender(tmp_path):
@@ -118,9 +143,8 @@ def test_check_root_flags_every_offender(tmp_path):
 
 def test_check_root_flags_too_deep(tmp_path):
     _make_manifest(tmp_path, "skills/retail/store-ops/inner")
-    errors = m.check_root("skills", repo_root=tmp_path)
-    assert len(errors) == 1
-    assert "too deeply" in errors[0]
+    (diag,) = m.check_root("skills", repo_root=tmp_path)
+    assert "too deeply" in diag.what
 
 
 def test_check_root_on_empty_root(tmp_path):
@@ -150,7 +174,31 @@ def test_main_reports_failure(monkeypatch, tmp_path, capsys):
     assert m.main() == 1
     out = capsys.readouterr().out
     assert "ACTION REQUIRED" in out
-    assert "1 misplaced recipe" in out
+    assert "1 problem to fix" in out
+    assert f"::error file=skills/oops/{MANIFEST}::" in out
+
+
+def test_main_annotates_every_offender(monkeypatch, tmp_path, capsys):
+    _make_manifest(tmp_path, "skills/a")
+    _make_manifest(tmp_path, "skills/b")
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    assert m.main() == 1
+    out = capsys.readouterr().out
+    assert "(+" not in out
+    assert f"::error file=skills/a/{MANIFEST}::" in out
+    assert f"::error file=skills/b/{MANIFEST}::" in out
+
+
+def test_main_footer_leads_with_the_authoring_docs(
+    monkeypatch, tmp_path, capsys
+):
+    _make_manifest(tmp_path, "skills/oops")
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    assert m.main() == 1
+    out = capsys.readouterr().out
+    assert "docs/recipe-handbook/README.md" in out
+    assert "docs/recipe-checklist.md" in out
+    assert "docs/recipe-handbook/troubleshooting.md" in out
 
 
 def test_main_narrows_to_the_given_scope(monkeypatch, tmp_path):

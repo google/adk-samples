@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 import validate_manifest as m
+from ci_message import Diagnostic, Doc
 
 VALID_MANIFEST = textwrap.dedent(
     """\
@@ -29,6 +30,19 @@ def _write(path: Path, content: str = "") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def _blob(diagnostics: list[Diagnostic]) -> str:
+    """Every field of every diagnostic, flattened for substring checks.
+
+    The tests assert on the CONTRACT — the offending name, the rule that
+    fired, an actionable fix, a doc link — not on one exact sentence, so
+    wording can be improved without a test edit.
+    """
+    return "\n".join(
+        f"{d.check}|{d.what}|{d.why}|{d.how}|{d.doc.url}|{d.file}"
+        for d in diagnostics
+    )
 
 
 def _make_recipe(
@@ -93,15 +107,43 @@ def test_validate_manifest_valid(tmp_path):
 def test_validate_manifest_empty_file(tmp_path):
     schema = m.load_schema()
     manifest = _write(tmp_path / "manifest.yaml", "")
-    errors = m.validate_manifest(manifest, schema)
-    assert errors == ["manifest.yaml is empty"]
+    (diag,) = m.validate_manifest(manifest, schema)
+    assert diag.check == "manifest-empty"
+    # The fix has to name the fields the author is expected to write; a
+    # bare "manifest.yaml is empty" left them to go and find the schema.
+    for field in ("type", "status", "language", "description", "ownership"):
+        assert field in diag.how
+    assert diag.doc is Doc.MANIFEST
+
+
+def test_validate_manifest_comments_only_is_named_as_such(tmp_path):
+    """The confusing half of the empty case: the author can see text."""
+    manifest = _write(
+        tmp_path / "manifest.yaml", "# type: standalone\n# TODO fill in\n"
+    )
+    (diag,) = m.validate_manifest(manifest, m.load_schema())
+    assert "only comments" in diag.what
 
 
 def test_validate_manifest_bad_yaml(tmp_path):
     schema = m.load_schema()
     manifest = _write(tmp_path / "manifest.yaml", "type: [unclosed\n")
-    errors = m.validate_manifest(manifest, schema)
-    assert any("YAML parse error" in e for e in errors)
+    (diag,) = m.validate_manifest(manifest, schema)
+    assert diag.check == "manifest-yaml"
+    assert "YAML parse error" in diag.how
+    assert "line" in diag.how
+
+
+def test_yaml_parse_error_keeps_line_and_column_in_the_annotation(tmp_path):
+    """The parser's report is multi-line. An annotation is one line, so
+    the detail used to be truncated away at the first newline — leaving
+    "YAML parse error: while parsing a flow node" and nothing else."""
+    manifest = _write(tmp_path / "manifest.yaml", "type: [unclosed\n")
+    (diag,) = m.validate_manifest(manifest, m.load_schema())
+    annotation = diag.render_annotation()
+    assert "\n" not in annotation
+    assert "%0A" in annotation
+    assert "line 1" in annotation
 
 
 def test_validate_manifest_missing_required_field(tmp_path):
@@ -116,9 +158,53 @@ def test_validate_manifest_missing_required_field(tmp_path):
         """
     )
     manifest = _write(tmp_path / "manifest.yaml", content)
-    errors = m.validate_manifest(manifest, schema)
-    assert errors
-    assert any("ownership" in e for e in errors)
+    diagnostics = m.validate_manifest(manifest, schema)
+    blob = _blob(diagnostics)
+    assert "'ownership'" in blob
+    assert "generate-manifest" in blob
+    assert Doc.MANIFEST.url in blob
+
+
+def test_unknown_field_lists_the_allowed_ones_and_suggests(tmp_path):
+    """A closed schema turns a typo into a hard failure, so the message
+    has to carry the correction — not just the rejection."""
+    manifest = _write(tmp_path / "manifest.yaml", VALID_MANIFEST + "tag: []\n")
+    diagnostics = m.validate_manifest(manifest, m.load_schema())
+    blob = _blob(diagnostics)
+    assert "'tag'" in blob
+    assert "Did you mean 'tags'?" in blob
+    # The allowed set is in the schema we already loaded; withholding it
+    # buys the contributor a second CI round trip.
+    assert "ownership" in blob and "description" in blob
+
+
+def test_top_level_json_path_is_named_in_english(tmp_path):
+    manifest = _write(tmp_path / "manifest.yaml", VALID_MANIFEST + "tag: []\n")
+    diagnostics = m.validate_manifest(manifest, m.load_schema())
+    blob = _blob(diagnostics)
+    assert "top level" in blob
+    assert "[$]" not in blob
+
+
+def test_too_short_prints_the_threshold_and_the_actual_length(tmp_path):
+    content = VALID_MANIFEST.replace(
+        "description: A valid recipe description that is comfortably long.",
+        "description: short",
+    )
+    manifest = _write(tmp_path / "manifest.yaml", content)
+    blob = _blob(m.validate_manifest(manifest, m.load_schema()))
+    assert "5 characters" in blob
+    assert "at least 10" in blob
+    assert "minLength: 10" in blob
+
+
+def test_enum_violation_lists_the_allowed_values(tmp_path):
+    content = VALID_MANIFEST.replace(
+        "type: standalone", "type: not_a_valid_type"
+    )
+    manifest = _write(tmp_path / "manifest.yaml", content)
+    blob = _blob(m.validate_manifest(manifest, m.load_schema()))
+    assert "standalone" in blob and "module" in blob
 
 
 def test_validate_manifest_placeholder_team_and_poc(tmp_path):
@@ -135,9 +221,15 @@ def test_validate_manifest_placeholder_team_and_poc(tmp_path):
         """
     )
     manifest = _write(tmp_path / "manifest.yaml", content)
-    errors = m.validate_manifest(manifest, schema)
-    assert any("ownership.team" in e for e in errors)
-    assert any("ownership.poc" in e for e in errors)
+    diagnostics = m.validate_manifest(manifest, schema)
+    blob = _blob(diagnostics)
+    assert "ownership.team" in blob
+    assert "ownership.poc" in blob
+    assert all(
+        d.doc is Doc.OWNERSHIP_PLACEHOLDER
+        for d in diagnostics
+        if d.check == "ownership-placeholder"
+    )
 
 
 def test_validate_manifest_placeholder_description(tmp_path):
@@ -156,8 +248,8 @@ def test_validate_manifest_placeholder_description(tmp_path):
         """
     )
     manifest = _write(tmp_path / "manifest.yaml", content)
-    errors = m.validate_manifest(manifest, schema)
-    assert any("description" in e for e in errors)
+    blob = _blob(m.validate_manifest(manifest, schema))
+    assert "description" in blob
 
 
 def test_validate_manifest_with_valid_license(tmp_path):
@@ -171,8 +263,9 @@ def test_validate_manifest_with_empty_license(tmp_path):
     schema = m.load_schema()
     content = VALID_MANIFEST + 'license: ""\n'
     manifest = _write(tmp_path / "manifest.yaml", content)
-    errors = m.validate_manifest(manifest, schema)
-    assert any("license" in e for e in errors)
+    blob = _blob(m.validate_manifest(manifest, schema))
+    assert "license" in blob
+    assert "minLength: 1" in blob
 
 
 # ---------------------------------------------------------------------------
@@ -223,9 +316,17 @@ def test_collect_single_namespaced_recipe(fake_repo):
     assert _rel(dirs, fake_repo) == {"core/python/recipe-b"}
 
 
-def test_collect_nonexistent_scope_exits(fake_repo):
-    with pytest.raises(SystemExit):
-        m.collect_recipe_dirs("core/does-not-exist")
+def test_collect_nonexistent_scope_returns_nothing(fake_repo):
+    """A collector must not kill the process from inside a helper: only
+    the caller knows enough to say WHY nothing matched."""
+    assert m.collect_recipe_dirs("core/does-not-exist") == []
+
+
+def test_nonexistent_scope_is_explained_not_silently_passed(fake_repo, capsys):
+    assert m.main("core/does-not-exist") == 1
+    out = capsys.readouterr().out
+    assert "does not exist" in out
+    assert "troubleshooting.md" in out
 
 
 # ---------------------------------------------------------------------------
@@ -314,13 +415,24 @@ def test_is_namespace_path(parts, expected):
     assert m.is_namespace_path(parts) is expected
 
 
-def test_collect_invalid_recipe_dir_exits(tmp_path, monkeypatch):
-    # A dir with only README.md is not a valid recipe dir.
+def test_collect_invalid_recipe_dir_says_what_a_recipe_is(
+    tmp_path, monkeypatch, capsys
+):
+    """A dir with only README.md is not a recipe dir. The old message was
+    "[ERROR] Not a valid recipe directory: /abs/path" — it named neither
+    the rule nor the fix, and it was an absolute path."""
     readme_only = tmp_path / "core" / "readme-only"
     _write(readme_only / "README.md", "# just docs")
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
-    with pytest.raises(SystemExit):
-        m.collect_recipe_dirs("core/readme-only")
+
+    assert m.collect_recipe_dirs("core/readme-only") == []
+    assert m.main("core/readme-only") == 1
+
+    out = capsys.readouterr().out
+    assert "'core/readme-only' is not a recipe directory" in out
+    assert str(tmp_path) not in out
+    assert "manifest.yaml" in out
+    assert "generate-manifest" in out
 
 
 # ---------------------------------------------------------------------------
