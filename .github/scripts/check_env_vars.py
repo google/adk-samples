@@ -38,6 +38,7 @@ from ci_message import (
     EXIT_OK,
     Diagnostic,
     Doc,
+    guard,
     infra_fault,
     report,
     report_infra_fault,
@@ -513,14 +514,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    # Belt and braces: a traceback escaping to the runner is reported by the
+    # guard(): a traceback escaping to the runner is reported by the
     # workflow as the contributor's failure, which is exactly the confusion
     # infra_fault exists to prevent.
-    try:
-        sys.exit(main())
-    except Exception as exc:
-        sys.exit(
-            report_infra_fault(
-                infra_fault(CHECKER, f"{type(exc).__name__}: {exc}")
-            )
-        )
+    sys.exit(guard(CHECKER, main))

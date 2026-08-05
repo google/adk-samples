@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 
 import validate_manifest
-from ci_message import EXIT_VIOLATIONS, Diagnostic, Doc, report
+from ci_message import EXIT_VIOLATIONS, Diagnostic, Doc, guard, report
 
 REPO_ROOT = validate_manifest.REPO_ROOT
 README_FILENAME = "README.md"
@@ -343,4 +343,4 @@ if __name__ == "__main__":
         ),
     )
     args = parser.parse_args()
-    sys.exit(main(args.scope))
+    sys.exit(guard("validate_readme.py", lambda: main(args.scope)))

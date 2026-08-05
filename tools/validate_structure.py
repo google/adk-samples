@@ -63,7 +63,7 @@ from pathlib import Path
 
 import validate_manifest as vm
 import yaml
-from ci_message import EXIT_VIOLATIONS, Diagnostic, Doc, report
+from ci_message import EXIT_VIOLATIONS, Diagnostic, Doc, guard, report
 
 REPO_ROOT = Path(__file__).parent.parent
 POLICY_PATH = REPO_ROOT / ".github" / "policy.yml"
@@ -875,4 +875,4 @@ if __name__ == "__main__":
         ),
     )
     args = parser.parse_args()
-    sys.exit(main(args.scope))
+    sys.exit(guard("validate_structure.py", lambda: main(args.scope)))

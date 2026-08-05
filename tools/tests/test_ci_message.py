@@ -297,3 +297,113 @@ def test_troubleshooting_contents_list_covers_every_anchor_used_by_code():
         f"Anchors referenced from code but absent from the Contents list: "
         f"{missing}"
     )
+
+
+def test_every_checker_entrypoint_is_crash_guarded():
+    """An unguarded entrypoint turns our bug into the contributor's verdict.
+
+    A crash exits non-zero, and the calling workflow cannot tell that apart
+    from EXIT_VIOLATIONS — so it prints "ACTION REQUIRED, here is how to fix
+    your recipe" underneath a traceback nobody can act on. Every checker
+    therefore has to route its `sys.exit` through `guard()` (or handle the
+    fault itself via `report_infra_fault`).
+
+    Scoped to modules that actually import ci_message: those are the
+    contributor-facing checkers. A helper or maintenance script that never
+    reports to a contributor has nothing to guard.
+    """
+    offenders: list[str] = []
+
+    for directory in ("tools", ".github/scripts"):
+        for path in sorted((REPO_ROOT / directory).glob("*.py")):
+            if path.name == "ci_message.py":
+                continue
+            text = path.read_text(encoding="utf-8")
+            if "ci_message" not in text:
+                continue
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                stripped = line.strip()
+                if not stripped.startswith("sys.exit("):
+                    continue
+                if "guard(" in stripped or "report_infra_fault(" in stripped:
+                    continue
+                rel = path.relative_to(REPO_ROOT)
+                offenders.append(f"{rel}:{lineno}: {stripped}")
+
+    assert not offenders, (
+        "These exit without a crash guard, so an unhandled exception is "
+        "reported to the contributor as a problem with their recipe. Wrap "
+        "the call in ci_message.guard():\n  " + "\n  ".join(offenders)
+    )
+
+
+# ---------------------------------------------------------------------------
+# guard()
+# ---------------------------------------------------------------------------
+
+
+def test_guard_returns_the_exit_code_of_a_clean_run():
+    """The guard must be transparent when nothing goes wrong."""
+    assert m.guard("checker.py", lambda: m.EXIT_OK) == m.EXIT_OK
+    assert m.guard("checker.py", lambda: m.EXIT_VIOLATIONS) == m.EXIT_VIOLATIONS
+
+
+def test_guard_turns_a_crash_into_exit_ci_fault():
+    def boom() -> int:
+        raise RuntimeError("kaboom")
+
+    assert m.guard("checker.py", boom) == m.EXIT_CI_FAULT
+
+
+def test_guard_crash_output_names_the_checker_not_a_file(capsys):
+    """A CI fault must never carry `file=`.
+
+    `::error file=x` is what paints a red marker on a contributor's source
+    in the Files tab. Doing that for our own crash is the single behaviour
+    InfraFault exists to prevent.
+    """
+
+    def boom() -> int:
+        raise ValueError("bad internals")
+
+    m.guard("check_env_vars.py", boom)
+    out = capsys.readouterr().out
+    assert "::error file=" not in out
+    assert "check_env_vars.py" in out
+    assert "ValueError: bad internals" in out
+    assert "NOT caused by your changes" in out
+    assert m.Doc.CI_FAULT.url in out
+
+
+def test_guard_lets_systemexit_through():
+    """`argparse --help` raises SystemExit; swallowing it would turn a
+    help request into a spurious CI fault."""
+
+    def helped() -> int:
+        raise SystemExit(0)
+
+    with pytest.raises(SystemExit):
+        m.guard("checker.py", helped)
+
+
+def test_guard_lets_keyboardinterrupt_through():
+    """Ctrl-C locally must stay a Ctrl-C, not become 'CI tooling failure'."""
+
+    def interrupted() -> int:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        m.guard("checker.py", interrupted)
+
+
+def test_guard_reports_an_exception_with_an_empty_message():
+    """`raise RuntimeError()` has no str(); the detail must still render.
+
+    A bare type name is thin, but an empty `Detail:` line would read as if
+    the checker had nothing to say about its own failure.
+    """
+
+    def boom() -> int:
+        raise RuntimeError
+
+    assert m.guard("checker.py", boom) == m.EXIT_CI_FAULT

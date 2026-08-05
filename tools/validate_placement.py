@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 
 import validate_manifest as vm
-from ci_message import Diagnostic, Doc, report
+from ci_message import Diagnostic, Doc, guard, report
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -199,4 +199,4 @@ def main(scope: str | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(guard("validate_placement.py", main))

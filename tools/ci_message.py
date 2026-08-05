@@ -57,6 +57,7 @@ with no repo dependencies available) as well as from `tools/*`:
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -323,3 +324,25 @@ def report_infra_fault(fault: InfraFault) -> int:
     print("")
     print(fault.render_annotation())
     return EXIT_CI_FAULT
+
+
+def guard(checker: str, run: Callable[[], int]) -> int:
+    """Run a checker's entrypoint so a crash becomes a CI fault, not a verdict.
+
+    Every entrypoint in this repo must be wrapped. Without it an unhandled
+    exception exits non-zero, and the calling workflow cannot tell that
+    apart from :data:`EXIT_VIOLATIONS` — so it prints "ACTION REQUIRED, here
+    is how to fix your recipe" underneath a traceback the contributor did
+    not cause and cannot act on. That is the exact confusion
+    :class:`InfraFault` exists to prevent, and it has to be enforced out
+    here because a crash by definition escaped the checker's own handling.
+
+    ``SystemExit`` and ``KeyboardInterrupt`` derive from BaseException, so
+    ``argparse --help`` and Ctrl-C pass through untouched.
+    """
+    try:
+        return run()
+    except Exception as exc:
+        return report_infra_fault(
+            infra_fault(checker, f"{type(exc).__name__}: {exc}")
+        )

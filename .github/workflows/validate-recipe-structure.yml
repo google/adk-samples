@@ -147,11 +147,51 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Exit status carries whose fault it is: 1 = rules the contributor
+          # must fix, 2 = one of our validators crashed. `|| FAILED=1` used
+          # to flatten the two, so a tooling bug printed the "here is how to
+          # fix your recipe" banner over a traceback.
+          run_validator() {
+            set +e
+            uv run validate "$@"
+            local status=$?
+            set -e
+            case "$status" in
+              0) ;;
+              1) FAILED=1 ;;
+              2) CI_FAULT=1 ;;
+              *)
+                echo "::error::'uv run validate $*' exited with an undefined status ($status). This is a CI tooling bug, not a problem with your recipe."
+                CI_FAULT=1
+                ;;
+            esac
+          }
+
+          ci_fault_banner() {
+            echo ""
+            echo "========================================"
+            echo "  CI TOOLING FAILURE — not your changes"
+            echo "========================================"
+            echo ""
+            echo "A validator crashed, so we do not know whether your recipe"
+            echo "is valid. Re-run the job; if it fails again, open an issue"
+            echo "with the detail above."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+          }
+
+          FAILED=0
+          CI_FAULT=0
+
           if [ "$VALIDATE_ALL" = "true" ]; then
             # Both validators walk core/, contrib/, and skills/ in one pass.
-            FAILED=0
-            uv run validate structure || FAILED=1
-            uv run validate readme    || FAILED=1
+            run_validator structure
+            run_validator readme
+
+            if [ "$CI_FAULT" -eq 1 ]; then
+              ci_fault_banner
+              exit 1
+            fi
 
             # This branch used to `exit $FAILED` with no message while the
             # per-recipe branch below printed a banner. It is the branch
@@ -185,12 +225,19 @@ jobs:
           # Per-recipe invocation: keeps annotations scoped to the recipe
           # under review and lets one broken recipe not short-circuit
           # validation of the others in the same PR.
-          FAILED=0
+          #
+          # A here-string feeds the loop rather than a pipe, so the body runs
+          # in this shell and the FAILED / CI_FAULT assignments survive it.
           while IFS= read -r recipe; do
             [ -z "$recipe" ] && continue
-            uv run validate structure "$recipe" || FAILED=1
-            uv run validate readme    "$recipe" || FAILED=1
+            run_validator structure "$recipe"
+            run_validator readme    "$recipe"
           done <<< "$CHANGED_RECIPES"
+
+          if [ "$CI_FAULT" -eq 1 ]; then
+            ci_fault_banner
+            exit 1
+          fi
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
@@ -290,7 +337,33 @@ jobs:
         run: uv sync
 
       - name: Check every recipe sits at its required path
-        run: uv run python tools/validate_placement.py
+        run: |
+          set -euo pipefail
+
+          # Distinguish "a recipe is misplaced" (1) from "the placement
+          # validator crashed" (2); a bare invocation would surface the
+          # second as the first.
+          set +e
+          uv run python tools/validate_placement.py
+          status=$?
+          set -e
+          case "$status" in
+            0) ;;
+            1) exit 1 ;;
+            2|*)
+              echo ""
+              echo "========================================"
+              echo "  CI TOOLING FAILURE — not your changes"
+              echo "========================================"
+              echo ""
+              echo "The placement validator could not complete, so we do not"
+              echo "know whether every recipe is correctly placed. Re-run the"
+              echo "job; if it fails again, open an issue with the detail above."
+              echo ""
+              echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+              exit 1
+              ;;
+          esac
 
   # The `check-dependabot-config` job used to live here. It failed a
   # contributor's PR when .github/dependabot.yml no longer matched the recipe
