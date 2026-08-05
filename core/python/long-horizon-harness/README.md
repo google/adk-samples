@@ -55,7 +55,7 @@ This sample shows how to build a long-horizon harness on ADK with capabilities l
 | **Sessions** | [Agent Platform Sessions](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sessions) |
 | **Sandbox** | [Sandboxes](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox) (BYOC container) — one per user, JWT-routed; reattached between turns (snapshot survival opt-in) |
 | **Frontend** | Vite 8 + TanStack Router/Query + React 18 |
-| **Surface** | Cloud Run + Cloud SQL + Cloud Scheduler — Cloud Run scales to zero between turns (Cloud SQL bills continuously) |
+| **Surface** | Cloud Run + Cloud SQL + Cloud Scheduler — nothing scales to zero: both Cloud Run services hold `min_instance_count = 1` (the every-minute tick can't pay a cold start), and Cloud SQL bills continuously |
 
 On top of those managed primitives, Horizon adds a handful of **interfaces** — the rows in [`AGENTS.md`](AGENTS.md):
 
@@ -144,7 +144,7 @@ Both services `ignore_changes` on their image, so steps 2–3 never fight Terraf
 
 > **IAP access is empty by default.** Set `TF_VAR_iap_users='["user:you@example.com"]'` before `make deploy` (or re-run after) or you'll be locked out of the web UI.
 
-**Billable, always-on resources** (Cloud SQL especially) — tear everything down when you're done. Container images pushed to Artifact Registry (`cloud-run-source-deploy`) are not Terraform-managed and survive `make destroy`; delete them separately if you care about the storage:
+**Billable, always-on resources** (Cloud SQL especially, plus one always-warm instance of each Cloud Run service) — tear everything down when you're done. Container images pushed to Artifact Registry (`cloud-run-source-deploy`) are not Terraform-managed and survive `make destroy`; delete them separately if you care about the storage:
 
 ```bash
 make destroy   # flips the delete guards off, then terraform destroy of all the above
