@@ -3,16 +3,12 @@
 Auto-generates .github/dependabot.yml by scanning core/, contrib/, and skills/
 for language-specific manifest files across all 5 ADK languages.
 
-Supported ecosystems
---------------------
-  uv      Python  — directory contains uv.lock
-  gomod   Go      — directory contains go.mod
-  maven   Java    — directory contains pom.xml
-  gradle  Kotlin  — directory contains both build.gradle.kts AND
-                    settings.gradle.kts (the latter marks the root project;
-                    sub-modules have only build.gradle.kts and are skipped)
-  npm     TS/JS   — directory contains package.json with a "dependencies"
-                    or "devDependencies" key (config-only package.json skipped)
+Manifest detection lives in recipe_manifests.py, shared with
+close_orphan_dependabot_prs.py — see that module for the ecosystem/manifest
+mapping. This script only renders what the scanner finds. One copy matters:
+if the generator and the orphan cleanup disagreed about which directories are
+dependency-managed, the cleanup would close PRs for directories the generator
+had just declared live.
 
 Usage
 -----
@@ -38,10 +34,10 @@ from __future__ import annotations
 
 import argparse
 import difflib
-import json
-import os
 import sys
 from pathlib import Path
+
+import recipe_manifests
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -50,103 +46,23 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 OUTPUT_FILE = REPO_ROOT / ".github" / "dependabot.yml"
 
-# Top-level directories to scan
-SCAN_ROOTS = ["core", "contrib", "skills"]
-
-# Directory names that are never recipe roots — skip entirely during the walk
-SKIP_DIRS = {
-    ".venv",
-    "node_modules",
-    ".gradle",
-    ".git",
-    "__pycache__",
-    ".tox",
-    ".mypy_cache",
-    "dist",
-    "build",
-}
-
-# ---------------------------------------------------------------------------
-# Ecosystem detectors
-# Each returns True if the given directory should get a Dependabot entry.
-# ---------------------------------------------------------------------------
-
-
-def _is_uv(d: Path) -> bool:
-    return (d / "uv.lock").is_file()
-
-
-def _is_gomod(d: Path) -> bool:
-    return (d / "go.mod").is_file()
-
-
-def _is_maven(d: Path) -> bool:
-    return (d / "pom.xml").is_file()
-
-
-def _is_gradle(d: Path) -> bool:
-    # Only the root project has settings.gradle.kts; sub-modules do not.
-    return (d / "build.gradle.kts").is_file() and (
-        d / "settings.gradle.kts"
-    ).is_file()
-
-
-def _is_npm(d: Path) -> bool:
-    pkg = d / "package.json"
-    if not pkg.is_file():
-        return False
-    try:
-        data = json.loads(pkg.read_text(encoding="utf-8"))
-        return bool(data.get("dependencies") or data.get("devDependencies"))
-    except (json.JSONDecodeError, OSError):
-        return False
-
-
-DETECTORS: list[tuple[str, object]] = [
-    ("uv", _is_uv),
-    ("gomod", _is_gomod),
-    ("maven", _is_maven),
-    ("gradle", _is_gradle),
-    ("npm", _is_npm),
-]
-
 # ---------------------------------------------------------------------------
 # Scanner
 # ---------------------------------------------------------------------------
 
 
 def scan(repo_root: Path) -> list[dict]:
-    """Return one entry dict per detected (ecosystem, directory) pair."""
-    entries: list[dict] = []
-    seen: set[tuple[str, str]] = set()
+    """Return one entry dict per detected (ecosystem, directory) pair.
 
-    for root_name in SCAN_ROOTS:
-        root_path = repo_root / root_name
-        if not root_path.is_dir():
-            continue
-
-        for dirpath, dirnames, _ in os.walk(root_path):
-            # Prune unwanted directories in-place so os.walk won't descend
-            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
-
-            directory = Path(dirpath)
-
-            for ecosystem, detector in DETECTORS:
-                if not detector(directory):  # type: ignore[operator]
-                    continue
-
-                rel = "/" + directory.relative_to(repo_root).as_posix()
-                key = (ecosystem, rel)
-                if key in seen:
-                    continue
-                seen.add(key)
-
-                entries.append(
-                    {"package-ecosystem": ecosystem, "directory": rel}
-                )
-
-    entries.sort(key=lambda e: (e["package-ecosystem"], e["directory"]))
-    return entries
+    Detection lives in recipe_manifests.py, which is shared with
+    close_orphan_dependabot_prs.py. Keeping one copy matters: if the two ever
+    disagreed about which directories are dependency-managed, the cleanup
+    would close PRs for directories this generator had just declared live.
+    """
+    return [
+        {"package-ecosystem": ecosystem, "directory": directory}
+        for ecosystem, directory in recipe_manifests.scan(repo_root)
+    ]
 
 
 # ---------------------------------------------------------------------------

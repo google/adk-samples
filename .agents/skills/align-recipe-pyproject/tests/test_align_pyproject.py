@@ -21,6 +21,7 @@ and that a narrow `testpaths` can exclude the required runnability test.
 from pathlib import Path
 
 import align_pyproject as m
+import pytest
 import tomlkit
 
 
@@ -206,3 +207,92 @@ def test_new_checks_appear_in_report(tmp_path):
 
     assert by_id["stale-python-version-refs"].status == m.REPORT_ONLY
     assert by_id["runnability-test-in-testpaths"].status == m.REPORT_ONLY
+
+
+# ---------------------------------------------------------------------------
+# project-name-matches-folder — expected name derivation
+#
+# core/ and contrib/ derive the name from the folder basename. skills/ joins
+# the vertical namespace to it, because skills/<vertical>/<solution> makes the
+# basename non-unique across verticals (skills/retail/product-search and
+# skills/grocery/product-search would otherwise both want "product-search").
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        # Language-namespaced roots — basename wins.
+        ("core/python/deep-search", "deep-search"),
+        ("contrib/python/financial-advisor", "financial-advisor"),
+        # Legacy flat layout still present under core/.
+        ("core/rag-vector-search", "rag-vector-search"),
+        # Vertical-namespaced root — vertical is joined in.
+        ("skills/retail/product-search", "retail-product-search"),
+        ("skills/hr/onboarding", "hr-onboarding"),
+        ("skills/finance/month-end-close", "finance-month-end-close"),
+        # Absolute paths behave identically: only the last three segments
+        # are inspected, so a checkout prefix cannot change the answer.
+        (
+            "/w/adk-samples/skills/retail/product-search",
+            "retail-product-search",
+        ),
+        ("/w/adk-samples/core/python/deep-search", "deep-search"),
+        # A bare directory name has no root to inspect.
+        ("product-search", "product-search"),
+        # Deeper than <root>/<namespace>/<solution>: the third-from-last
+        # segment is not a namespaced root, so this falls back to basename.
+        # validate_placement.py rejects this layout anyway.
+        ("skills/retail/deep/nested", "nested"),
+    ],
+)
+def test_expected_project_name(path, expected):
+    assert m.expected_project_name(Path(path)) == expected
+
+
+def _name_check(recipe_dir: Path, name: str | None, apply: bool) -> m.Check:
+    body = "[project]\n" + (f'name = "{name}"\n' if name is not None else "")
+    doc = tomlkit.parse(body)
+    return m.check_project_name_matches_folder(recipe_dir, doc, apply), doc
+
+
+def test_skill_with_vertical_prefixed_name_is_ok(tmp_path):
+    recipe = tmp_path / "skills" / "retail" / "product-search"
+    check, _ = _name_check(recipe, "retail-product-search", apply=False)
+    assert check.status == m.OK
+
+
+def test_skill_with_bare_basename_is_rewritten(tmp_path):
+    """The pre-fix behaviour (bare basename) is now a violation, and the
+    auto-fix promotes it to the vertical-prefixed form rather than the other
+    way around."""
+    recipe = tmp_path / "skills" / "retail" / "product-search"
+    check, doc = _name_check(recipe, "product-search", apply=True)
+    assert check.status == m.FIXED
+    assert check.details == {
+        "from": "product-search",
+        "to": "retail-product-search",
+    }
+    assert doc["project"]["name"] == "retail-product-search"
+
+
+def test_skill_dry_run_message_explains_the_vertical_rule(tmp_path):
+    recipe = tmp_path / "skills" / "retail" / "product-search"
+    check, _ = _name_check(recipe, "product-search", apply=False)
+    assert check.status == m.WOULD_FIX
+    assert "<vertical>-<solution>" in check.message
+
+
+def test_core_recipe_message_still_says_basename(tmp_path):
+    recipe = tmp_path / "core" / "python" / "deep-search"
+    check, _ = _name_check(recipe, "wrong", apply=False)
+    assert check.status == m.WOULD_FIX
+    assert "recipe folder basename" in check.message
+    assert "<vertical>" not in check.message
+
+
+def test_missing_name_is_added_with_vertical_prefix(tmp_path):
+    recipe = tmp_path / "skills" / "retail" / "product-search"
+    check, doc = _name_check(recipe, None, apply=True)
+    assert check.status == m.FIXED
+    assert doc["project"]["name"] == "retail-product-search"

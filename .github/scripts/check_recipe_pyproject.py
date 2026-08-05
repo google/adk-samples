@@ -3,8 +3,14 @@ Validates a recipe's pyproject.toml against the repo's metadata rules.
 
 Rules enforced (see .github/workflows/python-validate-recipe.yml):
 
-  - project-name-matches-folder: [project].name must equal the recipe
-    folder basename.
+  - project-name-matches-folder: [project].name must equal the recipe's
+    expected name, which depends on the root the recipe lives under:
+      * core/ and contrib/ — the folder basename (e.g. core/python/
+        deep-search -> "deep-search").
+      * skills/ — "<vertical>-<solution>", because skills/ interposes a
+        mandatory vertical namespace (skills/<vertical>/<solution>) and the
+        basename alone is not unique across verticals. See
+        expected_project_name() for the full rationale.
   - python-version-floor: [project].requires-python must ACCEPT Python
     3.11 exactly — it must neither permit anything below (loose floor) nor
     exclude 3.11 by requiring higher (e.g. `>=3.12`). CI pins Python 3.11
@@ -81,6 +87,50 @@ PYPI_URLS = frozenset(
     }
 )
 
+# Recipe roots whose layout interposes a mandatory NAMESPACE between the root
+# and the solution folder: <root>/<namespace>/<solution>.
+#
+# Only `skills/` does this today. Its middle segment is a VERTICAL, not a
+# language (see AGENTS.md and the `recipe_size_limits` comment in
+# .github/policy.yml), and tools/validate_placement.py rejects a solution
+# dropped directly under skills/.
+#
+# core/ and contrib/ look superficially similar (core/<language>/<recipe>)
+# but are NOT listed here: their middle segment is a language, and their
+# basenames are already unique repo-wide.
+#
+# Maps the root name to what its namespace segment is CALLED, purely so error
+# messages can say "<vertical>-<solution>" rather than mechanically
+# depluralising "skills" into something meaningless.
+# NOTE: mirrored in .agents/skills/align-recipe-pyproject/scripts/
+# align_pyproject.py — keep in sync.
+NAMESPACED_ROOTS = {"skills": "vertical"}
+
+
+def expected_project_name(recipe_dir: Path) -> str:
+    """Return the [project].name this recipe directory is required to declare.
+
+    For most recipes this is just the folder basename. For a recipe under a
+    namespaced root it is "<namespace>-<solution>", for two reasons:
+
+    1. The basename is not unique. `skills/retail/product-search` and a future
+       `skills/grocery/product-search` would both be forced to declare
+       [project].name = "product-search" — two distribution packages with the
+       same name. The vertical exists precisely to namespace solutions, so the
+       project name has to carry it.
+    2. It matches the skill's own identity. A vertical skill's SKILL.md
+       frontmatter `name:`, its slash command, and its installed directory all
+       use "<vertical>-<solution>"; the Python distribution name should not be
+       the odd one out.
+
+    Works on relative and absolute paths alike, since it inspects only the
+    last three path segments.
+    """
+    parts = recipe_dir.parts
+    if len(parts) >= 3 and parts[-3] in NAMESPACED_ROOTS:
+        return f"{parts[-2]}-{parts[-1]}"
+    return recipe_dir.name
+
 
 def emit(kind: str, file: Path, msg: str) -> None:
     """Print one PASS/FAIL record. Newlines are collapsed so the shell can split
@@ -89,28 +139,42 @@ def emit(kind: str, file: Path, msg: str) -> None:
     print(f"{kind}::{file}::{msg}")
 
 
-def check_name(project: dict, pyproject_path: Path, folder: str) -> None:
-    """B2-name: [project].name must equal the recipe folder basename."""
+def check_name(project: dict, pyproject_path: Path, recipe_dir: Path) -> None:
+    """B2-name: [project].name must equal expected_project_name(recipe_dir)."""
+    expected = expected_project_name(recipe_dir)
+    # Only spell out the derivation when it is not simply the basename, so
+    # the common core/contrib message stays as terse as it was.
+    if expected != recipe_dir.name:
+        root = recipe_dir.parts[-3]
+        namespace_term = NAMESPACED_ROOTS[root]
+        derivation = (
+            f" (recipes under {root}/ are named "
+            f"'<{namespace_term}>-<solution>', joining the {namespace_term} "
+            f"'{recipe_dir.parts[-2]}' to the folder name "
+            f"'{recipe_dir.name}')"
+        )
+    else:
+        derivation = ""
+
     name = project.get("name")
     if not name:
         emit(
             "FAIL",
             pyproject_path,
-            f"[project].name is missing; it must equal the recipe folder "
-            f"name '{folder}'.",
+            f"[project].name is missing; it must be '{expected}'{derivation}.",
         )
-    elif name != folder:
+    elif name != expected:
         emit(
             "FAIL",
             pyproject_path,
-            f"[project].name = '{name}' does not match the recipe folder "
-            f"name '{folder}'.",
+            f"[project].name = '{name}' does not match the required name "
+            f"'{expected}'{derivation}.",
         )
     else:
         emit(
             "PASS",
             pyproject_path,
-            f"[project].name matches folder name: '{name}'.",
+            f"[project].name matches the required name: '{name}'.",
         )
 
 
@@ -362,7 +426,7 @@ def main() -> int:
         return 0
 
     project = pyproject.get("project") or {}
-    check_name(project, pyproject_path, recipe_dir.name)
+    check_name(project, pyproject_path, recipe_dir)
     check_requires_python(project, pyproject_path)
     check_description(project, pyproject_path, manifest_path)
     check_default_pypi_index(pyproject, pyproject_path)
