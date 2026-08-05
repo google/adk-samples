@@ -43,39 +43,40 @@ shouldn't know who its consumers are.
 ## Sandbox backend
 
 Per-user workspace persistence is provided by `SandboxEnvironment`
-(`horizon/environment/sandbox.py`): each session boots a sandbox container,
-restores from the user's prior snapshot if one exists, and snapshots back at
-session close. Selection is controlled by:
+(`horizon/environment/sandbox.py`). A session **reattaches** to the user's
+most-recent RUNNING sandbox if there is one, else provisions blank (or restores
+a snapshot when Phase C is on). `close()` only tears down the local HTTP client
+— **it does not snapshot**; the platform-side sandbox keeps running for the next
+session. Full lifecycle: [`../docs/sandbox-lifecycle.md`](../docs/sandbox-lifecycle.md).
+Selection is controlled by:
 
 ```bash
 # Required to switch off LocalEnvironment.
 export LHA_ENVIRONMENT_BACKEND=sandbox
 
-# Required when backend=sandbox.
+# Optional: pins the Agent Engine hosting Memory Bank + sandboxes. Unset, it is
+# discovered/created by scripts/provision_agent_engine.py on `terraform apply`.
 export AGENT_ENGINE_RESOURCE_NAME=projects/<p>/locations/<l>/reasoningEngines/<r>
 
+# Required when backend=sandbox. Missing either of the two below, the provider
+# logs a warning and falls back to LocalEnvironment off Cloud Run (and raises
+# SandboxConfigurationError on it).
+#
 # BYOC runtime image the sandbox boots; rebuilt + pushed from
-# horizon/sandbox/runtime/. A new tag forces a new template.
-export LHA_RUNTIME_IMAGE=us-central1-docker.pkg.dev/<p>/<repo>/runtime:<tag>
+# horizon/sandbox/runtime/. A new tag forces a new template. Nothing in this
+# module creates the Artifact Registry repo — see ../AGENTS.md for the one-time
+# `gcloud artifacts repositories create` + Cloud Build steps.
+export LHA_RUNTIME_IMAGE=us-central1-docker.pkg.dev/<p>/lha-sandbox/runtime:<tag>
 
 # SA email whose JWT the sandbox LB checks on every shim request.
 # Caller ADC must hold roles/iam.serviceAccountTokenCreator on this SA.
+# `make deploy` reuses the Cloud Run SA for this; locally you create your own.
 export LHA_SANDBOX_CALLER_SA=lha-sandbox-caller@<p>.iam.gserviceaccount.com
-
-# Optional: how long _close_envs_at_exit waits for snapshot/delete RPCs to
-# finish before abandoning the cleanup thread (default 300s). Bump for very
-# large workspaces; lower for fast shutdown.
-export LHA_CLOSE_JOIN_TIMEOUT_SEC=300
-
-# Optional: set to "1" in the CLI entrypoint so SIGTERM/SIGINT trigger the
-# snapshot flush. Off by default so library/test imports don't hijack signal
-# handlers from the host process.
-export LHA_INSTALL_SIGNAL_HANDLERS=1
 ```
 
-The snapshot index lives on the host at `~/.lha/snapshots/index.json`,
-guarded by a sibling `.lock` file via `fcntl.flock` so parallel sessions for
-the same `user_id` serialize their writes.
+Sandbox discovery is Agent Platform's authoritative `sandboxes.list`, not a
+host-local index file — so any Cloud Run instance resolves the same sandbox and
+a process restart is irrelevant to reattach.
 
 ## Redeploying into a project you previously tore down
 
