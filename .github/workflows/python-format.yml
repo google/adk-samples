@@ -12,9 +12,11 @@ on:
       - "skills/**/*.py"
       - "**/pyproject.toml"
 
+# Read-only by default. `pull-requests: write` is granted per job below
+# rather than here, because a workflow-level grant is handed to every job in
+# the file — including any future job that has no business posting comments.
 permissions:
   contents: read
-  pull-requests: write # Essential for posting reviewdog suggestion comments
 
 # Cancel superseded runs on the same PR to save runner minutes and avoid
 # stale suggestion comments from an older commit lingering on the PR.
@@ -33,23 +35,26 @@ jobs:
   ruff-format:
     name: Ruff Format Suggestions
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # Essential for posting reviewdog suggestion comments
     # Ruff on the PR-diff is fast; 10 min is a generous ceiling that still
     # protects against a stuck reviewdog HTTP call to the GitHub API.
     timeout-minutes: 10
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
         with:
           python-version: "3.11"
           enable-cache: false
 
       - name: Install Reviewdog
-        uses: reviewdog/action-setup@v1
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # ratchet:reviewdog/action-setup@v1
         with:
           # Pinned rather than `latest` so a reviewdog release cannot turn every
           # open PR red without warning. Bump deliberately.
@@ -135,22 +140,25 @@ jobs:
   ruff-lint:
     name: Ruff Lint Suggestions
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # Essential for posting reviewdog suggestion comments
     # Same rationale as ruff-format above.
     timeout-minutes: 10
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
         with:
           python-version: "3.11"
           enable-cache: false
 
       - name: Install Reviewdog
-        uses: reviewdog/action-setup@v1
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # ratchet:reviewdog/action-setup@v1
         with:
           # Pinned rather than `latest` — see ruff-format job for rationale.
           reviewdog_version: v0.21.0

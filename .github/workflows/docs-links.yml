@@ -38,7 +38,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
 
       - name: Check links
         id: lychee
@@ -54,7 +54,7 @@ jobs:
         # and neither told the contributor which file to open. --format
         # markdown writes a readable report we can put in the job summary
         # and echo.
-        uses: lycheeverse/lychee-action@v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # ratchet:lycheeverse/lychee-action@v2.9.0
         env:
           # Authenticate GitHub link checks with the workflow token so
           # docs that link to any github.com URL (users, other repos,
