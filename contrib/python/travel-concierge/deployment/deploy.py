@@ -14,13 +14,11 @@
 
 """Deployment script for Travel Concierge."""
 
-import asyncio
 import os
 
 import vertexai
 from absl import app, flags
 from dotenv import load_dotenv
-from google.adk.sessions import VertexAiSessionService
 from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
 
@@ -30,6 +28,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("project_id", None, "GCP project ID.")
 flags.DEFINE_string("location", None, "GCP location.")
 flags.DEFINE_string("bucket", None, "GCP bucket.")
+flags.DEFINE_string("model_endpoint", None, "GCP model endpoint.")
 
 flags.DEFINE_string(
     "initial_states_path",
@@ -56,19 +55,18 @@ def create(env_vars: dict[str, str]) -> None:
         description="An Example AgentEngine Deployment",
         requirements=[
             "google-adk (>=1.31.0,<2.0.0)",
-            "google-cloud-aiplatform[agent_engines] (>=1.93.1)",
-            "google-genai (>=1.9.0)",
-            "pydantic (>=2.10.6,<3.0.0)",
+            "google-cloud-aiplatform[agent_engines] (>=1.157.0)",
+            "google-genai (>=1.21.1,<2.0.0)",
             "absl-py (>=2.2.1,<3.0.0)",
-            "pydantic (>=2.10.6,<3.0.0)",
+            "pydantic (>=2.13.4,<3.0.0)",
             "requests (>=2.32.3,<3.0.0)",
             "python-dotenv>=1.0.1",
             "arize-otel>=0.8.2; python_version >= '3.11' and python_version < '3.13'",
             "openinference-instrumentation-google-adk>=0.1.0; python_version >= '3.11' and python_version < '3.14'",
-            "openinference-instrumentation>=0.1.34",
-            "arize>=7.36.0",
-            "arize-phoenix-evals>=0.20.8",
-            "scikit-learn>=1.7.0",
+            "openinference-instrumentation>=0.1.53",
+            "arize>=8.35.0",
+            "arize-phoenix-evals>=3.1.0",
+            "scikit-learn>=1.9.0",
             "pandas>=2.3.0",
         ],
         extra_packages=[
@@ -85,26 +83,20 @@ def delete(resource_id: str) -> None:
     print(f"Deleted remote agent: {resource_id}")
 
 
-def send_message(
-    session_service: VertexAiSessionService, resource_id: str, message: str
-) -> None:
+def send_message(resource_id: str, message: str) -> None:
     """Send a message to the deployed agent."""
-
-    session = asyncio.run(
-        session_service.create_session(
-            app_name=resource_id, user_id="traveler0115"
-        )
-    )
-
     remote_agent = agent_engines.get(resource_id)
+    user_id = "traveler0115"
+    session = remote_agent.create_session(user_id=user_id)
+    print(f"Session successfully initialized. ID: {session['id']}")
 
-    print(f"Trying remote agent: {resource_id}")
     for event in remote_agent.stream_query(
-        user_id="traveler0115",
-        session_id=session.id,
+        user_id=user_id,
+        session_id=session["id"],
         message=message,
     ):
         print(event)
+
     print("Done.")
 
 
@@ -117,9 +109,13 @@ def main(argv: list[str]) -> None:
         if FLAGS.project_id
         else os.getenv("GOOGLE_CLOUD_PROJECT")
     )
-
+    model_endpoint = (
+        FLAGS.model_endpoint
+        if FLAGS.model_endpoint
+        else os.getenv("GOOGLE_CLOUD_LOCATION")
+    )
     location = (
-        FLAGS.location if FLAGS.location else os.getenv("GOOGLE_CLOUD_LOCATION")
+        FLAGS.location if FLAGS.location else os.getenv("GOOGLE_DEPLOY_REGION")
     )
     bucket = (
         FLAGS.bucket
@@ -140,17 +136,30 @@ def main(argv: list[str]) -> None:
     )
     env_vars["GOOGLE_MAPS_API_KEY"] = map_key
 
+    model_string = os.getenv("GOOGLE_GENAI_MODEL")
+    env_vars["GOOGLE_GENAI_MODEL"] = model_string
+
     print(f"PROJECT: {project_id}")
     print(f"LOCATION: {location}")
     print(f"BUCKET: {bucket}")
     print(f"INITIAL_STATE: {initial_states_path}")
     print(f"MAP: {map_key[:5]}")
+    print(f"MODEL: {model_string}")
+    print(f"MODEL ENDPOINT: {model_endpoint}")
 
     if not project_id:
         print("Missing required environment variable: GOOGLE_CLOUD_PROJECT")
         return
-    elif not location:
+    elif not model_endpoint:
         print("Missing required environment variable: GOOGLE_CLOUD_LOCATION")
+        return
+    elif not location:
+        print("Missing required environment variable: GOOGLE_DEPLOY_REGION")
+        return
+    elif location == "global":
+        print(
+            f'Deployment location cannot be "{location}", please rerun with --location <region>.'
+        )
         return
     elif not bucket:
         print(
@@ -165,12 +174,18 @@ def main(argv: list[str]) -> None:
     elif not map_key:
         print("Missing required environment variable: GOOGLE_MAPS_API_KEY")
         return
+    elif not model_string:
+        print("Missing required environment variable: GOOGLE_GENAI_MODEL")
+        return
 
     vertexai.init(
         project=project_id,
         location=location,
         staging_bucket=f"gs://{bucket}",
     )
+
+    # ADK uses this to determine model endpoint within AgentEngine
+    env_vars["GOOGLE_CLOUD_LOCATION"] = model_endpoint
 
     if FLAGS.create:
         create(env_vars)
@@ -183,9 +198,7 @@ def main(argv: list[str]) -> None:
         if not FLAGS.resource_id:
             print("resource_id is required for quicktest")
             return
-        session_service = VertexAiSessionService(project_id, location)
         send_message(
-            session_service,
             FLAGS.resource_id,
             "Tell me more about activities I can do around Machu Picchu",
         )

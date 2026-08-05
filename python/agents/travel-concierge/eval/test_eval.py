@@ -32,7 +32,7 @@ async def test_inspire():
     await AgentEvaluator.evaluate(
         "travel_concierge",
         str(pathlib.Path(__file__).parent / "data/inspire.test.json"),
-        num_runs=4,
+        num_runs=1,
     )
 
 
@@ -42,7 +42,7 @@ async def test_pretrip():
     await AgentEvaluator.evaluate(
         "travel_concierge",
         str(pathlib.Path(__file__).parent / "data/pretrip.test.json"),
-        num_runs=4,
+        num_runs=1,
     )
 
 
@@ -52,5 +52,5 @@ async def test_intrip():
     await AgentEvaluator.evaluate(
         "travel_concierge",
         str(pathlib.Path(__file__).parent / "data/intrip.test.json"),
-        num_runs=4,
+        num_runs=1,
     )

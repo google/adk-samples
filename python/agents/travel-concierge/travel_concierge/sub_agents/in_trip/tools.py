@@ -160,8 +160,12 @@ def find_segment(
       to   - capture information about the destination of this segment.
       arrive_by - an indication of the time we shall arrive at the destination.
     """
-    # Expects current_datetime is in '2024-03-15 04:00:00' format
-    datetime_object = datetime.fromisoformat(current_datetime)
+    if not current_datetime:
+        current_datetime = "2025-06-15 00:00:00"
+    try:
+        datetime_object = datetime.fromisoformat(current_datetime)
+    except ValueError:
+        datetime_object = datetime.now()
     current_date = datetime_object.strftime("%Y-%m-%d")
     current_time = datetime_object.strftime("%H:%M")
     event_date = current_date
@@ -172,8 +176,8 @@ def find_segment(
     print("-----")
 
     # defaults
-    origin_json = profile["home"]
-    destin_json = profile["home"]
+    origin_json = profile.get("home", {})
+    destin_json = profile.get("home", {})
 
     leave_by = "No movement required"
     arrive_by = "No movement required"
@@ -215,12 +219,18 @@ def find_segment(
 def _inspect_itinerary(state: dict[str:Any]):
     """Identifies and returns the itinerary, profile and current datetime from the session state."""
 
-    itinerary = state[constants.ITIN_KEY]
-    profile = state[constants.PROF_KEY]
+    itinerary = state.get(constants.ITIN_KEY, {})
+    profile = state.get(constants.PROF_KEY, {})
     print("itinerary", itinerary)
-    current_datetime = itinerary["start_date"] + " 00:00"
+    current_datetime = (
+        itinerary.get("start_date", "") + " 00:00"
+        if itinerary.get("start_date")
+        else ""
+    )
     if state.get(constants.ITIN_DATETIME, ""):
         current_datetime = state[constants.ITIN_DATETIME]
+    if not current_datetime:
+        current_datetime = "2025-06-15 00:00:00"
 
     return itinerary, profile, current_datetime
 
@@ -240,7 +250,7 @@ def transit_coordination(readonly_context: ReadonlyContext):
     )
 
     print("-----")
-    print(itinerary["trip_name"])
+    print(itinerary.get("trip_name", ""))
     print(current_datetime)
     print("-----")
     print("-----")

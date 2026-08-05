@@ -166,7 +166,7 @@
         }
       ],
       "session_input": {
-        "app_name": "",
+        "app_name": "travel_concierge",
         "user_id": "",
         "state": {
           "user_profile": {

@@ -12,11 +12,21 @@ load_dotenv()
 def instrument_adk_with_arize() -> trace.Tracer:
     """Instrument the ADK with Arize."""
 
-    if os.getenv("ARIZE_SPACE_ID") is None:
-        warnings.warn("ARIZE_SPACE_ID is not set", stacklevel=2)
+    if os.getenv("ENABLE_ARIZE", "false").lower() in ("false", "0"):
         return None
-    if os.getenv("ARIZE_API_KEY") is None:
-        warnings.warn("ARIZE_API_KEY is not set", stacklevel=2)
+
+    space_id = os.getenv("ARIZE_SPACE_ID")
+    api_key = os.getenv("ARIZE_API_KEY")
+
+    if not space_id or space_id.startswith("YOUR_"):
+        warnings.warn(
+            "ARIZE_SPACE_ID is not set or is a placeholder", stacklevel=2
+        )
+        return None
+    if not api_key or api_key.startswith("YOUR_"):
+        warnings.warn(
+            "ARIZE_API_KEY is not set or is a placeholder", stacklevel=2
+        )
         return None
 
     tracer_provider = register(

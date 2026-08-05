@@ -27,6 +27,9 @@ os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
-MODEL = os.getenv("GOOGLE_GENAI_MODEL")
+MODEL: str | None = os.getenv("GOOGLE_GENAI_MODEL")
+
+if MODEL is None:
+    raise ValueError("GOOGLE_GENAI_MODEL is not set")
 
 from . import agent  # noqa: E402

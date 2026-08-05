@@ -101,10 +101,12 @@ def _set_initial_states(source: dict[str, Any], target: State | dict[str, Any]):
     if constants.ITIN_INITIALIZED not in target:
         target[constants.ITIN_INITIALIZED] = True
 
-        target.update(source)
+        for k, v in source.items():
+            if k not in target or not target[k]:
+                target[k] = v
 
-        itinerary = source.get(constants.ITIN_KEY, {})
-        if itinerary:
+        itinerary = target.get(constants.ITIN_KEY, {})
+        if itinerary and constants.START_DATE in itinerary:
             target[constants.ITIN_START_DATE] = itinerary[constants.START_DATE]
             target[constants.ITIN_END_DATE] = itinerary[constants.END_DATE]
             target[constants.ITIN_DATETIME] = itinerary[constants.START_DATE]

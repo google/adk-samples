@@ -1,8 +1,12 @@
-from phoenix.evals import ClassificationTemplate
+from phoenix.evals import ClassificationEvaluator
+from phoenix.evals.llm import LLM
 
-AGENT_HANDOFF_TEMPLATE = ClassificationTemplate(
-    rails=["correct_handoff", "incorrect_handoff"],
-    template="""
+AGENT_HANDOFF_CHOICES = {
+    "correct_handoff": 1.0,
+    "incorrect_handoff": 0.0,
+}
+
+AGENT_HANDOFF_PROMPT = """
 You are evaluating the correctness of agent handoffs in a travel concierge system.
 
 User Query: {query}
@@ -17,13 +21,14 @@ Classification Guidelines:
 - incorrect_handoff: The agent failed to transfer when needed, transferred to wrong agent(s), or made unnecessary transfers
 
 Classify this agent handoff behavior:
-""",
-)
+"""
 
+TOOL_USAGE_CHOICES = {
+    "correct_tools": 1.0,
+    "incorrect_tools": 0.0,
+}
 
-TOOL_USAGE_TEMPLATE = ClassificationTemplate(
-    rails=["correct_tools", "incorrect_tools"],
-    template="""
+TOOL_USAGE_PROMPT = """
 You are evaluating the correctness of tool usage within travel concierge agents.
 
 User Query: {query}
@@ -38,13 +43,14 @@ Classification Guidelines:
 - incorrect_tools: The agent failed to use expected tools, used wrong tools, or used tools unnecessarily
 
 Classify this tool usage behavior:
-""",
-)
+"""
 
+RESPONSE_QUALITY_CHOICES = {
+    "good_response": 1.0,
+    "poor_response": 0.0,
+}
 
-RESPONSE_QUALITY_TEMPLATE = ClassificationTemplate(
-    rails=["good_response", "poor_response"],
-    template="""
+RESPONSE_QUALITY_PROMPT = """
 You are evaluating the quality of travel concierge agent responses.
 
 User Query: {query}
@@ -64,5 +70,31 @@ Consider the following factors:
 - Does the response demonstrate travel domain knowledge?
 
 Classify this response quality:
-""",
-)
+"""
+
+
+def create_agent_handoff_evaluator(llm: LLM) -> ClassificationEvaluator:
+    return ClassificationEvaluator(
+        name="agent_handoff",
+        llm=llm,
+        choices=AGENT_HANDOFF_CHOICES,
+        prompt_template=AGENT_HANDOFF_PROMPT,
+    )
+
+
+def create_tool_usage_evaluator(llm: LLM) -> ClassificationEvaluator:
+    return ClassificationEvaluator(
+        name="tool_usage",
+        llm=llm,
+        choices=TOOL_USAGE_CHOICES,
+        prompt_template=TOOL_USAGE_PROMPT,
+    )
+
+
+def create_response_quality_evaluator(llm: LLM) -> ClassificationEvaluator:
+    return ClassificationEvaluator(
+        name="response_quality",
+        llm=llm,
+        choices=RESPONSE_QUALITY_CHOICES,
+        prompt_template=RESPONSE_QUALITY_PROMPT,
+    )

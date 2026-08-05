@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Arize-based evaluation suite for the Travel Concierge agent.
-This follows the Arize documentation pattern for experiments while using Google Vertex AI for evaluations.
+This follows the Arize documentation pattern for experiments while using Google Vertex AI or Dev API for evaluations.
 """
 
 import json
@@ -16,13 +16,12 @@ import pandas as pd
 import vertexai
 
 # Arize imports
-from arize.experimental.datasets import ArizeDatasetsClient
-from arize.experimental.datasets.experiments.types import EvaluationResult
-from arize.experimental.datasets.utils.constants import GENERATIVE
+from arize import ArizeClient
+from arize.experiments import EvaluationResult
 from arize_eval_templates import (
-    AGENT_HANDOFF_TEMPLATE,
-    RESPONSE_QUALITY_TEMPLATE,
-    TOOL_USAGE_TEMPLATE,
+    create_agent_handoff_evaluator,
+    create_response_quality_evaluator,
+    create_tool_usage_evaluator,
 )
 from dotenv import load_dotenv
 
@@ -31,7 +30,7 @@ from google.adk.runners import InMemoryRunner
 from google.genai.types import Part, UserContent
 
 # Phoenix Evals imports
-from phoenix.evals import GeminiModel, llm_classify
+from phoenix.evals.llm import LLM
 
 # Import the travel concierge agent
 from travel_concierge import MODEL
@@ -42,25 +41,48 @@ load_dotenv()
 # Environment variables
 ARIZE_API_KEY = os.getenv("ARIZE_API_KEY")
 ARIZE_SPACE_ID = os.getenv("ARIZE_SPACE_ID")
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
-GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
+USE_VERTEXAI = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "True").lower() in (
+    "true",
+    "1",
+)
 
-if not all([ARIZE_API_KEY, ARIZE_SPACE_ID, GOOGLE_CLOUD_PROJECT]):
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+if not ARIZE_API_KEY or not ARIZE_SPACE_ID:
     raise ValueError(
-        "Missing required environment variables: ARIZE_API_KEY, ARIZE_SPACE_ID, GOOGLE_CLOUD_PROJECT"
+        "Missing required environment variables: ARIZE_API_KEY, ARIZE_SPACE_ID"
     )
 
-# Initialize Vertex AI
-vertexai.init(project=GOOGLE_CLOUD_PROJECT, location=GOOGLE_CLOUD_LOCATION)
+if USE_VERTEXAI:
+    if not GOOGLE_CLOUD_PROJECT:
+        raise ValueError(
+            "Missing required environment variable GOOGLE_CLOUD_PROJECT for Vertex AI"
+        )
+    vertexai.init(project=GOOGLE_CLOUD_PROJECT, location=GOOGLE_CLOUD_LOCATION)
+    phoenix_model = LLM(
+        provider="vertex",
+        model=MODEL,
+    )
+else:
+    if not GOOGLE_API_KEY:
+        raise ValueError(
+            "Missing required environment variable GOOGLE_API_KEY for Dev API"
+        )
+    phoenix_model = LLM(
+        provider="google",
+        model=MODEL,
+    )
 
 # Initialize Arize client
-arize_client = ArizeDatasetsClient(api_key=ARIZE_API_KEY)
+arize_client = ArizeClient(api_key=ARIZE_API_KEY)
 
-# Initialize Phoenix model for evaluations
-phoenix_model = GeminiModel(
-    model=MODEL,
-    project=GOOGLE_CLOUD_PROJECT,
-    location=GOOGLE_CLOUD_LOCATION,
+# Initialize Evaluators
+handoff_evaluator = create_agent_handoff_evaluator(phoenix_model)
+tool_usage_evaluator_inst = create_tool_usage_evaluator(phoenix_model)
+response_quality_evaluator_inst = create_response_quality_evaluator(
+    phoenix_model
 )
 
 
@@ -156,11 +178,11 @@ def create_arize_dataset(dataset_name: str, filename: str) -> dict[str, str]:
     )
 
     print(f"Creating dataset: {full_dataset_name}")
-    dataset_id = arize_client.create_dataset(
+    dataset_id = arize_client.datasets.create(
         space_id=ARIZE_SPACE_ID,
         dataset_name=full_dataset_name,
         data=df,
-        dataset_type=GENERATIVE,
+        dataset_type="GENERATIVE",
     )
 
     print(f"Dataset created with ID: {dataset_id}")
@@ -175,10 +197,6 @@ def extract_tool_calls_from_response(
     Extract tool call information from the agent's response and execution context.
     This creates metadata for evaluation.
     """
-    # For the travel concierge, we'll need to examine execution traces
-    # This is a simplified implementation - in practice, we'd need to capture
-    # actual tool calls from the ADK agent execution
-
     max_response_length = 100
 
     tool_calls = []
@@ -186,7 +204,6 @@ def extract_tool_calls_from_response(
 
     # Simple heuristics to detect potential tool usage
     if "transfer" in response_text.lower():
-        # Look for agent transfer patterns
         if "inspiration" in response_text.lower():
             agent_transfers.append("inspiration_agent")
         elif "planning" in response_text.lower():
@@ -202,14 +219,13 @@ def extract_tool_calls_from_response(
         ):
             agent_transfers.append("post_trip_agent")
 
-    # Detect other tool usage patterns
     if any(
         keyword in response_text.lower()
         for keyword in ["search", "flight", "hotel", "weather", "availability"]
     ):
         tool_calls.append(
             {
-                "tool_name": "search_tool",  # Generic inference
+                "tool_name": "search_tool",
                 "tool_input": (
                     response_text[:max_response_length] + "..."
                     if len(response_text) > max_response_length
@@ -232,14 +248,14 @@ async def call_travel_concierge_agent(
         app_name=runner.app_name, user_id="test_user"
     )
 
-    # TODO: Set session state if provided
-    # This would require understanding how to set the travel concierge session state
-
     content = UserContent(parts=[Part(text=query)])
     response_parts = []
 
-    for event in runner.run(
-        user_id=session.user_id, session_id=session.id, new_message=content
+    async for event in runner.run_async(
+        user_id=session.user_id,
+        session_id=session.id,
+        new_message=content,
+        state_delta=session_state,
     ):
         if event and event.content and event.content.parts:
             for part in event.content.parts:
@@ -293,50 +309,26 @@ async def task_function(dataset_row: dict) -> str:
 def agent_handoff_evaluator(output: str, dataset_row: dict) -> EvaluationResult:
     """Evaluator for agent handoff correctness."""
     try:
-        # Parse the agent output to get the metadata
-        try:
-            metadata = json.loads(output) if isinstance(output, str) else output
-        except (json.JSONDecodeError, TypeError):
-            metadata = {}
+        metadata = json.loads(output) if isinstance(output, str) else output
+        eval_input = {
+            "query": dataset_row.get("query", ""),
+            "agent_response": metadata.get("agent_response", ""),
+            "expected_agent_transfers": dataset_row.get(
+                "expected_agent_transfers", "[]"
+            ),
+            "actual_agent_transfers": json.dumps(
+                metadata.get("actual_agent_transfers", [])
+            ),
+        }
 
-        # Create evaluation data for this specific row
-        eval_data = pd.DataFrame(
-            [
-                {
-                    "query": dataset_row.get("query", ""),
-                    "agent_response": metadata.get("agent_response", ""),
-                    "expected_agent_transfers": dataset_row.get(
-                        "expected_agent_transfers", "[]"
-                    ),
-                    "actual_agent_transfers": json.dumps(
-                        metadata.get("actual_agent_transfers", [])
-                    ),
-                }
-            ]
-        )
-
-        # Run the Phoenix evaluation for this specific row
-        handoff_result = llm_classify(
-            data=eval_data,
-            model=phoenix_model,
-            template=AGENT_HANDOFF_TEMPLATE,
-            rails=AGENT_HANDOFF_TEMPLATE.rails,
-            verbose=False,
-        )
-
-        # Extract the result
-        if len(handoff_result) > 0 and "label" in handoff_result.columns:
-            label = handoff_result.iloc[0]["label"]
-        else:
-            label = "unknown"
-
-        # Binary scoring: 1.0 for correct, 0.0 for incorrect
-        score = 1.0 if label == "correct_handoff" else 0.0
-
-        explanation = f"Agent handoff evaluation: {label}. Expected transfers: {dataset_row.get('expected_agent_transfers', 'N/A')}, Actual transfers: {json.dumps(metadata.get('actual_agent_transfers', []))}"
+        scores = handoff_evaluator.evaluate(eval_input)
+        score_obj = scores[0]
 
         return EvaluationResult(
-            score=score, label=label, explanation=explanation
+            score=score_obj.score if score_obj.score is not None else 0.0,
+            label=score_obj.label or "unknown",
+            explanation=score_obj.explanation
+            or f"Agent handoff evaluation: {score_obj.label}",
         )
 
     except Exception as e:
@@ -351,50 +343,26 @@ def agent_handoff_evaluator(output: str, dataset_row: dict) -> EvaluationResult:
 def tool_usage_evaluator(output: str, dataset_row: dict) -> EvaluationResult:
     """Evaluator for tool usage correctness."""
     try:
-        # Parse the agent output to get the metadata
-        try:
-            metadata = json.loads(output) if isinstance(output, str) else output
-        except (json.JSONDecodeError, TypeError):
-            metadata = {}
+        metadata = json.loads(output) if isinstance(output, str) else output
+        eval_input = {
+            "query": dataset_row.get("query", ""),
+            "agent_response": metadata.get("agent_response", ""),
+            "expected_other_tools": dataset_row.get(
+                "expected_other_tools", "[]"
+            ),
+            "actual_tool_calls": json.dumps(
+                metadata.get("actual_tool_calls", [])
+            ),
+        }
 
-        # Create evaluation data for this specific row
-        eval_data = pd.DataFrame(
-            [
-                {
-                    "query": dataset_row.get("query", ""),
-                    "agent_response": metadata.get("agent_response", ""),
-                    "expected_other_tools": dataset_row.get(
-                        "expected_other_tools", "[]"
-                    ),
-                    "actual_tool_calls": json.dumps(
-                        metadata.get("actual_tool_calls", [])
-                    ),
-                }
-            ]
-        )
-
-        # Run the Phoenix evaluation for this specific row
-        tool_result = llm_classify(
-            data=eval_data,
-            model=phoenix_model,
-            template=TOOL_USAGE_TEMPLATE,
-            rails=TOOL_USAGE_TEMPLATE.rails,
-            verbose=False,
-        )
-
-        # Extract the result
-        if len(tool_result) > 0 and "label" in tool_result.columns:
-            label = tool_result.iloc[0]["label"]
-        else:
-            label = "unknown"
-
-        # Binary scoring: 1.0 for correct, 0.0 for incorrect
-        score = 1.0 if label == "correct_tools" else 0.0
-
-        explanation = f"Tool usage evaluation: {label}. Expected tools: {dataset_row.get('expected_other_tools', 'N/A')}, Actual tools: {json.dumps(metadata.get('actual_tool_calls', []))}"
+        scores = tool_usage_evaluator_inst.evaluate(eval_input)
+        score_obj = scores[0]
 
         return EvaluationResult(
-            score=score, label=label, explanation=explanation
+            score=score_obj.score if score_obj.score is not None else 0.0,
+            label=score_obj.label or "unknown",
+            explanation=score_obj.explanation
+            or f"Tool usage evaluation: {score_obj.label}",
         )
 
     except Exception as e:
@@ -411,47 +379,21 @@ def response_quality_evaluator(
 ) -> EvaluationResult:
     """Evaluator for response quality."""
     try:
-        # Parse the agent output to get the metadata
-        try:
-            metadata = json.loads(output) if isinstance(output, str) else output
-        except (json.JSONDecodeError, TypeError):
-            metadata = {}
+        metadata = json.loads(output) if isinstance(output, str) else output
+        eval_input = {
+            "query": dataset_row.get("query", ""),
+            "agent_response": metadata.get("agent_response", ""),
+            "expected_response": dataset_row.get("expected_response", ""),
+        }
 
-        # Create evaluation data for this specific row
-        eval_data = pd.DataFrame(
-            [
-                {
-                    "query": dataset_row.get("query", ""),
-                    "agent_response": metadata.get("agent_response", ""),
-                    "expected_response": dataset_row.get(
-                        "expected_response", ""
-                    ),
-                }
-            ]
-        )
-
-        # Run the Phoenix evaluation for this specific row
-        quality_result = llm_classify(
-            data=eval_data,
-            model=phoenix_model,
-            template=RESPONSE_QUALITY_TEMPLATE,
-            rails=RESPONSE_QUALITY_TEMPLATE.rails,
-            verbose=False,
-        )
-
-        # Extract the result
-        if len(quality_result) > 0 and "label" in quality_result.columns:
-            label = quality_result.iloc[0]["label"]
-        else:
-            label = "unknown"
-
-        # Binary scoring: 1.0 for good, 0.0 for poor
-        score = 1.0 if label == "good_response" else 0.0
-
-        explanation = f"Response quality evaluation: {label}. Query: {dataset_row.get('query', 'N/A')[:100]}..."
+        scores = response_quality_evaluator_inst.evaluate(eval_input)
+        score_obj = scores[0]
 
         return EvaluationResult(
-            score=score, label=label, explanation=explanation
+            score=score_obj.score if score_obj.score is not None else 0.0,
+            label=score_obj.label or "unknown",
+            explanation=score_obj.explanation
+            or f"Response quality evaluation: {score_obj.label}",
         )
 
     except Exception as e:
@@ -485,9 +427,6 @@ def run_evaluation_experiment():
     for dataset_name, dataset in datasets:
         print(f"Running agent tasks for {dataset_name}...")
 
-        # First, run the agent tasks to get responses
-        # We'll collect the results manually for Phoenix evaluation
-        # Use the 3 separate named evaluator functions
         evaluators = [
             agent_handoff_evaluator,
             tool_usage_evaluator,
@@ -496,32 +435,19 @@ def run_evaluation_experiment():
 
         print(f"Running Arize experiment for {dataset_name}...")
 
-        # Run Arize experiment with Phoenix evaluators
-        experiment_result = arize_client.run_experiment(
-            space_id=ARIZE_SPACE_ID,
-            dataset_id=dataset["id"],
+        experiment, _experiment_df = arize_client.experiments.run(
+            name=f"travel_concierge_phoenix_{dataset_name}_evaluation_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}",
+            dataset=dataset["id"],
             task=task_function,
             evaluators=evaluators,
-            experiment_name=f"travel_concierge_phoenix_{dataset_name}_evaluation_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}",
-            concurrency=2,  # Reduce concurrency to be gentle on APIs
+            concurrency=2,
             exit_on_error=False,
             dry_run=False,
         )
 
-        # Handle the experiment result
-        if hasattr(experiment_result, "id"):
-            experiment_id = experiment_result.id
-        elif (
-            isinstance(experiment_result, tuple) and len(experiment_result) > 0
-        ):
-            experiment_id = (
-                experiment_result[0].id
-                if hasattr(experiment_result[0], "id")
-                else str(experiment_result[0])
-            )
-        else:
-            experiment_id = "unknown"
-
+        experiment_id = (
+            experiment.id if hasattr(experiment, "id") else str(experiment)
+        )
         experiment_results.append((dataset_name, experiment_id))
         print(
             f"Experiment for {dataset_name} completed! Experiment ID: {experiment_id}"

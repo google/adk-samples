@@ -28,19 +28,17 @@ MAPS_MCP_URL = "https://mapstools.googleapis.com/mcp"
 def get_places_toolset() -> McpToolset:
     """Return an MCP toolset connected to Google Maps Grounding Lite.
 
-    The toolset includes a tool called `search_places` that can be used to 
+    The toolset includes a tool called `search_places` that can be used to
     search for places and retrieve their details,
-    including latitude, longitude, place_id, and a map link. 
-    
+    including latitude, longitude, place_id, and a map link.
+
     The tool accepts a place name or address as input and returns the
     corresponding place details. This can be used to verify the information
     of places suggested by other agents or tools in the travel concierge application.
     """
     maps_api_key = os.getenv("GOOGLE_MAPS_API_KEY")
     if not maps_api_key:
-        raise OSError(
-            "GOOGLE_MAPS_API_KEY must be set."
-        )
+        raise OSError("GOOGLE_MAPS_API_KEY must be set.")
 
     return McpToolset(
         connection_params=StreamableHTTPConnectionParams(
@@ -51,7 +49,7 @@ def get_places_toolset() -> McpToolset:
                 "Accept": "application/json, text/event-stream",
             },
         ),
-        errlog=None
+        errlog=None,
     )
 
 
