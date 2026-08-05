@@ -9,7 +9,7 @@ a workspace did or didn't survive across sessions, restarts, or upgrades.
 - **Persistence model** (blockquote, below the title) — reattach vs snapshot/restore, and version-scoped identity with version-agnostic reattach.
 - **Diagram 1 — Identity hierarchy** — where the sandbox attaches: scope is (process, user), not per-session.
 - **Diagram 2 — Single-process lifecycle** — cache miss/hit, reattach, and what process exit does (and doesn't) do.
-- **Diagram 3 — Snapshot / restore** — the Phase C nightly snapshot + restore-on-session-start path (off by default).
+- **Diagram 3 — Snapshot / restore** — the Phase C nightly snapshot + restore-on-session-start path (off in code; Terraform turns it on when you deploy).
 - **Diagram 4 — What survives what** — the survival matrix across RUNNING vs reaped sandboxes.
 - **Environment variables** — the `LHA_SNAPSHOT_*` / `LHA_SANDBOX_TTL` / `LHA_RUNTIME_MIN_VERSION` knobs.
 - **Troubleshooting** — debug-by-symptom: not reattaching, files lost, force-upgrades.
@@ -27,8 +27,9 @@ Verified against `horizon/sandbox/`, `horizon/conversation/session_start.py`, an
 >    platform-side sandbox stays RUNNING, and the next session for the same user
 >    reattaches to it (`find_latest_user_sandbox`, `horizon/sandbox/lifecycle.py`).
 >    This holds until the sandbox's TTL/idle teardown. See Diagram 2.
-> 2. **Snapshot / restore (Phase C, gated by `LHA_SNAPSHOT_ENABLED`, off by
->    default).** To survive the teardown a daily Cloud Scheduler job snapshots
+> 2. **Snapshot / restore (Phase C, gated by `LHA_SNAPSHOT_ENABLED` — off in
+>    code, but `terraform/cloud_run.tf` sets it to `1`, so a deployed stack has
+>    it on).** To survive the teardown a daily Cloud Scheduler job snapshots
 >    each active user's full `$HOME`, and a session with no RUNNING sandbox
 >    restores from the latest snapshot before provisioning blank. This is a
 >    **real implemented path** — `horizon/scheduler/snapshot_endpoint.py` +
@@ -131,10 +132,13 @@ Two sessions for alice in the same process see the same /workspace.
 > There is no signal-handler snapshot flush and no `~/.lha/snapshots/index.json`.
 > Durable survival across a sandbox teardown is the snapshot/restore job below.
 
-## Diagram 3 — Snapshot / restore (Phase C, off by default)
+## Diagram 3 — Snapshot / restore (Phase C)
 
 Gated by `LHA_SNAPSHOT_ENABLED` (`snapshots_enabled()`). When unset, both halves
-below no-op and the only persistence is reattach-until-TTL (Diagram 2).
+below no-op and the only persistence is reattach-until-TTL (Diagram 2). Unset is
+the *code* default — a deployed stack has it set: `terraform/cloud_run.tf` puts
+`LHA_SNAPSHOT_ENABLED = "1"` on the backend and `terraform/cloud_scheduler.tf`
+creates the daily job unconditionally.
 
 ```
   ── nightly ─────────────────────────────────────────────────────────
@@ -193,7 +197,7 @@ routine (`lhart-`) sandboxes (per-routine, no snapshot/restore).
 
 | Var | Default | Effect |
 |---|---|---|
-| `LHA_SNAPSHOT_ENABLED` | unset (off) | Master switch for Phase C — gates both the daily snapshot job and restore-on-session-start (`snapshots_enabled()`). |
+| `LHA_SNAPSHOT_ENABLED` | unset (off) locally; `1` on Cloud Run (set by `terraform/cloud_run.tf`) | Master switch for Phase C — gates both the daily snapshot job and restore-on-session-start (`snapshots_enabled()`). |
 | `LHA_SNAPSHOT_TTL` | `30d` | TTL stamped on each snapshot. |
 | `LHA_SNAPSHOT_KEEP` | `2` | Snapshots retained per user; older ones pruned each run. |
 | `LHA_SANDBOX_TTL` | `14d` | TTL on the live sandbox (and on a restored one). |
@@ -211,7 +215,7 @@ Debug by symptom. Each row points at the code that owns the behavior.
 |---|---|---|
 | New session gets a fresh blank `/workspace` instead of the previous one | `find_latest_user_sandbox` (version-agnostic, `lha-<user>-` prefix match) | Reattach picks the user's most-recent RUNNING sandbox regardless of image version; if none is RUNNING (TTL/idle teardown, or first run) it provisions blank (or restores a snapshot, if enabled). |
 | Installed CLIs disappear after a backend rollout | `version_below_floor` + `/sandbox-upgrade` (`upgrade_user_sandbox`) migrating only `/workspace` | Reattach is version-agnostic so CLIs in `$HOME`/`~/.local` survive a rollout; an *explicit* upgrade re-provisions and the zip migration (`POST /files/zip`) carries `/workspace` data only (drops binaries/exec bits). |
-| Files gone after a sandbox was reaped | `LHA_SNAPSHOT_ENABLED` (off by default); `snapshot_and_prune_user` / `restore_sandbox_from_snapshot` | Without Phase C there is no durable backing store — reattach only survives until the sandbox's TTL/idle teardown. |
+| Files gone after a sandbox was reaped | `LHA_SNAPSHOT_ENABLED` (off in code, `1` on a Terraform-deployed backend); `snapshot_and_prune_user` / `restore_sandbox_from_snapshot` | Without Phase C there is no durable backing store — reattach only survives until the sandbox's TTL/idle teardown. |
 | Snapshot exists but restore never happens | `snapshots_enabled()`, `find_latest_user_snapshot`; restore skipped on the force-upgrade path and on routine (`lhart-`) sandboxes | The master switch is off, or the path intentionally skips restore (it wants a fresh current-image / per-routine sandbox). |
 | Sandbox force-upgrades on every session | `LHA_RUNTIME_MIN_VERSION` + `version_below_floor` | A sandbox below the floor is migrated to the current image instead of reattached; an unparseable token/floor never forces an upgrade. |
 | A routine sees the user's workspace (or vice versa) | env cache key `("routine", routine_id)` vs `(backend, user_id)`; `find_routine_sandbox` (`lhart-` prefix) | Sandbox scope is (process, user); routine sandboxes use a disjoint `lhart-` prefix and a separate cache key, so neither discovery can resolve the other. |

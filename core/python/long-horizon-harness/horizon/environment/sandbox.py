@@ -52,10 +52,11 @@ class SandboxEnvironment(Environment):
 
     The shim inside the container handles every operation:
     ``POST /exec`` for shell commands, ``GET /files``/``POST /files`` for
-    file I/O. The sandbox itself is long-lived and shared across
-    processes via ``~/.lha/sandboxes/index.json``; ``close()`` just tears
-    down the local HTTP client — the sandbox keeps running so the next
-    process can reattach.
+    file I/O. The sandbox itself is long-lived and shared across processes
+    via Agent Platform's authoritative ``sandboxes.list`` (see
+    ``find_latest_user_sandbox``), not a host-local index file; ``close()``
+    just tears down the local HTTP client — the sandbox keeps running so the
+    next process can reattach.
     """
 
     on_host_fs = False
