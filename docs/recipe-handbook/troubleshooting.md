@@ -34,7 +34,7 @@ CI log, or [jump to Something else](#something-else).
 **pyproject.toml**
 - [pyproject.toml has a local ruff configuration](#pyprojecttoml-has-a-local-ruff-configuration)
 - [Standalone Ruff config file](#standalone-ruff-config-file)
-- [Project name doesn't match folder name](#project-name-doesnt-match-folder-name)
+- [Project name doesn't match the required name](#project-name-doesnt-match-the-required-name)
 - [Project description doesn't match manifest](#project-description-doesnt-match-manifest)
 - [requires-python below 3.11](#requires-python-below-311)
 - [pyproject.toml has no sibling uv.lock](#pyprojecttoml-has-no-sibling-uvlock)
@@ -196,17 +196,28 @@ If the reported variable is a false positive (for example,
 checker's ignore list. If it isn't, file an issue against
 [`.github/scripts/check_env_vars.py`](../../.github/scripts/check_env_vars.py).
 
-## Project name doesn't match folder name
+## Project name doesn't match the required name
 
 **Workflow:** [`python-validate-recipe.yml`](../../.github/workflows/python-validate-recipe.yml)
 
-CI output contains: `[project].name` and `does not match the recipe folder name`
+CI output contains: `[project].name` and `does not match the required name`
 
-Set `[project].name` in `pyproject.toml` to the recipe folder
-basename. A recipe at `contrib/python/my-recipe` needs:
+Set `[project].name` in `pyproject.toml` to the name CI reports as
+required. It is derived from where the recipe lives:
+
+- `core/` and `contrib/` — the recipe folder basename. A recipe at
+  `contrib/python/my-recipe` needs `name = "my-recipe"`.
+- `skills/` — `<vertical>-<solution>`, because `skills/` interposes a
+  mandatory vertical namespace. A skill at
+  `skills/retail/product-search` needs
+  `name = "retail-product-search"`, not `product-search`.
 
 ```toml
+# contrib/python/my-recipe
 name = "my-recipe"
+
+# skills/retail/product-search
+name = "retail-product-search"
 ```
 
 ## Project description doesn't match manifest
