@@ -1,7 +1,5 @@
 # Deep Search Agent Development Kit (ADK) Quickstart
 
-> **Note:** This agent was previously named `gemini-fullstack` and has been renamed to `deep-search`. If you're looking for the old `gemini-fullstack` agent, you're in the right place! All functionality remains the same.
-
 The **Deep Search Agent Development Kit (ADK) Quickstart** is a production-ready blueprint for building a sophisticated, fullstack research agent with Gemini. It's built to demonstrate how the ADK helps structure complex agentic workflows, build modular agents, and incorporate critical Human-in-the-Loop (HITL) steps.
 
 <table>
