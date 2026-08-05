@@ -100,16 +100,13 @@ cd core/python/long-horizon-harness
 make dev-local
 ```
 
-`make dev-local` is the simplest start: tools run on your host, sessions stay in memory, nothing is provisioned in GCP. The trade-off is **no cross-session memory** and **no sandbox isolation** — tools run directly on your machine. Inference goes to Agent Platform either way; there is no local model, `local` only moves *tool execution* to your host.
+## Build your own with a coding agent
 
-Other ways to run it:
+Run `uvx google-agents-cli setup`, then ask your coding agent:
 
-- `agents-cli run "your prompt"` — one shot from the terminal, no web UI
-- `make dev-sandbox` — tools run in the per-user Agent Platform sandbox
-
-`make setup` installs deps and seeds `.env` without starting anything. The project comes from `GOOGLE_CLOUD_PROJECT` in `.env`, falling back to your active `gcloud` project.
-
-> **Cost:** every turn is billed per token; only the test suites (`tests/unit` / `tests/integration`) are free. `make deploy` additionally stands up always-on resources (Cloud SQL, Cloud Scheduler) — see [Deploy](#deploy) for teardown.
+> Using `agents-cli` and this reference —
+> https://github.com/google/adk-samples/tree/main/core/python/long-horizon-harness
+> — help me build an agent that **&lt;does xyz&gt;**.
 
 ### Testing
 
@@ -122,15 +119,6 @@ agents-cli eval run                          # grades behavior against tests/eva
 
 Full config reference: [`docs/configuration.md`](docs/configuration.md).
 
----
-
-## Build your own with a coding agent
-
-Run `uvx google-agents-cli setup`, then ask your coding agent:
-
-> Using `agents-cli` and this reference —
-> https://github.com/google/adk-samples/tree/main/core/python/long-horizon-harness
-> — help me build an agent that **&lt;does xyz&gt;**.
 
 ---
 
