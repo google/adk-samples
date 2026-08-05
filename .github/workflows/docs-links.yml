@@ -38,15 +38,23 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
 
       - name: Check links
+        id: lychee
         # Lychee: covers relative filesystem links, anchor links, and
         # external HTTP(S) URLs. --no-progress keeps CI logs clean.
         # --exclude on '^https?://github.com/google/adk-samples/(issues|pulls)'
         # avoids rate-limiting on unauthenticated GitHub API calls when
         # docs link to the repo's own issues page.
-        uses: lycheeverse/lychee-action@v2
+        #
+        # `fail: false` + an explicit failure step below. Letting the action
+        # fail on its own produced a red X and nothing else: a genuinely
+        # dead link and a transient upstream 503 were indistinguishable,
+        # and neither told the contributor which file to open. --format
+        # markdown writes a readable report we can put in the job summary
+        # and echo.
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # ratchet:lycheeverse/lychee-action@v2.9.0
         env:
           # Authenticate GitHub link checks with the workflow token so
           # docs that link to any github.com URL (users, other repos,
@@ -59,4 +67,48 @@ jobs:
             --no-progress
             --exclude '^https?://github\.com/google/adk-samples/(issues|pulls)'
             'docs/**/*.md'
-          fail: true
+          output: lychee-report.md
+          format: markdown
+          fail: false
+
+      - name: Report broken links
+        env:
+          EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EXIT_CODE" = "0" ]; then
+            echo "[PASS] Every link under docs/ resolves."
+            exit 0
+          fi
+
+          echo "::group::lychee report"
+          cat lychee-report.md 2>/dev/null || echo "(no report file was produced)"
+          echo "::endgroup::"
+
+          # Surface the report on the run summary page too, so a reviewer
+          # does not have to open the raw log to see which link broke.
+          if [ -f lychee-report.md ]; then
+            cat lychee-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "  ACTION REQUIRED: broken link(s) in docs/"
+          echo "========================================"
+          echo ""
+          echo "The report above lists each failing link with the file it"
+          echo "appears in and the status it returned."
+          echo ""
+          echo "  - 404 / ENOTFOUND on a relative path: the target file was"
+          echo "    renamed, moved or deleted. Fix the path."
+          echo "  - 404 on an anchor (#some-heading): the heading was renamed."
+          echo "    Anchors are lowercase, spaces become hyphens, punctuation"
+          echo "    is dropped."
+          echo "  - 429 / 503 / timeout on an external URL: usually transient."
+          echo "    Re-run the job before changing anything. If the host is"
+          echo "    permanently rate-limiting us, add it to --exclude in"
+          echo "    .github/workflows/docs-links.yml."
+          echo ""
+          echo "::error::Broken link(s) found in docs/ — see the lychee report in this job's log and summary."
+          exit 1

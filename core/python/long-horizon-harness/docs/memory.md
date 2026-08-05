@@ -57,7 +57,14 @@ service is configured.
 **`PreloadMemoryTool()`**, registered in the root agent's `tools` list
 (`horizon/agent.py`). It queries `memory_service.search_memory()` and injects
 the hits into context. There is no custom `before_model` memory-search
-callback — `PreloadMemoryTool` is the whole prefetch mechanism.
+callback — `PreloadMemoryTool` is the whole *search*-based prefetch.
+
+It is not the only memory-derived injection, though. The structured user
+profile is a second, separate path: `session_start.py` loads it once per
+session into `state["user_profile"]`, and `build_volatile_reminder`
+(`horizon/conversation/reminders.py`) renders it into the prompt on **every**
+turn via `render_user_profile`. So: `PreloadMemoryTool` = per-turn similarity
+search; user profile = once-per-session load, re-rendered each turn.
 
 ## 2. Writing to memory
 

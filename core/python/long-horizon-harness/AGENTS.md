@@ -234,8 +234,10 @@ All four SQL paths — ADK web-path session service, lifespan Runner session ser
 uv run pytest tests/unit tests/integration              # deterministic — default
 RUN_SMOKE=1 uv run pytest tests/smoke                   # hits FastAPI, no LLM
 RUN_SMOKE=1 RUN_SMOKE_LLM=1 uv run pytest tests/smoke   # adds LLM-hitting smokes
-RUN_SANDBOX_PROBE=1 uv run pytest tests/...             # sandbox-tier probes
-RUN_CUJ_PROBE=1 uv run pytest tests/...                 # critical-user-journey probes
+# Probes are `probe_*.py`, which pytest's default `python_files` does NOT collect
+# from a directory argument — name the file explicitly.
+RUN_SANDBOX_PROBE=1 uv run pytest tests/integration/probes/probe_cuj1_ephemeral.py
+RUN_CUJ_PROBE=1 uv run pytest tests/integration/cuj_probes/probe_cuj10_reminder_fire.py
 agents-cli eval run                                     # ADK evals (LLM behavior)
 agents-cli lint --fix                                   # ruff + ty + codespell
 ```
@@ -265,6 +267,12 @@ The dev stack is **fail-fast and single-instance**: `dev` depends on `dev-prefli
 When `horizon/sandbox/runtime/` changes (Dockerfile, server.py, protocol.py, entrypoint.sh), rebuild via **Cloud Build** — never local `docker build`:
 
 ```bash
+# One-time: nothing in terraform/ creates the `lha-sandbox` repo, and the APIs
+# below are only enabled by Terraform at `make deploy` — too late for this build.
+gcloud services enable artifactregistry.googleapis.com cloudbuild.googleapis.com --project=$PROJECT_ID
+gcloud artifacts repositories create lha-sandbox \
+  --repository-format=docker --location=us-central1 --project=$PROJECT_ID
+
 gcloud builds submit horizon/sandbox/runtime \
   --tag=us-central1-docker.pkg.dev/$PROJECT_ID/lha-sandbox/runtime:vX.Y.Z \
   --project=$PROJECT_ID

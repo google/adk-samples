@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import validate_manifest as m
 import validate_readme as r
+from ci_message import Diagnostic, Doc
 
 # A minimal README that passes all checks (must be >= 100 words).
 VALID_README = textwrap.dedent(
@@ -53,6 +54,14 @@ def _write(path: Path, content: str = "") -> Path:
     return path
 
 
+def _blob(diagnostics: list[Diagnostic]) -> str:
+    """Every field of every diagnostic, flattened for substring checks."""
+    return "\n".join(
+        f"{d.check}|{d.what}|{d.why}|{d.how}|{d.doc.url}|{d.file}"
+        for d in diagnostics
+    )
+
+
 def _make_recipe(
     root: Path,
     rel: str,
@@ -90,22 +99,43 @@ def test_validate_readme_valid(tmp_path):
 
 def test_validate_readme_empty(tmp_path):
     readme = _write(tmp_path / "README.md", "")
-    errors = r.validate_readme(readme)
-    assert errors == ["README.md is empty"]
+    (diag,) = r.validate_readme(readme)
+    assert diag.check == "readme-empty"
+    assert diag.doc is Doc.README_MISSING
+    assert str(r.MIN_WORD_COUNT) in diag.how
 
 
 def test_validate_readme_todo_placeholder(tmp_path):
     content = VALID_README + "\nTODO: describe the agent here\n"
     readme = _write(tmp_path / "README.md", content)
-    errors = r.validate_readme(readme)
-    assert any("TODO" in e for e in errors)
+    (diag,) = r.validate_readme(readme)
+    assert diag.check == "readme-todo"
+    # Quote the offending line back — searching for it is the author's job
+    # only if we decline to do it for them.
+    assert "TODO: describe the agent here" in diag.how
 
 
 def test_validate_readme_too_short(tmp_path):
     content = "# My Recipe\n\n## Setup\n\nRun it.\n\n## Run\n\n```bash\nuv run adk web\n```\n"
     readme = _write(tmp_path / "README.md", content)
-    errors = r.validate_readme(readme)
-    assert any("too short" in e for e in errors)
+    (diag,) = r.validate_readme(readme)
+    # Both numbers, so the author knows how much further they have to go.
+    assert "words" in diag.what and str(r.MIN_WORD_COUNT) in diag.what
+    assert diag.doc is Doc.README_SHORT
+
+
+def test_a_latin1_readme_is_reported_not_a_traceback(tmp_path):
+    """UnicodeDecodeError is a ValueError, not an OSError, so the original
+    `except OSError` never caught it: one badly-encoded README aborted the
+    whole run and took every other recipe's results with it."""
+    readme = tmp_path / "README.md"
+    readme.write_bytes("# Café Agent\n".encode("latin-1"))
+
+    (diag,) = r.validate_readme(readme)
+
+    assert diag.check == "readme-encoding"
+    assert "UTF-8" in diag.what
+    assert "iconv" in diag.how
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +151,11 @@ def test_validate_readme_missing_setup(tmp_path):
     # path at all.
     content = VALID_README.replace("## Setup", "## Overview of Dependencies")
     readme = _write(tmp_path / "README.md", content)
-    errors = r.validate_readme(readme)
-    assert any("setup" in e for e in errors)
+    (diag,) = r.validate_readme(readme)
+    assert diag.check == "readme-setup"
+    # The accepted headings are listed, so the author does not have to
+    # guess which synonym the checker knows about.
+    assert "Prerequisites" in diag.how and "Installation" in diag.how
 
 
 def test_validate_readme_setup_synonym_prerequisites(tmp_path):
@@ -158,8 +191,10 @@ def test_validate_readme_setup_synonym_configuration(tmp_path):
 def test_validate_readme_missing_run(tmp_path):
     content = VALID_README.replace("## Run", "## Overview of Execution Details")
     readme = _write(tmp_path / "README.md", content)
-    errors = r.validate_readme(readme)
-    assert any("[run]" in e and "missing a run section" in e for e in errors)
+    (diag,) = r.validate_readme(readme)
+    assert diag.check == "readme-run"
+    assert "no run section" in diag.what
+    assert "Quickstart" in diag.how
 
 
 def test_validate_readme_run_synonym_usage(tmp_path):
@@ -204,7 +239,8 @@ def test_validate_readme_no_code_block(tmp_path):
     content = _re.sub(r"```.*?```", "", VALID_README, flags=_re.DOTALL)
     readme = _write(tmp_path / "README.md", content)
     errors = r.validate_readme(readme)
-    assert any("code block" in e for e in errors)
+    assert any("code block" in e.what for e in errors)
+    assert "```bash" in _blob(errors)
 
 
 # ---------------------------------------------------------------------------
@@ -264,3 +300,34 @@ def test_main_invalid_readme_emits_github_annotation(
 
     out = capsys.readouterr().out
     assert "::error file=core/bad/README.md::" in out
+
+
+def test_main_annotates_every_problem_not_just_the_first(
+    tmp_path, monkeypatch, capsys
+):
+    """A README this bad trips four rules. All four must reach the Files
+    tab; the old output showed one and "(+3 more)"."""
+    _make_recipe(tmp_path, "core/bad", readme="too short\n")
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(r, "REPO_ROOT", tmp_path)
+
+    assert r.main("core/bad") == 1
+
+    out = capsys.readouterr().out
+    assert "(+" not in out
+    assert out.count("::error file=core/bad/README.md::") == 4
+
+
+def test_main_footer_leads_with_the_authoring_docs(
+    tmp_path, monkeypatch, capsys
+):
+    _make_recipe(tmp_path, "core/bad", readme="too short\n")
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(r, "REPO_ROOT", tmp_path)
+
+    assert r.main("core/bad") == 1
+
+    out = capsys.readouterr().out
+    assert "docs/recipe-handbook/README.md" in out
+    assert "docs/recipe-checklist.md" in out
+    assert "docs/recipe-handbook/troubleshooting.md" in out
