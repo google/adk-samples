@@ -1,8 +1,9 @@
 name: 🧪 Tooling & Skill Tests
 
-# Unit tests for repo tooling (tools/) and skill scripts
-# (.agents/skills/*/scripts/). Recipe tests under core/ and contrib/ are
-# handled separately by python-tests.yml.
+# Unit tests for repo tooling (tools/), skill scripts
+# (.agents/skills/*/scripts/), and CI helper scripts (.github/scripts/).
+# Recipe tests under core/ and contrib/ are handled separately by
+# python-tests.yml.
 on:
   pull_request:
     paths:
@@ -56,7 +57,7 @@ concurrency:
 
 jobs:
   pytest:
-    name: pytest (tools + skills)
+    name: pytest (tools + skills + CI scripts)
     runs-on: ubuntu-latest
     # Tooling + skills tests are lightweight (pytest plus a few pure-Python
     # parsing libs in the dev group); 15 min leaves headroom for cold
