@@ -1,0 +1,105 @@
+# Retail Virtual Try-On
+
+Virtual try-on agent using Gemini image generation (flash/pro tiers) for clothing, eyewear, jewelry, cosmetics, and footwear. Includes a pre-flight product-cutout classifier and configurable safety levels.
+
+## Install
+
+```bash
+npx skills add tanvisinghal-0105/solution_skills --skill retail-virtual-tryon
+```
+
+Auto-detects your AI agent (Claude Code, Antigravity, Codex, ...) and drops
+`SKILL.md` into its skills directory (`~/.claude/skills/`, `~/.agents/skills/`).
+Antigravity discovers skills from `~/.agents/skills/` automatically.
+
+## Prerequisites
+
+- Python 3.10+
+- Google Cloud project with Vertex AI APIs enabled
+- [retail-product-search](../retail-product-search/) set up first
+
+## Run
+
+In a fresh workspace, launch your AI coding agent and trigger the skill.
+
+**Claude Code:**
+
+```
+/retail-virtual-tryon
+```
+
+**Antigravity:**
+
+```
+Use the retail-virtual-tryon skill to set up a virtual try-on app on Google Cloud.
+```
+
+The agent walks Q-MODE (4-5 questions Quick / 4 questions Export), runs
+`scripts/bootstrap.sh` to create the venv, then `scripts/setup.py` to
+provision GCS buckets, verify Vertex AI access, and launch the local
+sandbox at [http://localhost:8080](http://localhost:8080).
+
+### Direct CLI (no agent)
+
+```bash
+pip install -r requirements.txt
+python scripts/setup_tryon.py --config assets/design-spec.md
+# or pick a model directly:
+python scripts/setup_tryon.py --project-id $PROJECT --model flash
+python scripts/setup_tryon.py --project-id $PROJECT --model pro
+```
+
+## Model tiers
+
+| Label | Model ID | Best for |
+|-------|----------|----------|
+| `flash` (default) | `gemini-2.5-flash-image` | High-volume, cost-sensitive |
+| `pro` | `gemini-2.5-pro-image` | Luxury, editorial |
+
+## Skill
+
+See [SKILL.md](SKILL.md) for the conversational agent guide.
+
+## Try it
+
+Open [http://localhost:8080](http://localhost:8080) once the sandbox says
+`Application startup complete`. The demo catalog ships with two products
+(`shirt_001`, `sunglasses_001`) and one sample user photo.
+
+**Image try-on flow:**
+
+1. Click **Upload Photo** and pick a portrait-orientation photo of yourself,
+   or use `catalog_images/sample_user.jpg`
+2. Click a product card (e.g. `shirt_001`) to select it
+3. Click **Try On Image**
+4. First call takes 15-30s (Vertex AI cold start); subsequent calls under 10s
+
+**Video (catwalk) try-on flow:**
+
+1. Run the image try-on above first — video needs the composite image
+2. Once the composite renders, click **Generate Catwalk**
+3. Veo takes 30-60s to generate a 5-second video; be patient
+
+**Test your own catalog:**
+
+Type a local folder path or `gs://` URI into the catalog search header and
+click **Scan**. Gemini classifies each image (`Clothing` / `Eyewear` /
+`Jewelry` / `Footwear` / `Other`) and writes a `catalog.json` manifest. On
+a rescan, cached results are used unless you tick **Force reindex**.
+
+**Failure modes to watch for:**
+
+- `404 NOT_FOUND: Publisher model .../gemini-<X>-flash-image was not found` →
+  the model name isn't real in Vertex. Only `gemini-2.5-flash-image` and
+  `gemini-2.5-pro-image` exist today. Check `GEMINI_IMAGE_MODEL` in your
+  environment.
+- Image renders but face looks distorted → the Veo reference-image cropping
+  in `tryon_processor.py` didn't get a clean face crop. Retry with a
+  higher-resolution portrait photo.
+- Video hangs at "Generating catwalk..." for over 90s → Veo 3.1 quota
+  exhausted or the model is under load. Check the sandbox log for a `503`
+  or `429` from `veo-3.1-generate-001`.
+
+## License
+
+Apache 2.0
