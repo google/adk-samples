@@ -13,6 +13,10 @@ This sample shows how to build a long-horizon harness on ADK with capabilities l
 - **Understand the design** — [`docs/architecture.md`](docs/architecture.md)
 - **Review the security model** — [`docs/security-model.md`](docs/security-model.md), before pointing it at anything real
 
+<div align="center">
+  <img src="https://raw.githubusercontent.com/google/adk-samples/assets/long-horizon-harness/horizon-demo.gif" alt="The Horizon web UI running two tasks: an AI research digest and a BigQuery analysis, each streaming tool calls and ending in a rendered HTML artifact" width="820">
+</div>
+
 **Features:**
 
 *Memory & self-improvement*
