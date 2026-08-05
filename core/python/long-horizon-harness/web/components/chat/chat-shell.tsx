@@ -913,7 +913,7 @@ export function ChatShell({ contextId: contextIdProp }: ChatShellProps = {}) {
                 )}
               </SheetContent>
             </Sheet>
-            <Wordmark label="Long Horizon Harness" className="shrink-0 text-base font-semibold tracking-tight" />
+            <Wordmark label="Long Horizon Harness" className="min-w-0 truncate text-base font-semibold tracking-tight" />
             {activeSession && (
               <>
                 <span aria-hidden className="shrink-0 text-muted-foreground/40">
