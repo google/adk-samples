@@ -358,11 +358,33 @@ jobs:
             exit 1
           fi
 
+          # Both exits below used to be bare, so a formatting failure and a
+          # reviewdog failure each produced a red X with nothing to read.
           if [ "$FMT_STATUS" -ne 0 ]; then
+            echo ""
+            echo "========================================"
+            echo "  ACTION REQUIRED: Go files need formatting"
+            echo "========================================"
+            echo ""
+            echo "The diff above shows what gofmt/gci would change. Apply it"
+            echo "locally and commit the result:"
+            echo ""
+            echo "  gofmt -w <changed .go files>"
+            echo ""
+            echo "Import grouping is enforced by gci using each module's own"
+            echo "go.mod for the localmodule section, so run it from inside"
+            echo "the module directory."
             exit 1
           fi
 
-          exit "$RD_STATUS"
+          if [ "$RD_STATUS" -ne 0 ]; then
+            echo ""
+            echo "::error::reviewdog reported at least one formatting finding on the changed Go files — see the annotations and the diff above."
+            echo "[FAIL] reviewdog exited $RD_STATUS."
+            exit "$RD_STATUS"
+          fi
+
+          echo "[PASS] All changed Go files are correctly formatted."
 
   go-lint:
     name: Go Lint Suggestions
@@ -545,15 +567,29 @@ jobs:
           #    --issues-exit-code 0 a non-zero there can only be a crash
           #    (unresolvable dep, broken go.mod), which stays fatal.
           RD_STATUS=0
+          FINDINGS=0
           for mod in "${MODULES[@]}"; do
             echo "Linting module '$mod'"
+
+            # Emit BOTH formats: text to the log for a human, checkstyle to
+            # a file for reviewdog. Previously checkstyle went to stdout and
+            # was redirected wholesale into lint.xml, so the findings existed
+            # only inside a file that the EXIT trap deleted unprinted — on a
+            # fork PR, where reviewdog cannot post review comments (read-only
+            # GITHUB_TOKEN, 403), the contributor got a red X and no way to
+            # learn which rule fired in which file.
             ( cd "$mod" && golangci-lint run \
                 --issues-exit-code 0 \
                 --show-stats=false \
-                --output.text.path "" \
-                --output.checkstyle.path stdout \
-                ./... ) > "$WORK/lint.xml"
+                --output.text.path stdout \
+                --output.checkstyle.path "$WORK/lint.xml" \
+                ./... )
 
+            if [ -s "$WORK/lint.xml" ] && grep -q "<error" "$WORK/lint.xml"; then
+              FINDINGS=1
+            fi
+
+            # Best-effort inline annotations; the log above is authoritative.
             reviewdog -f=checkstyle \
                       -name="golangci-lint" \
                       -reporter=github-pr-review \
@@ -561,4 +597,22 @@ jobs:
                       -fail-level=any < "$WORK/lint.xml" || RD_STATUS=1
           done
 
-          exit "$RD_STATUS"
+          if [ "$FINDINGS" -eq 0 ] && [ "$RD_STATUS" -eq 0 ]; then
+            echo "[PASS] golangci-lint reported no findings on the changed Go files."
+            exit 0
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "  ACTION REQUIRED: Go lint findings"
+          echo "========================================"
+          echo ""
+          echo "Each finding above is printed as file:line:col: message"
+          echo "followed by the linter that produced it. Reproduce locally:"
+          echo ""
+          echo "  cd <module-dir> && golangci-lint run ./..."
+          echo ""
+          echo "Some linters can fix their own findings:"
+          echo ""
+          echo "  cd <module-dir> && golangci-lint run --fix ./..."
+          exit 1
