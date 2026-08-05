@@ -31,9 +31,12 @@ applies) — used by evalsets that need every-turn behavior to score the
 underlying logic without throttling noise.
 
 ``flush_fork.spawn_flush_fork`` and ``dream_review.request_dream_review``
-are intentionally NOT routed through ``try_claim``: flush fires at most
-once per session (right before compression) and dream-review is on-demand,
-so per-turn cooldown is not the right shape for either.
+are intentionally NOT routed through ``try_claim``: flush is already
+rate-limited by compaction itself (it fires once per compaction, which
+``compaction_interval=8`` in ``horizon/agent.py`` bounds to roughly one per
+8 invocations — so a long session flushes repeatedly, just never per-turn),
+and dream-review is on-demand. A per-turn cooldown is not the right shape
+for either.
 """
 
 from __future__ import annotations
