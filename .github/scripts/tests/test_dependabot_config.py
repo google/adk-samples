@@ -223,6 +223,41 @@ def test_every_ecosystem_present_in_the_tree_has_a_config_entry(config):
     )
 
 
+def test_static_entries_match_recipe_manifests(config):
+    """Every non-glob entry in the config must be in STATIC_ENTRIES.
+
+    A static entry is configured, never discovered, so
+    close_orphan_dependabot_prs.py can only know about it by being told.
+    One present here but missing from STATIC_ENTRIES has its PRs classified
+    as orphans and closed with --delete-branch — and since such an entry
+    produces roughly one grouped PR a week, the --max-close circuit breaker
+    would never trip on it.
+
+    While a generator owned this file it kept the two in step. Nothing does
+    now, which is exactly why this assertion exists.
+    """
+    configured_static = {
+        (u["package-ecosystem"], u["directory"])
+        for u in config["updates"]
+        if "directory" in u
+    }
+    known_static = set(rm.static_pairs())
+
+    unknown = configured_static - known_static
+    assert not unknown, (
+        f"{sorted(unknown)} are configured in dependabot.yml but missing from "
+        "recipe_manifests.STATIC_ENTRIES, so the orphan cleanup would close "
+        "their PRs with --delete-branch. Add them there."
+    )
+
+    stale = known_static - configured_static
+    assert not stale, (
+        f"{sorted(stale)} are in recipe_manifests.STATIC_ENTRIES but not in "
+        "dependabot.yml. Harmless, but the list is now describing an entry "
+        "that does not exist — remove it."
+    )
+
+
 def test_github_actions_entry_uses_a_plain_directory(config):
     """GitHub documents `directory: "/"` for github-actions; it is not a glob,
     and Dependabot looks in /.github/workflows regardless."""
