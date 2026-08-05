@@ -19,9 +19,9 @@ https://raw.githubusercontent.com/google/adk-samples/assets/<path>
 
 ## Adding a file
 
-Media here should be compressed before committing. For screen-recording GIFs,
-dithering is the main thing to avoid — it adds per-pixel noise that defeats
-GIF's run-length compression on flat UI surfaces:
+Compress media before committing it. For screen-recording GIFs, dithering is the
+main thing to avoid — it adds per-pixel noise that defeats GIF's run-length
+compression on flat UI surfaces, and can make the file larger than the source:
 
 ```bash
 ffmpeg -i in.gif -vf "fps=12,scale=1684:-1:flags=lanczos,palettegen=max_colors=128:stats_mode=diff" -y pal.png
@@ -29,4 +29,5 @@ ffmpeg -i in.gif -i pal.png -lavfi "fps=12,scale=1684:-1:flags=lanczos[x];[x][1:
 gifsicle -O3 --lossy=80 out.gif -o final.gif
 ```
 
-That reduced `horizon-demo.gif` from 11.5 MB to 7.7 MB at unchanged resolution.
+Palette size and `--lossy` are the effective levers; lowering fps usually buys
+little, since scrolling changes whole frames anyway.
