@@ -328,7 +328,8 @@ async def test_chained_command_with_unsafe_segment_asks():
 async def test_quoted_interpreter_body_not_shredded():
     # A `sudo python3 -c "<multiline script>"` is a single opaque arg: the prompt
     # (here triggered by the sudo escalation) must offer one clean prefix
-    # (`python3`), not one fake prefix per source line.
+    # (`sudo python3` — the escalation is named, never unwrapped), not one fake
+    # prefix per source line.
     ctx = _Ctx()
     cmd = (
         'sudo python3 -c "import json\nfor r in ranked:\n    print(r); x | y\n"'
@@ -338,11 +339,11 @@ async def test_quoted_interpreter_body_not_shredded():
     )
     assert result is not None and result.get("confirmation_required") is True
     payload = ctx._requested["payload"]
-    assert payload["proposedRule"]["commandPrefix"] == ["python3"]
+    assert payload["proposedRule"]["commandPrefix"] == ["sudo python3"]
     assert payload["choices"] == [
         "Yes, once",
-        "Yes — allow `python3` this session",
-        "Always allow `python3`",
+        "Yes — allow `sudo python3` this session",
+        "Always allow `sudo python3`",
         "Decline",
     ]
 
@@ -380,6 +381,179 @@ async def test_command_substitution_forces_ask():
         tool_context=ctx,
     )
     assert result is not None and result.get("confirmation_required") is True
+
+
+_BQ_BACKTICK_QUERY = (
+    "bq --project_id=p query --use_legacy_sql=false --format=prettyjson '\n"
+    "SELECT term FROM `bigquery-public-data.google_books_ngrams_2020.chi_sim_1`\n"
+    "LIMIT 10\n'"
+)
+
+
+async def test_bq_query_with_backticks_does_not_prompt():
+    # Prod regression: a BigQuery table ref is backtick-quoted inside a single-
+    # quoted SQL string. Those backticks expand nothing, but the substitution net
+    # matched them literally and prompted on every read-only query.
+    ctx = _Ctx()
+    result = await permission_guard(
+        tool=_Tool("terminal"),
+        args={"command": _BQ_BACKTICK_QUERY},
+        tool_context=ctx,
+    )
+    assert result is None
+    assert ctx._requested is None
+
+
+async def test_grant_honored_regardless_of_flag_position():
+    # Approving `bq query …` must cover the same command with flags hoisted ahead
+    # of the subcommand — otherwise the saved rule never matches and re-prompts.
+    ctx = _Ctx()
+    ctx.state[PERMISSION_GRANTS_STATE_KEY] = [
+        {
+            "toolName": "terminal",
+            "decision": "allow",
+            "commandPrefix": ["bq query"],
+        }
+    ]
+    result = await permission_guard(
+        tool=_Tool("terminal"),
+        args={"command": _BQ_BACKTICK_QUERY},
+        tool_context=ctx,
+    )
+    assert result is None
+    assert ctx._requested is None
+
+
+async def test_grant_scope_is_not_widened_by_leading_flags():
+    # A flag before the subcommand used to collapse the auto-scope prefix to the
+    # bare binary (`gcloud`), and a grant skips the command_safety demotion — so
+    # approving one delete silently authorized every other `gcloud … delete`.
+    save = _Ctx(tool_confirmation=_TC(True, {"outcome": "proceed_always"}))
+    assert (
+        await permission_guard(
+            tool=_Tool("terminal"),
+            args={
+                "command": "gcloud --project=p compute instances delete vm-1"
+            },
+            tool_context=save,
+        )
+        is None
+    )
+    assert save.state[PERMISSION_GRANTS_STATE_KEY][0]["commandPrefix"] == [
+        "gcloud compute"
+    ]
+
+    later = _Ctx()
+    later.state = save.state
+    result = await permission_guard(
+        tool=_Tool("terminal"),
+        args={"command": "gcloud --project=p storage rm gs://bucket/obj"},
+        tool_context=later,
+    )
+    assert result is not None and result.get("confirmation_required") is True
+
+
+async def test_bare_flag_value_is_never_mistaken_for_a_subcommand():
+    # `-n default` is a flag and its value. Scoping the grant to `kubectl default`
+    # would read as nonsense on the approval card while authorizing every kubectl
+    # call in that namespace — so the prefix stays the honest, broad `kubectl`.
+    save = _Ctx(tool_confirmation=_TC(True, {"outcome": "proceed_always"}))
+    assert (
+        await permission_guard(
+            tool=_Tool("terminal"),
+            args={
+                "command": "kubectl --context=prod -n default delete pod web-1"
+            },
+            tool_context=save,
+        )
+        is None
+    )
+    assert save.state[PERMISSION_GRANTS_STATE_KEY][0]["commandPrefix"] == [
+        "kubectl"
+    ]
+
+
+async def test_flag_value_cannot_impersonate_a_granted_subcommand():
+    # Mirror of the above on the matching side: a namespace literally named `get`
+    # must not let `kubectl -n get delete …` satisfy a `kubectl get` grant.
+    ctx = _Ctx()
+    ctx.state[PERMISSION_GRANTS_STATE_KEY] = [
+        {
+            "toolName": "terminal",
+            "decision": "allow",
+            "commandPrefix": ["kubectl get"],
+        }
+    ]
+    result = await permission_guard(
+        tool=_Tool("terminal"),
+        args={"command": "kubectl -n get delete pod web-1"},
+        tool_context=ctx,
+    )
+    assert result is not None and result.get("confirmation_required") is True
+
+
+async def test_real_substitution_still_asks_despite_grant():
+    # The anti-obfuscation net stays: a grant on the outer binary must not let a
+    # gated command ride along in argument position.
+    ctx = _Ctx()
+    ctx.state[PERMISSION_GRANTS_STATE_KEY] = [
+        {"toolName": "terminal", "decision": "allow", "commandPrefix": ["ls"]}
+    ]
+    result = await permission_guard(
+        tool=_Tool("terminal"),
+        args={"command": "ls $(bq rm x)"},
+        tool_context=ctx,
+    )
+    assert result is not None and result.get("confirmation_required") is True
+
+
+async def test_grant_does_not_cover_sudo_escalation():
+    # The flag-tolerant fallback must not unwrap `sudo`: a grant skips the
+    # command_safety demotion, so approving `npm install` would otherwise silently
+    # approve `sudo npm install` too.
+    ctx = _Ctx()
+    ctx.state[PERMISSION_GRANTS_STATE_KEY] = [
+        {
+            "toolName": "terminal",
+            "decision": "allow",
+            "commandPrefix": ["npm install"],
+        }
+    ]
+    result = await permission_guard(
+        tool=_Tool("terminal"),
+        args={"command": "sudo npm install evil-pkg"},
+        tool_context=ctx,
+    )
+    assert result is not None and result.get("confirmation_required") is True
+
+
+async def test_ansi_c_quoting_cannot_hide_substitution_under_a_grant():
+    # `$'\''` is ONE literal quote to bash. Mis-scanning it as a single-quoted run
+    # desyncs quote state and hid the `$(…)` that follows — and a grant skips the
+    # command_safety demotion that would otherwise still catch it.
+    ctx = _Ctx()
+    ctx.state[PERMISSION_GRANTS_STATE_KEY] = [
+        {
+            "toolName": "terminal",
+            "decision": "allow",
+            "commandPrefix": ["bq query"],
+        }
+    ]
+    result = await permission_guard(
+        tool=_Tool("terminal"),
+        args={"command": r"""bq query $'\'' $(cat /etc/passwd)"""},
+        tool_context=ctx,
+    )
+    assert result is not None and result.get("confirmation_required") is True
+
+
+async def test_flagged_rule_prefix_still_matches_literally():
+    # A hand-written overlay rule that names a flag must NOT be flag-tolerantly
+    # widened — `git push --force` must not authorize a plain `git push`.
+    from horizon.guardrails.permission_rules import _prefix_matches
+
+    assert _prefix_matches("git push --force origin main", "git push --force")
+    assert not _prefix_matches("git push origin main", "git push --force")
 
 
 async def test_ask_payload_includes_choices_for_ge():

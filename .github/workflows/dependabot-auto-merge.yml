@@ -40,10 +40,12 @@ on: # zizmor: ignore[dangerous-triggers]
       - "Validate Recipe Structure"
       - "🐍 Python Format PR Checks"
       - "Python Dependency Policy"
-      # Go. .github/scripts/generate_dependabot.py already ships a live
-      # `gomod` detector, so Dependabot starts opening Go dependency PRs as
-      # soon as the first go.mod lands under core/ or contrib/. Without this
-      # entry those PRs would never be re-evaluated for auto-merge.
+      # Go. Fires on nothing today: no Go recipe exists, and
+      # .github/dependabot.yml deliberately declares no `gomod` entry (see
+      # the comment there for why). Listed in advance because adding that
+      # entry and adding the first go.mod are one change, and forgetting this
+      # line would leave those PRs never re-evaluated for auto-merge — a
+      # silent failure rather than a loud one.
       - "🐹 Go Format PR Checks"
     types:
       - completed
@@ -169,13 +171,18 @@ jobs:
           # Get all changed files
           CHANGED_FILES=$(git diff --name-only origin/$BASE_BRANCH...HEAD)
 
-          # Check if all changed files are in python/agents/** directories using agent starter pack for testing
+          # Only auto-merge when every changed recipe has automated tests.
+          # (This comment used to say python/agents/**, which policy.yml
+          # lists under frozen_paths and the grep below has never matched.)
           HAS_AUTOMATED_TESTS=true
 
           # Get all changed recipe directories across all supported locations:
-          #   core/<lang>/<recipe>   contrib/<lang>/<recipe>   skills/<lang>/<recipe>
-          # The pattern captures exactly 3 path segments so sub-directories
-          # (e.g. core/python/deep-search/frontend) map back to the recipe root.
+          #   core/<language>/<recipe>       contrib/<language>/<recipe>
+          #   skills/<vertical>/<solution>
+          # Note the middle segment differs: a LANGUAGE under core/ and
+          # contrib/, a VERTICAL under skills/. The pattern captures exactly
+          # 3 path segments either way, so sub-directories (e.g.
+          # core/python/deep-search/frontend) map back to the recipe root.
           CHANGED_AGENT_DIRS=$(echo "$CHANGED_FILES" \
             | grep -oE '(core|contrib|skills)/[^/]+/[^/]+' \
             | sort -u || true)

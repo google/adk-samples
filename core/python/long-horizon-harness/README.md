@@ -10,8 +10,13 @@ This sample shows how to build a long-horizon harness on ADK with capabilities l
 
 - **Study the components** — [`AGENTS.md`](AGENTS.md), where each row links to the function to start from
 - **Run it yourself** — [Quickstart](#quickstart)
+- **Build your own** — [hand it to a coding agent](#build-your-own-with-a-coding-agent)
 - **Understand the design** — [`docs/architecture.md`](docs/architecture.md)
 - **Review the security model** — [`docs/security-model.md`](docs/security-model.md), before pointing it at anything real
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/google/adk-samples/assets/long-horizon-harness/horizon-demo.gif" alt="The Horizon web UI running two tasks: an AI research digest and a BigQuery analysis, each streaming tool calls and ending in a rendered HTML artifact" width="820">
+</div>
 
 **Features:**
 
@@ -73,7 +78,7 @@ Full subsystem walkthrough: [`docs/architecture.md`](docs/architecture.md).
 
 ### Prerequisites
 
-[uv](https://docs.astral.sh/uv/getting-started/installation/), [google-agents-cli](https://pypi.org/project/google-agents-cli/) (`uv tool install google-agents-cli` — provides the `agents-cli` command), [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), `make`, and Node.js 20.19+ or 22.12+ (Vite 8 — web UI only). On Windows, use WSL.
+[uv](https://docs.astral.sh/uv/getting-started/installation/), [google-agents-cli](https://pypi.org/project/google-agents-cli/) (`uvx google-agents-cli setup` — provides the `agents-cli` command), [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), `make`, and Node.js 20.19+ or 22.12+ (Vite 8 — web UI only). On Windows, use WSL.
 
 Plus a **GCP project with billing enabled**. These are one-time setup; skip any you've already done:
 
@@ -95,16 +100,13 @@ cd core/python/long-horizon-harness
 make dev-local
 ```
 
-`make dev-local` is the simplest start: tools run on your host, sessions stay in memory, nothing is provisioned in GCP. The trade-off is **no cross-session memory** and **no sandbox isolation** — tools run directly on your machine. Inference goes to Agent Platform either way; there is no local model, `local` only moves *tool execution* to your host.
+## Build your own with a coding agent
 
-Other ways to run it:
+Run `uvx google-agents-cli setup`, then ask your coding agent:
 
-- `agents-cli run "your prompt"` — one shot from the terminal, no web UI
-- `make dev-sandbox` — tools run in the per-user Agent Platform sandbox
-
-`make setup` installs deps and seeds `.env` without starting anything. The project comes from `GOOGLE_CLOUD_PROJECT` in `.env`, falling back to your active `gcloud` project.
-
-> **Cost:** every turn is billed per token; only the test suites (`tests/unit` / `tests/integration`) are free. `make deploy` additionally stands up always-on resources (Cloud SQL, Cloud Scheduler) — see [Deploy](#deploy) for teardown.
+> Using `agents-cli` and this reference —
+> https://github.com/google/adk-samples/tree/main/core/python/long-horizon-harness
+> — help me build an agent that **&lt;does xyz&gt;**.
 
 ### Testing
 
@@ -116,6 +118,7 @@ agents-cli eval run                          # grades behavior against tests/eva
 ```
 
 Full config reference: [`docs/configuration.md`](docs/configuration.md).
+
 
 ---
 
