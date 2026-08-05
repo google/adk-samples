@@ -44,7 +44,9 @@ maps_grounding_toolset = []
 try:
     maps_grounding_toolset = [get_places_toolset()]
 except OSError:
-    logging.warning("Google Maps Grounding Lite tool is not available. Check if GOOGLE_MAPS_API_KEY is set.")
+    logging.warning(
+        "Google Maps Grounding Lite tool is not available. Check if GOOGLE_MAPS_API_KEY is set."
+    )
 
 poi_agent = Agent(
     model=MODEL,

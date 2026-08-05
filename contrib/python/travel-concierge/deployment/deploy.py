@@ -48,10 +48,7 @@ flags.mark_bool_flags_as_mutual_exclusive(["create", "delete", "quicktest"])
 def create(env_vars: dict[str, str]) -> None:
     """Creates a new deployment."""
     print(env_vars)
-    app = AdkApp(
-        agent=root_agent,
-        enable_tracing=True
-    )
+    app = AdkApp(agent=root_agent, enable_tracing=True)
 
     remote_agent = agent_engines.create(
         app,
@@ -72,12 +69,12 @@ def create(env_vars: dict[str, str]) -> None:
             "arize>=7.36.0",
             "arize-phoenix-evals>=0.20.8",
             "scikit-learn>=1.7.0",
-            "pandas>=2.3.0",            
+            "pandas>=2.3.0",
         ],
         extra_packages=[
             "./travel_concierge",  # The main package
         ],
-        env_vars=env_vars,        
+        env_vars=env_vars,
     )
     print(f"Created remote agent: {remote_agent.resource_name}")
 

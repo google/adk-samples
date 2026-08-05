@@ -49,6 +49,7 @@ def get_abnb_toolset() -> McpToolset:
         )
     )
 
+
 def find_agent(agent, targat_name):
     """A convenient function to find an agent from an existing agent graph."""
     result = None
@@ -142,13 +143,13 @@ async def async_main(question):
                 # Detect different payloads and handle accordingly
                 application_payload = function_response.response
                 if function_name == "airbnb_search":
-                    application_payload = (
-                        application_payload["content"][0]["text"]
-                    )
+                    application_payload = application_payload["content"][0][
+                        "text"
+                    ]
                 print(
                     f"\n[{author}]: {function_name} responds -> {application_payload}"
                 )
-    
+
     await runner.close()
 
 
