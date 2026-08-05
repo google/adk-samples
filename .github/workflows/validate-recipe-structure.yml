@@ -27,6 +27,11 @@ on:
       - '.github/policy.yml'
       - '.github/workflows/validate-recipe-structure.yml'
       - '.github/scripts/generate_dependabot.py'
+      # The detectors the freshness gate depends on live here, not in
+      # the generator, so a PR touching only this file would otherwise
+      # change what dependabot.yml should contain without ever running
+      # the check that says so.
+      - '.github/scripts/recipe_manifests.py'
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'
@@ -46,6 +51,11 @@ on:
       - '.github/policy.yml'
       - '.github/workflows/validate-recipe-structure.yml'
       - '.github/scripts/generate_dependabot.py'
+      # The detectors the freshness gate depends on live here, not in
+      # the generator, so a PR touching only this file would otherwise
+      # change what dependabot.yml should contain without ever running
+      # the check that says so.
+      - '.github/scripts/recipe_manifests.py'
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'

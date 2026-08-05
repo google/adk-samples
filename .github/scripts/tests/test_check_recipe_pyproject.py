@@ -58,23 +58,58 @@ def _records(capsys) -> list[tuple[str, str]]:
         ("skills/retail/product-search", "retail-product-search"),
         ("skills/hr/onboarding", "hr-onboarding"),
         ("skills/finance/month-end-close", "finance-month-end-close"),
-        # Absolute paths behave identically: only the last three segments are
-        # inspected, so a CI checkout prefix cannot change the answer.
+        # A bare directory name has no root to inspect.
+        ("product-search", "product-search"),
+        # Deeper than <root>/<namespace>/<solution>. Not three segments from
+        # the root, so it is not the namespaced shape.
+        # tools/validate_placement.py rejects this layout anyway.
+        ("skills/retail/deep/nested", "nested"),
+    ],
+)
+def test_expected_project_name_for_repo_relative_paths(path, expected):
+    """CI always passes repo-relative paths — see tools/affected_recipes.py."""
+    assert m.expected_project_name(Path(path)) == expected
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
         (
             f"{CI_CHECKOUT}/skills/retail/product-search",
             "retail-product-search",
         ),
         (f"{CI_CHECKOUT}/core/python/deep-search", "deep-search"),
-        # A bare directory name has no root to inspect.
-        ("product-search", "product-search"),
-        # Deeper than <root>/<namespace>/<solution>: the third-from-last
-        # segment is not a namespaced root, so this falls back to basename.
-        # tools/validate_placement.py rejects this layout anyway.
-        ("skills/retail/deep/nested", "nested"),
+        (f"{CI_CHECKOUT}/core/rag-vector-search", "rag-vector-search"),
     ],
 )
-def test_expected_project_name(path, expected):
-    assert m.expected_project_name(Path(path)) == expected
+def test_absolute_paths_inside_the_repo_resolve_the_same(path, expected):
+    assert (
+        m.expected_project_name(Path(path), repo_root=Path(CI_CHECKOUT))
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        # The bug this guards: a checkout directory that merely happens to be
+        # NAMED "skills". Matching the third-from-last segment made this
+        # "core-rag-vector-search". The root has to be at position 0 of the
+        # repo-relative path, not just present somewhere in it.
+        ("/home/me/skills/core/rag-vector-search", "rag-vector-search"),
+        ("/var/tmp/skills/retail/product-search", "product-search"),
+        # Correctly shaped, but not under the repo root we were given.
+        (f"{CI_CHECKOUT}-other/skills/retail/product-search", "product-search"),
+    ],
+)
+def test_paths_outside_the_repo_fall_back_to_basename(path, expected):
+    """A path we cannot locate within the repository gets the conservative
+    answer. The auto-fixer mirror of this rule WRITES the value, so guessing
+    a namespaced name from an unanchored path would corrupt a pyproject."""
+    assert (
+        m.expected_project_name(Path(path), repo_root=Path(CI_CHECKOUT))
+        == expected
+    )
 
 
 def test_two_verticals_sharing_a_solution_name_do_not_collide():

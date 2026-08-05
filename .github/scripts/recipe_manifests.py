@@ -7,16 +7,23 @@ contain a dependency manifest, and for which package ecosystem?
 
 Why this exists as its own module
 ---------------------------------
-`.github/dependabot.yml` no longer enumerates directories — it uses glob
-patterns, so Dependabot discovers manifests itself and nothing has to be
-regenerated when a recipe is added or removed.
+Two scripts need the same answer, and they must never disagree:
 
-But close_orphan_dependabot_prs.py still needs the concrete list, to decide
-whether an open Dependabot PR targets a directory that still exists. It used
-to recover that list by parsing the enumerated `directory:` keys out of
-dependabot.yml. With glob patterns there is nothing to parse, so it scans the
-tree instead — which is also strictly more accurate, since the tree is the
-ground truth the globs are resolved against.
+  generate_dependabot.py         decides what goes INTO .github/dependabot.yml
+  close_orphan_dependabot_prs.py decides which open Dependabot PRs target a
+                                 directory that no longer exists, and closes
+                                 them with --delete-branch
+
+The second used to recover the list by regex-scanning the enumerated
+`directory:` keys back out of the file the first had written. Re-deriving by
+parsing was fragile in a destructive code path: a formatting change to the
+generated output could silently empty the set, and an empty set makes every
+open Dependabot PR look orphaned.
+
+Sharing the scanner removes that class of bug outright — there is one
+definition of "dependency-managed directory", so the generator and the
+cleanup cannot drift apart. STATIC_ENTRIES below exists for the same reason,
+for the entries that are configured unconditionally rather than discovered.
 
 Zero third-party dependencies, matching its callers.
 """
@@ -92,6 +99,37 @@ DETECTORS: list[tuple[str, object]] = [
     ("gradle", _is_gradle),
     ("npm", _is_npm),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Static entries
+# ---------------------------------------------------------------------------
+
+# Entries that are configured unconditionally rather than discovered by
+# scanning for recipe manifests.
+#
+# `github-actions` is not a recipe ecosystem: Dependabot reads
+# /.github/workflows and any root action.yml, so its directory is always "/"
+# and no amount of scanning the recipe tree would turn it up.
+#
+# Shared for the same reason as the detectors above, and this half is the
+# dangerous one. generate_dependabot.py appends these to dependabot.yml;
+# close_orphan_dependabot_prs.py adds them to the set of live pairs so their
+# PRs are never treated as orphans. When the two lists were written out
+# separately, adding a static entry to the generator alone meant the cleanup
+# did not recognise it and closed its PRs with --delete-branch — and because
+# such an entry produces roughly one grouped PR a week, the --max-close
+# circuit breaker would never trip on it.
+#
+# Each tuple is (package-ecosystem, directory, extra_labels).
+STATIC_ENTRIES: list[tuple[str, str, list[str]]] = [
+    ("github-actions", "/", ["github-actions"]),
+]
+
+
+def static_pairs() -> list[tuple[str, str]]:
+    """STATIC_ENTRIES as plain (ecosystem, directory) pairs."""
+    return [(eco, directory) for eco, directory, _ in STATIC_ENTRIES]
 
 
 def scan(repo_root: Path | None = None) -> list[tuple[str, str]]:

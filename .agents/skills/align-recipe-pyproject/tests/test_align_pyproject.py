@@ -231,23 +231,62 @@ def test_new_checks_appear_in_report(tmp_path):
         ("skills/retail/product-search", "retail-product-search"),
         ("skills/hr/onboarding", "hr-onboarding"),
         ("skills/finance/month-end-close", "finance-month-end-close"),
-        # Absolute paths behave identically: only the last three segments
-        # are inspected, so a checkout prefix cannot change the answer.
+        # A bare directory name has no root to inspect.
+        ("product-search", "product-search"),
+        # Deeper than <root>/<namespace>/<solution>, so not the namespaced
+        # shape. validate_placement.py rejects this layout anyway.
+        ("skills/retail/deep/nested", "nested"),
+    ],
+)
+def test_expected_project_name_for_repo_relative_paths(path, expected):
+    assert m.expected_project_name(Path(path)) == expected
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
         (
             "/w/adk-samples/skills/retail/product-search",
             "retail-product-search",
         ),
         ("/w/adk-samples/core/python/deep-search", "deep-search"),
-        # A bare directory name has no root to inspect.
-        ("product-search", "product-search"),
-        # Deeper than <root>/<namespace>/<solution>: the third-from-last
-        # segment is not a namespaced root, so this falls back to basename.
-        # validate_placement.py rejects this layout anyway.
-        ("skills/retail/deep/nested", "nested"),
     ],
 )
-def test_expected_project_name(path, expected):
-    assert m.expected_project_name(Path(path)) == expected
+def test_absolute_paths_inside_the_repo_resolve_the_same(path, expected):
+    root = Path("/w/adk-samples")
+    assert m.expected_project_name(Path(path), repo_root=root) == expected
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # A checkout directory that merely happens to be NAMED "skills".
+        # Matching the third-from-last segment made this script WRITE
+        # [project].name = "core-rag-vector-search" into a real pyproject.
+        "/home/me/skills/core/rag-vector-search",
+        # Right shape, wrong repository.
+        "/elsewhere/skills/retail/rag-vector-search",
+    ],
+)
+def test_paths_outside_the_repo_fall_back_to_basename(path):
+    root = Path("/w/adk-samples")
+    assert (
+        m.expected_project_name(Path(path), repo_root=root)
+        == "rag-vector-search"
+    )
+
+
+@pytest.fixture
+def fake_repo(tmp_path, monkeypatch):
+    """Treat tmp_path as the repository root.
+
+    The rule is a POSITION test against the repo root, so a recipe built
+    under tmp_path is outside the real repo and would correctly fall back to
+    its basename. Re-pointing REPO_ROOT is what lets these tests exercise the
+    namespaced branch at all.
+    """
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    return tmp_path
 
 
 def _name_check(recipe_dir: Path, name: str | None, apply: bool) -> m.Check:
@@ -256,17 +295,17 @@ def _name_check(recipe_dir: Path, name: str | None, apply: bool) -> m.Check:
     return m.check_project_name_matches_folder(recipe_dir, doc, apply), doc
 
 
-def test_skill_with_vertical_prefixed_name_is_ok(tmp_path):
-    recipe = tmp_path / "skills" / "retail" / "product-search"
+def test_skill_with_vertical_prefixed_name_is_ok(fake_repo):
+    recipe = fake_repo / "skills" / "retail" / "product-search"
     check, _ = _name_check(recipe, "retail-product-search", apply=False)
     assert check.status == m.OK
 
 
-def test_skill_with_bare_basename_is_rewritten(tmp_path):
+def test_skill_with_bare_basename_is_rewritten(fake_repo):
     """The pre-fix behaviour (bare basename) is now a violation, and the
     auto-fix promotes it to the vertical-prefixed form rather than the other
     way around."""
-    recipe = tmp_path / "skills" / "retail" / "product-search"
+    recipe = fake_repo / "skills" / "retail" / "product-search"
     check, doc = _name_check(recipe, "product-search", apply=True)
     assert check.status == m.FIXED
     assert check.details == {
@@ -276,23 +315,23 @@ def test_skill_with_bare_basename_is_rewritten(tmp_path):
     assert doc["project"]["name"] == "retail-product-search"
 
 
-def test_skill_dry_run_message_explains_the_vertical_rule(tmp_path):
-    recipe = tmp_path / "skills" / "retail" / "product-search"
+def test_skill_dry_run_message_explains_the_vertical_rule(fake_repo):
+    recipe = fake_repo / "skills" / "retail" / "product-search"
     check, _ = _name_check(recipe, "product-search", apply=False)
     assert check.status == m.WOULD_FIX
     assert "<vertical>-<solution>" in check.message
 
 
-def test_core_recipe_message_still_says_basename(tmp_path):
-    recipe = tmp_path / "core" / "python" / "deep-search"
+def test_core_recipe_message_still_says_basename(fake_repo):
+    recipe = fake_repo / "core" / "python" / "deep-search"
     check, _ = _name_check(recipe, "wrong", apply=False)
     assert check.status == m.WOULD_FIX
     assert "recipe folder basename" in check.message
     assert "<vertical>" not in check.message
 
 
-def test_missing_name_is_added_with_vertical_prefix(tmp_path):
-    recipe = tmp_path / "skills" / "retail" / "product-search"
+def test_missing_name_is_added_with_vertical_prefix(fake_repo):
+    recipe = fake_repo / "skills" / "retail" / "product-search"
     check, doc = _name_check(recipe, None, apply=True)
     assert check.status == m.FIXED
     assert doc["project"]["name"] == "retail-product-search"

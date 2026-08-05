@@ -171,11 +171,49 @@ def test_live_pairs_always_includes_the_static_github_actions_entry(
     assert c.live_pairs() == {("github_actions", "/")}
 
 
-def test_live_pairs_on_the_real_repo_covers_known_recipes():
+def test_live_pairs_on_the_real_repo_covers_everything_the_scan_found():
+    """Derived from the scan rather than naming a recipe.
+
+    An earlier version asserted `/core/python/deep-search` by name, which
+    would break if that recipe were ever renamed — and would break on an
+    unrelated PR, because this suite's triggers (tools-tests.yml) do not
+    include core/**, so the PR doing the rename would never run it.
+    """
     pairs = c.live_pairs()
-    assert ("uv", "/core/python/deep-search") in pairs
-    assert ("npm_and_yarn", "/core/python/deep-search/frontend") in pairs
-    assert ("github_actions", "/") in pairs
+    for ecosystem, directory in c.recipe_manifests.scan():
+        expected = (c.BRANCH_PREFIX.get(ecosystem, ecosystem), directory)
+        assert expected in pairs, f"{expected} missing from the live set"
+    assert pairs, "the real repo should yield a non-empty live set"
+
+
+def test_live_pairs_covers_every_static_entry():
+    """The half that can delete PRs. Static entries are configured, not
+    discovered, so nothing in the tree keeps their PRs from looking orphaned.
+    Reading them from recipe_manifests is what stops this set and the
+    generator's output from drifting apart."""
+    pairs = c.live_pairs()
+    for ecosystem, directory in c.recipe_manifests.static_pairs():
+        expected = (c.BRANCH_PREFIX.get(ecosystem, ecosystem), directory)
+        assert expected in pairs, f"static entry {expected} not recognised"
+
+
+def test_a_newly_added_static_entry_is_recognised_without_code_changes(
+    monkeypatch,
+):
+    """Regression guard for the drift that used to be possible: an entry
+    added to the generator alone had its PRs classified as orphans and closed
+    with --delete-branch, at roughly one grouped PR a week — far too slow for
+    --max-close to notice."""
+    monkeypatch.setattr(
+        c.recipe_manifests,
+        "STATIC_ENTRIES",
+        [*c.recipe_manifests.STATIC_ENTRIES, ("npm", "/tooling", ["tooling"])],
+    )
+    pairs = c.live_pairs()
+    assert ("npm_and_yarn", "/tooling") in pairs
+    assert not c.is_orphan(
+        "dependabot/npm_and_yarn/tooling/all-dependencies-abc", pairs
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -278,10 +316,130 @@ def test_max_close_limit_is_inclusive(monkeypatch):
     assert c.main(["--dry-run", "--max-close", "3"]) == 0
 
 
-def test_default_max_close_sits_below_the_repos_open_pr_volume():
-    """The cap only works as a circuit breaker if it is below "everything" —
-    the repo carries roughly 115 open Dependabot PRs at any time."""
-    assert 0 < c.DEFAULT_MAX_CLOSE < 100
+def test_default_max_close_is_actually_applied(monkeypatch, capsys):
+    """Behavioural, not a range assertion. `0 < DEFAULT_MAX_CLOSE < 100` held
+    just as happily at 1 or 99, so it proved nothing about the default being
+    wired to anything."""
+    monkeypatch.setattr(c, "DEFAULT_MAX_CLOSE", 2)
+    monkeypatch.setattr(
+        c.recipe_manifests, "scan", lambda: [("uv", "/core/python/alpha")]
+    )
+    monkeypatch.setattr(
+        c,
+        "list_open_dependabot_prs",
+        lambda: [
+            {"number": n, "headRefName": f"dependabot/uv/core/python/g{n}/a-1"}
+            for n in range(5)
+        ],
+    )
+    monkeypatch.setattr(
+        c, "close_pr", lambda n: pytest.fail(f"must not close #{n}")
+    )
+
+    # No --max-close flag: the parser default must be DEFAULT_MAX_CLOSE.
+    assert c.main([]) == 1
+    assert "limit of 2" in capsys.readouterr().err
+
+
+def test_dry_run_is_never_blocked_by_the_close_limit(monkeypatch, capsys):
+    """A dry run only reports, so capping it would make the escape hatch
+    unreachable: the advice for an oversized batch is to review the list,
+    and reviewing it is exactly what a dry run does."""
+    monkeypatch.setattr(
+        c.recipe_manifests, "scan", lambda: [("uv", "/core/python/alpha")]
+    )
+    monkeypatch.setattr(
+        c,
+        "list_open_dependabot_prs",
+        lambda: [
+            {"number": n, "headRefName": f"dependabot/uv/core/python/g{n}/a-1"}
+            for n in range(10)
+        ],
+    )
+    monkeypatch.setattr(
+        c, "close_pr", lambda n: pytest.fail(f"dry run closed #{n}")
+    )
+
+    assert c.main(["--dry-run", "--max-close", "2"]) == 0
+    out = capsys.readouterr().out
+    assert out.count("dependabot/uv/core/python/g") == 10, "must list them all"
+    # And still say a real run would refuse, with the value to use.
+    assert "--max-close 10" in out
+
+
+# ---------------------------------------------------------------------------
+# The close loop
+#
+# Nothing exercised this path before: main()-never-closes and
+# close-failures-ignored were both survivable mutations.
+# ---------------------------------------------------------------------------
+
+
+def test_every_orphan_is_closed_and_nothing_else_is(monkeypatch, capsys):
+    monkeypatch.setattr(
+        c.recipe_manifests, "scan", lambda: [("uv", "/core/python/alpha")]
+    )
+    monkeypatch.setattr(
+        c,
+        "list_open_dependabot_prs",
+        lambda: [
+            {"number": 1, "headRefName": "dependabot/uv/core/python/alpha/a-1"},
+            {"number": 2, "headRefName": "dependabot/uv/core/python/gone/a-2"},
+            {"number": 3, "headRefName": "dependabot/uv/core/python/dead/a-3"},
+        ],
+    )
+    closed = []
+    monkeypatch.setattr(
+        c, "close_pr", lambda n: (closed.append(n), (True, ""))[1]
+    )
+
+    assert c.main([]) == 0
+    assert closed == [2, 3], "the live recipe's PR must be left alone"
+    assert "closed #2" in capsys.readouterr().out
+
+
+def test_a_failed_close_is_reported_and_fails_the_run(monkeypatch, capsys):
+    """A 403 or a race must not be swallowed — the job has to go red, or a
+    branch silently survives and the next run tries again forever."""
+    monkeypatch.setattr(
+        c.recipe_manifests, "scan", lambda: [("uv", "/core/python/alpha")]
+    )
+    monkeypatch.setattr(
+        c,
+        "list_open_dependabot_prs",
+        lambda: [
+            {"number": 7, "headRefName": "dependabot/uv/core/python/gone/a-1"},
+            {"number": 8, "headRefName": "dependabot/uv/core/python/dead/a-2"},
+        ],
+    )
+    monkeypatch.setattr(
+        c,
+        "close_pr",
+        lambda n: (True, "") if n == 7 else (False, "403 Forbidden"),
+    )
+
+    assert c.main([]) == 1
+    captured = capsys.readouterr()
+    assert "closed #7" in captured.out
+    assert "FAILED #8" in captured.err
+    assert "403 Forbidden" in captured.err
+
+
+def test_a_successful_run_with_no_orphans_closes_nothing(monkeypatch):
+    monkeypatch.setattr(
+        c.recipe_manifests, "scan", lambda: [("uv", "/core/python/alpha")]
+    )
+    monkeypatch.setattr(
+        c,
+        "list_open_dependabot_prs",
+        lambda: [
+            {"number": 1, "headRefName": "dependabot/uv/core/python/alpha/a-1"}
+        ],
+    )
+    monkeypatch.setattr(
+        c, "close_pr", lambda n: pytest.fail(f"closed #{n} with no orphans")
+    )
+    assert c.main([]) == 0
 
 
 def test_main_does_not_close_anything_in_dry_run(monkeypatch):

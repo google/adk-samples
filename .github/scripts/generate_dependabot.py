@@ -138,9 +138,15 @@ updates:
     body_parts = [
         _render_entry(e["package-ecosystem"], e["directory"]) for e in entries
     ]
-    # Static github-actions entry is always last
-    body_parts.append(
-        _render_entry("github-actions", "/", extra_labels=["github-actions"])
+    # Entries configured unconditionally rather than discovered. They live in
+    # recipe_manifests so close_orphan_dependabot_prs.py recognises exactly
+    # this set; defining them here alone would leave the cleanup treating
+    # their PRs as orphans and closing them with --delete-branch.
+    body_parts.extend(
+        _render_entry(ecosystem, directory, extra_labels=extra_labels)
+        for ecosystem, directory, extra_labels in (
+            recipe_manifests.STATIC_ENTRIES
+        )
     )
     return header + "\n".join(body_parts)
 

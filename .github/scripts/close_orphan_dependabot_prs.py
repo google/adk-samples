@@ -113,18 +113,19 @@ def live_pairs(
     pass the result in rather than walking the tree a second time; it defaults
     to scanning.
 
-    The static github-actions entry ("/") is added unconditionally: it is not
-    discovered by scanning for recipe manifests, but it is permanently
-    configured, so its PRs must never be treated as orphans.
+    recipe_manifests.STATIC_ENTRIES are folded in unconditionally. They are
+    configured rather than discovered, so nothing in the tree would keep their
+    PRs from looking orphaned. Reading them from the shared module rather than
+    restating them here is what stops this set and the generator's output from
+    drifting: an entry added on only one side would have its PRs closed with
+    --delete-branch, at a rate too low for --max-close to notice.
     """
     if discovered is None:
         discovered = recipe_manifests.scan()
-    pairs = {
+    return {
         (BRANCH_PREFIX.get(eco, eco), directory)
-        for eco, directory in discovered
+        for eco, directory in [*discovered, *recipe_manifests.static_pairs()]
     }
-    pairs.add((BRANCH_PREFIX["github-actions"], "/"))
-    return pairs
 
 
 def head_ref_matches(head_ref: str, pair: tuple[str, str]) -> bool:
@@ -267,6 +268,24 @@ def main(argv: list[str] | None = None) -> int:
     if not orphans:
         return 0
 
+    # A dry run is read-only, so it is never blocked — it only reports. The
+    # circuit breaker below deliberately sits AFTER this: capping a dry run
+    # would make the escape hatch unreachable, since the advice for an
+    # oversized batch is to go and review it.
+    if args.dry_run:
+        over = len(orphans) > args.max_close
+        print("\n[dry-run] Would close:")
+        for pr in orphans:
+            print(f"  #{pr['number']}  {pr['headRefName']}")
+        if over:
+            print(
+                f"\nNote: {len(orphans)} orphans is above the --max-close "
+                f"limit of {args.max_close}, so a real run would refuse. If "
+                "this list is right, re-run without --dry-run and with "
+                f"--max-close {len(orphans)}."
+            )
+        return 0
+
     # Circuit breaker. The fail-closed guard above only catches a scan that
     # returns NOTHING; it cannot catch a scan that returns a plausible-looking
     # but wrong set, or a change to how Dependabot names branches, either of
@@ -280,19 +299,13 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"::error::{len(orphans)} orphans exceeds the --max-close limit "
             f"of {args.max_close}. Refusing to close anything. Re-run with "
-            "--dry-run to review the list; if it is genuinely correct, re-run "
-            f"with --max-close {len(orphans)}.",
+            "--dry-run to review the full list without closing; if it is "
+            f"genuinely correct, re-run with --max-close {len(orphans)}.",
             file=sys.stderr,
         )
         for pr in orphans:
             print(f"  #{pr['number']}  {pr['headRefName']}", file=sys.stderr)
         return 1
-
-    if args.dry_run:
-        print("\n[dry-run] Would close:")
-        for pr in orphans:
-            print(f"  #{pr['number']}  {pr['headRefName']}")
-        return 0
 
     print("\nClosing orphans (gh pr close --delete-branch, no comment):")
     failures: list[int] = []

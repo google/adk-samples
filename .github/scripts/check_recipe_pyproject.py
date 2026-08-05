@@ -106,8 +106,32 @@ PYPI_URLS = frozenset(
 # align_pyproject.py — keep in sync.
 NAMESPACED_ROOTS = {"skills": "vertical"}
 
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-def expected_project_name(recipe_dir: Path) -> str:
+
+def _repo_relative_parts(
+    recipe_dir: Path, repo_root: Path | None = None
+) -> tuple[str, ...]:
+    """Path segments of `recipe_dir` relative to the repository root.
+
+    An absolute path is made relative to `repo_root` so that the position of
+    a segment is meaningful. A relative path is taken as already
+    repo-relative, which is what CI passes. A path outside the repository
+    yields its own segments, which will not match the three-segment shape the
+    caller looks for — the safe outcome.
+    """
+    root = REPO_ROOT if repo_root is None else repo_root
+    if recipe_dir.is_absolute():
+        try:
+            return recipe_dir.resolve().relative_to(root.resolve()).parts
+        except ValueError:
+            return recipe_dir.parts
+    return recipe_dir.parts
+
+
+def expected_project_name(
+    recipe_dir: Path, repo_root: Path | None = None
+) -> str:
     """Return the [project].name this recipe directory is required to declare.
 
     For most recipes this is just the folder basename. For a recipe under a
@@ -123,12 +147,21 @@ def expected_project_name(recipe_dir: Path) -> str:
        use "<vertical>-<solution>"; the Python distribution name should not be
        the odd one out.
 
-    Works on relative and absolute paths alike, since it inspects only the
-    last three path segments.
+    The namespaced form requires the root to sit at the START of the
+    repo-relative path with exactly two segments after it — a position test,
+    not a name test. Matching on the third-from-last segment alone would fire
+    on any path that merely happens to contain a directory called "skills":
+    a hand-run `/home/me/skills/core/rag-vector-search` would yield
+    "core-rag-vector-search". CI only ever passes repo-relative paths, but
+    the auto-fixer mirror of this rule WRITES the value, so a human running
+    it by hand on an absolute path must not get a corrupted name.
+
+    Paths outside `repo_root` (and relative paths that are not exactly
+    <root>/<namespace>/<solution>) fall back to the basename.
     """
-    parts = recipe_dir.parts
-    if len(parts) >= 3 and parts[-3] in NAMESPACED_ROOTS:
-        return f"{parts[-2]}-{parts[-1]}"
+    parts = _repo_relative_parts(recipe_dir, repo_root)
+    if len(parts) == 3 and parts[0] in NAMESPACED_ROOTS:
+        return f"{parts[1]}-{parts[2]}"
     return recipe_dir.name
 
 
