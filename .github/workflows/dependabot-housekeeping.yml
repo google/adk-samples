@@ -1,0 +1,87 @@
+name: Dependabot Housekeeping
+
+# Closes Dependabot PRs whose target directory no longer exists.
+#
+# When a recipe is removed or renamed, Dependabot stops opening PRs for the
+# old directory but never closes the ones already open, so they linger
+# indefinitely. This sweeps them up.
+#
+# Replaces the old "Sync Dependabot Config" workflow, which regenerated
+# .github/dependabot.yml and opened a PR with the result. That file is now
+# static and glob-based — nothing to regenerate — but the orphan cleanup it
+# also performed is still needed, so it survives here on its own schedule.
+#
+# The cleanup derives the set of live directories by scanning the recipe tree
+# (.github/scripts/recipe_manifests.py), not by parsing dependabot.yml, which
+# no longer enumerates directories.
+#
+# Because closing is destructive (`--delete-branch`), the script refuses to
+# act when the scan comes back empty, and refuses to close a batch larger than
+# its --max-close limit. If this job fails with "exceeds the --max-close
+# limit", read the listed PRs before raising it: a large batch means healthy
+# PRs were reclassified, not that a lot of recipes were removed.
+
+on:
+  schedule:
+    # Mondays at 04:00 UTC, a couple of hours after the 02:00 Dependabot
+    # schedule in .github/dependabot.yml. Ordering barely matters — an orphan
+    # is by definition an old PR for a directory that is gone, so it cannot be
+    # something Dependabot opened minutes earlier — but running after the
+    # weekly wave keeps the log for a given week in one place.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List orphans without closing them"
+        type: boolean
+        default: false
+
+permissions:
+  # `contents: write` is required by `--delete-branch`, not by the checkout:
+  # deleting a branch is a git-ref write. Without it every close fails with
+  # "Resource not accessible by integration" after the PR has already been
+  # closed, leaving the branch behind.
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  close-orphans:
+    name: Close orphaned Dependabot PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          # The whole tree at one commit: the script decides what to close by
+          # scanning for recipe manifests, so a sparse checkout would
+          # under-report live directories and make valid PRs look orphaned.
+          # History is irrelevant, hence depth 1.
+          fetch-depth: 1
+          # This job runs with `contents: write` but never uses git — the
+          # script talks to the API via `gh` with GITHUB_TOKEN from the
+          # environment. Leaving a push-capable credential in .git/config
+          # would be attack surface for nothing.
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # ratchet:actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Close orphaned Dependabot PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            python .github/scripts/close_orphan_dependabot_prs.py --dry-run
+          else
+            python .github/scripts/close_orphan_dependabot_prs.py
+          fi

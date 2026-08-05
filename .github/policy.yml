@@ -250,9 +250,10 @@ required_files:
       # Every Go recipe is its own module. go.mod is required for three
       # reasons, in increasing order of subtlety:
       #   1. Without it the recipe cannot be built, tested, or versioned.
-      #   2. .github/scripts/generate_dependabot.py detects Go recipes by
-      #      the presence of go.mod (`_is_gomod`), so a recipe without one
-      #      silently receives no dependency updates.
+      #   2. Dependabot's `gomod` ecosystem keys off go.mod, so a recipe
+      #      without one silently receives no dependency updates. The orphan
+      #      cleanup in .github/scripts/recipe_manifests.py detects Go
+      #      recipes the same way (`_is_gomod`).
       #   3. .github/workflows/go-format.yml groups changed files by their
       #      owning go.mod and SKIPS any file it cannot attribute to a
       #      module — because gci's `localmodule` import section reads

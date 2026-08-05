@@ -10,25 +10,25 @@ close such PRs, so without this cleanup they linger indefinitely.
 
 Where the live set comes from
 -----------------------------
-The recipe tree, via recipe_manifests.scan() — the same scanner
-generate_dependabot.py uses to decide what goes INTO dependabot.yml.
+The tree, via recipe_manifests.scan() — NOT .github/dependabot.yml.
 
-This script used to recover the set by regex-scanning the enumerated
-`directory:` keys back out of that generated file. Reading the shared scanner
-directly is both simpler and safer: rediscovering by parsing meant a
-formatting change to the generator's output could silently empty this set,
-and an empty set makes every open Dependabot PR look orphaned.
+This script used to recover the set by regex-scanning enumerated `directory:`
+keys out of dependabot.yml. That file now uses glob patterns (`directories:`)
+so that adding a recipe requires no config change, which leaves nothing to
+parse: the old parser would have found zero pairs, judged every open
+Dependabot PR an orphan, and closed them all with --delete-branch.
 
-It also stops assuming dependabot.yml enumerates directories at all, which
-matters the moment that file moves to glob patterns.
+Scanning the tree is also the more accurate source. The globs in
+dependabot.yml are resolved by Dependabot against the tree, so the tree is
+what actually determines which directories are live.
 
 Uses `gh pr close <n> --delete-branch` with no explanatory comment: the GitHub
 GraphQL `addComment` mutation has an anti-abuse throttle that trips on large
 batches (observed in practice at ~80 comments in a burst). The close+delete-
-branch itself is the audit signal; the workflow log enumerates every closed
-PR.
+branch itself is the audit signal; the workflow log below enumerates every
+closed PR.
 
-Invoked by .github/workflows/sync-dependabot-config.yml.
+Invoked by .github/workflows/dependabot-housekeeping.yml.
 
 Requires: `gh` on PATH, GITHUB_TOKEN in the environment.
 
