@@ -154,24 +154,22 @@ def test_every_detected_manifest_directory_is_covered_by_a_glob(config):
     )
 
 
-def test_globs_reach_every_depth_present_in_the_tree(config):
-    """Recursion is load-bearing, not decorative. Manifests sit anywhere from
-    one to four levels below a root (`core/rag-vector-search` up to
-    `core/python/long-horizon-harness/web/server`), so a pattern that only
-    matched a fixed depth would silently drop the rest."""
+def test_tree_still_spans_several_manifest_depths():
+    """Canary for the coverage test above, which only proves the globs reach
+    every depth that actually EXISTS. Manifests sit one to four levels below
+    a root today (`core/rag-vector-search` up to
+    `core/python/long-horizon-harness/web/server`), which is why recursion is
+    load-bearing rather than decorative.
+
+    If the tree ever flattened to a single depth, the coverage test would
+    keep passing while silently no longer exercising recursion — so assert
+    the premise separately rather than re-walking the same scan.
+    """
     depths = {d.strip("/").count("/") + 1 for _, d in rm.scan()}
     assert len(depths) > 1, (
-        "expected manifests at several depths; if the tree flattened, this "
-        "test no longer proves recursion is exercised"
+        f"all manifests are now at depth {depths}; the glob-coverage test no "
+        "longer demonstrates that `**` recursion works"
     )
-
-    by_eco = {u["package-ecosystem"]: u for u in config["updates"]}
-    for ecosystem, directory in rm.scan():
-        patterns = by_eco[ecosystem]["directories"]
-        assert _matches_any(patterns, directory), (
-            f"{directory} (depth {directory.strip('/').count('/') + 1}) is "
-            f"not matched by {patterns}"
-        )
 
 
 def test_glob_roots_and_scan_roots_agree(globbed_entries):
@@ -249,14 +247,28 @@ def test_github_actions_entry_declares_no_semver_cooldown(config):
     assert "semver-major-days" not in entry.get("cooldown", {})
 
 
-def test_no_entry_sets_group_by(globbed_entries):
+def test_group_by_is_not_set_anywhere(globbed_entries):
     """Without `group-by`, Dependabot opens one PR per directory, matching the
     behaviour the previous per-directory config had. Setting
-    `group-by: dependency-name` would collapse a bump across every recipe into
-    a single repo-wide PR."""
+    `group-by: dependency-name` would collapse a bump across every recipe
+    into a single repo-wide PR.
+
+    The real home for the key is `groups.<name>.group-by`; the schema puts it
+    nowhere else and sets `additionalProperties: false` on an update entry,
+    so an entry-level `group-by` is rejected outright. Both levels are
+    checked anyway, so the test's scope matches its name and a reader does
+    not have to go and confirm that against the schema.
+    """
     for entry in globbed_entries:
-        for group in entry.get("groups", {}).values():
-            assert "group-by" not in group
+        assert "group-by" not in entry, (
+            f"{entry['package-ecosystem']}: `group-by` at entry level is not "
+            "valid config and would have Dependabot reject the whole file"
+        )
+        for name, group in entry.get("groups", {}).items():
+            assert "group-by" not in group, (
+                f"{entry['package-ecosystem']}.groups.{name}: `group-by` "
+                "collapses every directory's update into one repo-wide PR"
+            )
 
 
 def test_open_pr_limits_leave_room_for_every_directory(config):

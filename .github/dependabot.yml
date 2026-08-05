@@ -8,9 +8,11 @@
 # directory and was produced by a generator that contributors had to remember
 # to re-run, with a CI gate failing their PR when they forgot. The requirement
 # appeared in no contributor-facing doc and `uv run validate` could not catch
-# it, so the first anyone heard of it was a red X on their PR. All 21
-# generated entries were byte-identical apart from the path, so the globs
-# below lose no configurability.
+# it, so the first anyone heard of it was a red X on their PR. All 20
+# generated RECIPE entries were byte-identical apart from the path, so the
+# globs below lose no configurability. The static github-actions entry at the
+# bottom was never generated from the tree — it has always carried its own
+# extra label, group name and cooldown — and is unchanged.
 #
 # What to change here, and when:
 #   - A new recipe, anywhere under core/, contrib/, or skills/  -> nothing.

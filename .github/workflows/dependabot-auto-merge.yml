@@ -40,10 +40,12 @@ on: # zizmor: ignore[dangerous-triggers]
       - "Validate Recipe Structure"
       - "🐍 Python Format PR Checks"
       - "Python Dependency Policy"
-      # Go. .github/dependabot.yml already declares a globbed `gomod` entry,
-      # so Dependabot starts opening Go dependency PRs as soon as the first
-      # go.mod lands under core/, contrib/, or skills/. Without this entry
-      # those PRs would never be re-evaluated for auto-merge.
+      # Go. Fires on nothing today: no Go recipe exists, and
+      # .github/dependabot.yml deliberately declares no `gomod` entry (see
+      # the comment there for why). Listed in advance because adding that
+      # entry and adding the first go.mod are one change, and forgetting this
+      # line would leave those PRs never re-evaluated for auto-merge — a
+      # silent failure rather than a loud one.
       - "🐹 Go Format PR Checks"
     types:
       - completed
