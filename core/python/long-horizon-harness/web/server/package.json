@@ -12,9 +12,9 @@
     "node": ">=22"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "google-auth-library": "^9.15.0",
-    "http-proxy-middleware": "^3.0.3",
-    "jose": "^5.9.6"
+    "express": "^5.2.1",
+    "google-auth-library": "^10.9.0",
+    "http-proxy-middleware": "^4.2.0",
+    "jose": "^6.2.4"
   }
 }
