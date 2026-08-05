@@ -10,6 +10,7 @@ This sample shows how to build a long-horizon harness on ADK with capabilities l
 
 - **Study the components** — [`AGENTS.md`](AGENTS.md), where each row links to the function to start from
 - **Run it yourself** — [Quickstart](#quickstart)
+- **Build your own** — [hand it to a coding agent](#build-your-own-with-a-coding-agent)
 - **Understand the design** — [`docs/architecture.md`](docs/architecture.md)
 - **Review the security model** — [`docs/security-model.md`](docs/security-model.md), before pointing it at anything real
 
@@ -77,7 +78,7 @@ Full subsystem walkthrough: [`docs/architecture.md`](docs/architecture.md).
 
 ### Prerequisites
 
-[uv](https://docs.astral.sh/uv/getting-started/installation/), [google-agents-cli](https://pypi.org/project/google-agents-cli/) (`uv tool install google-agents-cli` — provides the `agents-cli` command), [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), `make`, and Node.js 20.19+ or 22.12+ (Vite 8 — web UI only). On Windows, use WSL.
+[uv](https://docs.astral.sh/uv/getting-started/installation/), [google-agents-cli](https://pypi.org/project/google-agents-cli/) (`uvx google-agents-cli setup` — provides the `agents-cli` command), [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), `make`, and Node.js 20.19+ or 22.12+ (Vite 8 — web UI only). On Windows, use WSL.
 
 Plus a **GCP project with billing enabled**. These are one-time setup; skip any you've already done:
 
@@ -120,6 +121,16 @@ agents-cli eval run                          # grades behavior against tests/eva
 ```
 
 Full config reference: [`docs/configuration.md`](docs/configuration.md).
+
+---
+
+## Build your own with a coding agent
+
+Run `uvx google-agents-cli setup`, then ask your coding agent:
+
+> Using `agents-cli` and this reference —
+> https://github.com/google/adk-samples/tree/main/core/python/long-horizon-harness
+> — help me build an agent that **&lt;does xyz&gt;**.
 
 ---
 
