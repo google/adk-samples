@@ -64,7 +64,7 @@ them by hand if you're setting up a recipe manually.
 
 ```toml
 [project]
-name = "my-recipe"           # must equal the recipe folder name
+name = "my-recipe"           # see "Project name" below
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -76,6 +76,21 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 ```
+
+**Project name.** `[project].name` is derived from where the
+recipe lives:
+
+| Location | `[project].name` | Example |
+| --- | --- | --- |
+| `core/<language>/<recipe>` | the folder name | `deep-search` |
+| `contrib/<language>/<recipe>` | the folder name | `financial-advisor` |
+| `skills/<vertical>/<solution>` | `<vertical>-<solution>` | `retail-product-search` |
+
+Vertical skills join the vertical in because the folder name
+alone is not unique across verticals — `skills/retail/product-search`
+and `skills/grocery/product-search` would otherwise both claim the
+distribution name `product-search`. It also keeps the package name
+aligned with the skill's `SKILL.md` `name:` field.
 
 Optional: add `description` if you want it in your `pyproject.toml`
 — it must match `manifest.description` exactly. Do NOT add

@@ -1,22 +1,50 @@
-# GENERATED FILE — every line below is written by
-# .github/scripts/generate_dependabot.py. Do not edit it by hand.
+# Dependabot configuration.
 #
-# Nothing triggers that script for you — there is no push hook, schedule, or
-# bot that keeps this in sync. Whoever adds or removes a recipe has to run it
-# and commit the result in the same pull request:
+# This file is STATIC and hand-maintained. Adding, removing, or renaming a
+# recipe requires NO change here — Dependabot resolves the glob patterns
+# below against the tree on every run and discovers manifests itself.
 #
-#   python .github/scripts/generate_dependabot.py
+# It did not always work that way. This file used to enumerate one entry per
+# directory and was produced by a generator that contributors had to remember
+# to re-run, with a CI gate failing their PR when they forgot. The requirement
+# appeared in no contributor-facing doc and `uv run validate` could not catch
+# it, so the first anyone heard of it was a red X on their PR. All 20
+# generated RECIPE entries were byte-identical apart from the path, so the
+# globs below lose no configurability. The static github-actions entry at the
+# bottom was never generated from the tree — it has always carried its own
+# extra label, group name and cooldown — and is unchanged.
 #
-# CI enforces this — the "Check dependabot.yml is up to date" job fails the
-# PR if this file no longer matches the recipe tree.
+# What to change here, and when:
+#   - A new recipe, anywhere under core/, contrib/, or skills/  -> nothing.
+#   - A new top-level recipe root                               -> add it to
+#     every `directories` list below, and to SCAN_ROOTS in
+#     .github/scripts/recipe_manifests.py.
+#   - A new language whose ecosystem is not listed below        -> add an
+#     entry for it.
 #
-# Ecosystems tracked: uv (Python), gomod (Go), maven (Java),
-#                     gradle (Kotlin), npm (TypeScript/JS), github-actions
+# Ecosystem/manifest mapping (mirrored by the detectors in
+# .github/scripts/recipe_manifests.py, which the orphan-PR cleanup uses):
+#   uv      Python  uv.lock
+#   npm     TS/JS   package.json with dependencies or devDependencies
+#   gomod   Go      go.mod
+#   maven   Java    pom.xml
+#   gradle  Kotlin  build.gradle.kts + settings.gradle.kts
+#
+# `**/*` is globstar: the directory layer below the root and everything
+# beneath it, recursively. Recursion is required, not cosmetic — manifests sit
+# at four different depths today, from `core/rag-vector-search` (a legacy flat
+# path) down to `core/python/long-horizon-harness/web/server`.
+#
+# Retired roots (`frozen_paths` in .github/policy.yml: python/agents,
+# java/agents, ...) are deliberately not globbed. They are closed to new work.
 
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/core/python/deep-search/frontend"
+  - package-ecosystem: "uv"
+    directories:
+      - "/core/**/*"
+      - "/contrib/**/*"
+      - "/skills/**/*"
     schedule:
       interval: weekly
       day: monday
@@ -26,43 +54,30 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 1
+    # Was 1 per directory across 16 enumerated entries. A single entry now
+    # covers every directory, so the cap is raised to keep throughput
+    # comparable.
+    open-pull-requests-limit: 25
     # Wait a few days after a release before opening a PR, so the community
     # catches broken releases before we auto-merge them. Security updates
     # bypass this cooldown and fire immediately.
     cooldown:
       default-days: 7
       semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "npm"
-    directory: "/core/python/genmedia-for-commerce/frontend"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
+    # No `group-by` — without it Dependabot opens one PR per directory, which
+    # preserves the previous one-PR-per-recipe behaviour. Adding
+    # `group-by: dependency-name` would collapse a bump across every recipe
+    # into a single repo-wide PR.
     groups:
       all-dependencies:
         patterns:
           - "*"
 
   - package-ecosystem: "npm"
-    directory: "/core/python/long-horizon-harness/web"
+    directories:
+      - "/core/**/*"
+      - "/contrib/**/*"
+      - "/skills/**/*"
     schedule:
       interval: weekly
       day: monday
@@ -72,10 +87,7 @@ updates:
       include: scope
     labels:
       - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
+    open-pull-requests-limit: 10
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -84,397 +96,21 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: "npm"
-    directory: "/core/python/long-horizon-harness/web/server"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
+  # gomod / maven / gradle are deliberately NOT declared. No Go, Java, or
+  # Kotlin recipe exists yet, and a glob matching zero directories is the
+  # likeliest way to get this whole file rejected — which would silently stop
+  # every dependency update, security ones included. That is not a risk worth
+  # taking for languages the repo does not yet host.
+  #
+  # This is not a silent gap. recipe_manifests.py still detects all five
+  # ecosystems, and test_dependabot_config.py asserts that every ecosystem
+  # found in the tree has an entry here — so the first Go/Java/Kotlin recipe
+  # fails CI with a message telling you to add its block, rather than merging
+  # green and quietly receiving no updates.
 
-  - package-ecosystem: "uv"
-    directory: "/contrib/python/financial-advisor"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/contrib/python/market-research-agent"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/ambient-expense-agent"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/ambient-expense-agent/frontend"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/cross-session-memory"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/deep-search"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/genmedia-for-commerce"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/long-horizon-harness"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/oauth-user-consent-flow"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/rag-agent-search"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/rag-vector-search"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/rag-vector-search/data_ingestion"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/python/safety-plugins"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/rag-agent-search"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/rag-vector-search"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/core/rag-vector-search/data_ingestion"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
+  # Not a recipe ecosystem: Dependabot reads /.github/workflows and any
+  # action.yml at the repo root. `directory: "/"` is what GitHub documents for
+  # github-actions; it is not a glob.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -488,9 +124,9 @@ updates:
       - dependencies
       - github-actions
     open-pull-requests-limit: 1
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
+    # `semver-major-days` is invalid for github-actions — its releases (v1,
+    # v2, ...) are not semver, and Dependabot rejects the whole config if it
+    # appears here.
     cooldown:
       default-days: 7
     groups:
