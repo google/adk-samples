@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Unit tests for the project-name rule in check_recipe_pyproject.py.
+"""Unit tests for check_recipe_pyproject.py.
 
-This script gates real PRs but had no test coverage. These tests pin the
-`skills/<vertical>/<solution>` naming behaviour so a future refactor cannot
+This script gates real PRs. The naming tests pin the
+`skills/<vertical>/<solution>` behaviour so a future refactor cannot
 silently reintroduce the basename-only rule, which would force two verticals
 that ship a same-named solution to declare the same distribution name.
 
@@ -22,12 +22,23 @@ The rule is implemented twice on purpose — the read-only validator here and
 the comment-preserving auto-fixer in
 .agents/skills/align-recipe-pyproject/scripts/align_pyproject.py. The two
 implementations are cross-checked at the bottom of this file.
+
+The rest of the file pins the exit-code contract the workflow reads, and the
+malformed-input cases that used to escape as an AttributeError traceback —
+which the workflow then reported as the contributor's error.
 """
 
+import sys
 from pathlib import Path
 
 import check_recipe_pyproject as m
 import pytest
+
+# The numbers the workflow branches on. Spelled out rather than imported so
+# a change to them has to be made deliberately in two places.
+EXIT_OK = 0
+EXIT_VIOLATIONS = 1
+EXIT_CI_FAULT = 2
 
 # Where actions/checkout puts the repo on a GitHub runner. The workflow hands
 # the script a repo-relative path, but a developer debugging by hand may pass
@@ -35,10 +46,20 @@ import pytest
 CI_CHECKOUT = "/home/runner/work/adk-samples/adk-samples"
 
 
-def _records(capsys) -> list[tuple[str, str]]:
-    """Parse emitted `KIND::path::message` lines into (kind, message)."""
-    out = capsys.readouterr().out.strip().splitlines()
-    return [(ln.split("::", 2)[0], ln.split("::", 2)[2]) for ln in out if ln]
+def _text(diagnostic) -> str:
+    """Everything the contributor reads, as one searchable string."""
+    return diagnostic.render_human()
+
+
+def _run(tmp_path: Path, monkeypatch, pyproject: str, manifest=None) -> int:
+    """Invoke the script the way CI does, on a throwaway recipe."""
+    (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+    if manifest is not None:
+        (tmp_path / "manifest.yaml").write_text(manifest, encoding="utf-8")
+    monkeypatch.setattr(
+        sys, "argv", ["check_recipe_pyproject.py", str(tmp_path)]
+    )
+    return m.main()
 
 
 # ---------------------------------------------------------------------------
@@ -124,63 +145,296 @@ def test_two_verticals_sharing_a_solution_name_do_not_collide():
 # ---------------------------------------------------------------------------
 
 
-def test_skill_with_vertical_prefixed_name_passes(capsys):
-    m.check_name(
-        {"name": "retail-product-search"},
-        Path("skills/retail/product-search/pyproject.toml"),
-        Path("skills/retail/product-search"),
+def test_skill_with_vertical_prefixed_name_passes():
+    assert (
+        m.check_name(
+            {"name": "retail-product-search"},
+            Path("skills/retail/product-search/pyproject.toml"),
+            Path("skills/retail/product-search"),
+        )
+        == []
     )
-    ((kind, msg),) = _records(capsys)
-    assert kind == "PASS"
-    assert "retail-product-search" in msg
 
 
-def test_skill_with_bare_basename_fails_and_explains_why(capsys):
-    m.check_name(
+def test_skill_with_bare_basename_fails_and_explains_why():
+    (diag,) = m.check_name(
         {"name": "product-search"},
         Path("skills/retail/product-search/pyproject.toml"),
         Path("skills/retail/product-search"),
     )
-    ((kind, msg),) = _records(capsys)
-    assert kind == "FAIL"
-    assert "retail-product-search" in msg
+    text = _text(diag)
+    assert "retail-product-search" in text
     # The contributor should not have to go read the script to understand it.
-    assert "<vertical>-<solution>" in msg
+    assert "<vertical>-<solution>" in text
+    # And should not have to work out where to type it.
+    assert 'name = "retail-product-search"' in diag.how
 
 
-def test_core_recipe_message_omits_the_vertical_explanation(capsys):
+def test_core_recipe_message_omits_the_vertical_explanation():
     """core/ and contrib/ messages stay as terse as they were pre-change."""
-    m.check_name(
+    (diag,) = m.check_name(
         {"name": "wrong"},
         Path("core/python/deep-search/pyproject.toml"),
         Path("core/python/deep-search"),
     )
-    ((kind, msg),) = _records(capsys)
-    assert kind == "FAIL"
-    assert "deep-search" in msg
-    assert "vertical" not in msg
+    text = _text(diag)
+    assert "deep-search" in text
+    assert "vertical" not in text
 
 
-def test_core_recipe_with_matching_basename_passes(capsys):
-    m.check_name(
-        {"name": "deep-search"},
-        Path("core/python/deep-search/pyproject.toml"),
-        Path("core/python/deep-search"),
+def test_core_recipe_with_matching_basename_passes():
+    assert (
+        m.check_name(
+            {"name": "deep-search"},
+            Path("core/python/deep-search/pyproject.toml"),
+            Path("core/python/deep-search"),
+        )
+        == []
     )
-    ((kind, _),) = _records(capsys)
-    assert kind == "PASS"
 
 
-def test_missing_name_reports_the_expected_value(capsys):
-    m.check_name(
+def test_missing_name_reports_the_expected_value():
+    (diag,) = m.check_name(
         {},
         Path("skills/retail/product-search/pyproject.toml"),
         Path("skills/retail/product-search"),
     )
-    ((kind, msg),) = _records(capsys)
-    assert kind == "FAIL"
-    assert "is missing" in msg
-    assert "retail-product-search" in msg
+    assert "is missing" in diag.what
+    assert "retail-product-search" in _text(diag)
+
+
+# ---------------------------------------------------------------------------
+# Exit-code contract
+#
+# The workflow no longer parses records out of stdout; it branches on the
+# exit code alone. 0/1/2 have to mean exactly one thing each.
+# ---------------------------------------------------------------------------
+
+_GOOD_INDEX = """
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true
+"""
+
+
+def _good_pyproject(name: str) -> str:
+    return (
+        f'[project]\nname = "{name}"\nversion = "0.1.0"\n'
+        f'requires-python = ">=3.11"\n{_GOOD_INDEX}'
+    )
+
+
+def test_conforming_recipe_exits_zero(tmp_path, monkeypatch, capsys):
+    code = _run(tmp_path, monkeypatch, _good_pyproject(tmp_path.name))
+    assert code == EXIT_OK
+    out = capsys.readouterr().out
+    assert out.startswith("[PASS]")
+    assert "::error" not in out
+
+
+def test_violation_exits_one_and_annotates_the_file(
+    tmp_path, monkeypatch, capsys
+):
+    code = _run(tmp_path, monkeypatch, _good_pyproject("wrong-name"))
+    assert code == EXIT_VIOLATIONS
+    out = capsys.readouterr().out
+    assert f"::error file={tmp_path}/pyproject.toml::" in out
+
+
+def test_every_violation_gets_its_own_annotation(tmp_path, monkeypatch, capsys):
+    """No "first error (+N more)" collapse: the Files tab shows them all."""
+    code = _run(
+        tmp_path,
+        monkeypatch,
+        '[project]\nname = "wrong-name"\nrequires-python = ">=3.9"\n',
+    )
+    assert code == EXIT_VIOLATIONS
+    out = capsys.readouterr().out
+    # name, requires-python, missing index.
+    assert out.count("::error file=") == 3
+
+
+def test_missing_pyproject_is_not_this_checkers_failure(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        sys, "argv", ["check_recipe_pyproject.py", str(tmp_path)]
+    )
+    assert m.main() == EXIT_OK
+    assert "::error" not in capsys.readouterr().out
+
+
+def test_a_path_that_is_not_a_directory_is_a_ci_fault(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        sys, "argv", ["check_recipe_pyproject.py", str(tmp_path / "nope")]
+    )
+    assert m.main() == EXIT_CI_FAULT
+    out = capsys.readouterr().out
+    assert "[ci-fault]" in out
+    # A CI fault must never put a marker on a contributor's file.
+    assert "::error file=" not in out
+
+
+def test_an_unexpected_crash_is_a_ci_fault_not_the_contributors_fault(
+    tmp_path, monkeypatch, capsys
+):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("checker bug")
+
+    monkeypatch.setattr(m, "check_name", boom)
+    code = _run(tmp_path, monkeypatch, _good_pyproject(tmp_path.name))
+    assert code == EXIT_CI_FAULT
+    out = capsys.readouterr().out
+    assert "RuntimeError: checker bug" in out
+    assert "::error file=" not in out
+
+
+# ---------------------------------------------------------------------------
+# Malformed input that used to raise AttributeError
+#
+# Each of these produced a traceback, which the workflow then reported as
+# "checker crashed" against the contributor's pyproject.toml.
+# ---------------------------------------------------------------------------
+
+
+def test_project_as_array_of_tables_is_reported_not_crashed(
+    tmp_path, monkeypatch, capsys
+):
+    code = _run(
+        tmp_path,
+        monkeypatch,
+        f'[[project]]\nname = "{tmp_path.name}"\n{_GOOD_INDEX}',
+    )
+    assert code == EXIT_VIOLATIONS
+    out = capsys.readouterr().out
+    assert "AttributeError" not in out
+    assert "not a table" in out
+    assert "[project]   ← not [[project]]" in out
+
+
+def test_index_as_a_list_of_strings_is_reported_not_crashed(
+    tmp_path, monkeypatch, capsys
+):
+    code = _run(
+        tmp_path,
+        monkeypatch,
+        f'[project]\nname = "{tmp_path.name}"\n'
+        f'requires-python = ">=3.11"\n\n[tool.uv]\n'
+        f'index = ["https://pypi.org/simple/"]\n',
+    )
+    assert code == EXIT_VIOLATIONS
+    out = capsys.readouterr().out
+    assert "AttributeError" not in out
+    assert "not a table" in out
+    assert "[[tool.uv.index]]" in out
+
+
+def test_index_as_a_single_table_is_reported_not_crashed(
+    tmp_path, monkeypatch, capsys
+):
+    code = _run(
+        tmp_path,
+        monkeypatch,
+        f'[project]\nname = "{tmp_path.name}"\n'
+        f'requires-python = ">=3.11"\n\n[tool.uv.index]\n'
+        f'url = "https://pypi.org/simple/"\ndefault = true\n',
+    )
+    assert code == EXIT_VIOLATIONS
+    assert "array of tables" in capsys.readouterr().out
+
+
+def test_the_index_fix_survives_as_multiple_lines_in_the_annotation(
+    tmp_path, monkeypatch, capsys
+):
+    """The reason the annotation is built here and not in shell: the old
+    demux collapsed newlines, rendering the TOML fix as one invalid line."""
+    _run(
+        tmp_path,
+        monkeypatch,
+        f'[project]\nname = "{tmp_path.name}"\nrequires-python = ">=3.11"\n',
+    )
+    annotation = next(
+        ln
+        for ln in capsys.readouterr().out.splitlines()
+        if ln.startswith("::error file=")
+    )
+    assert "%0A" in annotation
+    assert 'url = "https://pypi.org/simple/"' in annotation
+
+
+def test_the_index_message_carries_no_google_internal_jargon(
+    tmp_path, monkeypatch, capsys
+):
+    _run(
+        tmp_path,
+        monkeypatch,
+        f'[project]\nname = "{tmp_path.name}"\nrequires-python = ">=3.11"\n',
+    )
+    assert "Airlock" not in capsys.readouterr().out
+
+
+def test_list_shaped_manifest_is_reported_not_crashed(
+    tmp_path, monkeypatch, capsys
+):
+    pytest.importorskip("yaml")
+    code = _run(
+        tmp_path,
+        monkeypatch,
+        f'[project]\nname = "{tmp_path.name}"\n'
+        f'requires-python = ">=3.11"\ndescription = "d"\n{_GOOD_INDEX}',
+        manifest="- a\n- b\n",
+    )
+    assert code == EXIT_VIOLATIONS
+    out = capsys.readouterr().out
+    assert "AttributeError" not in out
+    assert "not a mapping" in out
+
+
+def test_missing_manifest_says_what_to_do_about_it(
+    tmp_path, monkeypatch, capsys
+):
+    code = _run(
+        tmp_path,
+        monkeypatch,
+        f'[project]\nname = "{tmp_path.name}"\n'
+        f'requires-python = ">=3.11"\ndescription = "A recipe."\n'
+        f"{_GOOD_INDEX}",
+    )
+    assert code == EXIT_VIOLATIONS
+    out = capsys.readouterr().out
+    # A symptom ("cannot verify consistency") is not an action.
+    assert "description: A recipe." in out
+
+
+def test_missing_pyyaml_is_a_ci_fault_not_a_contributor_error(
+    tmp_path, monkeypatch, capsys
+):
+    """The contributor cannot install a dependency into our runner."""
+    # A None entry in sys.modules makes `import yaml` raise ImportError.
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    code = _run(
+        tmp_path,
+        monkeypatch,
+        f'[project]\nname = "{tmp_path.name}"\n'
+        f'requires-python = ">=3.11"\ndescription = "d"\n{_GOOD_INDEX}',
+        manifest="description: d\n",
+    )
+    assert code == EXIT_CI_FAULT
+    out = capsys.readouterr().out
+    assert "[ci-fault]" in out
+    assert "::error file=" not in out
+
+
+def test_invalid_toml_is_reported_against_the_file(
+    tmp_path, monkeypatch, capsys
+):
+    code = _run(tmp_path, monkeypatch, "[project\nname = broken\n")
+    assert code == EXIT_VIOLATIONS
+    out = capsys.readouterr().out
+    assert "not valid TOML" in out
+    assert "Traceback" not in out
 
 
 # ---------------------------------------------------------------------------
