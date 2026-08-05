@@ -88,6 +88,42 @@ def test_command_prefix_is_token_boundary_aware():
     assert none_match == "ask_user"  # no rule matched → default ask_user
 
 
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        # Flag-tolerant: one approval covers any flag ordering.
+        ("bq --project_id=X query 'SELECT 1'", "allow"),
+        ("bq query 'SELECT 1'", "allow"),
+        ("bq --a=1 --b=2 query t", "allow"),
+        # ...but a separate-value flag is ambiguous, so it fails safe to a prompt
+        # rather than guess that `X` is not the subcommand.
+        ("bq --project_id X query t", "ask_user"),
+        # A flag value must never impersonate the granted subcommand.
+        ("bq -n query rm t", "ask_user"),
+        # Privilege escalation is never unwrapped into a plain grant.
+        ("sudo bq query t", "ask_user"),
+        ("bq rm -t x.y", "ask_user"),  # different subcommand
+    ],
+)
+def test_flagless_prefix_matches_flag_tolerantly(command, expected):
+    rules = [
+        parse_rule(
+            {
+                "toolName": "terminal",
+                "commandPrefix": "bq query",
+                "decision": "allow",
+            }
+        )
+    ]
+    decision, _ = resolve_decision(
+        rules,
+        tool_name="terminal",
+        args={"command": command},
+        command=command,
+    )
+    assert decision == expected
+
+
 def test_args_pattern_match():
     rules = [
         parse_rule(

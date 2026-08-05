@@ -83,6 +83,48 @@ def test_git_ordinary_runs_scary_asks():
         assert classify(ask)[0] == "ask", ask
 
 
+def test_git_global_value_flags_do_not_hide_the_subcommand():
+    # `-C <path>` and friends consume the NEXT token, so taking the first
+    # non-flag token as the subcommand read the *value* instead and silently
+    # disabled the whole git gate.
+    for ask in (
+        "git -C /repo push --force origin main",
+        "git -c user.name=x push --force origin main",
+        "git --git-dir /r/.git push --force",
+        "git --work-tree /r reset --hard",
+        "git --namespace ns push --mirror",
+        "git -C /repo clean -fd",
+        "git -C /repo push --delete origin br",
+        "git --git-dir=/r/.git push --force",  # =-form already worked
+        "git -C /a -c k=v push -f",  # stacked global flags
+        "git -X unknown push --force",  # unknown flag must not hide it either
+        "git --no-pager push --force",  # boolean global flag
+    ):
+        assert classify(ask) is not None and classify(ask)[0] == "ask", ask
+
+
+def test_git_gated_verb_as_a_branch_name_over_prompts():
+    # Accepted trade-off of scanning for the verb anywhere in the positionals:
+    # a branch named after a gated verb draws an extra prompt. Erring toward a
+    # prompt is the safe direction, and the alternative (trusting position) needs
+    # an exhaustive list of git's boolean AND value-taking global flags to avoid
+    # missing `git --no-pager push --force`.
+    assert classify("git branch -f push")[0] == "ask"
+    assert classify("git branch -f main") is None
+
+
+def test_git_global_value_flags_do_not_invent_a_subcommand():
+    # The flip side: a path or branch that happens to be named after a gated
+    # verb must not trip the gate.
+    for ok in (
+        "git -C /repo status",
+        "git -C push status",  # directory literally named `push`
+        "git -C /repo log --oneline",
+        "git -c user.name=push commit -m x",
+    ):
+        assert classify(ok) is None, ok
+
+
 def test_chmod_chown_recursive_dangerous_root_only():
     assert classify("chmod -R 777 /etc")[0] == "ask"
     assert classify("chown -R me /")[0] == "ask"
