@@ -126,7 +126,7 @@ Full config reference: [`docs/configuration.md`](docs/configuration.md).
 
 ## Build your own with a coding agent
 
-Install the CLI (`uv tool install google-agents-cli`), then ask your coding agent:
+Run `uvx google-agents-cli setup`, then ask your coding agent:
 
 > Using `agents-cli` and this reference —
 > https://github.com/google/adk-samples/tree/main/core/python/long-horizon-harness
