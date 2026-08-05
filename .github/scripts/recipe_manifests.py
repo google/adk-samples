@@ -7,23 +7,25 @@ contain a dependency manifest, and for which package ecosystem?
 
 Why this exists as its own module
 ---------------------------------
-Two scripts need the same answer, and they must never disagree:
+`.github/dependabot.yml` is static and glob-based — Dependabot resolves those
+globs against the tree itself, so nothing here feeds that file.
 
-  generate_dependabot.py         decides what goes INTO .github/dependabot.yml
-  close_orphan_dependabot_prs.py decides which open Dependabot PRs target a
-                                 directory that no longer exists, and closes
-                                 them with --delete-branch
+close_orphan_dependabot_prs.py still needs the concrete list, to decide
+whether an open Dependabot PR targets a directory that no longer exists. It
+closes what it decides with --delete-branch, so the answer has to be right.
 
-The second used to recover the list by regex-scanning the enumerated
-`directory:` keys back out of the file the first had written. Re-deriving by
-parsing was fragile in a destructive code path: a formatting change to the
-generated output could silently empty the set, and an empty set makes every
-open Dependabot PR look orphaned.
+It used to recover the list by regex-scanning the enumerated `directory:`
+keys out of dependabot.yml. That stopped being possible the moment the file
+switched to globs: the old parser would have found nothing, judged every open
+Dependabot PR an orphan, and closed the lot. Scanning the tree is also the
+more faithful source, since the tree is what Dependabot resolves those globs
+against.
 
-Sharing the scanner removes that class of bug outright — there is one
-definition of "dependency-managed directory", so the generator and the
-cleanup cannot drift apart. STATIC_ENTRIES below exists for the same reason,
-for the entries that are configured unconditionally rather than discovered.
+STATIC_ENTRIES below covers the other half — entries configured
+unconditionally rather than discovered. Nothing in the tree can turn them up,
+so they are listed once here and asserted against the real config by
+tests/test_dependabot_config.py. An entry present in dependabot.yml but
+missing from that list would have its PRs closed as orphans.
 
 Zero third-party dependencies, matching its callers.
 """
@@ -112,14 +114,16 @@ DETECTORS: list[tuple[str, object]] = [
 # /.github/workflows and any root action.yml, so its directory is always "/"
 # and no amount of scanning the recipe tree would turn it up.
 #
-# Shared for the same reason as the detectors above, and this half is the
-# dangerous one. generate_dependabot.py appends these to dependabot.yml;
-# close_orphan_dependabot_prs.py adds them to the set of live pairs so their
-# PRs are never treated as orphans. When the two lists were written out
-# separately, adding a static entry to the generator alone meant the cleanup
-# did not recognise it and closed its PRs with --delete-branch — and because
-# such an entry produces roughly one grouped PR a week, the --max-close
-# circuit breaker would never trip on it.
+# close_orphan_dependabot_prs.py folds these into the set of live pairs so
+# their PRs are never treated as orphans. Because they cannot be discovered,
+# an entry that exists in dependabot.yml but not in this list has its PRs
+# closed with --delete-branch — and since such an entry produces roughly one
+# grouped PR a week, the --max-close circuit breaker would never trip on it.
+# tests/test_dependabot_config.py asserts the two agree, in both directions.
+#
+# `extra_labels` is carried because dependabot.yml gives github-actions its
+# own extra label; keeping it here means the list fully describes the entry
+# rather than half of it.
 #
 # Each tuple is (package-ecosystem, directory, extra_labels).
 STATIC_ENTRIES: list[tuple[str, str, list[str]]] = [
