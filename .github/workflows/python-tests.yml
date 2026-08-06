@@ -50,7 +50,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -190,12 +190,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
 
       - name: Install uv
         # Leave enable-cache at the default (true) — wheel caching between
         # runs is worthwhile here (contrast with detect-recipes above).
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
         with:
           python-version: "3.11"
 
@@ -206,8 +206,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          FIX="Fix: ask your AI coding assistant to run the generate-python-runnability-test skill on ${RECIPE}, or copy the template from docs/recipe-handbook/languages/python.md#copy-paste-starters. Docs: docs/recipe-handbook/troubleshooting.md#runnability-test-missing"
+
           if [ ! -d "tests" ]; then
-            echo "::error::Missing tests/ directory in ${RECIPE}"
+            echo "::error file=${RECIPE}::${RECIPE} has no tests/ directory. Why: every Python recipe must prove it at least imports. ${FIX}"
+            echo "[FAIL] ${RECIPE}/tests/ does not exist."
+            echo "       ${FIX}"
             exit 1
           fi
 
@@ -216,7 +220,17 @@ jobs:
           # `head` closes stdin early and `find` dies from SIGPIPE.
           RUNNABILITY=$(find tests -name "test_runnability.py" -print -quit)
           if [ -z "$RUNNABILITY" ]; then
-            echo "::error::No test_runnability.py found under ${RECIPE}/tests/"
+            echo "::error file=${RECIPE}/tests::${RECIPE}/tests/ has no test_runnability.py. Why: every Python recipe must prove it at least imports. ${FIX}"
+            echo "[FAIL] No test_runnability.py under ${RECIPE}/tests/."
+            echo ""
+            echo "       The file must import the recipe's agent module and"
+            echo "       assert root_agent is not None. If that import has"
+            echo "       side effects needing credentials (google.auth.default,"
+            echo "       vertexai.init) the generator mocks them for you — CI"
+            echo "       has no application default credentials, so an"
+            echo "       unmocked import will fail here."
+            echo ""
+            echo "       ${FIX}"
             exit 1
           fi
 
@@ -264,8 +278,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          # This job is a branch-protection gate: it reports the aggregate of
+          # a matrix, so it can never name the specific recipe that failed.
+          # Say that outright and point at the matrix legs, rather than
+          # leaving a bare "did not succeed" that reads like a CI glitch.
           if [ "$DETECT_RESULT" != "success" ]; then
-            echo "::error::detect-recipes did not succeed (result: $DETECT_RESULT)."
+            echo "::error::Could not work out which Python recipes this PR affects (detect-recipes: $DETECT_RESULT), so no tests ran. This is a CI tooling failure, not a problem with your changes — re-run the job. Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
             exit 1
           fi
 
@@ -277,7 +295,11 @@ jobs:
               echo "No Python recipes to test — gate passes."
               ;;
             *)
-              echo "::error::run-tests did not succeed (result: $RUN_RESULT)."
+              echo "::error::One or more Python recipe test jobs did not pass (run-tests: $RUN_RESULT). This gate reports the aggregate — open the 'pytest — <recipe>' job for the recipe that failed to see the actual pytest output. Docs: docs/recipe-handbook/troubleshooting.md"
+              echo ""
+              echo "This job is a gate, not a test run. The failure is in one"
+              echo "of the matrix legs above, each named 'pytest — <recipe>'."
+              echo "Open the red one for the pytest output."
               exit 1
               ;;
           esac
