@@ -54,6 +54,19 @@ logger = logging.getLogger(__name__)
 DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001"
 DEFAULT_EMBEDDING_FIELDS = ["name", "description", "category", "brand"]
 
+# Vector dimensions each embedding model emits. Vector Search collections
+# must be created with the correct dimension count or vectors are rejected
+# / index results are wrong. gemini-embedding-001's native output is 3072,
+# but we request the 768-dim projection for parity with text-embedding-*
+# and lower storage/query cost. Add new entries as models are qualified.
+EMBEDDING_MODEL_DIMENSIONS: dict[str, int] = {
+    "gemini-embedding-001": 768,
+    "text-embedding-004": 768,
+    "text-embedding-005": 768,
+    "text-multilingual-embedding-002": 768,
+}
+DEFAULT_EMBEDDING_DIMENSIONS = 768
+
 # All product fields stored as data object fields
 PRODUCT_DATA_FIELDS = {
     "product_id": "string",
@@ -177,6 +190,18 @@ def create_collection_if_needed(  # pylint: disable=too-many-arguments
         text_template,
     )
 
+    dimensions = EMBEDDING_MODEL_DIMENSIONS.get(
+        embedding_model, DEFAULT_EMBEDDING_DIMENSIONS
+    )
+    if embedding_model not in EMBEDDING_MODEL_DIMENSIONS:
+        logger.warning(
+            "Embedding model '%s' is not in EMBEDDING_MODEL_DIMENSIONS; "
+            "using default %d dimensions. Add it to the lookup table in "
+            "ingest_vertex_search.py if this is wrong for your model.",
+            embedding_model,
+            DEFAULT_EMBEDDING_DIMENSIONS,
+        )
+
     request = vectorsearch.CreateCollectionRequest(
         parent=parent,
         collection_id=collection_id,
@@ -185,7 +210,7 @@ def create_collection_if_needed(  # pylint: disable=too-many-arguments
             "vector_schema": {
                 "text_embedding": {
                     "dense_vector": {
-                        "dimensions": 768,
+                        "dimensions": dimensions,
                         "vertex_embedding_config": {
                             "model_id": embedding_model,
                             "text_template": text_template,

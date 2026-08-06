@@ -118,6 +118,7 @@ def _validate_single_record(
     all_fields: set[str],
     higher_level_fields: set[str],
     seen_warned_fields: set[str],
+    fields_level: str,
 ) -> list[str]:
     """Validate a single record against the schema.
 
@@ -130,6 +131,7 @@ def _validate_single_record(
             warn (and are ignored) instead of failing the row.
         seen_warned_fields: Mutable set tracking which higher-level fields
             already produced a warning, so each fires once per run.
+        fields_level: Name of the selected level, used in warning messages.
 
     Returns:
         List of error strings for this row (empty if the row is valid).
@@ -175,7 +177,7 @@ def _validate_single_record(
             "Field '%s' present in data but outside the '%s' schema. "
             "It will be ignored. Pick a higher --fields-level if you want it indexed.",
             field,
-            "current",
+            fields_level,
         )
         seen_warned_fields.add(field)
 
@@ -224,6 +226,7 @@ def validate(
             all_fields,
             higher_level_fields,
             seen_warned_fields,
+            fields_level,
         )
         if row_errors:
             errors.extend(row_errors)

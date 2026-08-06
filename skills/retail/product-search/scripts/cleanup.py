@@ -15,8 +15,8 @@
 
 r"""Clean up all GCP resources created by the product search agent.
 
-Deletes BigQuery datasets, Vector Search 2.0 collections (and legacy
-v1 MatchingEngineIndex if present), and Cloud Run services.
+Deletes BigQuery datasets, Vector Search 2.0 collections, and Cloud Run
+services.
 
 Usage:
     # Dry run (show what would be deleted, don't delete)
@@ -40,14 +40,16 @@ import subprocess
 import sys
 from typing import Any
 
-from _setup_utils import (
-    load_config,  # pylint: disable=wrong-import-position
-)
-from google.api_core import exceptions
-from google.cloud import aiplatform, bigquery, vectorsearch
-
 # Allow imports from the script's own directory before pip install -e is run.
+# MUST run before `from _setup_utils import ...` below, or the local import
+# resolves via whatever fallback happens to be on sys.path (which is not
+# guaranteed to be this script's dir when run as `python -m scripts.cleanup`).
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+from _setup_utils import load_config
+from google.api_core import exceptions
+from google.cloud import bigquery, vectorsearch
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -79,9 +81,14 @@ def delete_bigquery(project_id: str, dataset_id: str, dry_run: bool) -> bool:
 
     try:
         client.get_dataset(dataset_ref)
-    except Exception:  # pylint: disable=broad-exception-caught
+    except exceptions.NotFound:
         logger.info("BigQuery dataset %s does not exist, skipping", dataset_ref)
         return True
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Permission denied / auth / network / etc. Return False so the
+        # caller doesn't mistake this for "already deleted".
+        logger.error("Failed to check BigQuery dataset %s: %s", dataset_ref, e)
+        return False
 
     if dry_run:
         logger.info(
@@ -263,53 +270,6 @@ def delete_vectorsearch_collection(
         return False
 
 
-def delete_vectorsearch_v1_index(
-    project_id: str, location: str, index_name: str, dry_run: bool
-) -> bool:
-    """Delete legacy Vector Search v1 MatchingEngineIndex (if any remain).
-
-    Args:
-        project_id: GCP project ID.
-        location: GCP region of the legacy index.
-        index_name: Display name of the legacy MatchingEngineIndex.
-        dry_run: If True, log what would be deleted but don't delete.
-
-    Returns:
-        True on success, or when there's no matching index to delete.
-        False if a delete call failed.
-    """
-    aiplatform.init(project=project_id, location=location)
-
-    indexes = aiplatform.MatchingEngineIndex.list(
-        filter=f'display_name="{index_name}"'
-    )
-
-    if not indexes:
-        return True
-
-    ok = True
-    for index in indexes:
-        if dry_run:
-            logger.info(
-                "[DRY RUN] Would delete legacy Vector Search index: %s",
-                index.resource_name,
-            )
-            continue
-
-        try:
-            index.delete()  # type: ignore[attr-defined]
-            logger.info(
-                "Deleted legacy Vector Search index: %s", index.resource_name
-            )
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error(
-                "Failed to delete legacy index %s: %s", index.resource_name, e
-            )
-            ok = False
-
-    return ok
-
-
 def delete_cloudrun(
     project_id: str, location: str, service_name: str, dry_run: bool
 ) -> bool:
@@ -446,12 +406,6 @@ def cleanup(
             "vectorsearch (collection)",
             delete_vectorsearch_collection(
                 project_id, location, collection_id, dry_run
-            ),
-        )
-        _track(
-            "vectorsearch (v1 index)",
-            delete_vectorsearch_v1_index(
-                project_id, location, "retail_skill_products_index", dry_run
             ),
         )
 

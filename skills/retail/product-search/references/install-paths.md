@@ -26,16 +26,20 @@ For conda/asdf/other layouts, set `PYTHON_BIN` and skip the loop.
 
 ## Why `bash -c` wraps the pip command
 
-`pip install -e "$SKILL_DIR[adk]"` looks correct but breaks in zsh: zsh treats
-`[adk]` as a glob character class, silently expands to empty, and the
-`[adk]` extras are dropped. `bash -c "pip install -e '${SKILL_DIR}[adk]'"`
-sidesteps this — pip runs under bash, which doesn't glob-expand `[adk]`.
+`SKILL_DIR` may contain spaces (`/Users/name with space/.claude/skills/...`).
+`bash -c "pip install -e '$SKILL_DIR'"` quotes the whole argument so pip
+sees one path, not tokens split at spaces.
+
+(Historical note: earlier versions installed `pip install -e "$SKILL_DIR[adk]"`
+to pull an optional ADK extra. `google-adk` is now an unconditional dependency
+in `pyproject.toml`, so the `[adk]` selector is no longer needed. If you see
+it in a stale doc, drop the `[adk]` suffix and the install still works.)
 
 ## Why the workspace setup must run as one shell command
 
 Agent shell tools reset cwd and clear variables between calls. If you set
 `SKILL_DIR` in call 1 and run pip in call 2, `$SKILL_DIR` is empty in call 2
-and the install becomes `pip install -e [adk]` (invalid).
+and the install becomes `pip install -e ` (invalid).
 
 ## Description tuning for triggering
 

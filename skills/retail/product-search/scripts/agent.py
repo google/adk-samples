@@ -31,19 +31,42 @@ from google.adk import agents, apps, models
 from scripts.config import config
 from scripts.retrievers import search_collection
 
-# Resolve the GCP project: prefer the value in .env (via config), fall
-# back to ADC's default project, then write back into os.environ so any
-# code that reads GOOGLE_CLOUD_PROJECT directly sees the same value.
-_, _default_project = google.auth.default()
-_project_id = config.GOOGLE_CLOUD_PROJECT or _default_project
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", _project_id)
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", config.GOOGLE_CLOUD_LOCATION)
-vertexai.init(project=_project_id, location=config.GOOGLE_CLOUD_LOCATION)
-
-
 _COLLECTION_PATH_RE = re.compile(
     r"^projects/[^/\s]+/locations/[^/\s]+/collections/[^/\s]+$"
 )
+
+# Cache for lazy Vertex init. Populated on first tool call, not at import,
+# so \`from scripts.agent import root_agent\` works in CI where ADC is not
+# configured (e.g. the runnability test).
+_resolved_project_id: str | None = None
+
+
+def _resolve_project_id() -> str:
+    """Resolve the effective GCP project id and init Vertex AI on first call.
+
+    Prefers the value in .env (via config), falls back to ADC's default
+    project, then writes back into os.environ so any code that reads
+    GOOGLE_CLOUD_PROJECT directly sees the same value. Idempotent —
+    subsequent calls return the cached result.
+    """
+    global _resolved_project_id
+    if _resolved_project_id is not None:
+        return _resolved_project_id
+    project_id: str | None = config.GOOGLE_CLOUD_PROJECT or None
+    if not project_id:
+        _, adc_default = google.auth.default()
+        project_id = adc_default
+    if not project_id:
+        raise RuntimeError(
+            "GOOGLE_CLOUD_PROJECT is not set and ADC has no default project. "
+            "Copy .env.example to .env and set GOOGLE_CLOUD_PROJECT, or run "
+            "`gcloud auth application-default set-quota-project <PROJECT>`."
+        )
+    os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
+    os.environ.setdefault("GOOGLE_CLOUD_LOCATION", config.GOOGLE_CLOUD_LOCATION)
+    vertexai.init(project=project_id, location=config.GOOGLE_CLOUD_LOCATION)
+    _resolved_project_id = project_id
+    return project_id
 
 
 def _get_vector_search_collection() -> str:
@@ -63,8 +86,9 @@ def _get_vector_search_collection() -> str:
     """
     raw = config.VECTOR_SEARCH_COLLECTION
     if not raw:
+        project_id = _resolve_project_id()
         return (
-            f"projects/{_project_id}/locations/{config.VECTOR_SEARCH_LOCATION}"
+            f"projects/{project_id}/locations/{config.VECTOR_SEARCH_LOCATION}"
             "/collections/retail-skill-products-collection"
         )
     # Strip whitespace -- multi-line shell pastes can embed a newline mid-path,

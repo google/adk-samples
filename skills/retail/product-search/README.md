@@ -46,9 +46,15 @@ Use the retail-product-search skill to set up a product search agent on Google C
 ```
 
 The agent walks Q-MODE, runs `scripts/bootstrap.sh` to create the venv, then
-`scripts/setup.py` to validate the catalog, ingest to BigQuery, create the
-Vector Search collection, and launch the ADK web UI at
-[http://localhost:8765](http://localhost:8765).
+`scripts/setup.py` to validate the catalog, ingest to BigQuery, and create
+the Vector Search collection. Once setup finishes, the agent (or you, at a
+terminal) launches the ADK web UI as a separate step:
+
+```bash
+.venv/bin/adk web "$SKILL_DIR/scripts" --port 8765
+```
+
+Then open [http://localhost:8765](http://localhost:8765).
 
 ### Which mode?
 
@@ -95,7 +101,7 @@ collection.
 | Error | Fix |
 |---|---|
 | `MethodNotImplemented: 501` from Vector Search | `VECTOR_SEARCH_COLLECTION` has a newline. Re-export on one line |
-| `ModuleNotFoundError: google.adk` | `bash -c "pip install -e '${SKILL_DIR}[adk]'"` (the `bash -c` matters in zsh) |
+| `ModuleNotFoundError: google.adk` | `pip install -e "$SKILL_DIR"` — google-adk is an unconditional dependency, no `[adk]` extra needed |
 | `Package requires Python: 3.9.X` | Recreate venv with `python3.12 -m venv .venv` |
 | `BILLING_DISABLED` / `PERMISSION_DENIED` | GCP project setup — see [references/troubleshooting.md](references/troubleshooting.md) |
 

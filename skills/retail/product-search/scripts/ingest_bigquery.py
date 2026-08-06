@@ -63,7 +63,6 @@ logger = logging.getLogger(__name__)
 # Extended: + rating, stock, manufacturer
 # Full: + variants, tags, specifications, reviews
 REQUIRED_FIELDS = ["product_id", "name", "price", "description"]
-OPTIONAL_FIELDS = ["category", "brand", "image_url", "rating", "stock"]
 
 SCHEMA = [
     bigquery.SchemaField("product_id", "STRING", mode="REQUIRED"),
@@ -134,8 +133,11 @@ def convert_types(product: dict[str, Any]) -> dict[str, Any]:
     if product.get("rating"):
         converted["rating"] = float(product["rating"])
 
-    if product.get("stock"):
-        converted["stock"] = int(product["stock"])
+    # `stock: 0` is a legit value (out-of-stock product); only skip when
+    # the field is missing or an empty string from CSV.
+    stock = product.get("stock")
+    if stock is not None and stock != "":
+        converted["stock"] = int(stock)
 
     for field in ["category", "brand", "image_url"]:
         if field in product:

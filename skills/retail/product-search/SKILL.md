@@ -50,8 +50,7 @@ The skill has two locations:
 - **Workspace** — the agent's cwd; design-spec.md, .venv, and per-run state live here
 
 By the end of this section the workspace must have `.venv/` (with the skill
-installed editable + `[adk]` extras), `design-spec.md`, and `SKILL_DIR`
-exported in the shell.
+installed editable), `design-spec.md`, and `SKILL_DIR` exported in the shell.
 
 Run this as ONE shell command — splitting it across tool calls loses state:
 
@@ -233,7 +232,7 @@ Most-common failures inline; full table in
 | `setup.py` exits with `'NoneType' object has no attribute 'get'` | `design-spec.md` was rewritten as plain Markdown instead of mutating the YAML-frontmatter template bootstrap copied. Wait for bootstrap to finish, then **edit** (not rewrite) `./design-spec.md` — only change the field values inside the existing `---...---` frontmatter |
 | `adk web` starts but `/list-apps` returns `[]` / browser shows "No agents found" | Bare `adk` resolved to a global Python that lacks the editable install. Kill it and restart with `.venv/bin/adk web "$SKILL_DIR/scripts" --port 8765` |
 | `MethodNotImplemented: 501` from Vector Search | `VECTOR_SEARCH_COLLECTION` has a newline. Re-export on one line |
-| `ModuleNotFoundError: google.adk` | `bash -c "pip install -e '${SKILL_DIR}[adk]'"` (the `bash -c` matters in zsh) |
+| `ModuleNotFoundError: google.adk` | `pip install -e "$SKILL_DIR"` — google-adk is an unconditional dependency, no `[adk]` extra needed |
 | `Package requires Python: 3.9.X` | venv used system Python 3.9. Recreate with `python3.12 -m venv .venv` |
 | `BILLING_DISABLED` / `PERMISSION_DENIED` / `API has not been used` | GCP project setup — see troubleshooting.md |
 
