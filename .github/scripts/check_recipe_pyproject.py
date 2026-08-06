@@ -3,8 +3,14 @@ Validates a recipe's pyproject.toml against the repo's metadata rules.
 
 Rules enforced (see .github/workflows/python-validate-recipe.yml):
 
-  - project-name-matches-folder: [project].name must equal the recipe
-    folder basename.
+  - project-name-matches-folder: [project].name must equal the recipe's
+    expected name, which depends on the root the recipe lives under:
+      * core/ and contrib/ — the folder basename (e.g. core/python/
+        deep-search -> "deep-search").
+      * skills/ — "<vertical>-<solution>", because skills/ interposes a
+        mandatory vertical namespace (skills/<vertical>/<solution>) and the
+        basename alone is not unique across verticals. See
+        expected_project_name() for the full rationale.
   - python-version-floor: [project].requires-python must ACCEPT Python
     3.11 exactly — it must neither permit anything below (loose floor) nor
     exclude 3.11 by requiring higher (e.g. `>=3.12`). CI pins Python 3.11
@@ -31,13 +37,15 @@ mirror it there (and vice versa).
 
 Usage: python check_recipe_pyproject.py <recipe-dir>
 
-Output format (one record per line, for the shell caller to parse):
-  PASS::<path>::<message>
-  FAIL::<path>::<message>
+Exit codes:
+  0  every rule passed
+  1  contributor-fixable problems found; every one has been reported with
+     a fix, both as a human block and as a ::error annotation
+  2  CI fault — the checker crashed, or its own environment is missing a
+     dependency it needs. Never blamed on the contributor's files.
 
-Exits 0 always. The workflow decides pass/fail from the emitted records so that
-a missing pyproject.toml (which is caught by a separate required-files check)
-does not cause a redundant error here.
+A missing pyproject.toml is not this script's failure to report (a separate
+required-files check owns it), so that case exits 0 with a note.
 """
 
 import sys
@@ -46,6 +54,19 @@ from pathlib import Path
 import tomllib
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import Version
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from ci_message import (
+    EXIT_OK,
+    Diagnostic,
+    Doc,
+    guard,
+    infra_fault,
+    report,
+    report_infra_fault,
+)
+
+CHECKER = "check_recipe_pyproject.py"
 
 MIN_PYTHON = (3, 11)
 MIN_PYTHON_STR = f"{MIN_PYTHON[0]}.{MIN_PYTHON[1]}"
@@ -81,40 +102,155 @@ PYPI_URLS = frozenset(
     }
 )
 
+# Recipe roots whose layout interposes a mandatory NAMESPACE between the root
+# and the solution folder: <root>/<namespace>/<solution>.
+#
+# Only `skills/` does this today. Its middle segment is a VERTICAL, not a
+# language (see AGENTS.md and the `recipe_size_limits` comment in
+# .github/policy.yml), and tools/validate_placement.py rejects a solution
+# dropped directly under skills/.
+#
+# core/ and contrib/ look superficially similar (core/<language>/<recipe>)
+# but are NOT listed here: their middle segment is a language, and their
+# basenames are already unique repo-wide.
+#
+# Maps the root name to what its namespace segment is CALLED, purely so error
+# messages can say "<vertical>-<solution>" rather than mechanically
+# depluralising "skills" into something meaningless.
+# NOTE: mirrored in .agents/skills/align-recipe-pyproject/scripts/
+# align_pyproject.py — keep in sync.
+NAMESPACED_ROOTS = {"skills": "vertical"}
 
-def emit(kind: str, file: Path, msg: str) -> None:
-    """Print one PASS/FAIL record. Newlines are collapsed so the shell can split
-    stdout line-by-line without worrying about multi-line messages."""
-    msg = msg.replace("\n", " ")
-    print(f"{kind}::{file}::{msg}")
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-def check_name(project: dict, pyproject_path: Path, folder: str) -> None:
-    """B2-name: [project].name must equal the recipe folder basename."""
-    name = project.get("name")
-    if not name:
-        emit(
-            "FAIL",
-            pyproject_path,
-            f"[project].name is missing; it must equal the recipe folder "
-            f"name '{folder}'.",
-        )
-    elif name != folder:
-        emit(
-            "FAIL",
-            pyproject_path,
-            f"[project].name = '{name}' does not match the recipe folder "
-            f"name '{folder}'.",
+def _repo_relative_parts(
+    recipe_dir: Path, repo_root: Path | None = None
+) -> tuple[str, ...]:
+    """Path segments of `recipe_dir` relative to the repository root.
+
+    An absolute path is made relative to `repo_root` so that the position of
+    a segment is meaningful. A relative path is taken as already
+    repo-relative, which is what CI passes. A path outside the repository
+    yields its own segments, which will not match the three-segment shape the
+    caller looks for — the safe outcome.
+    """
+    root = REPO_ROOT if repo_root is None else repo_root
+    if recipe_dir.is_absolute():
+        try:
+            return recipe_dir.resolve().relative_to(root.resolve()).parts
+        except ValueError:
+            return recipe_dir.parts
+    return recipe_dir.parts
+
+
+def expected_project_name(
+    recipe_dir: Path, repo_root: Path | None = None
+) -> str:
+    """Return the [project].name this recipe directory is required to declare.
+
+    For most recipes this is just the folder basename. For a recipe under a
+    namespaced root it is "<namespace>-<solution>", for two reasons:
+
+    1. The basename is not unique. `skills/retail/product-search` and a future
+       `skills/grocery/product-search` would both be forced to declare
+       [project].name = "product-search" — two distribution packages with the
+       same name. The vertical exists precisely to namespace solutions, so the
+       project name has to carry it.
+    2. It matches the skill's own identity. A vertical skill's SKILL.md
+       frontmatter `name:`, its slash command, and its installed directory all
+       use "<vertical>-<solution>"; the Python distribution name should not be
+       the odd one out.
+
+    The namespaced form requires the root to sit at the START of the
+    repo-relative path with exactly two segments after it — a position test,
+    not a name test. Matching on the third-from-last segment alone would fire
+    on any path that merely happens to contain a directory called "skills":
+    a hand-run `/home/me/skills/core/rag-vector-search` would yield
+    "core-rag-vector-search". CI only ever passes repo-relative paths, but
+    the auto-fixer mirror of this rule WRITES the value, so a human running
+    it by hand on an absolute path must not get a corrupted name.
+
+    Paths outside `repo_root` (and relative paths that are not exactly
+    <root>/<namespace>/<solution>) fall back to the basename.
+    """
+    parts = _repo_relative_parts(recipe_dir, repo_root)
+    if len(parts) == 3 and parts[0] in NAMESPACED_ROOTS:
+        return f"{parts[1]}-{parts[2]}"
+    return recipe_dir.name
+
+
+class CheckerFault(Exception):
+    """A failure in the checker's own environment, not in the recipe.
+
+    Raised instead of reported so it can never be rendered as a Diagnostic
+    against a contributor's file.
+    """
+
+
+def _describe(value: object) -> str:
+    """`list ['a', 'b']` — the type first, because the type is the bug."""
+    text = repr(value)
+    if len(text) > 60:
+        text = text[:57] + "..."
+    return f"{type(value).__name__} {text}"
+
+
+def check_name(
+    project: dict, pyproject_path: Path, recipe_dir: Path
+) -> list[Diagnostic]:
+    """B2-name: [project].name must equal expected_project_name(recipe_dir)."""
+    expected = expected_project_name(recipe_dir)
+    # Only spell out the namespace derivation when the answer is not simply
+    # the basename, so the common core/contrib message stays terse.
+    if expected != recipe_dir.name:
+        root = recipe_dir.parts[-3]
+        term = NAMESPACED_ROOTS[root]
+        derivation = (
+            f"Recipes under {root}/ are named '<{term}>-<solution>' — the "
+            f"{term} '{recipe_dir.parts[-2]}' joined to the folder name "
+            f"'{recipe_dir.name}' — because a solution basename is not "
+            f"unique across {term}s."
         )
     else:
-        emit(
-            "PASS",
-            pyproject_path,
-            f"[project].name matches folder name: '{name}'.",
+        derivation = (
+            f"A recipe's distribution name must equal its folder name, "
+            f"'{recipe_dir.name}'."
         )
 
+    how = f'Set the name in [project]:\n  name = "{expected}"'
+    name = project.get("name")
+    if not name:
+        return [
+            Diagnostic(
+                check="project-name",
+                what=f"[project].name is missing from {pyproject_path}.",
+                why=f"It must be '{expected}'. {derivation}",
+                how=how,
+                doc=Doc.PROJECT_NAME,
+                file=str(pyproject_path),
+            )
+        ]
+    if name != expected:
+        return [
+            Diagnostic(
+                check="project-name",
+                what=(
+                    f"[project].name = '{name}', but this recipe must "
+                    f"declare '{expected}'."
+                ),
+                why=derivation,
+                how=how,
+                doc=Doc.PROJECT_NAME,
+                file=str(pyproject_path),
+            )
+        ]
+    return []
 
-def check_requires_python(project: dict, pyproject_path: Path) -> None:
+
+def check_requires_python(
+    project: dict, pyproject_path: Path
+) -> list[Diagnostic]:
     """B1: [project].requires-python must ACCEPT Python == MIN_PYTHON.
 
     Interpretation B: every recipe must be lockable/runnable under the
@@ -137,27 +273,48 @@ def check_requires_python(project: dict, pyproject_path: Path) -> None:
     implementation) so every legal operator (>=, >, ~=, ==, !=, <, <=, and
     combinations) is handled correctly.
     """
+    floor = f'  requires-python = ">={MIN_PYTHON_STR}"'
     requires_python = project.get("requires-python")
     if not requires_python:
-        emit(
-            "FAIL",
-            pyproject_path,
-            f"[project].requires-python is missing; it must declare a "
-            f"specifier that accepts Python {MIN_PYTHON_STR} and rejects "
-            "anything below (per AGENTS.md).",
-        )
-        return
+        return [
+            Diagnostic(
+                check="requires-python",
+                what=(
+                    f"[project].requires-python is missing from "
+                    f"{pyproject_path}."
+                ),
+                why=(
+                    f"AGENTS.md sets {MIN_PYTHON_STR} as the minimum for "
+                    f"every recipe, and CI pins {MIN_PYTHON_STR} when it "
+                    f"locks and runs this one. Without a specifier, uv is "
+                    f"free to resolve against any interpreter."
+                ),
+                how=f"Add to [project]:\n{floor}",
+                doc=Doc.REQUIRES_PYTHON,
+                file=str(pyproject_path),
+            )
+        ]
 
     try:
-        spec = SpecifierSet(requires_python)
-    except InvalidSpecifier as e:
-        emit(
-            "FAIL",
-            pyproject_path,
-            f"[project].requires-python = '{requires_python}' is not a valid "
-            f"PEP 440 version specifier ({e}).",
-        )
-        return
+        spec = SpecifierSet(str(requires_python))
+    except (InvalidSpecifier, TypeError) as e:
+        return [
+            Diagnostic(
+                check="requires-python",
+                what=(
+                    f"[project].requires-python = '{requires_python}' is not "
+                    f"a valid PEP 440 version specifier ({e})."
+                ),
+                why=(
+                    "uv and pip both parse this field as a PEP 440 "
+                    "specifier set; a value they cannot parse makes the "
+                    "recipe uninstallable."
+                ),
+                how=f"Use a specifier such as:\n{floor}",
+                doc=Doc.REQUIRES_PYTHON,
+                file=str(pyproject_path),
+            )
+        ]
 
     permits_older = [v for v in BELOW_MIN if v in spec]
     excludes_min = Version(MIN_PYTHON_STR) not in spec
@@ -166,208 +323,461 @@ def check_requires_python(project: dict, pyproject_path: Path) -> None:
         # Only surface a real witness version, never a synthetic `.9999`
         # probe (which is the only match for a micro floor like `>=3.10.5`).
         real = [v for v in permits_older if v.micro != _PROBE_MICRO]
-        example = f" (e.g. {real[0]})" if real else ""
-        emit(
-            "FAIL",
-            pyproject_path,
-            f"[project].requires-python = '{requires_python}' permits Python "
-            f"versions below {MIN_PYTHON_STR}{example}; lower bound must be "
-            f">= {MIN_PYTHON_STR} (per AGENTS.md).",
-        )
-        return
+        example = f" (for example {real[0]})" if real else ""
+        return [
+            Diagnostic(
+                check="requires-python",
+                what=(
+                    f"[project].requires-python = '{requires_python}' "
+                    f"accepts Python below {MIN_PYTHON_STR}{example}."
+                ),
+                why=(
+                    f"AGENTS.md sets {MIN_PYTHON_STR} as the minimum for "
+                    f"every recipe in this repo."
+                ),
+                how=(
+                    f"Raise the lower bound to {MIN_PYTHON_STR}, keeping any "
+                    f"upper bound you already have:\n{floor}"
+                ),
+                doc=Doc.REQUIRES_PYTHON,
+                file=str(pyproject_path),
+            )
+        ]
 
     if excludes_min:
-        emit(
-            "FAIL",
-            pyproject_path,
-            f"[project].requires-python = '{requires_python}' excludes Python "
-            f"{MIN_PYTHON_STR}; the specifier must accept {MIN_PYTHON_STR} so "
-            "CI (which pins Python 3.11) can lock and run this recipe. Lower "
-            f"the floor to '>={MIN_PYTHON_STR}' (preserving any upper bound), "
-            "or if the recipe genuinely needs newer features, raise the "
-            "issue with the repo maintainers to update CI's pinned interpreter.",
-        )
-        return
+        return [
+            Diagnostic(
+                check="requires-python",
+                what=(
+                    f"[project].requires-python = '{requires_python}' "
+                    f"excludes Python {MIN_PYTHON_STR}."
+                ),
+                why=(
+                    f"CI pins Python {MIN_PYTHON_STR}. A specifier that "
+                    f"rejects it makes uv fail to resolve an interpreter, "
+                    f"which surfaces later as a misleading 'lockfile is out "
+                    f"of date' error."
+                ),
+                how=(
+                    f"Lower the floor, preserving any upper bound:\n{floor}\n"
+                    f"If the recipe genuinely needs newer language features, "
+                    f"ask the repo maintainers to raise CI's pinned "
+                    f"interpreter instead of raising it here."
+                ),
+                doc=Doc.REQUIRES_PYTHON,
+                file=str(pyproject_path),
+            )
+        ]
 
-    emit(
-        "PASS",
-        pyproject_path,
-        f"[project].requires-python admits Python {MIN_PYTHON_STR} "
-        f"('{requires_python}').",
-    )
+    return []
 
 
 def check_description(
     project: dict, pyproject_path: Path, manifest_path: Path
-) -> None:
+) -> list[Diagnostic]:
     """B2-desc: if [project].description is set, must equal manifest.description.
 
     The field is optional; skipped entirely when absent.
     """
     description = project.get("description")
     if description is None:
-        return
+        return []
+    py_desc = str(description).strip()
 
     if not manifest_path.is_file():
-        emit(
-            "FAIL",
-            pyproject_path,
-            "[project].description is set but manifest.yaml is missing; "
-            "cannot verify consistency.",
-        )
-        return
+        return [
+            Diagnostic(
+                check="description-matches-manifest",
+                what=(
+                    f"[project].description is set in {pyproject_path}, but "
+                    f"there is no {manifest_path} to check it against."
+                ),
+                why=(
+                    "Every recipe ships a manifest.yaml, and its "
+                    "`description` is the single source of truth that "
+                    "[project].description has to match. With no manifest "
+                    "the rule cannot be evaluated, and the recipe is "
+                    "missing a required file besides."
+                ),
+                how=(
+                    f"Create {manifest_path} carrying the same description:\n"
+                    f"  description: {py_desc}\n"
+                    f"The generate-manifest AI skill writes the whole file "
+                    f"from the recipe. If the recipe genuinely has no "
+                    f"manifest, delete [project].description instead — the "
+                    f"field is optional."
+                ),
+                doc=Doc.MANIFEST,
+                file=str(pyproject_path),
+            )
+        ]
 
     # Imported lazily so a recipe with no [project].description does not
     # require pyyaml at all.
     try:
         import yaml
-    except ImportError:
-        emit(
-            "FAIL",
-            manifest_path,
-            "pyyaml is required to verify [project].description against "
-            "manifest.description but is not installed. Ensure the workflow "
-            "invokes this script with pyyaml available (e.g. "
-            "`uv run --with pyyaml`).",
-        )
-        return
+    except ImportError as exc:
+        raise CheckerFault(
+            f"pyyaml is not importable ({exc}), so [project].description "
+            f"cannot be compared with manifest.description. The workflow "
+            f"must invoke this script with pyyaml available: "
+            f"`uv run --no-project --with pyyaml --with packaging`."
+        ) from exc
 
     try:
-        with open(manifest_path) as f:
+        with open(manifest_path, encoding="utf-8") as f:
             manifest = yaml.safe_load(f) or {}
-    except yaml.YAMLError as e:
-        emit("FAIL", manifest_path, f"Failed to parse manifest.yaml: {e}")
-        return
+    except (yaml.YAMLError, UnicodeDecodeError) as e:
+        return [
+            Diagnostic(
+                check="description-matches-manifest",
+                what=f"{manifest_path} could not be read as YAML: {e}",
+                why=(
+                    "manifest.yaml is parsed by this check and by "
+                    "tools/validate_manifest.py; a file neither can read "
+                    "blocks every manifest-derived rule."
+                ),
+                how=(
+                    "Fix the YAML (indentation and unquoted colons are the "
+                    "usual culprits), or regenerate the file with the "
+                    "generate-manifest AI skill."
+                ),
+                doc=Doc.MANIFEST,
+                file=str(manifest_path),
+            )
+        ]
 
-    py_desc = description.strip()
-    mf_desc = (manifest.get("description") or "").strip()
-    if py_desc != mf_desc:
-        emit(
-            "FAIL",
-            pyproject_path,
-            f"[project].description does not match manifest.description. "
-            f"pyproject: {py_desc!r} | manifest: {mf_desc!r}. Update "
-            f"whichever is out of date so both match (or drop "
-            f"[project].description from pyproject.toml, since it is "
-            f"optional).",
+    if not isinstance(manifest, dict):
+        return [
+            Diagnostic(
+                check="description-matches-manifest",
+                what=(
+                    f"{manifest_path} is valid YAML but its top level is a "
+                    f"{_describe(manifest)}, not a mapping of fields."
+                ),
+                why=(
+                    "manifest.yaml must be a mapping with top-level keys "
+                    "(name, description, language, …). A document that "
+                    "starts with `- ` is a list, so it has no `description` "
+                    "field for [project].description to match."
+                ),
+                how=(
+                    "Rewrite manifest.yaml as `key: value` pairs, for "
+                    "example:\n"
+                    f"  description: {py_desc}\n"
+                    "The generate-manifest AI skill writes a correctly "
+                    "shaped file from the recipe."
+                ),
+                doc=Doc.MANIFEST,
+                file=str(manifest_path),
+            )
+        ]
+
+    mf_desc = str(manifest.get("description") or "").strip()
+    if py_desc == mf_desc:
+        return []
+    return [
+        Diagnostic(
+            check="description-matches-manifest",
+            what=(
+                f"[project].description does not match "
+                f"manifest.description.\n"
+                f"  pyproject.toml: {py_desc!r}\n"
+                f"  manifest.yaml:  {mf_desc!r}"
+            ),
+            why=(
+                "The two files describe the same recipe in two places; when "
+                "they disagree, the description shown in the catalogue "
+                "depends on which file the reader happens to open."
+            ),
+            how=(
+                "Update whichever is out of date so both read the same, or "
+                "delete [project].description from pyproject.toml — it is "
+                "optional, and manifest.yaml is the source of truth."
+            ),
+            doc=Doc.PROJECT_DESCRIPTION,
+            file=str(pyproject_path),
         )
-    else:
-        emit(
-            "PASS",
-            pyproject_path,
-            "[project].description matches manifest.description.",
-        )
+    ]
 
 
-def check_default_pypi_index(pyproject: dict, pyproject_path: Path) -> None:
+_INDEX_BLOCK = (
+    '  [[tool.uv.index]]\n  url = "https://pypi.org/simple/"\n  default = true'
+)
+
+# Contributor-facing wording deliberately omits the Google-internal reason.
+# The real one: on a corp workstation the system-wide /etc/uv/uv.toml
+# redirects to the Airlock proxy, which the developer would then have to
+# authenticate to. Per uv's config-file merge rules project-level indexes are
+# concatenated ahead of system-level ones, so declaring public PyPI here as
+# default puts it first in the merged list. External contributors have no
+# Airlock, so naming it in the error only confuses them.
+_INDEX_WHY = (
+    "Every recipe must pin public PyPI as its default index so `uv sync` "
+    "resolves the same way on every machine. Without it, a machine-wide uv "
+    "configuration can silently redirect installs to a different index that "
+    "the next person to run the recipe cannot reach."
+)
+
+
+def check_default_pypi_index(
+    pyproject: dict, pyproject_path: Path
+) -> list[Diagnostic]:
     """default-pypi-index: [[tool.uv.index]] with default=true → public PyPI.
 
-    Required so `uv sync` works on Google corp workstations without the
-    developer having to authenticate to the corp Airlock proxy that the
-    system-wide /etc/uv/uv.toml would otherwise redirect to. Per uv's
-    config-file merge rules, project-level indexes are concatenated ahead
-    of system-level ones — declaring public PyPI here as default puts it
-    first in the merged index list.
-
     Fail modes:
-      - No [[tool.uv.index]] at all: FAIL.
-      - Entries exist but none has default=true: FAIL.
-      - A default entry exists but its url is not public PyPI: FAIL (the
-        recipe author may have a legitimate reason but must justify it;
-        default here is strictness so CI protects the repo standard).
+      - No [[tool.uv.index]] at all.
+      - `index` written in a shape uv does not accept (single-bracket table,
+        or a bare list of URL strings).
+      - Entries exist but none has default=true.
+      - A default entry exists but its url is not public PyPI (the recipe
+        author may have a legitimate reason but must justify it; the default
+        here is strictness so CI protects the repo standard).
     """
-    indexes = pyproject.get("tool", {}).get("uv", {}).get("index") or []
+    tool = pyproject.get("tool")
+    uv = tool.get("uv") if isinstance(tool, dict) else None
+    indexes = uv.get("index") if isinstance(uv, dict) else None
     if not indexes:
-        emit(
-            "FAIL",
-            pyproject_path,
-            "Missing required `[[tool.uv.index]]` block. Every recipe "
-            "must declare public PyPI as its default index so `uv sync` "
-            "works without corp Airlock auth. Add:\n"
-            "  [[tool.uv.index]]\n"
-            '  url = "https://pypi.org/simple/"\n'
-            "  default = true",
-        )
-        return
+        return [
+            Diagnostic(
+                check="default-pypi-index",
+                what=(f"{pyproject_path} has no `[[tool.uv.index]]` block."),
+                why=_INDEX_WHY,
+                how=f"Add to pyproject.toml:\n{_INDEX_BLOCK}",
+                doc=Doc.PYPI_INDEX,
+                file=str(pyproject_path),
+            )
+        ]
 
     # `[tool.uv.index]` (single brackets) parses as a dict; `[[tool.uv.index]]`
-    # (double brackets, array-of-tables) parses as a list of dicts. Only the
-    # latter is what uv accepts. Guard against the single-bracket mistake so
-    # we emit a clean FAIL instead of crashing with AttributeError when we
-    # iterate the dict and try `.get()` on a key-string below.
+    # (double brackets, array of tables) parses as a list of dicts. Only the
+    # latter is what uv accepts.
     if not isinstance(indexes, list):
-        emit(
-            "FAIL",
-            pyproject_path,
-            "`[tool.uv.index]` is declared as a single table but uv "
-            "requires an array of tables. Use double brackets:\n"
-            "  [[tool.uv.index]]   ← not [tool.uv.index]\n"
-            '  url = "https://pypi.org/simple/"\n'
-            "  default = true",
-        )
-        return
+        return [
+            Diagnostic(
+                check="default-pypi-index",
+                what=(
+                    f"`tool.uv.index` is a {_describe(indexes)}, but uv "
+                    f"requires an array of tables."
+                ),
+                why=(
+                    "Single brackets declare one table; uv reads "
+                    "`tool.uv.index` as a list of index definitions. "
+                    f"{_INDEX_WHY}"
+                ),
+                how=(
+                    "Use double brackets — `[[tool.uv.index]]`, not "
+                    f"`[tool.uv.index]`:\n{_INDEX_BLOCK}"
+                ),
+                doc=Doc.PYPI_INDEX,
+                file=str(pyproject_path),
+            )
+        ]
+
+    # An inline `index = ["https://…"]` is a list, so it survives the check
+    # above and then has no `.get()`. Each element must be a table.
+    non_tables = [e for e in indexes if not isinstance(e, dict)]
+    if non_tables:
+        return [
+            Diagnostic(
+                check="default-pypi-index",
+                what=(
+                    f"`tool.uv.index` contains an entry that is a "
+                    f"{_describe(non_tables[0])}, not a table."
+                ),
+                why=(
+                    '`index = ["https://pypi.org/simple/"]` is a list of '
+                    "strings. uv needs an array of TABLES, because an index "
+                    "carries more than a url — `default`, and optionally "
+                    f"`name` and `explicit`. {_INDEX_WHY}"
+                ),
+                how=(
+                    "Replace the list of strings with an array of tables:\n"
+                    f"{_INDEX_BLOCK}"
+                ),
+                doc=Doc.PYPI_INDEX,
+                file=str(pyproject_path),
+            )
+        ]
 
     for entry in indexes:
         if entry.get("default") is True:
             url = entry.get("url")
             if url and str(url).lower() in PYPI_URLS:
-                emit(
-                    "PASS",
-                    pyproject_path,
-                    f"[[tool.uv.index]] with default=true points at "
-                    f"public PyPI ('{url}').",
+                return []
+            return [
+                Diagnostic(
+                    check="default-pypi-index",
+                    what=(
+                        f"The `[[tool.uv.index]]` entry with default=true "
+                        f"has url='{url}', which is not public PyPI."
+                    ),
+                    why=_INDEX_WHY,
+                    how=(
+                        "Point the default entry at public PyPI (both the "
+                        "trailing-slash and non-trailing-slash forms are "
+                        f"accepted):\n{_INDEX_BLOCK}\n"
+                        "A private index may be added as an ADDITIONAL "
+                        "non-default entry."
+                    ),
+                    doc=Doc.PYPI_INDEX,
+                    file=str(pyproject_path),
                 )
-                return
-            emit(
-                "FAIL",
-                pyproject_path,
-                f"[[tool.uv.index]] has default=true but url='{url}' is "
-                f"not public PyPI. Change it to "
-                f"'https://pypi.org/simple/' (both trailing-slash and "
-                f"non-trailing-slash forms are accepted).",
-            )
-            return
+            ]
 
-    emit(
-        "FAIL",
-        pyproject_path,
-        "One or more `[[tool.uv.index]]` entries exist but none is marked "
-        "`default = true`. Mark the public-PyPI entry as default, or add "
-        "one:\n"
-        "  [[tool.uv.index]]\n"
-        '  url = "https://pypi.org/simple/"\n'
-        "  default = true",
-    )
+    return [
+        Diagnostic(
+            check="default-pypi-index",
+            what=(
+                f"{pyproject_path} declares {len(indexes)} "
+                f"`[[tool.uv.index]]` entr"
+                f"{'y' if len(indexes) == 1 else 'ies'}, but none is marked "
+                f"`default = true`."
+            ),
+            why=_INDEX_WHY,
+            how=(
+                "Mark the public-PyPI entry as the default, or add one:\n"
+                f"{_INDEX_BLOCK}"
+            ),
+            doc=Doc.PYPI_INDEX,
+            file=str(pyproject_path),
+        )
+    ]
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} <recipe-dir>", file=sys.stderr)
-        return 2
+def _project_table(
+    pyproject: dict, pyproject_path: Path, recipe_dir: Path
+) -> tuple[dict, list[Diagnostic]]:
+    """The `[project]` table, or a shape diagnostic if it is not a table."""
+    project = pyproject.get("project")
+    if project is None:
+        return {}, []
+    if isinstance(project, dict):
+        return project, []
+    return {}, [
+        Diagnostic(
+            check="project-table",
+            what=(
+                f"`project` in {pyproject_path} is a {_describe(project)}, "
+                f"not a table."
+            ),
+            why=(
+                "`[[project]]` (double brackets) declares an array of "
+                "tables. PEP 621 requires a single `[project]` table, and "
+                "every metadata rule reads its fields from there — so as "
+                "written, name, requires-python and description are all "
+                "invisible to uv and to this check."
+            ),
+            how=(
+                "Use single brackets:\n"
+                "  [project]   ← not [[project]]\n"
+                f'  name = "{expected_project_name(recipe_dir)}"\n'
+                f'  requires-python = ">={MIN_PYTHON_STR}"'
+            ),
+            doc=Doc.PROJECT_NAME,
+            file=str(pyproject_path),
+        )
+    ]
 
-    recipe_dir = Path(sys.argv[1])
+
+def _run(recipe_dir: Path) -> int:
     pyproject_path = recipe_dir / "pyproject.toml"
     manifest_path = recipe_dir / "manifest.yaml"
 
     if not pyproject_path.is_file():
-        # A separate required-files check in the workflow reports this; stay
-        # silent here so we don't double up on the same failure.
-        return 0
+        # A separate required-files check in the workflow reports this; not
+        # repeating it here keeps one missing file from producing two errors.
+        print(
+            f"[SKIP] {pyproject_path} does not exist — the required-files "
+            f"check reports that separately."
+        )
+        return EXIT_OK
 
     try:
         with open(pyproject_path, "rb") as f:
             pyproject = tomllib.load(f)
     except tomllib.TOMLDecodeError as e:
-        emit("FAIL", pyproject_path, f"Failed to parse pyproject.toml: {e}")
-        return 0
+        return _report(
+            [
+                Diagnostic(
+                    check="pyproject-parse",
+                    what=f"{pyproject_path} is not valid TOML: {e}",
+                    why=(
+                        "uv, pip and this check all parse pyproject.toml "
+                        "before anything else; while it does not parse, no "
+                        "other rule about the recipe can even be evaluated."
+                    ),
+                    how=(
+                        "Fix the syntax at the position reported above. To "
+                        "see the same error locally:\n"
+                        "  python3 -c 'import tomllib,sys; "
+                        'tomllib.load(open(sys.argv[1],"rb"))\' '
+                        f"{pyproject_path}"
+                    ),
+                    doc=Doc.PROJECT_NAME,
+                    file=str(pyproject_path),
+                )
+            ],
+            recipe_dir,
+        )
 
-    project = pyproject.get("project") or {}
-    check_name(project, pyproject_path, recipe_dir.name)
-    check_requires_python(project, pyproject_path)
-    check_description(project, pyproject_path, manifest_path)
-    check_default_pypi_index(pyproject, pyproject_path)
-    return 0
+    project, diagnostics = _project_table(pyproject, pyproject_path, recipe_dir)
+    if not diagnostics:
+        diagnostics += check_name(project, pyproject_path, recipe_dir)
+        diagnostics += check_requires_python(project, pyproject_path)
+        diagnostics += check_description(project, pyproject_path, manifest_path)
+    diagnostics += check_default_pypi_index(pyproject, pyproject_path)
+    return _report(diagnostics, recipe_dir)
+
+
+def _report(diagnostics: list[Diagnostic], recipe_dir: Path) -> int:
+    return report(
+        diagnostics,
+        header=f"{recipe_dir}: pyproject.toml metadata",
+        passed_message=(
+            f"{recipe_dir}/pyproject.toml: name, requires-python, "
+            f"description and default index all satisfy the repo rules."
+        ),
+        next_step=(
+            "The align-recipe-pyproject AI skill applies all of these fixes "
+            "in place, preserving comments."
+        ),
+    )
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        return report_infra_fault(
+            infra_fault(
+                CHECKER,
+                f"invoked with {len(sys.argv) - 1} argument(s); expected "
+                f"exactly one recipe directory.",
+            )
+        )
+
+    recipe_dir = Path(sys.argv[1])
+    if not recipe_dir.is_dir():
+        return report_infra_fault(
+            infra_fault(
+                CHECKER,
+                f"{recipe_dir} is not a directory. The path came from the "
+                f"workflow's recipe discovery step, not from the "
+                f"contributor.",
+            )
+        )
+
+    try:
+        return _run(recipe_dir)
+    except CheckerFault as exc:
+        return report_infra_fault(infra_fault(CHECKER, str(exc)))
+    except Exception as exc:
+        return report_infra_fault(
+            infra_fault(CHECKER, f"{type(exc).__name__}: {exc}")
+        )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # guard(): a traceback escaping to the runner is reported by the
+    # workflow as the contributor's failure, which is exactly the confusion
+    # infra_fault exists to prevent.
+    sys.exit(guard(CHECKER, main))
