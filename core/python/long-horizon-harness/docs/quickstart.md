@@ -12,6 +12,7 @@ Engine, no Cloud SQL. Inference still calls Vertex (there is no local model).
 - **Prerequisites** — uv, google-agents-cli, the gcloud SDK, and Node (web UI only).
 - **GCP access (inference only)** — ADC login + the Vertex AI API.
 - **Run it** — `make dev-local` (backend + web) and the local-first `.env` defaults.
+- **Vertex sandbox** — the four one-time steps `make dev-sandbox` assumes you already did.
 - **Smallest embeddable harness** — three env vars and one import.
 - **Tests** — deterministic `pytest`, no GCP needed.
 - **Connect Google (optional OAuth)** — bring your own OAuth client to wire `gcloud`/`gws` into the sandbox.
@@ -19,7 +20,7 @@ Engine, no Cloud SQL. Inference still calls Vertex (there is no local model).
 ## 1. Prerequisites
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- [google-agents-cli](https://pypi.org/project/google-agents-cli/) — `uv tool install google-agents-cli`
+- [google-agents-cli](https://pypi.org/project/google-agents-cli/) — `uvx google-agents-cli setup`
 - [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (for Vertex inference)
 - Node.js 20.19+ or 22.12+ (Vite 8 requirement — only for the web UI)
 
@@ -50,8 +51,58 @@ The defaults in `.env.example` already select the local-first combo
 ignores the backend choice in it.
 
 **Trade-off:** no cross-session memory (sessions are in-memory, lost on restart)
-and no isolated sandbox (tools execute on your machine). Switch to the Vertex
-sandbox with `make dev-sandbox` (or `LHA_ENVIRONMENT_BACKEND=sandbox` in `.env`).
+and no isolated sandbox (tools execute on your machine). To get the isolated
+per-user sandbox, see the next section — `make dev-sandbox` alone is not enough.
+
+## 3b. Vertex sandbox instead of your host (optional)
+
+> ⚠️ **`make dev-sandbox` on its own does not give you an isolated sandbox.**
+> `SandboxProvider.build_environment` also needs `LHA_RUNTIME_IMAGE` and
+> `LHA_SANDBOX_CALLER_SA`, both blank in `.env.example`. Off Cloud Run, if
+> either is missing it logs a warning and **silently falls back to
+> `LocalEnvironment` — tools keep running on your machine.** Check the backend
+> log for `falling back to LocalEnvironment` before assuming you're isolated.
+> (Deployed, the same condition raises `SandboxConfigurationError` instead.)
+
+Four one-time steps:
+
+```bash
+# 1. APIs. Terraform enables these at `make deploy`, but you need them earlier
+#    to build the runtime image.
+gcloud services enable artifactregistry.googleapis.com cloudbuild.googleapis.com \
+  aiplatform.googleapis.com --project=$PROJECT_ID
+
+# 2. Artifact Registry repo. Nothing in terraform/ creates this one.
+gcloud artifacts repositories create lha-sandbox \
+  --repository-format=docker --location=us-central1 --project=$PROJECT_ID
+
+# 3. Build + push the sandbox runtime image (Cloud Build, never local docker).
+gcloud builds submit horizon/sandbox/runtime \
+  --tag=us-central1-docker.pkg.dev/$PROJECT_ID/lha-sandbox/runtime:v0.1.0 \
+  --project=$PROJECT_ID
+
+# 4. A caller SA whose JWT the sandbox LB checks, and permission to mint its
+#    tokens. `make deploy` creates one for Cloud Run; locally you make your own.
+gcloud iam service-accounts create lha-sandbox-caller --project=$PROJECT_ID
+gcloud iam service-accounts add-iam-policy-binding \
+  lha-sandbox-caller@$PROJECT_ID.iam.gserviceaccount.com \
+  --member="user:$(gcloud config get-value account)" \
+  --role=roles/iam.serviceAccountTokenCreator --project=$PROJECT_ID
+```
+
+Then set both in `.env` and start:
+
+```bash
+LHA_RUNTIME_IMAGE=us-central1-docker.pkg.dev/<project>/lha-sandbox/runtime:v0.1.0
+LHA_SANDBOX_CALLER_SA=lha-sandbox-caller@<project>.iam.gserviceaccount.com
+```
+
+```bash
+make dev-sandbox   # or LHA_ENVIRONMENT_BACKEND=sandbox in .env + `make dev`
+```
+
+Lifecycle details (reattach, snapshots, version floors):
+[`sandbox-lifecycle.md`](sandbox-lifecycle.md).
 
 ## 4. Smallest embeddable harness
 

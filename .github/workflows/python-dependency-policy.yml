@@ -317,6 +317,7 @@ jobs:
           set -euo pipefail
 
           FAILED=0
+          CI_FAULT=0
 
           while IFS= read -r lockfile; do
             # --no-project: skip project discovery so uv does NOT walk up, find
@@ -325,13 +326,55 @@ jobs:
             # project environment is needed. Using `uv run` (vs bare python3)
             # still gives us uv's managed Python rather than whatever happens to
             # be on the runner's PATH.
-            uv run --no-project python3 .github/scripts/check_lockfile_hashes.py "$lockfile" || FAILED=1
+            #
+            # Exit status carries whose fault it is: 1 = missing hashes the
+            # contributor must regenerate, 2 = the checker itself could not
+            # parse the lockfile. Previously ANY failure printed the
+            # "re-generate with uv lock" advice below, so a crash produced a
+            # confident diagnosis that happened to be wrong.
+            set +e
+            uv run --no-project python3 .github/scripts/check_lockfile_hashes.py "$lockfile"
+            hash_exit=$?
+            set -e
+            case "$hash_exit" in
+              0) ;;
+              1) FAILED=1 ;;
+              2) CI_FAULT=1 ;;
+              *)
+                echo "::error::check_lockfile_hashes.py exited with an undefined status ($hash_exit). This is a CI tooling bug, not a problem with your recipe."
+                CI_FAULT=1
+                ;;
+            esac
           done < "$LOCKFILES_FILE"
+
+          if [ "$CI_FAULT" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  CI TOOLING FAILURE — not your changes"
+            echo "========================================"
+            echo ""
+            echo "The hash checker could not read a lockfile, so we do not"
+            echo "know whether the hashes are present. Re-run the job; if it"
+            echo "fails again, open an issue with the detail above."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+            exit 1
+          fi
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
-            echo "All distributions must have sha256 hashes for supply chain integrity."
-            echo "Re-generate the lockfile with 'uv lock'."
+            echo "========================================"
+            echo "  ACTION REQUIRED: lockfile missing hashes"
+            echo "========================================"
+            echo ""
+            echo "Every distribution needs a sha256 hash for supply-chain"
+            echo "integrity. uv writes them by default, so an entry without"
+            echo "one usually means the lockfile was hand-edited or produced"
+            echo "by a different tool. Regenerate it:"
+            echo ""
+            echo "  uv lock --project <recipe-dir>"
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#missing-package-hash-in-uvlock"
             exit 1
           fi
 
@@ -349,6 +392,7 @@ jobs:
           set -euo pipefail
 
           FAILED=0
+          CI_FAULT=0
           FAILED_DIRS=""
 
           while IFS= read -r lockfile; do
@@ -361,13 +405,49 @@ jobs:
             # staleness (transient registry error, malformed pyproject.toml,
             # unresolvable dep) the real error is visible rather than being
             # silently mis-reported as "stale lockfile".
-            if ! uv lock --check --project "$lockdir"; then
-              echo "::error file=$lockfile::$lockfile is out of date — run: uv lock --project $lockdir"
+            #
+            # Visible was not enough on its own, though. The old message
+            # asserted "is out of date — run: uv lock" for ANY non-zero
+            # exit, so a network blip told the contributor to run a command
+            # that could not possibly fix it, against a file that was
+            # already correct. Distinguish the two by inspecting what uv
+            # actually said.
+            set +e
+            lock_output=$(uv lock --check --project "$lockdir" 2>&1)
+            lock_exit=$?
+            set -e
+            printf '%s\n' "$lock_output"
+
+            [ "$lock_exit" -eq 0 ] && continue
+
+            if printf '%s' "$lock_output" | grep -qiE "not up-to-date|out of date|would be (updated|added|removed)|needs to be updated|lockfile is outdated"; then
+              echo "::error file=$lockfile::$lockfile is out of date with $lockdir/pyproject.toml. Fix: run 'uv lock --project $lockdir' and commit the updated lockfile. Docs: docs/recipe-handbook/troubleshooting.md#uvlock-out-of-sync"
               echo "[FAIL] $lockfile is out of date with $lockdir/pyproject.toml"
               FAILED_DIRS="${FAILED_DIRS}  uv lock --project ${lockdir}"$'\n'
               FAILED=1
+            else
+              echo "::error::uv could not check $lockfile (exit $lock_exit) and the cause is NOT a stale lockfile — see the uv output above. This is usually a transient registry or network failure. Re-run the job; if it persists it needs a repo maintainer, not a change to your PR. Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+              echo "[CI FAULT] 'uv lock --check' failed on $lockdir for a reason other than staleness (exit $lock_exit)."
+              CI_FAULT=1
             fi
           done < "$LOCKFILES_FILE"
+
+          if [ "$CI_FAULT" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  CI TOOLING FAILURE — not your changes"
+            echo "========================================"
+            echo ""
+            echo "uv could not complete a lockfile check for a reason other"
+            echo "than staleness. Do not run 'uv lock' to work around this —"
+            echo "it will produce an unrelated diff."
+            echo ""
+            echo "Re-run the job. If it fails again, open an issue with the"
+            echo "uv output above and a link to this run."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+            exit 1
+          fi
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
@@ -380,6 +460,8 @@ jobs:
             echo "$FAILED_DIRS"
             echo "If you recently edited a pyproject.toml, make sure to run 'uv lock' in the"
             echo "same directory before pushing."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#uvlock-out-of-sync"
             echo ""
             exit 1
           fi

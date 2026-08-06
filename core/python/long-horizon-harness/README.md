@@ -10,8 +10,13 @@ This sample shows how to build a long-horizon harness on ADK with capabilities l
 
 - **Study the components** — [`AGENTS.md`](AGENTS.md), where each row links to the function to start from
 - **Run it yourself** — [Quickstart](#quickstart)
+- **Build your own** — [hand it to a coding agent](#build-your-own-with-a-coding-agent)
 - **Understand the design** — [`docs/architecture.md`](docs/architecture.md)
 - **Review the security model** — [`docs/security-model.md`](docs/security-model.md), before pointing it at anything real
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/google/adk-samples/assets/long-horizon-harness/horizon-demo.gif" alt="The Horizon web UI running two tasks: an AI research digest and a BigQuery analysis, each streaming tool calls and ending in a rendered HTML artifact" width="820">
+</div>
 
 **Features:**
 
@@ -50,7 +55,7 @@ This sample shows how to build a long-horizon harness on ADK with capabilities l
 | **Sessions** | [Agent Platform Sessions](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sessions) |
 | **Sandbox** | [Sandboxes](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox) (BYOC container) — one per user, JWT-routed; reattached between turns (snapshot survival opt-in) |
 | **Frontend** | Vite 8 + TanStack Router/Query + React 18 |
-| **Surface** | Cloud Run + Cloud SQL + Cloud Scheduler — Cloud Run scales to zero between turns (Cloud SQL bills continuously) |
+| **Surface** | Cloud Run + Cloud SQL + Cloud Scheduler — nothing scales to zero: both Cloud Run services hold `min_instance_count = 1` (the every-minute tick can't pay a cold start), and Cloud SQL bills continuously |
 
 On top of those managed primitives, Horizon adds a handful of **interfaces** — the rows in [`AGENTS.md`](AGENTS.md):
 
@@ -73,7 +78,7 @@ Full subsystem walkthrough: [`docs/architecture.md`](docs/architecture.md).
 
 ### Prerequisites
 
-[uv](https://docs.astral.sh/uv/getting-started/installation/), [google-agents-cli](https://pypi.org/project/google-agents-cli/) (`uv tool install google-agents-cli` — provides the `agents-cli` command), [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), `make`, and Node.js 20.19+ or 22.12+ (Vite 8 — web UI only). On Windows, use WSL.
+[uv](https://docs.astral.sh/uv/getting-started/installation/), [google-agents-cli](https://pypi.org/project/google-agents-cli/) (`uvx google-agents-cli setup` — provides the `agents-cli` command), [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), `make`, and Node.js 20.19+ or 22.12+ (Vite 8 — web UI only). On Windows, use WSL.
 
 Plus a **GCP project with billing enabled**. These are one-time setup; skip any you've already done:
 
@@ -95,16 +100,13 @@ cd core/python/long-horizon-harness
 make dev-local
 ```
 
-`make dev-local` is the simplest start: tools run on your host, sessions stay in memory, nothing is provisioned in GCP. The trade-off is **no cross-session memory** and **no sandbox isolation** — tools run directly on your machine. Inference goes to Agent Platform either way; there is no local model, `local` only moves *tool execution* to your host.
+## Build your own with a coding agent
 
-Other ways to run it:
+Run `uvx google-agents-cli setup`, then ask your coding agent:
 
-- `agents-cli run "your prompt"` — one shot from the terminal, no web UI
-- `make dev-sandbox` — tools run in the per-user Agent Platform sandbox
-
-`make setup` installs deps and seeds `.env` without starting anything. The project comes from `GOOGLE_CLOUD_PROJECT` in `.env`, falling back to your active `gcloud` project.
-
-> **Cost:** every turn is billed per token; only the test suites (`tests/unit` / `tests/integration`) are free. `make deploy` additionally stands up always-on resources (Cloud SQL, Cloud Scheduler) — see [Deploy](#deploy) for teardown.
+> Using `agents-cli` and this reference —
+> https://github.com/google/adk-samples/tree/main/core/python/long-horizon-harness
+> — help me build an agent that **&lt;does xyz&gt;**.
 
 ### Testing
 
@@ -116,6 +118,7 @@ agents-cli eval run                          # grades behavior against tests/eva
 ```
 
 Full config reference: [`docs/configuration.md`](docs/configuration.md).
+
 
 ---
 
@@ -141,7 +144,7 @@ Both services `ignore_changes` on their image, so steps 2–3 never fight Terraf
 
 > **IAP access is empty by default.** Set `TF_VAR_iap_users='["user:you@example.com"]'` before `make deploy` (or re-run after) or you'll be locked out of the web UI.
 
-**Billable, always-on resources** (Cloud SQL especially) — tear everything down when you're done. Container images pushed to Artifact Registry (`cloud-run-source-deploy`) are not Terraform-managed and survive `make destroy`; delete them separately if you care about the storage:
+**Billable, always-on resources** (Cloud SQL especially, plus one always-warm instance of each Cloud Run service) — tear everything down when you're done. Container images pushed to Artifact Registry (`cloud-run-source-deploy`) are not Terraform-managed and survive `make destroy`; delete them separately if you care about the storage:
 
 ```bash
 make destroy   # flips the delete guards off, then terraform destroy of all the above

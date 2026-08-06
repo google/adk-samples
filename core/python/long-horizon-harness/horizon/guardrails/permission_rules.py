@@ -34,6 +34,7 @@ from horizon.guardrails._overlay import (
     read_overlay_text,
 )
 from horizon.guardrails._regex_safety import safe_regex
+from horizon.guardrails.command_classify import significant_tokens
 
 _logger = logging.getLogger(__name__)
 
@@ -120,7 +121,16 @@ def _tool_matches(rule: PermissionRule, tool_name: str) -> bool:
 
 
 def _prefix_matches(command: str, prefix: str) -> bool:
-    return command == prefix or command.startswith(prefix + " ")
+    if command == prefix or command.startswith(prefix + " "):
+        return True
+    # Flag-tolerant fallback so an approved `bq query` also covers
+    # `bq --project_id=X query …`. Only for a flagless rule prefix: one that names
+    # a flag (`git push --force`) must keep matching literally, or dropping flags
+    # would widen it onto the plain command it was written to single out.
+    prefix_tokens = prefix.split()
+    if not prefix_tokens or any(t.startswith("-") for t in prefix_tokens):
+        return False
+    return significant_tokens(command)[: len(prefix_tokens)] == prefix_tokens
 
 
 def rule_matches(

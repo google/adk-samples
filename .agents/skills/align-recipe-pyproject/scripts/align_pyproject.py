@@ -39,7 +39,11 @@ mirror it there (and vice versa).
         resolve (typically: relax the ceiling, or raise the recipe with
         the maintainers to update CI's pinned interpreter).
   - project-name-matches-folder
-        [project].name must equal the recipe folder basename.
+        [project].name must equal the recipe's expected name: the folder
+        basename for core/ and contrib/, but "<vertical>-<solution>" for
+        skills/, whose layout interposes a mandatory vertical namespace
+        (skills/<vertical>/<solution>) that makes the basename alone
+        non-unique. See expected_project_name() for the full rationale.
         Auto-fix: set it.
   - description-matches-manifest
         If [project].description is set, it must equal manifest.description.
@@ -114,6 +118,51 @@ BELOW_MIN = (
     ]
     + [Version(f"{MIN_PYTHON[0] - 1}.99")]
 )
+
+# Recipe roots whose layout interposes a mandatory NAMESPACE between the root
+# and the solution folder: <root>/<namespace>/<solution>.
+#
+# Only `skills/` does this today. Its middle segment is a VERTICAL, not a
+# language (see AGENTS.md and the `recipe_size_limits` comment in
+# .github/policy.yml), and tools/validate_placement.py rejects a solution
+# dropped directly under skills/.
+#
+# core/ and contrib/ look superficially similar (core/<language>/<recipe>)
+# but are NOT listed here: their middle segment is a language, and their
+# basenames are already unique repo-wide.
+#
+# Maps the root name to what its namespace segment is CALLED, purely so
+# messages can say "<vertical>-<solution>" rather than mechanically
+# depluralising "skills" into something meaningless.
+# NOTE: mirrored in .github/scripts/check_recipe_pyproject.py — keep in sync.
+NAMESPACED_ROOTS = {"skills": "vertical"}
+
+# This script lives at .agents/skills/<skill>/scripts/, four levels down.
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _repo_relative_parts(
+    recipe_dir: Path, repo_root: Path | None = None
+) -> tuple[str, ...]:
+    """Path segments of `recipe_dir` relative to the repository root.
+
+    An absolute path is made relative to `repo_root` so that a segment's
+    POSITION is meaningful. A relative path is taken as already
+    repo-relative. A path outside the repository yields its own segments,
+    which will not match the three-segment shape the caller looks for — the
+    safe outcome.
+
+    NOTE: mirrored in .github/scripts/check_recipe_pyproject.py —
+    keep in sync.
+    """
+    root = REPO_ROOT if repo_root is None else repo_root
+    if recipe_dir.is_absolute():
+        try:
+            return recipe_dir.resolve().relative_to(root.resolve()).parts
+        except ValueError:
+            return recipe_dir.parts
+    return recipe_dir.parts
+
 
 # Status values for a Check entry.
 OK = "ok"  # nothing to do
@@ -418,50 +467,104 @@ def _rewrite_requires_python(spec: SpecifierSet) -> str:
 # ---------- project-name-matches-folder ------------------------------------
 
 
+def expected_project_name(
+    recipe_dir: Path, repo_root: Path | None = None
+) -> str:
+    """Return the [project].name this recipe directory is required to declare.
+
+    For most recipes this is just the folder basename. For a recipe under a
+    namespaced root it is "<namespace>-<solution>", for two reasons:
+
+    1. The basename is not unique. `skills/retail/product-search` and a future
+       `skills/grocery/product-search` would both be forced to declare
+       [project].name = "product-search" — two distribution packages with the
+       same name. The vertical exists precisely to namespace solutions, so the
+       project name has to carry it.
+    2. It matches the skill's own identity. A vertical skill's SKILL.md
+       frontmatter `name:`, its slash command, and its installed directory all
+       use "<vertical>-<solution>"; the Python distribution name should not be
+       the odd one out.
+
+    The namespaced form requires the root to sit at the START of the
+    repo-relative path with exactly two segments after it — a position test,
+    not a name test. Matching on the third-from-last segment alone would fire
+    on any path that merely happens to contain a directory called "skills",
+    so `align_pyproject.py --recipe-dir /home/me/skills/core/rag-vector-search`
+    would WRITE [project].name = "core-rag-vector-search". This script edits
+    files, so that mattered more here than in the read-only validator.
+
+    Paths outside `repo_root` (and relative paths that are not exactly
+    <root>/<namespace>/<solution>) fall back to the basename.
+
+    NOTE: mirrored in .github/scripts/check_recipe_pyproject.py —
+    keep in sync.
+    """
+    parts = _repo_relative_parts(recipe_dir, repo_root)
+    if len(parts) == 3 and parts[0] in NAMESPACED_ROOTS:
+        return f"{parts[1]}-{parts[2]}"
+    return recipe_dir.name
+
+
+def _name_derivation(recipe_dir: Path, expected: str) -> str:
+    """Human-readable note explaining a non-obvious expected name.
+
+    Empty for the common case where the expected name is just the basename,
+    so core/ and contrib/ messages stay as terse as they were.
+    """
+    if expected == recipe_dir.name:
+        return "recipe folder basename"
+    namespace_term = NAMESPACED_ROOTS[recipe_dir.parts[-3]]
+    return (
+        f"recipes under {recipe_dir.parts[-3]}/ are named "
+        f"'<{namespace_term}>-<solution>'"
+    )
+
+
 def check_project_name_matches_folder(
     recipe_dir: Path,
     doc: tomlkit.TOMLDocument,
     apply: bool,
 ) -> Check:
-    folder = recipe_dir.name
+    expected = expected_project_name(recipe_dir)
+    derivation = _name_derivation(recipe_dir, expected)
     project = doc.get("project")
     current = None if project is None else project.get("name")
 
-    if current == folder:
+    if current == expected:
         return Check(
             "project-name-matches-folder",
             OK,
-            f"[project].name matches folder name: '{folder}'.",
+            f"[project].name matches the required name: '{expected}'.",
         )
 
     if apply:
         if project is None:
             doc["project"] = tomlkit.table()
             project = doc["project"]
-        project["name"] = folder
+        project["name"] = expected
         if current is None:
-            msg = f"Added [project].name = '{folder}'."
+            msg = f"Added [project].name = '{expected}'."
         else:
-            msg = f"Rewrote [project].name: '{current}' -> '{folder}'."
+            msg = f"Rewrote [project].name: '{current}' -> '{expected}'."
         return Check(
             "project-name-matches-folder",
             FIXED,
             msg,
-            {"from": current, "to": folder},
+            {"from": current, "to": expected},
         )
 
     if current is None:
-        msg = f"Would add [project].name = '{folder}' (recipe folder basename)."
+        msg = f"Would add [project].name = '{expected}' ({derivation})."
     else:
         msg = (
-            f"Would rewrite [project].name: '{current}' -> '{folder}' "
-            f"(recipe folder basename)."
+            f"Would rewrite [project].name: '{current}' -> '{expected}' "
+            f"({derivation})."
         )
     return Check(
         "project-name-matches-folder",
         WOULD_FIX,
         msg,
-        {"from": current, "to": folder},
+        {"from": current, "to": expected},
     )
 
 
