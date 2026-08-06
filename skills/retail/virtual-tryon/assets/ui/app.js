@@ -412,6 +412,7 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
                 alert("Please upload your portrait photo first!");
                 tryonLoading.classList.add("hidden");
+                laserScanner.classList.add("hidden");
                 outputEmptyPlaceholder.classList.remove("hidden");
                 runTryonBtn.removeAttribute("disabled");
                 return;
@@ -492,13 +493,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 outputEmptyPlaceholder.classList.add("hidden");
                 tryonOutputVideo.src = res.video_base64;
                 videoWrapper.classList.remove("hidden");
-                
+
                 // Show badge
                 if (outputBadge) {
                     outputBadge.textContent = "VEO STREAM";
                     outputBadge.className = "badge-cyber";
                     outputBadge.classList.remove("hidden");
                 }
+                // Re-enable video button so the user can regenerate the catwalk.
+                runVideoBtn.removeAttribute("disabled");
             } else {
                 alert("Catwalk Video Error: " + (res.detail || "Request failed"));
                 tryonOutputImg.classList.remove("hidden"); // fall back to image
