@@ -31,6 +31,7 @@ from google.genai import types
 from google.genai.types import Image as GenaiImage
 from google.genai.types import VideoGenerationReferenceImage
 from PIL import Image
+
 from scripts.config import config
 
 logger = logging.getLogger(__name__)
@@ -63,8 +64,9 @@ def _load_image_bytes(
     """Load image bytes from local file or GCS URI."""
     if image_path_or_uri.startswith("gs://"):
         if not project_id:
-            # Fallback local project detection
-            _, project_id = storage.Client().project
+            # storage.Client().project is a plain string (the resolved
+            # ADC project id); do NOT tuple-unpack it.
+            project_id = storage.Client().project
         gcs_client = storage.Client(project=project_id)
         bucket_name, blob_path = image_path_or_uri[5:].split("/", 1)
         bucket = gcs_client.bucket(bucket_name)

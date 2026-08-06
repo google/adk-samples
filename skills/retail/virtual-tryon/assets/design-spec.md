@@ -6,7 +6,7 @@
 gcp_project_id: ""                                          # REQUIRED: your GCP project ID
 
 # --- GCP ---
-gcp_region: us-west1                                        # region for Vertex AI Imagen / Gemini / Veo
+gcp_region: us-west1                                        # region for Vertex AI Gemini image / Veo
 
 # --- Try-on mode ---
 tryon_mode: image_and_video                                 # image_only | image_and_video
@@ -33,7 +33,7 @@ tryon_catalog_upload: true                                  # set false to run p
 ## Overview
 
 This design spec captures the configuration decisions for a retail virtual
-try-on agent built on Google Cloud (Vertex AI Imagen, Gemini, Veo). It is
+try-on agent built on Google Cloud (Vertex AI Gemini image models and Veo). It is
 generated during the SKILL.md interview and used by setup, sandbox, and
 export scripts.
 

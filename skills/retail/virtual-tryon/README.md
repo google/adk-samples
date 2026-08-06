@@ -4,19 +4,26 @@ Virtual try-on agent using Gemini image generation (flash/pro tiers) for clothin
 
 ## Install
 
+Clone the adk-samples repo and install the recipe:
+
 ```bash
-npx skills add tanvisinghal-0105/solution_skills --skill retail-virtual-tryon
+git clone https://github.com/google/adk-samples.git
+cd adk-samples/skills/retail/virtual-tryon
+uv sync
 ```
 
-Auto-detects your AI agent (Claude Code, Antigravity, Codex, ...) and drops
-`SKILL.md` into its skills directory (`~/.claude/skills/`, `~/.agents/skills/`).
-Antigravity discovers skills from `~/.agents/skills/` automatically.
+AI coding assistants that support the skills spec (Claude Code, Antigravity,
+Codex, ...) also discover `SKILL.md` from `~/.claude/skills/` or
+`~/.agents/skills/` — copy or symlink this recipe there if you want to invoke
+it as `/retail-virtual-tryon` inside your assistant.
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - Google Cloud project with Vertex AI APIs enabled
-- [retail-product-search](../retail-product-search/) set up first
+- The sibling recipe [`skills/retail/product-search/`](../product-search/) set up
+  first (proposed in PR #2473 — landing separately). Its Vector Search collection
+  supplies the product catalog that VTO's `EVAL.yaml` grades against.
 
 ## Run
 
@@ -42,11 +49,11 @@ sandbox at [http://localhost:8080](http://localhost:8080).
 ### Direct CLI (no agent)
 
 ```bash
-pip install -r requirements.txt
-python scripts/setup_tryon.py --config assets/design-spec.md
+uv sync                                       # or: pip install -e .
+uv run python scripts/setup_tryon.py --config assets/design-spec.md
 # or pick a model directly:
-python scripts/setup_tryon.py --project-id $PROJECT --model flash
-python scripts/setup_tryon.py --project-id $PROJECT --model pro
+uv run python scripts/setup_tryon.py --project-id $PROJECT --model flash
+uv run python scripts/setup_tryon.py --project-id $PROJECT --model pro
 ```
 
 ## Model tiers

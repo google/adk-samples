@@ -18,7 +18,7 @@ cases:
     skill_name: "retail-virtual-tryon"
     products:
       - "Vertex AI"
-      - "Imagen"
+      - "Gemini"
   rubric:
     - "The response MUST address whether eyewear is a supported category for virtual try-on."
     - "The response MUST reference how facial features are used in the try-on rendering."
@@ -92,7 +92,7 @@ cases:
     skill_name: "retail-virtual-tryon"
     products:
       - "Vertex AI"
-      - "Imagen"
+      - "Gemini"
   rubric:
     - "The response MUST describe the available safety filter levels and how to configure them."
     - "The response MUST mention that certain content categories can be set to block or allow."

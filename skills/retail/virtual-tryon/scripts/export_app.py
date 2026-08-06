@@ -156,140 +156,37 @@ def export_app(config_path: str, skill_dir: str):
         shutil.copymode(src_file, dest_file)
         logger.info(f"Exported python module: {f} -> {dest_dir}")
 
-    # 3. Create requirements.txt
-    reqs = """fastapi>=0.100.0
-uvicorn>=0.20.0
-python-multipart>=0.0.6
-google-genai>=1.0.0
-google-cloud-storage>=2.0.0
-pillow>=9.0.0
-pyyaml>=6.0
-httpx>=0.23.0
-"""
-    with open(dest_dir / "requirements.txt", "w") as f:
-        f.write(reqs)
-    logger.info("Generated: requirements.txt")
+    # 3. Copy container / deploy templates from assets/export-template/,
+    #    substituting {{TOKEN}} placeholders with values from design-spec.md.
+    template_dir = src_path / "assets" / "export-template"
+    if not template_dir.exists():
+        logger.error(f"Export template directory not found at: {template_dir}")
+        return False
 
-    # 4. Create Dockerfile
-    dockerfile = f"""# Stage 1: Build virtual environment
-FROM python:3.11-slim AS builder
-WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+    substitutions = {
+        "{{PROJECT_ID}}": project_id,
+        "{{REGION}}": region,
+        "{{CATALOG_PATH}}": catalog_path,
+        "{{OUTPUT_BUCKET}}": output_bucket,
+        "{{UPLOAD_BUCKET}}": upload_bucket,
+        "{{MODEL_NAME}}": model_name,
+    }
 
-# Stage 2: Final runtime container
-FROM python:3.11-slim AS runner
-WORKDIR /app
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+    # Files marked executable in the export output. dict comprehension over
+    # a name -> mode mapping keeps this obvious as new templates are added.
+    executable_files = {"deploy_cloudrun.sh": 0o755}
 
-# Set environment variables from project configuration
-ENV GOOGLE_CLOUD_PROJECT="{project_id}"
-ENV GCP_REGION="{region}"
-ENV TRYON_CATALOG_PATH="{catalog_path}"
-ENV TRYON_OUTPUT_BUCKET="{output_bucket}"
-ENV TRYON_UPLOAD_BUCKET="{upload_bucket}"
-ENV GEMINI_IMAGE_MODEL="{model_name}"
-ENV PORT=8080
-
-COPY . .
-EXPOSE 8080
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]
-"""
-    with open(dest_dir / "Dockerfile", "w") as f:
-        f.write(dockerfile)
-    logger.info("Generated: Dockerfile")
-
-    # 5. Create .dockerignore
-    dockerignore = """__pycache__/
-.pytest_cache/
-.catalog_cache/
-catalog_images/
-tmp/
-.git/
-.gitignore
-deploy_cloudrun.sh
-"""
-    with open(dest_dir / ".dockerignore", "w") as f:
-        f.write(dockerignore)
-    logger.info("Generated: .dockerignore")
-
-    # 6. Create cloudbuild.yaml
-    cloudbuild = f"""steps:
-  # Build the container image
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/vto-retail-app:$COMMIT_SHA', '.']
-  
-  # Push the image to Artifact Registry / GCR
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/vto-retail-app:$COMMIT_SHA']
-  
-  # Deploy to Cloud Run
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'gcloud'
-    args:
-      - 'run'
-      - 'deploy'
-      - 'vto-retail-app'
-      - '--image'
-      - 'gcr.io/$PROJECT_ID/vto-retail-app:$COMMIT_SHA'
-      - '--region'
-      - '{region}'
-      - '--platform'
-      - 'managed'
-      - '--allow-unauthenticated'
-images:
-  - 'gcr.io/$PROJECT_ID/vto-retail-app:$COMMIT_SHA'
-"""
-    with open(dest_dir / "cloudbuild.yaml", "w") as f:
-        f.write(cloudbuild)
-    logger.info("Generated: cloudbuild.yaml")
-
-    # 7. Create deploy_cloudrun.sh script
-    deploy_script = f"""#!/bin/bash
-# Standalone Cloud Run deployment script fallback
-
-set -e
-
-PROJECT_ID="{project_id}"
-REGION="{region}"
-SERVICE_NAME="vto-retail-app"
-
-echo "=========================================================="
-echo "DEPLOYING VIRTUAL TRY-ON APP TO GOOGLE CLOUD RUN"
-echo "=========================================================="
-echo "GCP Project:   $PROJECT_ID"
-echo "Region:        $REGION"
-echo "Service Name:  $SERVICE_NAME"
-echo "=========================================================="
-
-# 1. Enable APIs
-echo "Enabling Cloud Run and Cloud Build APIs..."
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com --project="$PROJECT_ID" --quiet
-
-# 2. Deploy directly from source (uses local Dockerfile)
-echo "Deploying source container via Cloud Build and Cloud Run..."
-gcloud run deploy "$SERVICE_NAME" \\
-  --source . \\
-  --region "$REGION" \\
-  --project "$PROJECT_ID" \\
-  --allow-unauthenticated \\
-  --quiet
-
-echo "=========================================================="
-echo "DEPLOYMENT COMPLETED SUCCESSFULLY"
-echo "=========================================================="
-"""
-
-    deploy_file = dest_dir / "deploy_cloudrun.sh"
-    with open(deploy_file, "w") as f:
-        f.write(deploy_script)
-    # Make script executable
-    os.chmod(deploy_file, 0o755)
-    logger.info("Generated: deploy_cloudrun.sh")
+    for template_file in sorted(template_dir.iterdir()):
+        if not template_file.is_file():
+            continue
+        content = template_file.read_text()
+        for token, value in substitutions.items():
+            content = content.replace(token, value)
+        dest_file = dest_dir / template_file.name
+        dest_file.write_text(content)
+        if template_file.name in executable_files:
+            os.chmod(dest_file, executable_files[template_file.name])
+        logger.info(f"Rendered: {template_file.name}")
 
     logger.info("EXPORT COMPLETED SUCCESSFULLY. Standalone source generated.")
     return True

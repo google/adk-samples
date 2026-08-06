@@ -21,6 +21,7 @@ try-on tools.
 import logging
 
 from google.adk import agents, apps, models
+
 from scripts.config import config
 from scripts.tryon_processor import generate_tryon_image, generate_tryon_video
 
@@ -53,6 +54,11 @@ def try_on_product_image(
             "error": "GOOGLE_CLOUD_PROJECT is not set. Copy .env.example to .env and fill it in.",
         }
 
+    logger.info(
+        "try_on_product_image: product_id=%s category=%s",
+        product_id,
+        product_category,
+    )
     try:
         res = generate_tryon_image(
             person_image_path=user_photo_path,
@@ -63,10 +69,12 @@ def try_on_product_image(
             product_category=product_category,
             product_description=product_description,
         )
-        return {"status": "success", **res}
+        return {"status": "success", "product_id": product_id, **res}
     except Exception as e:
-        logger.exception("Error generating try-on image")
-        return {"status": "error", "error": str(e)}
+        logger.exception(
+            "try_on_product_image failed for product_id=%s", product_id
+        )
+        return {"status": "error", "product_id": product_id, "error": str(e)}
 
 
 def try_on_product_video(
@@ -97,6 +105,11 @@ def try_on_product_video(
             "error": "GOOGLE_CLOUD_PROJECT is not set. Copy .env.example to .env and fill it in.",
         }
 
+    logger.info(
+        "try_on_product_video: product_id=%s category=%s",
+        product_id,
+        product_category,
+    )
     try:
         # Step 1: Generate the try-on image composite
         img_res = generate_tryon_image(
@@ -118,10 +131,12 @@ def try_on_product_video(
             scene_description=scene_description,
         )
 
-        return {"status": "success", **video_res}
+        return {"status": "success", "product_id": product_id, **video_res}
     except Exception as e:
-        logger.exception("Error generating try-on video")
-        return {"status": "error", "error": str(e)}
+        logger.exception(
+            "try_on_product_video failed for product_id=%s", product_id
+        )
+        return {"status": "error", "product_id": product_id, "error": str(e)}
 
 
 INSTRUCTION = """You are a virtual try-on assistant for retail products.

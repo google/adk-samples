@@ -30,6 +30,7 @@ from pathlib import Path
 from google.cloud import storage
 from google.genai import types
 from pydantic import BaseModel, Field
+
 from scripts.config import config
 
 os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"

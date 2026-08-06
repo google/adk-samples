@@ -2,7 +2,7 @@
 name: retail-virtual-tryon
 description: >-
   Creates virtual try-on agents supporting image and video (catwalk animation) try-ons
-  on Google Cloud (Vertex AI Imagen, Gemini, and Veo). Handles resource setup,
+  on Google Cloud (Vertex AI Gemini image models and Veo). Handles resource setup,
   user photo uploading, image/video generation pipelines, local testing, and evaluation.
 metadata:
   author: Google

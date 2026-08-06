@@ -31,6 +31,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from google.cloud import storage
 from pydantic import BaseModel
+
 from scripts.config import config
 from scripts.scan_catalog import scan_directory
 from scripts.tryon_processor import generate_tryon_image, generate_tryon_video
@@ -162,6 +163,11 @@ def get_media(
             content_type = "image/webp"
 
         return StreamingResponse(stream_file(), media_type=content_type)
+    except HTTPException:
+        # Preserve deliberate HTTP responses (e.g. the 404 above) so they
+        # reach the client with their original status; only unexpected
+        # errors should fall through to the 500 handler.
+        raise
     except Exception as e:
         logger.error(f"Media streaming failed for '{path}': {e}")
         raise HTTPException(

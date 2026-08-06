@@ -1,7 +1,6 @@
 [project]
 name = "retail-virtual-tryon"
-version = "0.1.0"
-description = "Virtual try-on agent supporting image and video catwalk try-ons using Vertex AI"
+version = "0.2.0"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 
@@ -17,6 +16,10 @@ dependencies = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["scripts"]
