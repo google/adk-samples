@@ -14,6 +14,7 @@ dependencies:
     - google-cloud-aiplatform
     - google-cloud-bigquery
     - google-cloud-storage
+    - google-cloud-vectorsearch
     - google-genai
   services:
     - vertex-ai

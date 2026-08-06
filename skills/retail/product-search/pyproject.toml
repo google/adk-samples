@@ -1,7 +1,6 @@
 [project]
 name = "retail-product-search"
-version = "0.1.0"
-description = "Semantic product search agent using Vertex AI Vector Search and BigQuery"
+version = "0.2.0"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 
@@ -21,6 +20,10 @@ dependencies = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["scripts"]

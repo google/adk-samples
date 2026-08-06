@@ -3,8 +3,10 @@
 Reference documentation for the scripts in `scripts/`. These are standalone
 Python scripts that handle product data ingestion and vector search indexing.
 
-All scripts support `--config design-spec.md` to load defaults from your
-project configuration.
+`setup.py`, `ingest_bigquery.py`, and `ingest_vertex_search.py` accept
+`--config design-spec.md` to load defaults from your project
+configuration. `validate_schema.py` takes `--file` and `--fields-level`
+directly — it does not read design-spec.md.
 
 ---
 

@@ -25,6 +25,7 @@ wrapper that reads the collection path from the environment.
 import re
 
 from google.cloud import vectorsearch
+
 from scripts.config import config
 
 _COLLECTION_PATH_RE = re.compile(
@@ -45,7 +46,7 @@ def _format_result(index: int, result) -> str:
 
     Returns:
         A one-line string of the form
-        ``"Product N: name, $price, by brand, rated R/5, <desc>"``.
+        ``"Product N: name, $price, by brand, rated R out of 5, <desc>"``.
     """
     data = result.data_object.data
     name = data.get("name", "Unknown")

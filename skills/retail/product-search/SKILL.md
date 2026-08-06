@@ -11,7 +11,7 @@ description: >-
 metadata:
   author: Google
   license: Apache-2.0
-  version: 0.1.0
+  version: 0.2.0
 ---
 
 # Product Search Agent
@@ -230,7 +230,7 @@ Most-common failures inline; full table in
 
 | Error | Fix |
 |---|---|
-| `setup.py` exits with `'NoneType' object has no attribute 'get'` | `design-spec.md` was written as plain Markdown instead of mutating the YAML-frontmatter template bootstrap copied | Wait for bootstrap to finish, then **edit** (not rewrite) `./design-spec.md` — only change the field values inside the existing `---...---` frontmatter |
+| `setup.py` exits with `'NoneType' object has no attribute 'get'` | `design-spec.md` was rewritten as plain Markdown instead of mutating the YAML-frontmatter template bootstrap copied. Wait for bootstrap to finish, then **edit** (not rewrite) `./design-spec.md` — only change the field values inside the existing `---...---` frontmatter |
 | `adk web` starts but `/list-apps` returns `[]` / browser shows "No agents found" | Bare `adk` resolved to a global Python that lacks the editable install. Kill it and restart with `.venv/bin/adk web "$SKILL_DIR/scripts" --port 8765` |
 | `MethodNotImplemented: 501` from Vector Search | `VECTOR_SEARCH_COLLECTION` has a newline. Re-export on one line |
 | `ModuleNotFoundError: google.adk` | `bash -c "pip install -e '${SKILL_DIR}[adk]'"` (the `bash -c` matters in zsh) |

@@ -6,18 +6,22 @@ shopping assistant agents.
 
 ## Install
 
+Clone the adk-samples repo and install the recipe:
+
 ```bash
-npx skills add tanvisinghal-0105/solution_skills --skill retail-product-search
+git clone https://github.com/google/adk-samples.git
+cd adk-samples/skills/retail/product-search
+uv sync
 ```
 
-Hosts that support the skills spec (Claude Code, Antigravity, Codex, ...)
-auto-detect and drop `SKILL.md` into their skills directory
-(`~/.claude/skills/`, `~/.agents/skills/`). Antigravity discovers skills
-from `~/.agents/skills/` automatically.
+AI coding assistants that support the skills spec (Claude Code, Antigravity,
+Codex, ...) also discover `SKILL.md` from `~/.claude/skills/` or
+`~/.agents/skills/` — copy or symlink this recipe there if you want to invoke
+it as `/retail-product-search` inside your assistant.
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - [`gcloud` CLI](https://cloud.google.com/sdk/docs/install) with ADC
   configured (`gcloud auth application-default login`)
 - A GCP project with billing enabled and BigQuery + Vertex AI APIs on:
