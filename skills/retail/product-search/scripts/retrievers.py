@@ -22,10 +22,10 @@ wrapper that reads the collection path from the environment.
 # pylint: disable=line-too-long
 # (error messages and example URLs are intentionally long; breaking them hurts copy-paste UX.)
 
-import os
 import re
 
 from google.cloud import vectorsearch
+from scripts.config import config
 
 _COLLECTION_PATH_RE = re.compile(
     r"^projects/[^/\s]+/locations/[^/\s]+/collections/[^/\s]+$"
@@ -140,7 +140,7 @@ def search(query: str, top_k: int = 5) -> str:
             to a malformed path (typically with an embedded newline from a
             wrapped multi-line shell paste).
     """
-    raw = os.environ.get("VECTOR_SEARCH_COLLECTION")
+    raw = config.VECTOR_SEARCH_COLLECTION
     if not raw:
         raise RuntimeError(
             "VECTOR_SEARCH_COLLECTION env var is not set. Set it to the collection "

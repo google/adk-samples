@@ -27,18 +27,17 @@ import re
 import google
 import vertexai
 from google.adk import agents, apps, models
+from scripts.config import config
 from scripts.retrievers import search_collection
 
-LLM_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-VECTOR_SEARCH_LOCATION = os.getenv("VECTOR_SEARCH_LOCATION", "us-central1")
-LLM = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
-
+# Resolve the GCP project: prefer the value in .env (via config), fall
+# back to ADC's default project, then write back into os.environ so any
+# code that reads GOOGLE_CLOUD_PROJECT directly sees the same value.
 _, _default_project = google.auth.default()
-_project_id = os.getenv("GOOGLE_CLOUD_PROJECT", _default_project)
+_project_id = config.GOOGLE_CLOUD_PROJECT or _default_project
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", _project_id)
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", LLM_LOCATION)
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
-vertexai.init(project=_project_id, location=LLM_LOCATION)
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", config.GOOGLE_CLOUD_LOCATION)
+vertexai.init(project=_project_id, location=config.GOOGLE_CLOUD_LOCATION)
 
 
 _COLLECTION_PATH_RE = re.compile(
@@ -49,9 +48,9 @@ _COLLECTION_PATH_RE = re.compile(
 def _get_vector_search_collection() -> str:
     """Return the Vector Search collection resource path.
 
-    Reads from the ``VECTOR_SEARCH_COLLECTION`` env var when set; otherwise
-    builds the default path from ``GOOGLE_CLOUD_PROJECT`` and
-    ``VECTOR_SEARCH_LOCATION``.
+    Reads from ``config.VECTOR_SEARCH_COLLECTION`` when set; otherwise
+    builds the default path from ``config.GOOGLE_CLOUD_PROJECT`` and
+    ``config.VECTOR_SEARCH_LOCATION``.
 
     Returns:
         The fully qualified Vector Search collection path.
@@ -61,10 +60,10 @@ def _get_vector_search_collection() -> str:
             path (e.g. contains a newline from a wrapped shell paste, which
             silently causes the Vector Search SDK to return a 501).
     """
-    raw = os.getenv("VECTOR_SEARCH_COLLECTION")
-    if raw is None:
+    raw = config.VECTOR_SEARCH_COLLECTION
+    if not raw:
         return (
-            f"projects/{_project_id}/locations/{VECTOR_SEARCH_LOCATION}"
+            f"projects/{_project_id}/locations/{config.VECTOR_SEARCH_LOCATION}"
             "/collections/retail-skill-products-collection"
         )
     # Strip whitespace -- multi-line shell pastes can embed a newline mid-path,
@@ -124,7 +123,7 @@ When presenting search results:
 
 root_agent = agents.Agent(
     name="root_agent",
-    model=models.Gemini(model=LLM),
+    model=models.Gemini(model=config.GEMINI_MODEL),
     instruction=INSTRUCTION,
     tools=[retrieve_docs],
 )

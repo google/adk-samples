@@ -1790,6 +1790,7 @@ dependencies = [
     { name = "google-cloud-vectorsearch" },
     { name = "google-genai" },
     { name = "pyopenssl" },
+    { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "requests" },
 ]
@@ -1810,6 +1811,7 @@ requires-dist = [
     { name = "google-cloud-vectorsearch", specifier = ">=0.5,<1.0" },
     { name = "google-genai", specifier = ">=1.0" },
     { name = "pyopenssl", specifier = ">=23.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.28" },
 ]
