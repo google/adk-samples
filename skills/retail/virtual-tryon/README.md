@@ -4,18 +4,25 @@ Virtual try-on agent using Gemini image generation (flash/pro tiers) for clothin
 
 ## Install
 
-Clone the adk-samples repo and install the recipe:
+Install directly into your AI coding assistant (Claude Code, Antigravity,
+Codex, ...) via `npx skills add`. The tool discovers `SKILL.md` from this
+recipe and registers `/retail-virtual-tryon` as an invocable skill:
+
+```bash
+npx skills add google/adk-samples --skill retail-virtual-tryon
+```
+
+Installs to `~/.claude/skills/` or `~/.agents/skills/` depending on host.
+Antigravity discovers from `~/.agents/skills/` automatically.
+
+**Developer install** (if you're contributing to the recipe rather than
+consuming it):
 
 ```bash
 git clone https://github.com/google/adk-samples.git
 cd adk-samples/skills/retail/virtual-tryon
 uv sync
 ```
-
-AI coding assistants that support the skills spec (Claude Code, Antigravity,
-Codex, ...) also discover `SKILL.md` from `~/.claude/skills/` or
-`~/.agents/skills/` — copy or symlink this recipe there if you want to invoke
-it as `/retail-virtual-tryon` inside your assistant.
 
 ## Prerequisites
 
