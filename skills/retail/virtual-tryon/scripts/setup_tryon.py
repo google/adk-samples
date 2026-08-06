@@ -33,10 +33,47 @@ from google.cloud import storage
 # Add parent of scripts directory to path to enable package resolution
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.config import config
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def _design_spec_to_env(design_spec_path: str) -> None:
+    """Bridge design-spec.md keys into environment variables.
+
+    Q-MODE writes user answers into design-spec.md. This function reads the
+    YAML frontmatter and calls os.environ.setdefault() for each recognized
+    key so that scripts.config picks them up. setdefault() is used so any
+    values the caller already exported win.
+    """
+    if not Path(design_spec_path).exists():
+        return
+    cfg = load_config(design_spec_path)
+    if not cfg:
+        return
+    project_id = cfg.get("gcp_project_id")
+    if project_id:
+        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
+    if cfg.get("gcp_region"):
+        os.environ.setdefault("GCP_REGION", cfg["gcp_region"])
+    if cfg.get("tryon_model"):
+        os.environ.setdefault("GEMINI_IMAGE_MODEL", cfg["tryon_model"])
+    output_bucket = cfg.get("tryon_output_bucket") or (
+        f"{project_id}-tryon-output" if project_id else None
+    )
+    if output_bucket:
+        os.environ.setdefault("TRYON_OUTPUT_BUCKET", output_bucket)
+    upload_bucket = cfg.get("tryon_upload_bucket") or (
+        f"{project_id}-tryon-uploads" if project_id else None
+    )
+    if upload_bucket:
+        os.environ.setdefault("TRYON_UPLOAD_BUCKET", upload_bucket)
+    if cfg.get("tryon_catalog_path"):
+        os.environ.setdefault("TRYON_CATALOG_PATH", cfg["tryon_catalog_path"])
+
 
 # Models mapping for verification
 IMAGE_MODELS = {
@@ -68,17 +105,20 @@ def load_config(config_path: str) -> dict:
 def create_bucket_if_needed(
     project_id: str,
     bucket_name: str,
-    location: str = "us-west1",
+    location: str | None = None,
     auto_delete_days: int = 0,
 ) -> None:
     """Create a GCS bucket if it doesn't exist."""
+    effective_location = location or config.GCP_REGION
     client = storage.Client(project=project_id)
     try:
         client.get_bucket(bucket_name)
         logger.info(f"Bucket {bucket_name} already exists.")
     except Exception:
-        logger.info(f"Creating bucket: {bucket_name} in location {location}...")
-        bucket = client.create_bucket(bucket_name, location=location)
+        logger.info(
+            f"Creating bucket: {bucket_name} in location {effective_location}..."
+        )
+        bucket = client.create_bucket(bucket_name, location=effective_location)
         if auto_delete_days > 0:
             bucket.add_lifecycle_delete_rule(age=auto_delete_days)
             bucket.patch()
@@ -169,12 +209,12 @@ def setup_service_account_permissions(project_id: str) -> None:
 
 
 def verify_api_access(
-    project_id: str, model_id: str, location: str = "us-west1"
+    project_id: str, model_id: str, location: str | None = None
 ) -> bool:
     """Verify that a model API is accessible."""
-    resolved_location = "global" if "gemini" in model_id else location
+    effective_location = location or config.GCP_REGION
+    resolved_location = "global" if "gemini" in model_id else effective_location
     try:
-        os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
         from google import genai
 
         client = genai.Client(
@@ -264,7 +304,7 @@ def upload_local_catalog_to_gcs(
     project_id: str,
     local_dir_path: str,
     bucket_name: str,
-    location: str = "us-west1",
+    location: str | None = None,
 ) -> str:
     """Create a GCS catalog bucket and upload all local images in the folder to it."""
     create_bucket_if_needed(project_id, bucket_name, location)
@@ -417,20 +457,27 @@ def main():
         default="assets/design-spec.md",
         help="Path to design-spec.md",
     )
-    parser.add_argument("--project-id", help="GCP project ID")
-    parser.add_argument("--location", default="us-west1", help="GCP region")
-    parser.add_argument("--output-bucket", help="GCS bucket for outputs")
-    parser.add_argument("--upload-bucket", help="GCS bucket for user uploads")
+    parser.add_argument(
+        "--project-id", help="Override GOOGLE_CLOUD_PROJECT for this run"
+    )
+    parser.add_argument("--location", help="Override GCP_REGION for this run")
+    parser.add_argument(
+        "--output-bucket", help="Override TRYON_OUTPUT_BUCKET for this run"
+    )
+    parser.add_argument(
+        "--upload-bucket", help="Override TRYON_UPLOAD_BUCKET for this run"
+    )
     parser.add_argument(
         "--model",
-        default="flash",
-        help="VTO image model: flash | pro | gemini-2.5-flash-image | gemini-2.5-pro-image",
+        help="Override GEMINI_IMAGE_MODEL for this run "
+        "(flash | pro | full model id)",
     )
     parser.add_argument(
         "--video", action="store_true", help="Enable video try-on (Veo)"
     )
     parser.add_argument(
-        "--catalog", help="Path or URI to product images catalog"
+        "--catalog",
+        help="Override TRYON_CATALOG_PATH for this run",
     )
     parser.add_argument(
         "--no-upload",
@@ -439,56 +486,60 @@ def main():
     )
     args = parser.parse_args()
 
-    # Load from design-spec
-    cfg = load_config(args.config) if Path(args.config).exists() else {}
+    # Config resolution order (highest priority wins):
+    #   1. CLI flags (below)
+    #   2. Ambient os.environ / .env (already loaded by scripts.config)
+    #   3. design-spec.md keys, bridged via _design_spec_to_env
+    #   4. Hardcoded fallbacks in scripts.config
+    _design_spec_to_env(args.config)
 
-    project_id = args.project_id or cfg.get("gcp_project_id")
-    if not project_id:
-        # Check env var
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+    # CLI flags override everything else.
+    if args.project_id:
+        os.environ["GOOGLE_CLOUD_PROJECT"] = args.project_id
+    if args.location:
+        os.environ["GCP_REGION"] = args.location
+    if args.output_bucket:
+        os.environ["TRYON_OUTPUT_BUCKET"] = args.output_bucket
+    if args.upload_bucket:
+        os.environ["TRYON_UPLOAD_BUCKET"] = args.upload_bucket
+    if args.model:
+        os.environ["GEMINI_IMAGE_MODEL"] = args.model
+    if args.catalog:
+        os.environ["TRYON_CATALOG_PATH"] = args.catalog
 
+    # Now every value has one source of truth: config.*.
+    project_id = config.GOOGLE_CLOUD_PROJECT
     if not project_id:
         logger.error(
-            "Error: GCP Project ID is required. Please set via design-spec.md, --project-id, or GOOGLE_CLOUD_PROJECT env var."
+            "GOOGLE_CLOUD_PROJECT is not set. Copy .env.example to .env, run "
+            "Q-MODE to populate design-spec.md, or pass --project-id."
         )
         sys.exit(1)
 
-    location = args.location or cfg.get("gcp_region", "us-west1")
-    output_bucket = (
-        args.output_bucket
-        or cfg.get("tryon_output_bucket")
-        or f"{project_id}-tryon-output"
-    )
-    upload_bucket = (
-        args.upload_bucket
-        or cfg.get("tryon_upload_bucket")
-        or f"{project_id}-tryon-uploads"
-    )
+    output_bucket = config.TRYON_OUTPUT_BUCKET or f"{project_id}-tryon-output"
+    upload_bucket = config.TRYON_UPLOAD_BUCKET or f"{project_id}-tryon-uploads"
 
-    # Check if video mode is enabled in config or args
+    # Non-env config (mode, catalog upload flag, GCS catalog bucket) is
+    # design-spec.md-only for now — those are Q-MODE artifacts, not
+    # runtime knobs.
+    cfg = load_config(args.config) if Path(args.config).exists() else {}
     enable_video = args.video or (
         cfg.get("tryon_mode") in ("image_and_video", "video")
     )
-    model = (
-        args.model or cfg.get("tryon_model") or os.getenv("GEMINI_IMAGE_MODEL")
-    )
-    catalog = args.catalog or cfg.get("tryon_catalog_path") or "catalog_images"
+    catalog = config.TRYON_CATALOG_PATH
     if catalog.lower() == "demo":
         catalog = "catalog_images"
-
     catalog_bucket = cfg.get("gcs_catalog_bucket")
-
-    # Catalog upload resolved from args or config
     catalog_upload = not args.no_upload
     if cfg.get("tryon_catalog_upload") is False:
         catalog_upload = False
 
     success = setup(
         project_id=project_id,
-        location=location,
+        location=config.GCP_REGION,
         output_bucket=output_bucket,
         upload_bucket=upload_bucket,
-        image_model_label=model,
+        image_model_label=config.GEMINI_IMAGE_MODEL,
         enable_video=enable_video,
         catalog_path=catalog,
         config_path=args.config,

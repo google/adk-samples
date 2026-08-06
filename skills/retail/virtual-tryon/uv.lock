@@ -1673,6 +1673,7 @@ dependencies = [
     { name = "google-cloud-storage" },
     { name = "google-genai" },
     { name = "pillow" },
+    { name = "python-dotenv" },
     { name = "pyyaml" },
 ]
 
@@ -1689,6 +1690,7 @@ requires-dist = [
     { name = "google-cloud-storage", specifier = ">=2.0" },
     { name = "google-genai", specifier = ">=1.0" },
     { name = "pillow", specifier = ">=9.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 

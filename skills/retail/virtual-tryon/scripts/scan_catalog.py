@@ -25,22 +25,19 @@ import json
 import logging
 import os
 import sys
-
-os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
 from pathlib import Path
 
 from google.cloud import storage
 from google.genai import types
 from pydantic import BaseModel, Field
+from scripts.config import config
+
+os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-# Model for catalog image classification. Read from env so the model can be
-# upgraded without a code change and so we do not hardcode a deprecated name.
-CATALOG_CLASSIFIER_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.5-flash")
 
 
 class ProductAnalysis(BaseModel):
@@ -52,17 +49,20 @@ class ProductAnalysis(BaseModel):
     )
 
 
-def _get_client(project_id: str, location: str = "us-west1"):
+def _get_client(project_id: str, location: str | None = None):
     from google import genai
 
-    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
-    return genai.Client(vertexai=True, project=project_id, location=location)
+    return genai.Client(
+        vertexai=True,
+        project=project_id,
+        location=location or config.GCP_REGION,
+    )
 
 
 def scan_directory(
     directory_path: str,
     project_id: str,
-    location: str = "us-west1",
+    location: str | None = None,
     force_reindex: bool = False,
 ) -> list[dict]:
     """Scan directory (local path or gs:// URI) for images and classify them using Gemini."""
@@ -132,7 +132,7 @@ def scan_directory(
                 img_bytes = blob.download_as_bytes()
 
                 response = client.models.generate_content(
-                    model=CATALOG_CLASSIFIER_MODEL,
+                    model=config.GEMINI_TEXT_MODEL,
                     contents=[
                         types.Part.from_bytes(
                             data=img_bytes, mime_type="image/jpeg"
@@ -236,7 +236,7 @@ def scan_directory(
                     img_bytes = f.read()
 
                 response = client.models.generate_content(
-                    model=CATALOG_CLASSIFIER_MODEL,
+                    model=config.GEMINI_TEXT_MODEL,
                     contents=[
                         types.Part.from_bytes(
                             data=img_bytes, mime_type="image/jpeg"
@@ -290,17 +290,20 @@ if __name__ == "__main__":
         "directory",
         help="Local directory path or gs:// URI containing product images",
     )
-    parser.add_argument("--project-id", help="GCP project ID")
-    parser.add_argument("--location", default="us-west1", help="GCP region")
+    parser.add_argument(
+        "--project-id", help="GCP project ID (overrides GOOGLE_CLOUD_PROJECT)"
+    )
+    parser.add_argument("--location", help="GCP region (overrides GCP_REGION)")
     parser.add_argument(
         "--force", action="store_true", help="Force reindexing of all images"
     )
     args = parser.parse_args()
 
-    project_id = args.project_id or os.getenv("GOOGLE_CLOUD_PROJECT")
+    project_id = args.project_id or config.GOOGLE_CLOUD_PROJECT
     if not project_id:
         logger.error(
-            "GCP Project ID is required. Please set GOOGLE_CLOUD_PROJECT env var."
+            "GOOGLE_CLOUD_PROJECT is not set. Copy .env.example to .env and fill it in, "
+            "or pass --project-id."
         )
         sys.exit(1)
 

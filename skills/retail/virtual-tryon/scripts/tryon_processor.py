@@ -31,6 +31,7 @@ from google.genai import types
 from google.genai.types import Image as GenaiImage
 from google.genai.types import VideoGenerationReferenceImage
 from PIL import Image
+from scripts.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -44,15 +45,14 @@ IMAGE_MODELS = {
 VIDEO_MODELS = {"veo": "veo-3.1-generate-001"}
 
 
-def _get_client(project_id: str, location: str = "global"):
+def _get_client(project_id: str, location: str | None = None):
     """Create google-genai Client."""
     from google import genai
 
-    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
     return genai.Client(
         vertexai=True,
         project=project_id,
-        location=location,
+        location=location or config.GEMINI_MODEL_LOCATION,
         http_options={"timeout": 60000},
     )
 
@@ -157,10 +157,10 @@ def generate_tryon_image(
     product_image_path: str,
     project_id: str,
     output_bucket: str | None = None,
-    model_name: str = "flash",
+    model_name: str | None = None,
     product_category: str = "clothing",
     product_description: str = "",
-    location: str = "global",
+    location: str | None = None,
 ) -> dict:
     """Generate try-on image using Gemini Image model.
 
@@ -169,16 +169,19 @@ def generate_tryon_image(
         product_image_path: Path/URI to the product image.
         project_id: GCP project ID.
         output_bucket: optional GCS bucket name to save the generated image.
-        model_name: "flash" (default) | "pro" | full model id
+        model_name: alias ("flash" / "pro") or full model id.
+            Defaults to config.GEMINI_IMAGE_MODEL.
         product_category: Category like clothing, eyewear, jewelry, etc.
         product_description: Textual description to aid Gemini prompt.
+        location: Vertex AI region. Defaults to config.GEMINI_MODEL_LOCATION.
     """
     client = _get_client(project_id, location)
 
     person_bytes = _load_image_bytes(person_image_path, project_id)
     product_bytes = _load_image_bytes(product_image_path, project_id)
 
-    resolved_model = IMAGE_MODELS.get(model_name, IMAGE_MODELS["flash"])
+    effective_model = model_name or config.GEMINI_IMAGE_MODEL
+    resolved_model = IMAGE_MODELS.get(effective_model, IMAGE_MODELS["flash"])
     logger.info(
         f"Generating Try-On Image using model: {resolved_model} for category: {product_category}"
     )
@@ -267,8 +270,8 @@ def generate_tryon_video(
     tryon_image_bytes: bytes,
     project_id: str,
     output_bucket: str | None = None,
-    scene_description: str = "a minimal fashion studio catwalk catwalk walk",
-    location: str = "us-west1",
+    scene_description: str = "a minimal fashion studio catwalk walk",
+    location: str | None = None,
 ) -> dict:
     """Generate try-on video using Veo 3.1 Reference-to-Video (R2V).
 
@@ -277,6 +280,7 @@ def generate_tryon_video(
         project_id: GCP project ID
         output_bucket: optional GCS bucket to save video
         scene_description: Description of the catwalk animation setting
+        location: Vertex AI region. Defaults to config.GEMINI_MODEL_LOCATION.
     """
     client = _get_client(project_id, location)
 

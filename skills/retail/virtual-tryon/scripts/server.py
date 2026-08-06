@@ -31,6 +31,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from google.cloud import storage
 from pydantic import BaseModel
+from scripts.config import config
 from scripts.scan_catalog import scan_directory
 from scripts.tryon_processor import generate_tryon_image, generate_tryon_video
 
@@ -55,9 +56,8 @@ app.add_middleware(
 
 def _resolve_project() -> str:
     """Resolve GCP project: env var, then ADC default. Raises if neither set."""
-    env_proj = os.getenv("GOOGLE_CLOUD_PROJECT")
-    if env_proj:
-        return env_proj
+    if config.GOOGLE_CLOUD_PROJECT:
+        return config.GOOGLE_CLOUD_PROJECT
     try:
         _, adc_proj = google_auth.default()
     except Exception:
@@ -65,20 +65,19 @@ def _resolve_project() -> str:
     if not adc_proj:
         raise RuntimeError(
             "GOOGLE_CLOUD_PROJECT not set and no ADC project available. "
-            "Run start_sandbox.py with --config ./design-spec.md, or "
-            "export GOOGLE_CLOUD_PROJECT=<your-project>."
+            "Copy `.env.example` to `.env` and set GOOGLE_CLOUD_PROJECT, "
+            "or run the skill's Q-MODE which writes it for you."
         )
     return adc_proj
 
 
 PROJECT_ID = _resolve_project()
-LOCATION = os.getenv("GCP_REGION", "us-west1")
-MODEL_LOCATION = os.getenv("GEMINI_MODEL_LOCATION", "global")
-OUTPUT_BUCKET = os.getenv("TRYON_OUTPUT_BUCKET")
-MODEL_NAME = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+LOCATION = config.GCP_REGION
+MODEL_LOCATION = config.GEMINI_MODEL_LOCATION
+OUTPUT_BUCKET = config.TRYON_OUTPUT_BUCKET
+MODEL_NAME = config.GEMINI_IMAGE_MODEL
+DEFAULT_CATALOG_PATH = config.TRYON_CATALOG_PATH
 
-# Default local catalog path
-DEFAULT_CATALOG_PATH = os.getenv("TRYON_CATALOG_PATH", "catalog_images")
 TMP_UPLOAD_DIR = Path("tmp/vto-uploads")
 TMP_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 

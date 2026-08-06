@@ -15,77 +15,68 @@
 
 """FastAPI uvicorn launcher.
 
-Runs the VTO catalog sandbox uvicorn server on localhost. Loads design-spec.md
-into the environment before starting so server.py reads the user's project /
-buckets instead of falling back to ADC defaults or failing.
+Runs the VTO catalog sandbox uvicorn server on localhost. Config comes from
+`.env` (loaded via scripts.config) — for Q-MODE users, `setup.py` writes
+`.env` from `design-spec.md` before this script runs.
 """
 
 import argparse
-import os
-import re
+import logging
 import sys
 from pathlib import Path
 
-# Add parent of scripts directory to path to enable package resolution
+# Add parent of scripts directory to path to enable package resolution.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.config import config
 
-def _load_config(config_path: str) -> dict:
-    """Parse YAML frontmatter from design-spec.md. Returns {} on any failure."""
-    try:
-        import yaml
-
-        content = Path(config_path).read_text()
-        parts = re.split(r"^---\s*$", content, flags=re.MULTILINE)
-        if len(parts) >= 3:
-            return yaml.safe_load(parts[1]) or {}
-    except Exception:
-        pass
-    return {}
-
-
-def apply_config_to_env(config_path: str) -> None:
-    """Export design-spec values into os.environ. Uses setdefault so caller env wins."""
-    cfg = _load_config(config_path)
-    if not cfg:
-        return
-    project_id = cfg.get("gcp_project_id")
-    if project_id:
-        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
-    if cfg.get("gcp_region"):
-        os.environ.setdefault("GCP_REGION", cfg["gcp_region"])
-    output_bucket = cfg.get("tryon_output_bucket") or (
-        f"{project_id}-tryon-output" if project_id else None
-    )
-    if output_bucket:
-        os.environ.setdefault("TRYON_OUTPUT_BUCKET", output_bucket)
-    upload_bucket = cfg.get("tryon_upload_bucket") or (
-        f"{project_id}-tryon-uploads" if project_id else None
-    )
-    if upload_bucket:
-        os.environ.setdefault("TRYON_UPLOAD_BUCKET", upload_bucket)
-    catalog_path = cfg.get("tryon_catalog_path")
-    if catalog_path:
-        if catalog_path.lower() == "demo":
-            catalog_path = "catalog_images"
-        os.environ.setdefault("TRYON_CATALOG_PATH", catalog_path)
-    if cfg.get("tryon_model"):
-        os.environ.setdefault("GEMINI_IMAGE_MODEL", cfg["tryon_model"])
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="./design-spec.md")
+    parser.add_argument(
+        "--config",
+        default="./design-spec.md",
+        help=(
+            "Path to design-spec.md. Kept for CLI compatibility; runtime "
+            "config now comes from .env (populated by setup.py)."
+        ),
+    )
     args = parser.parse_args()
-    apply_config_to_env(args.config)
+
+    # Sanity check: warn loudly if design-spec.md doesn't exist AND .env
+    # doesn't either. Q-MODE users hit this only if they skipped setup.py.
+    workspace = Path(args.config).resolve().parent
+    if not (workspace / ".env").exists() and not Path(args.config).exists():
+        logger.warning(
+            "Neither .env nor %s was found in %s. "
+            "The sandbox will start using scripts.config defaults, which "
+            "requires GOOGLE_CLOUD_PROJECT to be set in the ambient environment.",
+            args.config,
+            workspace,
+        )
+
+    if not config.GOOGLE_CLOUD_PROJECT:
+        logger.error(
+            "GOOGLE_CLOUD_PROJECT is not set. Copy .env.example to .env and "
+            "fill it in, or run scripts/setup.py --config ./design-spec.md."
+        )
+        sys.exit(1)
 
     import uvicorn
 
-    port = int(os.getenv("PORT", "8080"))
-    print("\n============================================================")
-    print("Starting Virtual Try-On Sandbox Dashboard")
-    print(f"Access the web interface at:  http://localhost:{port}")
-    print("============================================================\n")
+    logger.info("=" * 60)
+    logger.info("Starting Virtual Try-On Sandbox Dashboard")
+    logger.info(f"  Project:    {config.GOOGLE_CLOUD_PROJECT}")
+    logger.info(f"  Region:     {config.GCP_REGION}")
+    logger.info(f"  Image model: {config.GEMINI_IMAGE_MODEL}")
+    logger.info(f"Access at:   http://localhost:{config.PORT}")
+    logger.info("=" * 60)
 
-    # Run the FastAPI server
-    uvicorn.run("scripts.server:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(
+        "scripts.server:app", host="0.0.0.0", port=config.PORT, reload=True
+    )

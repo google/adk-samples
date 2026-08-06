@@ -19,14 +19,12 @@ try-on tools.
 """
 
 import logging
-import os
 
 from google.adk import agents, apps, models
+from scripts.config import config
 from scripts.tryon_processor import generate_tryon_image, generate_tryon_video
 
 logger = logging.getLogger(__name__)
-
-LLM = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
 
 def try_on_product_image(
@@ -49,23 +47,19 @@ def try_on_product_image(
         A dictionary with "status" ("success" or "error"), "output_uri" (if bucket configured) or
         "output_path" (if saved locally), and "model_used".
     """
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
-    output_bucket = os.getenv("TRYON_OUTPUT_BUCKET", "")
-    model_name = os.getenv("GEMINI_IMAGE_MODEL", "flash")
-
-    if not project_id:
+    if not config.GOOGLE_CLOUD_PROJECT:
         return {
             "status": "error",
-            "error": "GOOGLE_CLOUD_PROJECT environment variable is not set.",
+            "error": "GOOGLE_CLOUD_PROJECT is not set. Copy .env.example to .env and fill it in.",
         }
 
     try:
         res = generate_tryon_image(
             person_image_path=user_photo_path,
             product_image_path=product_image_path,
-            project_id=project_id,
-            output_bucket=output_bucket if output_bucket else None,
-            model_name=model_name,
+            project_id=config.GOOGLE_CLOUD_PROJECT,
+            output_bucket=config.TRYON_OUTPUT_BUCKET or None,
+            model_name=config.GEMINI_IMAGE_MODEL,
             product_category=product_category,
             product_description=product_description,
         )
@@ -97,13 +91,10 @@ def try_on_product_video(
         A dictionary with "status" ("success" or "error"), "output_uri" (if bucket configured) or
         "output_path" (if saved locally) of the generated catwalk video.
     """
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
-    output_bucket = os.getenv("TRYON_OUTPUT_BUCKET", "")
-
-    if not project_id:
+    if not config.GOOGLE_CLOUD_PROJECT:
         return {
             "status": "error",
-            "error": "GOOGLE_CLOUD_PROJECT environment variable is not set.",
+            "error": "GOOGLE_CLOUD_PROJECT is not set. Copy .env.example to .env and fill it in.",
         }
 
     try:
@@ -111,9 +102,9 @@ def try_on_product_video(
         img_res = generate_tryon_image(
             person_image_path=user_photo_path,
             product_image_path=product_image_path,
-            project_id=project_id,
+            project_id=config.GOOGLE_CLOUD_PROJECT,
             output_bucket=None,  # Keep temporary on disk
-            model_name=os.getenv("GEMINI_IMAGE_MODEL", "flash"),
+            model_name=config.GEMINI_IMAGE_MODEL,
             product_category=product_category,
             product_description=product_description,
         )
@@ -122,8 +113,8 @@ def try_on_product_video(
         tryon_image_bytes = img_res["image_bytes"]
         video_res = generate_tryon_video(
             tryon_image_bytes=tryon_image_bytes,
-            project_id=project_id,
-            output_bucket=output_bucket if output_bucket else None,
+            project_id=config.GOOGLE_CLOUD_PROJECT,
+            output_bucket=config.TRYON_OUTPUT_BUCKET or None,
             scene_description=scene_description,
         )
 
@@ -145,7 +136,7 @@ or path to the user so they can view the result."""
 
 root_agent = agents.Agent(
     name="root_agent",
-    model=models.Gemini(model=LLM),
+    model=models.Gemini(model=config.GEMINI_MODEL),
     instruction=INSTRUCTION,
     tools=[try_on_product_image, try_on_product_video],
 )
