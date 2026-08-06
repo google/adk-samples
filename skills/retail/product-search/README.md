@@ -6,18 +6,25 @@ shopping assistant agents.
 
 ## Install
 
-Clone the adk-samples repo and install the recipe:
+Install directly into your AI coding assistant (Claude Code, Antigravity,
+Codex, ...) via `npx skills add`. The tool discovers `SKILL.md` from this
+recipe and registers `/retail-product-search` as an invocable skill:
+
+```bash
+npx skills add google/adk-samples --skill retail-product-search
+```
+
+Installs to `~/.claude/skills/` or `~/.agents/skills/` depending on host.
+Antigravity discovers from `~/.agents/skills/` automatically.
+
+**Developer install** (if you're contributing to the recipe rather than
+consuming it):
 
 ```bash
 git clone https://github.com/google/adk-samples.git
 cd adk-samples/skills/retail/product-search
 uv sync
 ```
-
-AI coding assistants that support the skills spec (Claude Code, Antigravity,
-Codex, ...) also discover `SKILL.md` from `~/.claude/skills/` or
-`~/.agents/skills/` — copy or symlink this recipe there if you want to invoke
-it as `/retail-product-search` inside your assistant.
 
 ## Prerequisites
 
