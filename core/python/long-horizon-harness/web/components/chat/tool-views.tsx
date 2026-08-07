@@ -13,12 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 import { diffLines } from "diff";
-import { Highlight, themes, type Language, type PrismTheme } from "prism-react-renderer";
+import {
+  Highlight,
+  themes,
+  type Language,
+  type PrismTheme,
+} from "prism-react-renderer";
 import { FileText, Pencil, Terminal as TerminalIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "./copy-button";
+import { useViewerOptional } from "./artifact-viewer/viewer-context";
+import { normalizeWorkspacePath } from "./workspace-href";
 
 const EXT_TO_LANG: Record<string, Language> = {
   py: "python",
@@ -131,7 +137,9 @@ const LANG_ALIAS: Record<string, Language> = {
   ...EXT_TO_LANG,
 };
 
-export function prismLanguageFromInfo(info: string | null | undefined): Language {
+export function prismLanguageFromInfo(
+  info: string | null | undefined,
+): Language {
   if (!info) return "markup";
   return LANG_ALIAS[info.toLowerCase()] ?? "markup";
 }
@@ -204,8 +212,8 @@ export function DiffBlock({
         const cls = part.added
           ? "bg-emerald-500/10 text-emerald-300"
           : part.removed
-          ? "bg-rose-500/10 text-rose-300"
-          : "text-zinc-400";
+            ? "bg-rose-500/10 text-rose-300"
+            : "text-zinc-400";
         return lines.map((ln, li) => (
           <div key={`${pi}-${li}`} className={cn("px-1", cls)}>
             <span aria-hidden className="mr-2 select-none opacity-60">
@@ -259,7 +267,8 @@ export function PatchView({
   return (
     <div className="flex w-full max-w-full flex-col gap-1">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        patch · <span className="font-mono normal-case">{path || "(no path)"}</span>
+        patch ·{" "}
+        <span className="font-mono normal-case">{path || "(no path)"}</span>
         {replaceAll && (
           <span className="ml-1 rounded bg-amber-500/15 px-1 text-amber-300">
             replace_all
@@ -276,15 +285,39 @@ export function PatchView({
   );
 }
 
-export function writeFilePreview(
-  args: Record<string, unknown> | null,
-): string {
+export function writeFilePreview(args: Record<string, unknown> | null): string {
   if (!args) return "";
   const path = asString(args.path);
   if (!path) return "";
   const content = asString(args.content);
   const lines = content ? content.split("\n").length : 0;
   return `${basename(path)} · ${lines} lines`;
+}
+
+/** The written path, clickable when it resolves to a live workspace file. */
+function WorkspaceFileLink({ path }: { path: string }) {
+  const viewer = useViewerOptional();
+  const wsPath = path ? normalizeWorkspacePath(path) : null;
+  if (!wsPath || !viewer) {
+    return <span className="font-mono normal-case">{path || "(no path)"}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        viewer.openArtifact({
+          name: wsPath.split("/").pop() || wsPath,
+          mimeType: "",
+          path: wsPath,
+          url: `/lha/workspace/download?path=${encodeURIComponent(wsPath)}&inline=1`,
+        })
+      }
+      className="font-mono normal-case underline hover:no-underline"
+      title={`Open ${wsPath} in the side panel`}
+    >
+      {path}
+    </button>
+  );
 }
 
 export function WriteFileView({
@@ -304,7 +337,12 @@ export function WriteFileView({
   return (
     <div className="flex w-full max-w-full flex-col gap-1">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        write_file · <span className="font-mono normal-case">{path || "(no path)"}</span>
+        write_file ·{" "}
+        {err ? (
+          <span className="font-mono normal-case">{path || "(no path)"}</span>
+        ) : (
+          <WorkspaceFileLink path={path} />
+        )}
       </div>
       <CodeBlock code={content} language={lang} />
       {err && (
@@ -316,9 +354,7 @@ export function WriteFileView({
   );
 }
 
-export function readFilePreview(
-  args: Record<string, unknown> | null,
-): string {
+export function readFilePreview(args: Record<string, unknown> | null): string {
   if (!args) return "";
   const path = asString(args.path);
   if (!path) return "";
@@ -350,7 +386,8 @@ export function ReadFileView({
   return (
     <div className="flex w-full max-w-full flex-col gap-1">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        read_file · <span className="font-mono normal-case">{path || "(no path)"}</span>
+        read_file ·{" "}
+        <span className="font-mono normal-case">{path || "(no path)"}</span>
       </div>
       {hasResult ? (
         err ? (
@@ -361,15 +398,15 @@ export function ReadFileView({
           <CodeBlock code={content} language={lang} />
         )
       ) : (
-        <div className="text-[11px] text-muted-foreground">awaiting content…</div>
+        <div className="text-[11px] text-muted-foreground">
+          awaiting content…
+        </div>
       )}
     </div>
   );
 }
 
-export function terminalPreview(
-  args: Record<string, unknown> | null,
-): string {
+export function terminalPreview(args: Record<string, unknown> | null): string {
   if (!args) return "";
   const cmd = asString(args.command);
   if (!cmd) return "";
@@ -398,8 +435,7 @@ export function TerminalView({
       : null;
   const stdout = asString(r?.stdout);
   const stderr = asString(r?.stderr);
-  const exitCode =
-    typeof r?.exit_code === "number" ? r.exit_code : null;
+  const exitCode = typeof r?.exit_code === "number" ? r.exit_code : null;
   const err = asString(r?.error);
   return (
     <div className="flex w-full max-w-full flex-col gap-1">
