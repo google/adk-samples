@@ -846,3 +846,146 @@ class TestRoundTrips:
 
         read_result = await read_file(str(target))
         assert "value = 42" in read_result["content"]
+
+
+class TestPatchByRange:
+    """Offsets identify the span; ``old_string`` only verifies it.
+
+    The UI hands over character offsets for text the user highlighted, which
+    stays unambiguous in files where the same text repeats — the case a search
+    anchor cannot resolve at all.
+    """
+
+    async def test_edits_the_named_span_even_when_the_text_repeats(
+        self, tmp_path: Path
+    ) -> None:
+        from horizon.tools.file_ops import patch
+
+        target = tmp_path / "alpha.md"
+        # "b" three times: a search anchor would refuse this outright.
+        target.write_text("a\nb\nc\nb\nd\nb\n", encoding="utf-8")
+        start = len("a\n")
+
+        result = await patch(str(target), "b", "B", start=start, end=start + 1)
+
+        assert result["success"] is True, result
+        assert result["replacements"] == 1
+        assert target.read_text(encoding="utf-8") == "a\nB\nc\nb\nd\nb\n"
+
+    async def test_edits_a_partial_line(self, tmp_path: Path) -> None:
+        from horizon.tools.file_ops import patch
+
+        target = tmp_path / "doc.md"
+        target.write_text("# dogs\n", encoding="utf-8")
+        start = len("# ")
+
+        result = await patch(
+            str(target), "dogs", "Dogs", start=start, end=start + 4
+        )
+
+        assert result["success"] is True, result
+        assert target.read_text(encoding="utf-8") == "# Dogs\n"
+
+    async def test_refuses_when_the_span_no_longer_matches(
+        self, tmp_path: Path
+    ) -> None:
+        from horizon.tools.file_ops import patch
+
+        target = tmp_path / "doc.md"
+        target.write_text("hello world\n", encoding="utf-8")
+
+        result = await patch(str(target), "hello", "hi", start=6, end=11)
+
+        assert result["success"] is False
+        assert "changed since" in result["error"]
+        # Untouched, rather than a confident edit to the wrong span.
+        assert target.read_text(encoding="utf-8") == "hello world\n"
+
+    async def test_refuses_a_range_past_the_end_of_the_file(
+        self, tmp_path: Path
+    ) -> None:
+        from horizon.tools.file_ops import patch
+
+        target = tmp_path / "doc.md"
+        target.write_text("short\n", encoding="utf-8")
+
+        result = await patch(str(target), "short", "long", start=0, end=999)
+
+        assert result["success"] is False
+        assert "past the end" in result["error"]
+        assert target.read_text(encoding="utf-8") == "short\n"
+
+    async def test_refuses_an_inverted_or_negative_range(
+        self, tmp_path: Path
+    ) -> None:
+        from horizon.tools.file_ops import patch
+
+        target = tmp_path / "doc.md"
+        target.write_text("abcdef\n", encoding="utf-8")
+
+        # Assert the reason, not just the refusal: a negative start otherwise
+        # slips through to the content guard and is rejected for the wrong
+        # reason, leaving the range check untested.
+        inverted = await patch(str(target), "b", "B", start=4, end=2)
+        assert inverted["success"] is False
+        assert "invalid range" in inverted["error"]
+
+        negative = await patch(str(target), "b", "B", start=-1, end=2)
+        assert negative["success"] is False
+        assert "invalid range" in negative["error"]
+
+        assert target.read_text(encoding="utf-8") == "abcdef\n"
+
+    async def test_refuses_a_half_specified_range(self, tmp_path: Path) -> None:
+        from horizon.tools.file_ops import patch
+
+        target = tmp_path / "doc.md"
+        target.write_text("abcdef\n", encoding="utf-8")
+
+        result = await patch(str(target), "b", "B", start=1)
+
+        assert result["success"] is False
+        assert "together" in result["error"]
+        assert target.read_text(encoding="utf-8") == "abcdef\n"
+
+    async def test_an_empty_range_inserts(self, tmp_path: Path) -> None:
+        from horizon.tools.file_ops import patch
+
+        target = tmp_path / "doc.md"
+        target.write_text("ac\n", encoding="utf-8")
+
+        result = await patch(str(target), "", "b", start=1, end=1)
+
+        assert result["success"] is True, result
+        assert target.read_text(encoding="utf-8") == "abc\n"
+
+    async def test_replace_all_with_a_range_is_refused(
+        self, tmp_path: Path
+    ) -> None:
+        """A range names one span, so repeating it means nothing. Silently
+        ignoring the flag would do something the caller did not ask for."""
+        from horizon.tools.file_ops import patch
+
+        target = tmp_path / "doc.md"
+        target.write_text("a\nb\nb\n", encoding="utf-8")
+
+        result = await patch(
+            str(target), "b", "B", start=2, end=3, replace_all=True
+        )
+
+        assert result["success"] is False
+        assert "replace_all" in result["error"]
+        assert target.read_text(encoding="utf-8") == "a\nb\nb\n"
+
+    async def test_search_mode_is_unchanged_when_no_range_is_given(
+        self, tmp_path: Path
+    ) -> None:
+        from horizon.tools.file_ops import patch
+
+        target = tmp_path / "doc.md"
+        target.write_text("hello world\n", encoding="utf-8")
+
+        result = await patch(str(target), "world", "there")
+
+        assert result["success"] is True, result
+        assert target.read_text(encoding="utf-8") == "hello there\n"
