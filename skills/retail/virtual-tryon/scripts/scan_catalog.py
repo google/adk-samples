@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from scripts.config import config
 
-os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
+os.environ.setdefault("GOOGLE_API_USE_CLIENT_CERTIFICATE", "false")
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
