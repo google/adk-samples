@@ -208,15 +208,9 @@ jobs:
           #    a red X with no rule, no file and no line — the violation was
           #    real but invisible. `--output-format=concise` costs one extra
           #    ruff invocation and makes the log self-sufficient.
-          #
-          #    `--quiet` suppresses ruff's "All checks passed!" banner on
-          #    clean input (ruff >= 0.16 writes that banner to stdout, which
-          #    made LINT_OUTPUT non-empty and tripped the exit-1 gate below
-          #    even when there were zero violations). Diagnostics still print.
           LINT_OUTPUT=$(uvx ruff check \
             --force-exclude \
             --output-format=concise \
-            --quiet \
             --exit-zero "${CHANGED_FILES[@]}")
 
           if [ -n "$LINT_OUTPUT" ]; then
