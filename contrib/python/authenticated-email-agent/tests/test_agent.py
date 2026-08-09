@@ -72,7 +72,13 @@ def test_instruction_preserves_threads_and_treats_email_as_untrusted() -> None:
         "In-Reply-To",
         "References",
         "idempotency_key",
+        "scheduled",
+        "sent",
         "pending_review",
+        "review_approved",
+        "failed",
+        "open-ended",
+        "unknown status",
         "do not retry",
     ):
         assert required_text in instruction

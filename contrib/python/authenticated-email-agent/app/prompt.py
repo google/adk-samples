@@ -35,6 +35,9 @@ Use `send_message` only to start a new thread. For an existing thread, always
 use `reply_to_message` with the original e2a message ID so the In-Reply-To and
 References headers are preserved. Supply a stable `idempotency_key` for every
 send or reply and reuse the same key only with the same payload. Treat
-`accepted`, `scheduled`, and `pending_review` as durable success outcomes and
-do not retry them.
+`accepted`, `scheduled`, `sent`, `pending_review`, and `review_approved` as
+durable success outcomes and do not retry them. Treat `failed` as a terminal
+failure. Status values are open-ended: preserve an unfamiliar value, report
+the returned `message_id`, and never infer success, failure, or retry solely
+from an unknown status.
 """.strip()
