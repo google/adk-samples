@@ -1,113 +1,70 @@
 # Dependabot configuration.
 #
-# This file is STATIC and hand-maintained. Adding, removing, or renaming a
-# recipe requires NO change here — Dependabot resolves the glob patterns
-# below against the tree on every run and discovers manifests itself.
+# Recipe dependency VERSION updates are deliberately not configured here.
+# That is a policy decision, not an oversight — read on before adding an
+# entry back.
 #
-# It did not always work that way. This file used to enumerate one entry per
-# directory and was produced by a generator that contributors had to remember
-# to re-run, with a CI gate failing their PR when they forgot. The requirement
-# appeared in no contributor-facing doc and `uv run validate` could not catch
-# it, so the first anyone heard of it was a red X on their PR. All 20
-# generated RECIPE entries were byte-identical apart from the path, so the
-# globs below lose no configurability. The static github-actions entry at the
-# bottom was never generated from the tree — it has always carried its own
-# extra label, group name and cooldown — and is unchanged.
+# Why recipes do not get version updates
+# --------------------------------------
+# A recipe is a clone-and-study artifact, and its committed uv.lock is a
+# verified snapshot: "this exact set of versions was tested and worked."
+# A version-update PR replaces that verified set with an unverified one and
+# asks a reviewer to bless it. The invariant this repo actually cares about
+# is "the recipe still installs from its lock and still passes its tests",
+# NOT "the recipe uses current versions".
 #
-# What to change here, and when:
-#   - A new recipe, anywhere under core/, contrib/, or skills/  -> nothing.
-#   - A new top-level recipe root                               -> add it to
-#     every `directories` list below, and to SCAN_ROOTS in
-#     .github/scripts/recipe_manifests.py.
-#   - A new language whose ecosystem is not listed below        -> add an
-#     entry for it.
+# It also did not work in practice. With one entry per recipe ecosystem the
+# repo accumulated 98 open Dependabot PRs, none of which could merge: `main`
+# requires a code-owner review, and an approval from GITHUB_TOKEN does not
+# satisfy that (see dependabot-auto-merge.yml, which approves as
+# github-actions[bot] and therefore never unblocks anything). The review load
+# landed on two people by way of the CODEOWNERS catch-all, regardless of who
+# actually owned the recipe. That does not scale past the recipe count the
+# repo already has, let alone the one it is heading for.
 #
-# Ecosystem/manifest mapping (mirrored by the detectors in
-# .github/scripts/recipe_manifests.py, which the orphan-PR cleanup uses):
-#   uv      Python  uv.lock
-#   npm     TS/JS   package.json with dependencies or devDependencies
-#   gomod   Go      go.mod
-#   maven   Java    pom.xml
-#   gradle  Kotlin  build.gradle.kts + settings.gradle.kts
+# What replaces it
+# ----------------
+#   - Freshness is the recipe owner's call. Every manifest.yaml declares
+#     `ownership.poc`, and an owner who has a reason to move versions is free
+#     to do so.
+#   - Rot is detected rather than prevented, by a monthly canary that lands
+#     separately in #2502 as .github/workflows/recipe-canary.yml. It verifies
+#     that each recipe still installs from its committed lockfile
+#     (`uv sync --frozen`) and still passes its tests, and files an issue
+#     against the recipe's poc when it does not. That catches the failure
+#     modes a frozen lock really has — a yanked release, a package pulled
+#     from the index, wheels with no build for a newer interpreter — without
+#     asking anyone to review a bump that changes nothing they need.
 #
-# `**/*` is globstar: the directory layer below the root and everything
-# beneath it, recursively. Recursion is required, not cosmetic — manifests sit
-# at four different depths today, from `core/rag-vector-search` (a legacy flat
-# path) down to `core/python/long-horizon-harness/web/server`.
+# Security updates are NOT affected by this file
+# ----------------------------------------------
+# Dependabot security updates are a repository setting, and GitHub documents
+# that there is no interaction between dependabot.yml and Dependabot security
+# alerts. Dropping the recipe ecosystems from this file does not disable
+# security PRs; they keep arriving for any advisory with an available patch.
+# Deleting this file entirely would not stop them either.
 #
-# Retired roots (`frozen_paths` in .github/policy.yml: python/agents,
-# java/agents, ...) are deliberately not globbed. They are closed to new work.
+# Why github-actions stays
+# ------------------------
+# It is not a recipe ecosystem. Action pins are this repository's own CI
+# supply chain — owned by the repo maintainers rather than by any recipe
+# owner, so "the recipe owner decides" does not apply. It is also capped at a
+# single grouped PR per week, so it carries none of the volume problem above.
+#
+# If you add a recipe ecosystem back
+# ----------------------------------
+# .github/scripts/tests/test_dependabot_config.py pins the absence on purpose
+# and will fail, so that re-enabling version updates is a deliberate act with
+# a reviewer attached rather than a quiet one-line edit. Update that test in
+# the same change, and say why in the PR.
+#
+# Note that .github/scripts/recipe_manifests.py still detects every ecosystem
+# in the tree, and the orphan cleanup in dependabot-housekeeping.yml still
+# derives liveness from the tree rather than from this file — so nothing here
+# affects which open PRs are treated as orphans.
 
 version: 2
 updates:
-  - package-ecosystem: "uv"
-    directories:
-      - "/core/**/*"
-      - "/contrib/**/*"
-      - "/skills/**/*"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    # Was 1 per directory across 16 enumerated entries. A single entry now
-    # covers every directory, so the cap is raised to keep throughput
-    # comparable.
-    open-pull-requests-limit: 25
-    # Wait a few days after a release before opening a PR, so the community
-    # catches broken releases before we auto-merge them. Security updates
-    # bypass this cooldown and fire immediately.
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    # No `group-by` — without it Dependabot opens one PR per directory, which
-    # preserves the previous one-PR-per-recipe behaviour. Adding
-    # `group-by: dependency-name` would collapse a bump across every recipe
-    # into a single repo-wide PR.
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "npm"
-    directories:
-      - "/core/**/*"
-      - "/contrib/**/*"
-      - "/skills/**/*"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:00"
-    commit-message:
-      prefix: chore
-      include: scope
-    labels:
-      - dependencies
-    open-pull-requests-limit: 10
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
-    groups:
-      all-dependencies:
-        patterns:
-          - "*"
-
-  # gomod / maven / gradle are deliberately NOT declared. No Go, Java, or
-  # Kotlin recipe exists yet, and a glob matching zero directories is the
-  # likeliest way to get this whole file rejected — which would silently stop
-  # every dependency update, security ones included. That is not a risk worth
-  # taking for languages the repo does not yet host.
-  #
-  # This is not a silent gap. recipe_manifests.py still detects all five
-  # ecosystems, and test_dependabot_config.py asserts that every ecosystem
-  # found in the tree has an entry here — so the first Go/Java/Kotlin recipe
-  # fails CI with a message telling you to add its block, rather than merging
-  # green and quietly receiving no updates.
-
   # Not a recipe ecosystem: Dependabot reads /.github/workflows and any
   # action.yml at the repo root. `directory: "/"` is what GitHub documents for
   # github-actions; it is not a glob.

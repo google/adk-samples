@@ -13,14 +13,15 @@ Where the live set comes from
 The tree, via recipe_manifests.scan() — NOT .github/dependabot.yml.
 
 This script used to recover the set by regex-scanning enumerated `directory:`
-keys out of dependabot.yml. That file now uses glob patterns (`directories:`)
-so that adding a recipe requires no config change, which leaves nothing to
-parse: the old parser would have found zero pairs, judged every open
-Dependabot PR an orphan, and closed them all with --delete-branch.
+keys out of dependabot.yml. That file no longer configures recipe ecosystems
+at all, which leaves nothing to parse: the old parser would find zero recipe
+pairs, judge every open Dependabot PR an orphan, and close them all with
+--delete-branch.
 
-Scanning the tree is also the more accurate source. The globs in
-dependabot.yml are resolved by Dependabot against the tree, so the tree is
-what actually determines which directories are live.
+The tree is also the more accurate source. Which recipe directories exist is
+a property of the tree, not of a config file that has stopped describing
+them — and the 98 PRs open when the policy changed are precisely the ones
+that would be swept up if this ever started reading dependabot.yml again.
 
 Uses `gh pr close <n> --delete-branch` with no explanatory comment: the GitHub
 GraphQL `addComment` mutation has an anti-abuse throttle that trips on large
