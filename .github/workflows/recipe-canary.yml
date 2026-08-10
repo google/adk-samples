@@ -129,7 +129,14 @@ jobs:
         env:
           PYVER: ${{ matrix.entry.python }}
         run: |
+          # `set +e` is load-bearing — do not drop it. GitHub invokes `run:`
+          # as `bash -e {0}`, so errexit is ALREADY on and `set -uo pipefail`
+          # does not clear it; only `set +e` does. Without it the failing
+          # `uv sync` below kills the step where it stands and the three
+          # lines after it never run, losing the log tail exactly when there
+          # is something worth reading in it.
           set -uo pipefail
+          set +e
           # --frozen: install exactly what uv.lock says, and fail rather than
           # re-resolve. --python: honour the matrix version instead of
           # whatever uv would pick.
@@ -159,7 +166,11 @@ jobs:
         env:
           PYVER: ${{ matrix.entry.python }}
         run: |
+          # `set +e` for the same reason as the sync step above: errexit is
+          # already on, and without clearing it a failing pytest run skips
+          # the log tail that makes the failure diagnosable.
           set -uo pipefail
+          set +e
           uv run --python "$PYVER" pytest \
             --ignore=tests/integration \
             --ignore-glob='**/test_integration.py' \
@@ -182,7 +193,17 @@ jobs:
           SYNC_OUTCOME: ${{ steps.sync.outcome }}
           TESTS_OUTCOME: ${{ steps.tests.outcome }}
         run: |
+          # `set +e` matters MOST here. Errexit is on by default (`bash -e
+          # {0}`), and every DETAIL assignment below is a pipeline that
+          # legitimately exits non-zero: `grep` returns 1 when a log has no
+          # matching line, and `tail` returns 1 when the log is absent
+          # because an earlier step died. With errexit live, either case
+          # kills this step, `result.json` is never written, and the recipe
+          # drops out of the collated report entirely — so a genuinely
+          # broken recipe gets no issue filed. That is the opposite of what
+          # a canary is for.
           set -uo pipefail
+          set +e
           OUTCOME=pass
           STEP=""
           DETAIL=""
@@ -201,7 +222,10 @@ jobs:
           elif [ "$TESTS_OUTCOME" != "success" ]; then
             OUTCOME=fail
             STEP="pytest"
-            DETAIL=$(grep -E '^(FAILED|ERROR|E  )' pytest.log 2>/dev/null | head -3 | tr '\n' ' ')
+            # `sed -n '1,3p'` rather than `head -3`: head closes the pipe
+            # after three lines, and on a large pytest.log grep is killed by
+            # SIGPIPE (141) before it finishes writing. sed drains its input.
+            DETAIL=$(grep -E '^(FAILED|ERROR|E  )' pytest.log 2>/dev/null | sed -n '1,3p' | tr '\n' ' ')
             [ -z "$DETAIL" ] && DETAIL=$(tail -5 pytest.log 2>/dev/null | tr '\n' ' ')
           fi
 
@@ -232,7 +256,11 @@ jobs:
   report:
     name: File and update canary issues
     needs: [matrix, check]
-    if: always() && needs.matrix.result == 'success'
+    # `!cancelled()` rather than `always()`: a cancelled run has no verdict to
+    # report, and acting on its partial results is how a recipe gets a false
+    # recovery. A FAILED check job is different — that is the signal — so this
+    # still runs when checks fail.
+    if: '!cancelled() && needs.matrix.result == ''success'''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -253,6 +281,8 @@ jobs:
 
       - name: Collate
         id: collate
+        env:
+          MATRIX_JSON: ${{ needs.matrix.outputs.matrix }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -262,11 +292,49 @@ jobs:
               json.loads(p.read_text())
               for p in sorted(root.rglob("result.json"))
           ]
+
+          # Reconcile against the matrix. A check job that dies before
+          # writing result.json leaves no trace otherwise, and the gap is
+          # dangerous in one specific way: a recipe whose passing job
+          # reported and whose failing job vanished reads as RECOVERED, so
+          # the reporter would close its tracking issue and throw away the
+          # escalation history. Recipes with incomplete evidence are dropped
+          # here unless they already have a failure, because a recipe absent
+          # from results.json is left untouched while one wrongly present is
+          # acted on.
+          expected = {
+              (e["recipe"], e["python"])
+              for e in json.loads(os.environ["MATRIX_JSON"])
+          }
+          seen = {(e["recipe"], e["python"]) for e in entries}
+          missing = expected - seen
+          incomplete = {r for r, _ in missing}
+          failing = {e["recipe"] for e in entries if e["outcome"] == "fail"}
+
+          if missing:
+              for recipe, python in sorted(missing):
+                  print(
+                      f"::warning::no result from {recipe} @ py{python} — "
+                      f"the check job did not report"
+                  )
+
+          dropped = incomplete - failing
+          if dropped:
+              print(
+                  f"::warning::{len(dropped)} recipe(s) have incomplete "
+                  f"results and no observed failure; leaving their issues "
+                  f"untouched: {sorted(dropped)}"
+              )
+              entries = [e for e in entries if e["recipe"] not in dropped]
+
           out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "results.json"
           out.write_text(json.dumps(entries, indent=1))
           fails = [e for e in entries if e["outcome"] == "fail"]
           infra = [e for e in entries if e["outcome"] == "infra"]
-          print(f"{len(entries)} jobs, {len(fails)} failing, {len(infra)} infra")
+          print(
+              f"{len(entries)}/{len(expected)} jobs reported, "
+              f"{len(fails)} failing, {len(infra)} infra"
+          )
           for e in entries:
               print(f"  {e['outcome']:5}  {e['recipe']} @ py{e['python']}")
           PY

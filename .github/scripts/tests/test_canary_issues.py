@@ -22,6 +22,7 @@ everyone to ignore the channel.
 Every test below pins one of those.
 """
 
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -76,6 +77,53 @@ def test_one_failing_version_fails_the_recipe():
         {"recipe": "a", "python": "3.13", "outcome": "fail"},
     ]
     assert set(m.failing_recipes(results)) == {"a"}
+
+
+# ---------------------------------------------------------------------------
+# Which recipes are considered RECOVERED — the other half, and the one that
+# closes issues, so it has to be a positive observation rather than "did not
+# appear in the failing set".
+# ---------------------------------------------------------------------------
+
+
+def test_recovery_requires_an_actual_passing_job():
+    results = [
+        {"recipe": "a", "python": "3.11", "outcome": "pass"},
+        {"recipe": "b", "python": "3.11", "outcome": "fail"},
+        {"recipe": "c", "python": "3.11", "outcome": "infra"},
+    ]
+    assert m.recovered_recipes(results) == {"a"}
+
+
+def test_an_infra_only_month_is_not_a_recovery():
+    """The bug this function exists for. `failing_recipes` ignores `infra`, so
+    a registry outage puts a recipe in NEITHER bucket. Reading that as
+    recovery closes the tracking issue claiming the recipe passes — having
+    tested nothing — and throws away the escalation history."""
+    results = [
+        {"recipe": "a", "python": "3.11", "outcome": "infra"},
+        {"recipe": "a", "python": "3.13", "outcome": "infra"},
+    ]
+    assert m.failing_recipes(results) == {}
+    assert m.recovered_recipes(results) == set()
+
+
+def test_one_passing_version_is_not_recovery_if_another_failed():
+    results = [
+        {"recipe": "a", "python": "3.11", "outcome": "pass"},
+        {"recipe": "a", "python": "3.13", "outcome": "fail"},
+    ]
+    assert m.recovered_recipes(results) == set()
+
+
+def test_a_pass_alongside_infra_still_counts_as_recovery():
+    """Nothing failed and something demonstrably worked, which is as much as
+    the canary can ever observe."""
+    results = [
+        {"recipe": "a", "python": "3.11", "outcome": "pass"},
+        {"recipe": "a", "python": "3.13", "outcome": "infra"},
+    ]
+    assert m.recovered_recipes(results) == {"a"}
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +300,57 @@ def test_empty_results_refuse_to_act(tmp_path, capsys):
     results.write_text("[]", encoding="utf-8")
     assert m.main(["--results", str(results)]) == 1
     assert "Refusing to act" in capsys.readouterr().err
+
+
+def _drive_main(tmp_path, monkeypatch, results, issue):
+    """Run main() over `results` with one open issue, recording the verdict."""
+    acted: list[tuple] = []
+    monkeypatch.setattr(m, "ensure_labels", lambda: None)
+    monkeypatch.setattr(m, "find_issue", lambda r: issue)
+    monkeypatch.setattr(
+        m, "open_issue", lambda r, j, u, d: acted.append(("open", r))
+    )
+    monkeypatch.setattr(
+        m, "escalate", lambda r, i, d: acted.append(("escalate", r))
+    )
+    monkeypatch.setattr(
+        m, "close_recovered", lambda r, i, d: acted.append(("close", r))
+    )
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps(results), encoding="utf-8")
+    assert m.main(["--results", str(path), "--dry-run"]) == 0
+    return acted
+
+
+def test_an_infra_only_month_leaves_the_issue_open(tmp_path, monkeypatch):
+    """End to end: a registry outage must not close a rotting issue.
+
+    Before the fix `main()` reached `close_recovered` for any recipe absent
+    from `failing_recipes`, so this posted "installs from its lockfile and
+    passes its tests again" on an issue whose recipe had not been tested at
+    all, and reset an escalation clock up to 119 days old.
+    """
+    results = [
+        {"recipe": "contrib/foo", "python": "3.11", "outcome": "infra"},
+        {"recipe": "contrib/foo", "python": "3.13", "outcome": "infra"},
+    ]
+    acted = _drive_main(
+        tmp_path, monkeypatch, results, _issue(95, {m.LABEL_DELETION})
+    )
+    assert acted == []
+
+
+def test_a_genuine_pass_still_closes_the_issue(tmp_path, monkeypatch):
+    """The other side of the same guard: recovery must still work."""
+    results = [{"recipe": "contrib/foo", "python": "3.11", "outcome": "pass"}]
+    acted = _drive_main(tmp_path, monkeypatch, results, _issue(95))
+    assert acted == [("close", "contrib/foo")]
+
+
+def test_a_still_failing_recipe_escalates(tmp_path, monkeypatch):
+    results = [{"recipe": "contrib/foo", "python": "3.11", "outcome": "fail"}]
+    acted = _drive_main(tmp_path, monkeypatch, results, _issue(35))
+    assert acted == [("escalate", "contrib/foo")]
 
 
 def test_gh_failure_is_raised_not_swallowed(monkeypatch):

@@ -187,6 +187,31 @@ def failing_recipes(results: list[dict]) -> dict[str, list[dict]]:
     return failures
 
 
+def recovered_recipes(results: list[dict]) -> set[str]:
+    """Recipes with at least one `pass` job and no `fail` job.
+
+    Recovery must be a POSITIVE observation, never the absence of a failure.
+    `failing_recipes` ignores `infra` outcomes on purpose, so a month where
+    every job for a recipe came back `infra` — a registry outage, a runner
+    problem — leaves that recipe in neither bucket. Reading "not failing" as
+    "recovered" would close the tracking issue claiming the recipe installs
+    and passes, having tested nothing, and would reset an escalation clock up
+    to 119 days old.
+
+    A recipe with no conclusive result is left exactly as it was: the issue
+    stays open, no rung advances, and the next run picks up where this one
+    left off.
+    """
+    outcomes: dict[str, set[str]] = {}
+    for entry in results:
+        outcomes.setdefault(entry["recipe"], set()).add(entry.get("outcome"))
+    return {
+        recipe
+        for recipe, seen in outcomes.items()
+        if "pass" in seen and "fail" not in seen
+    }
+
+
 def _mention(owner: str | None) -> tuple[str, str]:
     """(mention line, note) for the issue body."""
     if owner:
@@ -459,11 +484,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     failures = failing_recipes(results)
+    recovered = recovered_recipes(results)
     by_recipe: dict[str, list[dict]] = {}
     for entry in results:
         by_recipe.setdefault(entry["recipe"], []).append(entry)
     all_recipes = set(by_recipe)
-    print(f"{len(all_recipes)} recipes checked, {len(failures)} failing.")
+    inconclusive = all_recipes - set(failures) - recovered
+    print(
+        f"{len(all_recipes)} recipes checked, {len(failures)} failing, "
+        f"{len(recovered)} passing, {len(inconclusive)} inconclusive."
+    )
 
     if not args.dry_run:
         ensure_labels()
@@ -482,9 +512,16 @@ def main(argv: list[str] | None = None) -> int:
                     f"open ({age_days(issue['createdAt'])}d)"
                 )
                 escalate(recipe, issue, args.dry_run)
-        elif issue is not None:
+        elif issue is None:
+            continue
+        elif recipe in recovered:
             print(f"{recipe}: recovered, closing #{issue['number']}")
             close_recovered(recipe, issue, args.dry_run)
+        else:
+            print(
+                f"{recipe}: inconclusive (no passing job this run), leaving "
+                f"#{issue['number']} open"
+            )
 
     return 0
 
