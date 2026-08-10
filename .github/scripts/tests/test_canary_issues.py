@@ -418,7 +418,8 @@ def _drive_main(tmp_path, monkeypatch, results, issue):
     """Run main() over `results` with one open issue, recording the verdict."""
     acted: list[tuple] = []
     monkeypatch.setattr(m, "ensure_labels", lambda: None)
-    monkeypatch.setattr(m, "find_issue", lambda r: issue)
+    monkeypatch.setattr(m, "open_issues_by_title", dict)
+    monkeypatch.setattr(m, "find_issue", lambda r, idx=None: issue)
     monkeypatch.setattr(
         m, "open_issue", lambda r, j, u, d: acted.append(("open", r))
     )
@@ -472,7 +473,8 @@ def test_no_escalate_flag_reaches_escalate(tmp_path, monkeypatch):
     results = [{"recipe": "contrib/foo", "python": "3.11", "outcome": "fail"}]
     acted: list[tuple] = []
     monkeypatch.setattr(m, "ensure_labels", lambda: None)
-    monkeypatch.setattr(m, "find_issue", lambda r: _issue(35))
+    monkeypatch.setattr(m, "open_issues_by_title", dict)
+    monkeypatch.setattr(m, "find_issue", lambda r, idx=None: _issue(35))
     monkeypatch.setattr(
         m,
         "escalate",
@@ -508,7 +510,10 @@ def test_a_mass_failure_refuses_to_file_issues(tmp_path, monkeypatch, capsys):
         for i in range(m.DEFAULT_MAX_ISSUES + 1)
     ]
     called: list[str] = []
-    monkeypatch.setattr(m, "find_issue", lambda r: called.append(r) or None)
+    monkeypatch.setattr(m, "open_issues_by_title", dict)
+    monkeypatch.setattr(
+        m, "find_issue", lambda r, idx=None: called.append(r) or None
+    )
     path = tmp_path / "r.json"
     path.write_text(json.dumps(results), encoding="utf-8")
     assert m.main(["--results", str(path), "--dry-run"]) == 1
@@ -523,7 +528,8 @@ def test_the_breaker_allows_a_normal_month(tmp_path, monkeypatch):
     ]
     opened: list[str] = []
     monkeypatch.setattr(m, "ensure_labels", lambda: None)
-    monkeypatch.setattr(m, "find_issue", lambda r: None)
+    monkeypatch.setattr(m, "open_issues_by_title", dict)
+    monkeypatch.setattr(m, "find_issue", lambda r, idx=None: None)
     monkeypatch.setattr(m, "open_issue", lambda r, j, u, d: opened.append(r))
     path = tmp_path / "r.json"
     path.write_text(json.dumps(results), encoding="utf-8")
@@ -542,12 +548,13 @@ def test_one_api_failure_does_not_skip_every_recipe_after_it(
     ]
     seen: list[str] = []
 
-    def flaky(recipe):
+    def flaky(recipe, idx=None):
         seen.append(recipe)
         if recipe == "core/python/b":
             raise m.GhError("rate limited")
 
     monkeypatch.setattr(m, "ensure_labels", lambda: None)
+    monkeypatch.setattr(m, "open_issues_by_title", dict)
     monkeypatch.setattr(m, "find_issue", flaky)
     monkeypatch.setattr(m, "open_issue", lambda r, j, u, d: None)
     path = tmp_path / "r.json"
@@ -637,3 +644,52 @@ def test_is_assignable_is_not_called_during_a_dry_run(monkeypatch):
     monkeypatch.setattr(m, "is_assignable", lambda u: called.append(u) or True)
     m.open_issue("core/python/x", [], "url", True)
     assert called == []
+
+
+def test_issues_are_fetched_once_per_run_not_once_per_recipe(
+    tmp_path, monkeypatch
+):
+    """`find_issue` used to run its own `gh issue list` for every recipe: the
+    same query, the same page of up to 200 issues, n times — and n chances to
+    hit a rate limit on a run whose whole job is to be dependable."""
+    recipes = [f"core/python/r{i}" for i in range(6)]
+    results = [
+        {"recipe": r, "python": "3.11", "outcome": "fail"} for r in recipes
+    ]
+    calls: list[tuple] = []
+
+    def fake_gh(*args, **kwargs):
+        calls.append(args)
+        return json.dumps([]) if args[:2] == ("issue", "list") else ""
+
+    monkeypatch.setattr(m, "gh", fake_gh)
+    monkeypatch.setattr(m, "ensure_labels", lambda: None)
+    monkeypatch.setattr(m, "open_issue", lambda r, j, u, d: None)
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps(results), encoding="utf-8")
+
+    assert m.main(["--results", str(path), "--dry-run"]) == 0
+    listings = [c for c in calls if c[:2] == ("issue", "list")]
+    assert len(listings) == 1, (
+        f"{len(listings)} `gh issue list` calls for {len(recipes)} recipes; "
+        "the snapshot should be taken once per run"
+    )
+
+
+def test_find_issue_still_works_standalone(monkeypatch):
+    """Omitting the index fetches one, which is right for a one-off call and
+    wrong inside a loop. Kept working so the function stays usable alone."""
+    _gh_stub(
+        monkeypatch,
+        [
+            {
+                "number": 3,
+                "title": m.issue_title("core/python/x"),
+                "createdAt": NOW.isoformat(),
+                "labels": [{"name": m.LABEL_ROTTING}],
+            }
+        ],
+    )
+    found = m.find_issue("core/python/x")
+    assert found["number"] == 3
+    assert found["labelNames"] == {m.LABEL_ROTTING}

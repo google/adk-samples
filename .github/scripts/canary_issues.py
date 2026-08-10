@@ -196,8 +196,19 @@ def is_assignable(user: str) -> bool:
     return result.returncode == 0
 
 
-def find_issue(recipe: str) -> dict | None:
-    """The open canary issue for this recipe, if one exists."""
+def open_issues_by_title() -> dict[str, dict]:
+    """Every open canary issue, indexed by title. ONE `gh` call.
+
+    Fetched once per run rather than once per recipe. The query is identical
+    every time and returns the same page of up to 200 issues, so calling it
+    inside the recipe loop meant n subprocesses and n x 200 titles scanned to
+    answer a question one call already answers. It is also n chances to hit a
+    rate limit on a run whose whole job is to be dependable.
+
+    Taking a single snapshot is safe because each recipe is visited exactly
+    once, and the only issue this run creates for a recipe is created after
+    that recipe's lookup.
+    """
     raw = gh(
         "issue",
         "list",
@@ -212,12 +223,29 @@ def find_issue(recipe: str) -> dict | None:
         "--json",
         "number,title,createdAt,labels",
     )
-    wanted = issue_title(recipe)
+    index: dict[str, dict] = {}
     for issue in json.loads(raw or "[]"):
-        if issue["title"] == wanted:
-            issue["labelNames"] = {lbl["name"] for lbl in issue["labels"]}
-            return issue
-    return None
+        issue["labelNames"] = {lbl["name"] for lbl in issue["labels"]}
+        index[issue["title"]] = issue
+    return index
+
+
+def find_issue(
+    recipe: str, index: dict[str, dict] | None = None
+) -> dict | None:
+    """The open canary issue for this recipe, if one exists.
+
+    Exact title match, never a prefix: `rag-agent-search` must not be handed
+    the issue belonging to `rag-agent-search-v2`, which would escalate one
+    recipe's ladder on another's failures.
+
+    `index` is the snapshot from `open_issues_by_title`. Omitting it fetches
+    one for this single lookup, which is convenient for a one-off call and
+    wrong inside a loop.
+    """
+    if index is None:
+        index = open_issues_by_title()
+    return index.get(issue_title(recipe))
 
 
 def age_days(created_at: str, now: datetime | None = None) -> int:
@@ -629,13 +657,16 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run:
         ensure_labels()
 
+    # One snapshot for the whole run, not one lookup per recipe.
+    issues = open_issues_by_title()
+
     errors: list[tuple[str, Exception]] = []
     for recipe in sorted(all_recipes):
         # One recipe's API failure must not skip every recipe after it. The
         # loop used to abort on the first GhError, leaving an arbitrary tail
         # of the list unexamined with nothing saying which.
         try:
-            _process(recipe, by_recipe, failures, recovered, args)
+            _process(recipe, by_recipe, failures, recovered, args, issues)
         except GhError as exc:
             print(f"{recipe}: ERROR {exc}", file=sys.stderr)
             errors.append((recipe, exc))
@@ -658,9 +689,10 @@ def _process(
     failures: dict[str, list[dict]],
     recovered: set[str],
     args: argparse.Namespace,
+    issues: dict[str, dict] | None = None,
 ) -> None:
     """Decide and apply this recipe's issue action."""
-    issue = find_issue(recipe)
+    issue = find_issue(recipe, issues)
     if recipe in failures:
         if issue is None:
             print(f"{recipe}: FAILING, opening issue")

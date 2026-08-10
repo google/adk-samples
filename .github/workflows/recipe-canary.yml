@@ -214,17 +214,43 @@ jobs:
           STEP=""
           DETAIL=""
 
-          if [ "$SYNC_OUTCOME" != "success" ]; then
+          # Blame the recipe only on EVIDENCE. Every path that reaches a
+          # verdict without a log to read classifies as infra, because the
+          # cost of the two mistakes is not symmetric: a missed month of rot
+          # is caught next month, while one issue filed against an owner for
+          # a runner problem teaches everyone to ignore the channel.
+          if [ "$SYNC_OUTCOME" = "skipped" ] || [ -z "$SYNC_OUTCOME" ]; then
+            # The sync step never ran, so nothing was learned about the
+            # recipe. Checkout or the uv install failed ahead of it — both
+            # transient, and both exactly the class this must not misfile.
+            # `skipped` reaches here because this step is `if: always()`.
+            OUTCOME=infra
+            STEP="setup"
+            DETAIL="sync never ran (outcome: ${SYNC_OUTCOME:-unset}); checkout or uv install failed first"
+          elif [ "$SYNC_OUTCOME" != "success" ]; then
             STEP="uv sync --frozen"
             DETAIL=$(tail -5 sync.log 2>/dev/null | tr '\n' ' ')
             # A lockfile that will not install is a genuine recipe problem
             # (yanked release, no wheel for this interpreter). A network or
             # registry failure is not — and uv says which in its own words.
-            if echo "$DETAIL" | grep -qiE 'network|timed out|temporary failure|503|502|connection reset'; then
+            if [ -z "$DETAIL" ]; then
+              # `uv sync > sync.log` creates the file before uv runs, so an
+              # empty or absent log means uv never got far enough to say
+              # anything. No evidence against the recipe.
+              OUTCOME=infra
+              DETAIL="sync failed with no log output"
+            elif echo "$DETAIL" | grep -qiE 'network|timed out|temporary failure|503|502|connection reset|resolve|handshake|SSL|proxy|rate limit'; then
               OUTCOME=infra
             else
               OUTCOME=fail
             fi
+          elif [ "$TESTS_OUTCOME" = "skipped" ] || [ -z "$TESTS_OUTCOME" ]; then
+            # Sync worked but pytest never ran — the .env step failed, or the
+            # job was cancelled. Same rule: no log, no evidence, not the
+            # recipe's fault.
+            OUTCOME=infra
+            STEP="pytest"
+            DETAIL="tests never ran (outcome: ${TESTS_OUTCOME:-unset})"
           elif [ "$TESTS_OUTCOME" != "success" ]; then
             OUTCOME=fail
             STEP="pytest"
@@ -233,6 +259,10 @@ jobs:
             # SIGPIPE (141) before it finishes writing. sed drains its input.
             DETAIL=$(grep -E '^(FAILED|ERROR|E  )' pytest.log 2>/dev/null | sed -n '1,3p' | tr '\n' ' ')
             [ -z "$DETAIL" ] && DETAIL=$(tail -5 pytest.log 2>/dev/null | tr '\n' ' ')
+            if [ -z "$DETAIL" ]; then
+              OUTCOME=infra
+              DETAIL="pytest failed with no log output"
+            fi
           fi
 
           # Exported, not passed through `env:` — these are computed in this
