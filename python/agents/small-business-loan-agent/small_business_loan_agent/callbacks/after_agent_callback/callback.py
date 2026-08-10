@@ -31,6 +31,9 @@ from google.genai import Client, types as genai_types
 from google.genai.types import GenerateContentConfig
 from small_business_loan_agent.callbacks.after_agent_callback.models import JudgeVerdict
 from small_business_loan_agent.callbacks.after_agent_callback.prompt import JUDGE_PROMPT
+from small_business_loan_agent.shared_libraries.firestore_utils.state_service import (
+    ProcessStateService,
+)
 from small_business_loan_agent.shared_libraries.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -104,6 +107,42 @@ def _extract_tool_sequence_and_messages(
     return tool_sequence, final_response, user_message
 
 
+def _build_process_history(request_id: str | None, tool_sequence: list[str]) -> str:
+    """Describe which workflow steps are already completed, across all turns, for this request.
+
+    The judge only sees this turn's tool calls in `tool_sequence`, which makes a
+    legitimate skip (a step completed in an earlier turn) indistinguishable from a
+    genuine trajectory bug. This resolves the ambiguity from persisted process state:
+    any ALL_STEPS entry marked completed/approved that ISN'T in this turn's
+    tool_sequence must have been completed in a prior turn (if it had been completed
+    THIS turn, its AgentTool call would appear in tool_sequence).
+    """
+    if not request_id:
+        return "No request ID available — cannot look up process history."
+
+    try:
+        process_state = ProcessStateService().get_process_status(request_id)
+    except Exception as e:
+        return f"Process history unavailable (lookup error: {e})"
+
+    if not process_state:
+        return "No process history found for this request (first turn)."
+
+    steps = process_state.get("steps", {})
+    lines = []
+    for step_name in ProcessStateService.ALL_STEPS:
+        status = steps.get(step_name, {}).get("status", ProcessStateService.STATUS_NOT_STARTED)
+        is_done = status in (ProcessStateService.STATUS_COMPLETED, ProcessStateService.STATUS_APPROVED)
+        if is_done and step_name in tool_sequence:
+            lines.append(f"- {step_name}: completed THIS turn")
+        elif is_done:
+            lines.append(f"- {step_name}: already completed (prior turn) — not called this turn, and that's expected")
+        else:
+            lines.append(f"- {step_name}: not completed (status={status})")
+
+    return "\n".join(lines)
+
+
 def _collect_agent_outputs(callback_context: CallbackContext) -> dict:
     """Collect agent outputs from session state for grounding checks."""
     agent_outputs = {}
@@ -132,6 +171,7 @@ async def llm_judge_gate(
     try:
         tool_sequence, final_response, user_message = _extract_tool_sequence_and_messages(callback_context)
         agent_outputs = _collect_agent_outputs(callback_context)
+        process_history = _build_process_history(request_id, tool_sequence)
 
         logger.info(f"LLM Judge evaluating response for {request_id}")
         logger.info(f"Tool sequence: {' -> '.join(tool_sequence)}")
@@ -139,6 +179,7 @@ async def llm_judge_gate(
         judge_input = JUDGE_PROMPT.format(
             agent_outputs=json.dumps(agent_outputs, indent=2, default=str) if agent_outputs else "No agent outputs",
             tool_sequence=" -> ".join(tool_sequence) if tool_sequence else "No tools called",
+            process_history=process_history,
             user_message=user_message or "No user message",
             final_response=final_response or "No response",
         )
