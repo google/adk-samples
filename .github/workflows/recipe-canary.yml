@@ -349,11 +349,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # Set once a dedicated App identity exists (see the repo's branch
-          # protection ruleset). Until then the script says plainly, on the
-          # issue, that a human must apply file changes by hand rather than
-          # claiming to have opened a PR it cannot open.
-          CANARY_APP_TOKEN: ${{ secrets.CANARY_APP_TOKEN }}
           DRY: ${{ github.event.inputs.dry_run }}
           EVENT_NAME: ${{ github.event_name }}
         run: |

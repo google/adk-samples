@@ -547,29 +547,38 @@ means. The recipe's owner (`ownership.poc` in its `manifest.yaml`) owns this.
 
 ## Recipe is marked inactive
 
+**Workflow:** [`validate-recipe-structure.yml`](../../.github/workflows/validate-recipe-structure.yml)
+
+CI output contains: `recipe-inactive`, or `is marked ` followed by `` `status: inactive` ``
+
 **This will not block your PR.** It is a notice.
 
 The recipe's `manifest.yaml` declares `status: inactive`. That is not a
 label for "we don't use this much" — it is a position on a clock.
 
 The monthly recipe canary (`.github/workflows/recipe-canary.yml`) installs
-each recipe from its committed lockfile and runs its tests. When a recipe
-fails and nobody fixes it, the canary escalates:
+each recipe from its committed lockfile and runs its tests. Each run that
+still fails advances the recipe's tracking issue by one stage:
 
-| after | what happens |
+| failing run | what happens |
 |---|---|
-| 30 days | reminder on the tracking issue |
-| 60 days | the recipe is marked `status: inactive` |
-| 90 days | notice that deletion is scheduled |
-| 120 days | a PR is opened to delete the recipe |
+| 1st | a tracking issue is opened and the owner notified |
+| 2nd | reminder on that issue |
+| 3rd | the canary asks for the recipe to be marked `status: inactive` |
+| 4th | notice that deletion is scheduled |
+| 5th | removal of the recipe is proposed |
 
-So a recipe sitting at `inactive` is on its way out unless something changes.
+The canary runs monthly, so that is roughly a month per stage. The schedule
+only ever slips later — a missed run costs a stage — never sooner.
 
-**If you are reviving it**, set `status: active` in the same PR. This matters
-more than it looks: a recipe that gets fixed but never flipped back keeps
-counting down and can be deleted while working. The canary restores `active`
-itself when it sees the recipe pass again, but only if it is still being
-tested — which it is, deliberately, for exactly this reason.
+**The canary cannot make any of these file changes itself.** It has no write
+access to the repository, so `status: inactive` is only ever a request left
+on the tracking issue: a human applies it, or nobody does. It follows that
+the canary also cannot tell whether the manifest was ever actually changed.
+
+**If you are reviving the recipe**, set `status: active` in the same PR.
+Nothing else will. Fixing the recipe closes the tracking issue, but the
+manifest keeps whatever a human last wrote in it.
 
 **If you are just passing through** — editing docs, fixing a typo — ignore
 this. The recipe's owner (`ownership.poc` in its `manifest.yaml`) owns the

@@ -705,10 +705,16 @@ def report_inactive(recipe_dirs: list[Path]) -> None:
     `active` indistinguishable from one nobody touched.
 
     It matters now because inactive is a waypoint to deletion — the recipe
-    canary escalates a failing recipe to `inactive` at 60 days and proposes
-    removing it at 120. A recipe sitting inactive is on a clock, so anyone
-    running the validator should be told, and a PR touching one gets an
-    annotation asking whether it is being revived.
+    canary asks for it on the third consecutive monthly run a recipe fails,
+    and proposes removing the recipe two runs after that. A recipe sitting
+    inactive is on a clock, so anyone running the validator should be told,
+    and a PR touching one gets an annotation asking whether it is being
+    revived.
+
+    Nothing clears the field automatically. The canary has no write access —
+    it asks on the issue and a human applies it, or nobody does — so this
+    notice is the only thing that will ever point out a recipe that was
+    fixed but never flipped back.
     """
     inactive = inactive_recipes(recipe_dirs)
     if not inactive:
@@ -727,10 +733,11 @@ def report_inactive(recipe_dirs: list[Path]) -> None:
             what=f"{rel} is marked `status: inactive`.",
             why=(
                 "Inactive is a waypoint to deletion, not a parking space. "
-                "The recipe canary marks a persistently failing recipe "
-                "inactive at 60 days and proposes deleting it at 120, so a "
-                "recipe left inactive after it has been fixed is on a clock "
-                "nobody is watching."
+                "The recipe canary asks for it on the third consecutive "
+                "monthly run a recipe fails and proposes removal two runs "
+                "later. Nothing resets the field on its own, so a recipe "
+                "left inactive after it has been fixed still reads as "
+                "abandoned to everyone who looks."
             ),
             how=(
                 f"If you are reviving this recipe, set `status: active` in "

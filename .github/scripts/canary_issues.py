@@ -26,16 +26,25 @@ archaeology over git history to work out when something started failing, and
 a rung that cannot fire twice because the label recording it is right there
 on the issue.
 
-Why "propose" and not "do"
---------------------------
-Three stages want to change files on `main`, which is protected: 1 approving
+Why "ask" and not "do"
+----------------------
+Three rungs want to change files on `main`, which is protected: 1 approving
 review AND a code-owner review. A workflow authenticating with GITHUB_TOKEN
 cannot push there, and its approvals do not count toward either requirement —
-that is exactly why 98 Dependabot PRs sat unmergeable for months. So this
-script never writes to the repo directly. It opens a pull request, or (when
-no elevated token is configured) leaves a comment saying what a human needs
-to do. Degrading to a comment matters: it means the canary is useful the day
-it merges, before any App identity exists.
+that is exactly why 98 Dependabot PRs sat unmergeable for months.
+
+So this script does not write to the repository at all. It has no YAML
+library, opens no pull request, and the `report` job that runs it is declared
+`contents: read`. Every file change the ladder calls for is left to a human,
+said plainly on the issue. That is a real limitation, not a temporary one to
+paper over: an earlier version promised "a pull request will be opened
+automatically" whenever a CANARY_APP_TOKEN secret was set, and since no code
+ever opened one, setting that secret would have made the canary lie on a
+public issue.
+
+Building the write side means a comment-preserving YAML editor (these
+manifests are mostly comments), an identity that can push, and its own
+review — tracked separately.
 
 Notifying the owner
 -------------------
@@ -491,22 +500,24 @@ def escalate(
 
 
 def _write_note(recipe: str, what: str) -> str:
-    """What the canary can actually do about a file change, right now.
+    """What the canary can actually do about a file change: nothing, yet.
 
-    Kept in one place because it changes the moment an elevated identity is
-    configured, and a stale "a maintainer must do this by hand" instruction
-    on an issue is worse than none.
+    This script does not write to the repository. It has no YAML library, it
+    opens no pull request, and the `report` job that runs it is declared
+    `contents: read`, so it could not push if it tried. Every file change the
+    ladder calls for is a human's to make.
+
+    An earlier version switched on a `CANARY_APP_TOKEN` env var and promised
+    "a pull request will be opened automatically" when it was set. No code
+    ever opened one, so setting that secret would have made the canary lie on
+    a public issue. The branch is gone; when the write side is built it can
+    come back with an implementation behind it.
     """
-    if os.environ.get("CANARY_APP_TOKEN"):
-        return (
-            f"A pull request applying `{what}` to `{recipe}` will be opened "
-            f"automatically."
-        )
     return (
         f"**A maintainer needs to apply `{what}` to `{recipe}` by hand.** The "
-        f"canary has no write identity configured (`CANARY_APP_TOKEN` is "
-        f"unset), and `GITHUB_TOKEN` cannot push to a branch that requires a "
-        f"code-owner review — so it will not pretend to have done it."
+        f"canary has no write identity: `GITHUB_TOKEN` cannot push to a "
+        f"branch that requires a code-owner review, so it will not pretend "
+        f"to have done it."
     )
 
 
@@ -516,12 +527,15 @@ def close_recovered(recipe: str, issue: dict, dry: bool) -> None:
         f"so the canary is closing this.\n\n"
     )
     if LABEL_ROTTING in issue["labelNames"]:
+        # The label records that the canary ASKED for the manifest change,
+        # not that anyone made it — the canary cannot write files and does
+        # not read `status` back. Saying "this recipe was marked inactive"
+        # as fact would be wrong most of the time.
         body += (
-            f"This recipe was marked `status: inactive` while it was "
-            f"failing. {_write_note(recipe, 'status: active')}\n\n"
-            f"Until that lands the recipe still reads as inactive, which "
-            f"would eventually put it back on the deletion path despite "
-            f"working — so it is worth doing promptly."
+            f"While this was failing the canary asked for `{recipe}` to be "
+            f"marked `status: inactive`. It has no way to tell whether that "
+            f"happened, so: if the manifest does say `inactive`, set it back "
+            f"to `active`.\n\n{_write_note(recipe, 'status: active')}"
         )
     else:
         body += "No further action needed."

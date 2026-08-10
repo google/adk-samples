@@ -240,19 +240,50 @@ def test_a_recipe_with_a_poc_still_tags_both(calls):
 # ---------------------------------------------------------------------------
 
 
-def test_without_an_elevated_token_the_canary_says_so(monkeypatch):
-    """GITHUB_TOKEN cannot push to a code-owner-protected branch. Claiming a
-    PR was opened when none was is worse than admitting the gap."""
-    monkeypatch.delenv("CANARY_APP_TOKEN", raising=False)
+def test_the_canary_always_says_a_human_must_apply_file_changes():
+    """GITHUB_TOKEN cannot push to a code-owner-protected branch, and nothing
+    in this script writes files or opens a PR. Claiming otherwise on a public
+    issue is worse than admitting the gap."""
     note = m._write_note("core/python/demo", "status: inactive")
     assert "by hand" in note
     assert "will not pretend" in note
 
 
-def test_with_an_elevated_token_it_promises_a_pr(monkeypatch):
+def test_no_environment_variable_can_make_it_promise_a_pr(monkeypatch):
+    """An earlier version promised "a pull request will be opened
+    automatically" whenever CANARY_APP_TOKEN was set, and no code ever opened
+    one — so setting that secret would have made the canary lie."""
     monkeypatch.setenv("CANARY_APP_TOKEN", "x")
     note = m._write_note("core/python/demo", "status: inactive")
-    assert "pull request" in note
+    assert "automatically" not in note
+    assert "by hand" in note
+
+
+def test_the_script_cannot_write_files_at_all():
+    """Structural, not stylistic: no YAML library is imported and no PR is
+    created anywhere in the module, which is what makes the note above true.
+    If the write side lands, this test is the one that should fail first."""
+    source = Path(m.__file__).read_text(encoding="utf-8")
+    code = "\n".join(
+        line for line in source.splitlines() if not line.strip().startswith("#")
+    )
+    assert "import yaml" not in code
+    assert "ruamel" not in code
+    assert '"pr", "create"' not in code
+    assert "pr create" not in code
+
+
+def test_recovery_does_not_claim_the_manifest_was_changed(calls, monkeypatch):
+    """The rotting label records that the canary ASKED for `status: inactive`,
+    not that anyone applied it. Stating it as fact is wrong most of the
+    time, since nothing writes the manifest."""
+    closed: list[tuple] = []
+    monkeypatch.setattr(m, "gh", lambda *a, **k: closed.append(a) or "")
+    issue = _issue(120, {m.LABEL_ROTTING})
+    m.close_recovered("core/python/demo", issue, dry=False)
+    body = next(c[2] for c in calls if c[0] == "comment")
+    assert "was marked" not in body
+    assert "asked for" in body
 
 
 # ---------------------------------------------------------------------------
