@@ -33,6 +33,72 @@ import json
 A2A_DATA_PART_START_TAG = b"<a2a_datapart_json>"
 A2A_DATA_PART_END_TAG = b"</a2a_datapart_json>"
 
+# Discriminator the web client stamps on a highlighted-selection payload.
+# Mirrors SELECTION_DATA_KIND in web/components/chat/workspace-href.ts.
+_SELECTION_KIND = "lha.selection"
+
+# Discriminator for files dragged from the workspace tree into the composer.
+# Mirrors FILEREF_DATA_KIND in web/components/chat/workspace-href.ts.
+_FILEREF_KIND = "lha.fileref"
+
+
+def _render_fileref(payload: dict) -> str | None:
+    """Prose for workspace files the user attached from the tree.
+
+    Only paths travel: the files are already in the workspace, so re-sending
+    their bytes would duplicate them. Says what was pointed at, not what to do
+    with it — the user's own message carries the instruction.
+    """
+    paths = payload.get("paths")
+    if not isinstance(paths, list) or not paths:
+        return None
+    clean = [p for p in paths if isinstance(p, str) and p]
+    if len(clean) != len(paths):
+        return None
+    listed = "\n".join(f"- {p}" for p in clean)
+    noun = "file" if len(clean) == 1 else "files"
+    return (
+        f"[The user attached {len(clean)} workspace {noun} to this message. "
+        "Read them if the request concerns them:]\n"
+        f"{listed}"
+    )
+
+
+def _render_selection(payload: dict) -> str | None:
+    """Prose for a text selection the user highlighted in the web UI.
+
+    Hands over character offsets rather than asking the model to locate the
+    text: the same words may appear many times in a file, and a search anchor
+    cannot tell which one was pointed at. Deliberately states what was
+    selected, not what to do with it — the user's own message carries the
+    instruction.
+    """
+    path = payload.get("path")
+    snippet = payload.get("snippet")
+    start = payload.get("start")
+    end = payload.get("end")
+    if not isinstance(path, str) or not isinstance(snippet, str):
+        return None
+    if not isinstance(start, int) or not isinstance(end, int):
+        return None
+    start_line = payload.get("start_line")
+    end_line = payload.get("end_line")
+    where = path
+    if isinstance(start_line, int) and isinstance(end_line, int):
+        where += (
+            f", line {start_line}"
+            if start_line == end_line
+            else f", lines {start_line}-{end_line}"
+        )
+    return (
+        f"[The user highlighted this exact text in {where}:]\n"
+        f"{snippet}\n"
+        f"[It spans characters {start}-{end}. To act on exactly that span, "
+        f"call patch with start={start}, end={end}, and old_string set to the "
+        "highlighted text above — do not search for the text, as it may occur "
+        "elsewhere in the file.]"
+    )
+
 
 def unwrap_a2a_datapart_text(data: bytes | None) -> str | None:
     """Return readable text for a wrapped DataPart blob, else ``None``.
@@ -50,6 +116,15 @@ def unwrap_a2a_datapart_text(data: bytes | None) -> str | None:
     except (ValueError, UnicodeDecodeError):
         return None
     payload = obj.get("data", obj) if isinstance(obj, dict) else obj
+    if isinstance(payload, dict):
+        kind = payload.get("lha_kind")
+        rendered = None
+        if kind == _SELECTION_KIND:
+            rendered = _render_selection(payload)
+        elif kind == _FILEREF_KIND:
+            rendered = _render_fileref(payload)
+        if rendered is not None:
+            return rendered
     return "[UI action] " + json.dumps(payload, ensure_ascii=False)
 
 

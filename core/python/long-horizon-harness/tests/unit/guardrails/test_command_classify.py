@@ -22,6 +22,7 @@ from horizon.guardrails.command_classify import (
     command_prefix,
     has_command_substitution,
     has_redirection,
+    significant_tokens,
     split_segments,
     strip_wrapper,
 )
@@ -71,6 +72,29 @@ def test_split_segments(command, expected):
         ("echo `bq rm x`", True),
         ("diff <(a) <(b)", True),
         ("ls -la", False),
+        # Single quotes suppress every expansion, so a literal backtick (the
+        # BigQuery table-ref quoting) is not command substitution.
+        ("bq query 'SELECT 1 FROM `proj.ds.tbl`'", False),
+        ("echo 'costs $(a lot)'", False),
+        ("echo 'diff <(a)'", False),
+        # ...but bash DOES expand $() and backticks inside double quotes.
+        ('bq query "SELECT 1 FROM `proj.ds.tbl`"', True),
+        ('echo "today is $(date)"', True),
+        ('echo "escaped \\$(date)"', False),  # backslash-escaped, no expansion
+        # Process substitution is not performed inside double quotes.
+        ('echo "<(a)"', False),
+        # ANSI-C quoting: bash DOES process backslash escapes inside $'…', so
+        # $'\'' is one literal quote char. Scanning it as a plain single-quoted
+        # run desyncs quote state and hides the substitution that follows.
+        (r"""bq query $'\'' $(cat /etc/passwd)""", True),
+        (r"""echo $'a\'b' $(id)""", True),
+        (r"""echo $'\'' `id`""", True),
+        (r"echo $'plain text'", False),  # ANSI-C with nothing nested
+        (r"echo $'tab\there' $(id)", True),
+        # Unbalanced quoting can't be reasoned about — fail closed.
+        ('echo "unterminated', True),
+        ("echo 'unterminated", True),
+        (r"echo $'unterminated", True),
     ],
 )
 def test_has_command_substitution(segment, expected):
@@ -86,8 +110,22 @@ def test_has_command_substitution(segment, expected):
         ("python train.py", "python"),  # train.py is not a bare word → stop
         ("ls", "ls"),
         ("FOO=bar bq rm x", "bq rm"),  # skip env assignment
-        ("sudo systemctl restart x", "systemctl restart"),  # skip sudo
+        # sudo is NOT unwrapped: the prefix must name the escalation, or a plain
+        # `npm install` grant would flag-tolerantly cover `sudo npm install`.
+        ("sudo systemctl restart x", "sudo systemctl"),
         ("./run.sh arg", "./run.sh"),  # binary with no bare-word subcmd
+        # Self-contained --flag=value tokens are skipped, so the auto-scope prefix
+        # doesn't collapse to the whole binary (which would grant `bq rm` off the
+        # back of approving a harmless `bq query`).
+        ("bq --project_id=p query 'SELECT 1'", "bq query"),
+        ("gcloud --project=p compute instances list", "gcloud compute"),
+        ("ls -la", "ls"),  # flag-only tail still yields the bare binary
+        # A BARE flag may consume the next token as its value, and nothing here
+        # knows which CLI does that — so scanning stops rather than mistake the
+        # value for a subcommand. Honest-broad beats confidently-wrong.
+        ("kubectl --context=p -n default delete pod x", "kubectl"),
+        ("gcloud --quiet compute instances list", "gcloud"),
+        ("docker -H tcp://h run img", "docker"),
     ],
 )
 def test_command_prefix(segment, expected):
@@ -127,3 +165,40 @@ def test_command_prefix(segment, expected):
 )
 def test_has_redirection(segment, expected):
     assert has_redirection(segment) is expected
+
+
+@pytest.mark.parametrize(
+    "segment,expected",
+    [
+        ("bq --project_id=X query t", ["bq", "query", "t"]),
+        ("bq rm -t x.y", ["bq", "rm"]),  # bare flag ends the walk
+        ("kubectl -n get delete pod", ["kubectl"]),  # value can't impersonate
+        ("sudo npm install x", ["sudo", "npm", "install", "x"]),  # never unwrap
+        ("env FOO=1 bq rm x", ["bq", "rm", "x"]),
+        ("cmd --a=b=c --out=-x sub", ["cmd", "sub"]),  # self-contained flags
+        ("cmd --flag= sub", ["cmd", "sub"]),  # empty value is still contained
+        ("gcloud -- compute rm", ["gcloud"]),  # `--` is bare → stop
+        ("tail -1 f", ["tail"]),
+        ("", []),
+    ],
+)
+def test_significant_tokens(segment, expected):
+    assert significant_tokens(segment) == expected
+
+
+def test_derived_prefix_always_matches_its_own_command():
+    """The shared token walk's core invariant: a prefix derived from a command
+    must match that command, or approving it re-prompts forever."""
+    import itertools
+
+    from horizon.guardrails.permission_rules import _prefix_matches
+
+    parts = ["sudo", "env", "FOO=b", "bq", "./r.sh", "--q", "-n", "--p=v", "--"]
+    words = ["query", "rm", "default", "x.y"]
+    violations = [
+        cmd
+        for combo in itertools.product(parts + words, repeat=3)
+        for cmd in [" ".join(combo)]
+        if not _prefix_matches(cmd, command_prefix(cmd))
+    ]
+    assert violations == []

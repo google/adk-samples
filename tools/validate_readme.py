@@ -36,6 +36,7 @@ import sys
 from pathlib import Path
 
 import validate_manifest
+from ci_message import EXIT_VIOLATIONS, Diagnostic, Doc, guard, report
 
 REPO_ROOT = validate_manifest.REPO_ROOT
 README_FILENAME = "README.md"
@@ -90,119 +91,242 @@ def _has_section(content: str, keywords: frozenset[str]) -> bool:
     return False
 
 
-def validate_readme(readme_path: Path) -> list[str]:
-    """Returns a list of error strings. Empty list means valid."""
-    errors = []
+def _keyword_list(keywords: frozenset[str]) -> str:
+    """Render a keyword set the way it should be typed into a heading."""
+    return ", ".join(sorted(kw.title() for kw in keywords))
+
+
+def validate_readme(readme_path: Path) -> list[Diagnostic]:
+    """Returns a list of diagnostics. Empty list means valid."""
+    file = validate_manifest.repo_relative(readme_path)
+    diagnostics: list[Diagnostic] = []
 
     try:
         content = readme_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        # UnicodeDecodeError is a ValueError, NOT an OSError, so the
+        # `except OSError` below never saw it: a latin-1 README used to
+        # abort the whole run with a traceback, taking every other recipe's
+        # results with it.
+        return [
+            Diagnostic(
+                check="readme-encoding",
+                what=(
+                    f"README.md is not valid UTF-8 — byte 0x"
+                    f"{e.object[e.start]:02x} at offset {e.start} "
+                    f"({e.reason})."
+                ),
+                why=(
+                    "Every file in this repo is read as UTF-8, by CI and by "
+                    "GitHub's own renderer. A README saved as latin-1 or "
+                    "cp1252 cannot be read by either."
+                ),
+                how=(
+                    "Re-save README.md as UTF-8. From the recipe "
+                    "directory:\n"
+                    "  iconv -f latin1 -t utf-8 README.md > README.utf8.md "
+                    "&& mv README.utf8.md README.md"
+                ),
+                doc=Doc.README_MISSING,
+                file=file,
+            )
+        ]
     except OSError as e:
-        errors.append(f"Cannot read README.md: {e}")
-        return errors
+        return [
+            Diagnostic(
+                check="readme-unreadable",
+                what=f"README.md could not be read: {e}.",
+                why=(
+                    "The README is a required file, so a recipe whose "
+                    "README cannot be opened cannot be validated."
+                ),
+                how=(
+                    "Check the file's permissions and that it is a regular "
+                    "file, not a broken symlink."
+                ),
+                doc=Doc.README_MISSING,
+                file=file,
+            )
+        ]
 
     if not content.strip():
-        errors.append("README.md is empty")
-        return errors
+        return [
+            Diagnostic(
+                check="readme-empty",
+                what="README.md is empty.",
+                why=(
+                    "The README is the recipe's front door: it is what a "
+                    "reader sees first and the only place the setup and run "
+                    "steps are written down."
+                ),
+                how=(
+                    "Write at least a description, a setup section, and a "
+                    "run section with the exact command in a fenced code "
+                    f"block. Minimum length is {MIN_WORD_COUNT} words."
+                ),
+                doc=Doc.README_MISSING,
+                file=file,
+            )
+        ]
 
     # No TODO: placeholders — catches unfilled scaffold or draft text.
-    if re.search(r"TODO:", content):
-        errors.append(
-            "  [description] README.md contains TODO: placeholders — "
-            "replace with real content before submitting."
+    todos = sorted({m.group(0) for m in re.finditer(r"TODO:.*", content)})
+    if todos:
+        preview = "\n".join(f"  {line[:70]}" for line in todos[:5])
+        diagnostics.append(
+            Diagnostic(
+                check="readme-todo",
+                what=(
+                    f"README.md still contains {len(todos)} TODO: "
+                    f"placeholder(s)."
+                ),
+                why=(
+                    "A TODO: line is scaffold text nobody replaced, so the "
+                    "reader is being shown an instruction meant for the "
+                    "author."
+                ),
+                how=f"Replace each of these with real content:\n{preview}",
+                doc=Doc.README_TODO,
+                file=file,
+            )
         )
 
     # Minimum word count — proxy for a real description being present.
     word_count = len(content.split())
     if word_count < MIN_WORD_COUNT:
-        errors.append(
-            f"  [description] README.md is too short ({word_count} words, "
-            f"minimum {MIN_WORD_COUNT}) — add a description, setup, and run "
-            "section."
+        diagnostics.append(
+            Diagnostic(
+                check="readme-length",
+                what=(
+                    f"README.md is {word_count} words; the minimum is "
+                    f"{MIN_WORD_COUNT}."
+                ),
+                why=(
+                    "Word count is a proxy for a real description being "
+                    "present — a README this short has never yet turned out "
+                    "to explain what the recipe does."
+                ),
+                how=(
+                    f"Add roughly {MIN_WORD_COUNT - word_count} more words: "
+                    f"what the recipe demonstrates, what it needs to run, "
+                    f"and what a successful run looks like. Aim for 200-300."
+                ),
+                doc=Doc.README_SHORT,
+                file=file,
+            )
         )
 
     # Setup section — must have a heading matching a setup keyword.
     if not _has_section(content, _SETUP_KEYWORDS):
-        errors.append(
-            "  [setup] README.md is missing a setup section — add a heading "
-            "containing one of: Setup, Prerequisites, Installation, "
-            "Requirements, Configuration, Getting Started, Before You Begin."
+        diagnostics.append(
+            Diagnostic(
+                check="readme-setup",
+                what="README.md has no setup section.",
+                why=(
+                    "No heading in the file contains any of the words that "
+                    "mark one, so a reader has nowhere to look for the "
+                    "prerequisites."
+                ),
+                how=(
+                    f"Add a heading whose text contains one of: "
+                    f"{_keyword_list(_SETUP_KEYWORDS)}."
+                ),
+                doc=Doc.README_SETUP,
+                file=file,
+            )
         )
 
     # Run section — must have a heading matching a run keyword.
     if not _has_section(content, _RUN_KEYWORDS):
-        errors.append(
-            "  [run] README.md is missing a run section — add a heading "
-            "containing one of: Run, Running, Usage, Quickstart, Start, "
-            "Deploy, How to Run."
+        diagnostics.append(
+            Diagnostic(
+                check="readme-run",
+                what="README.md has no run section.",
+                why=(
+                    "No heading in the file contains any of the words that "
+                    "mark one, so a reader cannot find how to start the "
+                    "agent."
+                ),
+                how=(
+                    f"Add a heading whose text contains one of: "
+                    f"{_keyword_list(_RUN_KEYWORDS)}."
+                ),
+                doc=Doc.README_RUN,
+                file=file,
+            )
         )
 
     # At least one fenced code block — the run command must be shown.
     if "```" not in content:
-        errors.append(
-            "  [run] README.md has no fenced code block — show the exact "
-            "command to start the agent in a ``` block."
+        diagnostics.append(
+            Diagnostic(
+                check="readme-run",
+                what="README.md has no fenced code block.",
+                why=(
+                    "The exact command to start the agent has to be "
+                    "copy-pasteable; prose describing it is not."
+                ),
+                how=(
+                    "Put the run command in a fenced block:\n"
+                    "  ```bash\n"
+                    "  uv run adk web\n"
+                    "  ```"
+                ),
+                doc=Doc.README_RUN,
+                file=file,
+            )
         )
 
-    return errors
+    return diagnostics
 
 
 def main(scope: str | None = None) -> int:
     recipe_dirs = validate_manifest.collect_recipe_dirs(scope)
+    if validate_manifest.report_empty_scope(scope, recipe_dirs):
+        return EXIT_VIOLATIONS
 
-    missing = []
-    invalid = {}
-
+    diagnostics: list[Diagnostic] = []
     for recipe_dir in recipe_dirs:
         readme_path = recipe_dir / README_FILENAME
         if not readme_path.exists():
-            missing.append(str(recipe_dir.relative_to(REPO_ROOT)))
+            diagnostics.append(
+                Diagnostic(
+                    check="readme-missing",
+                    what=f"{README_FILENAME} is missing.",
+                    why=(
+                        "README.md is required of every recipe "
+                        "(policy.required_files.always) — it is the only "
+                        "place a reader learns what the recipe does and how "
+                        "to run it."
+                    ),
+                    how=(
+                        "Add a README.md with three sections: a description "
+                        "of what the recipe demonstrates, a setup section "
+                        "(prerequisites, auth, env vars), and a run section "
+                        "with the exact command in a fenced code block. "
+                        f"Minimum length is {MIN_WORD_COUNT} words."
+                    ),
+                    doc=Doc.README_MISSING,
+                    file=validate_manifest.repo_relative(readme_path),
+                )
+            )
         else:
-            errors = validate_readme(readme_path)
-            if errors:
-                invalid[str(readme_path.relative_to(REPO_ROOT))] = errors
+            diagnostics.extend(validate_readme(readme_path))
 
-    passed = True
-
-    if missing:
-        passed = False
-        print("\n[FAIL] Missing README.md in the following recipe directories:")
-        for d in missing:
-            print(f"  - {d}/")
-            print(
-                f"::error file={d}/README.md::README.md is missing. "
-                "Add a README.md with a description, setup, and run section."
-            )
-
-    if invalid:
-        passed = False
-        print("\n[FAIL] Invalid README.md files:")
-        for path, errors in invalid.items():
-            print(f"\n  {path}:")
-            for e in errors:
-                print(f"    {e}")
-            first_error = errors[0].strip()
-            print(
-                f"::error file={path}::{first_error} (+{len(errors) - 1} more)"
-                if len(errors) > 1
-                else f"::error file={path}::{first_error}"
-            )
-
-    if not passed:
-        print(
-            "\n========================================"
-            "\n  ACTION REQUIRED: invalid README(s)"
-            "\n========================================"
-            "\n"
-            "\nFix the README.md file(s) listed above, then push again."
-            "\n"
-            "\nReference:"
-            "\n  Docs:  docs/recipe-handbook/anatomy.md"
-        )
-        return 1
-
-    checked = len(recipe_dirs)
-    print(f"\n[PASS] All {checked} recipe README(s) are present and valid.")
-    return 0
+    return report(
+        diagnostics,
+        header="README.md problems",
+        passed_message=(
+            f"All {len(recipe_dirs)} recipe README(s) are present and valid."
+        ),
+        next_step=(
+            f"{validate_manifest.AUTHORING_DOCS}\n"
+            f"\nRe-run locally:\n"
+            f"  uv run validate readme <recipe-path>\n"
+            f"\nWhat a README must contain: "
+            f"docs/recipe-handbook/anatomy.md."
+        ),
+    )
 
 
 if __name__ == "__main__":
@@ -219,4 +343,4 @@ if __name__ == "__main__":
         ),
     )
     args = parser.parse_args()
-    sys.exit(main(args.scope))
+    sys.exit(guard("validate_readme.py", lambda: main(args.scope)))

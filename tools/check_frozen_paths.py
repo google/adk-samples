@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from ci_message import Diagnostic, Doc, guard, report
 
 REPO_ROOT = Path(__file__).parent.parent
 POLICY_PATH = REPO_ROOT / ".github" / "policy.yml"
@@ -40,10 +41,10 @@ POLICY_PATH = REPO_ROOT / ".github" / "policy.yml"
 # Where recipes live now. Only used to build the "move it here" hint.
 ACTIVE_CONTRIB_ROOT = "contrib"
 
-# How many offending recipes to spell out before truncating the summary.
-# Every one still gets its own ::error annotation; this only bounds the
-# human-readable block at the end.
-MAX_LISTED = 20
+# A MAX_LISTED cap used to truncate the human-readable summary at 20
+# entries. `report` in ci_message prints every diagnostic in full, so the
+# cap is gone: a contributor with 21 affected recipes needs all 21, not
+# 20 and a count.
 
 
 def load_frozen_paths(policy_path: Path = POLICY_PATH) -> list[str]:
@@ -120,36 +121,50 @@ def find_violations(
     return violations
 
 
-def _report(violations: dict[str, str]) -> None:
-    """Print GitHub annotations plus a human-readable summary."""
-    for recipe_dir, example in violations.items():
-        destination = suggested_destination(recipe_dir)
-        print(
-            f"::error file={example}::"
-            f"'{recipe_dir}' is in a retired folder and no longer accepts "
-            f"changes. Move this recipe to '{destination}'. "
-            f"See docs/recipe-checklist.md."
-        )
+def _report(violations: dict[str, str]) -> int:
+    """Report every violation through the shared diagnostic helper.
 
-    count = len(violations)
+    Nothing is truncated: `report` prints one annotation per diagnostic.
+    """
+    diagnostics = [
+        Diagnostic(
+            check="frozen-path",
+            what=(
+                f"'{recipe_dir}' is in a retired folder, which no longer "
+                f"accepts changes."
+            ),
+            why=(
+                "Recipes used to live at <language>/agents/<recipe>. Those "
+                "roots are closed — they are listed under frozen_paths in "
+                ".github/policy.yml — and every active recipe now lives "
+                "under contrib/. A change to the retired copy is invisible "
+                "to anyone actually using the recipe."
+            ),
+            how=(
+                f"Move the recipe, then make your change at the new path:\n"
+                f"  git mv {recipe_dir} {suggested_destination(recipe_dir)}\n"
+                f"The move itself is not blocked: this check ignores "
+                f"deletions and renames precisely so a migration can "
+                f"proceed. The moved recipe then has to meet the current "
+                f"contribution requirements, which the retired copy "
+                f"predates — see docs/recipe-checklist.md."
+            ),
+            doc=Doc.RETIRED_FOLDER,
+            file=example,
+        )
+        for recipe_dir, example in violations.items()
+    ]
+    count = len(diagnostics)
     noun = "recipe" if count == 1 else "recipes"
-    print("")
-    print("=" * 60)
-    print(f"  ACTION REQUIRED: {count} {noun} in a retired folder")
-    print("=" * 60)
-    print("")
-    print("These folders are closed. Recipes now live under contrib/.")
-    print("")
-    for recipe_dir in list(violations)[:MAX_LISTED]:
-        print(f"  {recipe_dir}  ->  {suggested_destination(recipe_dir)}")
-    if count > MAX_LISTED:
-        print(f"  ... and {count - MAX_LISTED} more")
-    print("")
-    print("To fix: move the recipe to the path shown above, then make sure")
-    print("it meets the contribution requirements:")
-    print("")
-    print("  docs/recipe-checklist.md")
-    print("")
+    return report(
+        diagnostics,
+        header=f"{count} {noun} in a retired folder",
+        passed_message="No changes inside retired recipe folders.",
+        next_step=(
+            "Move each recipe to the destination shown above, then re-run.\n"
+            "Requirements for the moved recipe: docs/recipe-checklist.md"
+        ),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -165,9 +180,8 @@ def main(argv: list[str] | None = None) -> int:
         print("[PASS] No changes inside retired recipe folders.")
         return 0
 
-    _report(violations)
-    return 1
+    return _report(violations)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(guard("check_frozen_paths.py", main))

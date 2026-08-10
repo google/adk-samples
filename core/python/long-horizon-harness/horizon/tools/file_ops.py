@@ -480,12 +480,55 @@ async def _post_edit_diagnostics(path: str) -> str | None:
     return "ruff diagnostics (informational — the edit was applied):\n" + body
 
 
+def _replace_range(
+    original: str,
+    start: int | None,
+    end: int | None,
+    expected: str,
+    new_string: str,
+) -> tuple[str, int, str | None]:
+    """Splice ``new_string`` over ``original[start:end]``.
+
+    Position identifies the span, so repeated content is not ambiguous the way
+    a search anchor is. ``expected`` is a guard, not a search key: the caller
+    computed these offsets against some version of the file, and if that
+    version is gone the offsets point somewhere arbitrary. Refusing beats
+    silently editing the wrong text.
+
+    Returns ``(updated, replacements, error)``; ``error`` non-None means the
+    file must be left untouched.
+    """
+    if start is None or end is None:
+        return original, 0, "start and end must be given together"
+    if start < 0 or end < start:
+        return original, 0, f"invalid range: start={start}, end={end}"
+    if end > len(original):
+        return (
+            original,
+            0,
+            f"range end={end} is past the end of the file ({len(original)} "
+            "characters) — re-read the file and retry",
+        )
+    found = original[start:end]
+    if found != expected:
+        return (
+            original,
+            0,
+            "the text at that range has changed since those offsets were "
+            f"taken (expected {expected!r}, found {found!r}) — re-read the "
+            "file and retry",
+        )
+    return original[:start] + new_string + original[end:], 1, None
+
+
 async def patch(
     path: str,
     old_string: str,
     new_string: str,
     *,
     replace_all: bool = False,
+    start: int | None = None,
+    end: int | None = None,
     tool_context: Any | None = None,
 ) -> dict[str, Any]:
     """Replace old_string with new_string in path.
@@ -494,6 +537,14 @@ async def patch(
     swap every occurrence. The file is left untouched on any error. Relative
     paths resolve under your current workspace focus (see `/workspace`);
     prefix with `/` to reach the whole workspace.
+
+    Pass ``start`` and ``end`` (character offsets into the file) to target one
+    exact span instead of searching for it. Use this when you were given
+    offsets — e.g. text the user highlighted in the UI — since a span picked
+    by position stays unambiguous even when the same text occurs elsewhere in
+    the file. ``old_string`` is then the content you expect to find there: the
+    edit is refused if it doesn't match, so a file that shifted underneath
+    fails loudly instead of corrupting the wrong span.
     """
     target, err = _resolve_in_session_window(path, tool_context)
     if err is not None:
@@ -514,17 +565,34 @@ async def patch(
         return _error(f"Failed to read {path}: {exc}")
 
     original = raw.decode("utf-8", errors="replace")
-    resolution = find_replacement(original, old_string, replace_all=replace_all)
-    if resolution.error is not None:
-        return _error(f"{resolution.error} (file: {path})")
-    assert resolution.search is not None
 
-    search = resolution.search
-    updated = (
-        original.replace(search, new_string)
-        if replace_all
-        else original.replace(search, new_string, 1)
-    )
+    if (start is not None or end is not None) and replace_all:
+        return _error(
+            "replace_all cannot be combined with start/end: a range names one "
+            "span, so there is nothing to repeat."
+        )
+
+    if start is not None or end is not None:
+        updated, count, range_err = _replace_range(
+            original, start, end, old_string, new_string
+        )
+        if range_err is not None:
+            return _error(f"{range_err} (file: {path})")
+    else:
+        resolution = find_replacement(
+            original, old_string, replace_all=replace_all
+        )
+        if resolution.error is not None:
+            return _error(f"{resolution.error} (file: {path})")
+        assert resolution.search is not None
+
+        search = resolution.search
+        updated = (
+            original.replace(search, new_string)
+            if replace_all
+            else original.replace(search, new_string, 1)
+        )
+        count = resolution.count
 
     try:
         await env.write_file(target, updated)
@@ -534,7 +602,7 @@ async def patch(
     result: dict[str, Any] = {
         "success": True,
         "path": str(target),
-        "replacements": resolution.count,
+        "replacements": count,
     }
     if str(target).endswith(".py"):
         diagnostics = await _post_edit_diagnostics(str(target))
