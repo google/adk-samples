@@ -132,54 +132,107 @@ def test_a_pass_alongside_infra_still_counts_as_recovery():
 
 
 @pytest.mark.parametrize(
-    ("age", "expected_labels"),
+    ("already", "expected"),
     [
-        (0, []),
-        (29, []),
-        (30, ["recipe:reminded"]),
-        (59, ["recipe:reminded"]),
-        (60, ["recipe:reminded", m.LABEL_ROTTING]),
-        (90, ["recipe:reminded", m.LABEL_ROTTING, m.LABEL_DELETION]),
+        (set(), m.LABEL_REMINDED),
+        ({m.LABEL_REMINDED}, m.LABEL_ROTTING),
+        ({m.LABEL_REMINDED, m.LABEL_ROTTING}, m.LABEL_DELETION),
         (
-            120,
-            [
-                "recipe:reminded",
-                m.LABEL_ROTTING,
-                m.LABEL_DELETION,
-                "recipe:deletion-proposed",
-            ],
+            {m.LABEL_REMINDED, m.LABEL_ROTTING, m.LABEL_DELETION},
+            m.LABEL_PROPOSED,
         ),
     ],
 )
-def test_stages_fire_at_their_thresholds(calls, age, expected_labels):
-    m.escalate("core/python/demo", _issue(age), dry=False, now=NOW)
-    fired = [c[2] for c in calls if c[0] == "label"]
-    assert fired == expected_labels
+def test_each_run_advances_exactly_one_rung(calls, already, expected):
+    """The labels are the state: the next rung is the first one the issue
+    does not already carry."""
+    issue = _issue(400, already)
+    m.escalate("core/python/demo", issue, dry=False, now=NOW)
+    assert [c[2] for c in calls if c[0] == "label"] == [expected]
 
 
-def test_a_stage_never_fires_twice(calls):
-    """The label is the state. Without this the day-30 reminder would repeat
-    every month — exactly the nagging the design exists to avoid."""
-    already = {"recipe:reminded", m.LABEL_ROTTING}
-    m.escalate("core/python/demo", _issue(65, already), dry=False, now=NOW)
-    assert [c for c in calls if c[0] == "label"] == []
-    assert [c for c in calls if c[0] == "comment"] == []
+def test_the_ladder_cannot_collapse_however_old_the_issue(calls):
+    """The bug this rewrite exists for. Age used to gate each rung
+    independently, so an issue that crossed two thresholds between runs fired
+    both in one go — an owner got 'here is a reminder' and 'this is being
+    marked inactive' in the same breath, with no grace between them. A very
+    old issue must still advance one rung and no more."""
+    m.escalate("core/python/demo", _issue(3650), dry=False, now=NOW)
+    assert [c[2] for c in calls if c[0] == "label"] == [m.LABEL_REMINDED]
+    assert len([c for c in calls if c[0] == "comment"]) == 1
 
 
-def test_a_late_run_catches_up_through_every_missed_stage(calls):
-    """If the canary is down for months, a 100-day-old issue must not skip
-    from day 0 straight to the deletion warning with no reminder in between."""
-    m.escalate("core/python/demo", _issue(100), dry=False, now=NOW)
-    fired = [c[2] for c in calls if c[0] == "label"]
-    assert fired == ["recipe:reminded", m.LABEL_ROTTING, m.LABEL_DELETION]
+def test_a_rung_never_fires_twice(calls):
+    """Without this the reminder would repeat every month — exactly the
+    nagging the design exists to avoid."""
+    already = {m.LABEL_REMINDED, m.LABEL_ROTTING}
+    m.escalate("core/python/demo", _issue(400, already), dry=False, now=NOW)
+    assert [c[2] for c in calls if c[0] == "label"] == [m.LABEL_DELETION]
 
 
-def test_deletion_stages_tag_a_maintainer_not_only_the_owner(calls):
-    """An unresponsive owner is the reason we got here, so the 90- and
-    120-day notices have to reach someone who can decide."""
-    m.escalate("core/python/demo", _issue(120), dry=False, now=NOW)
-    bodies = [c[2] for c in calls if c[0] == "comment"]
-    assert any(f"@{m.MAINTAINER}" in b for b in bodies[-2:])
+def test_a_fully_escalated_issue_goes_quiet(calls):
+    """Every rung fired: say nothing rather than nag forever."""
+    m.escalate("core/python/demo", _issue(999, set(m.LADDER)), dry=False)
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("rung_index", "already"),
+    [
+        (0, set()),
+        (1, {m.LABEL_REMINDED}),
+        (2, {m.LABEL_REMINDED, m.LABEL_ROTTING}),
+    ],
+)
+def test_a_rung_is_held_below_its_minimum_age(calls, rung_index, already):
+    """The floor. It never binds on the monthly cron, but it stops a more
+    frequent cron from compressing a four-month ladder into four weeks."""
+    just_under = (rung_index + 1) * m.MIN_DAYS_BETWEEN_STAGES - 1
+    m.escalate(
+        "core/python/demo", _issue(just_under, already), dry=False, now=NOW
+    )
+    assert calls == []
+
+
+def test_a_manual_run_never_advances_the_ladder(calls):
+    """`--no-escalate`. Re-running the canary by hand to check something must
+    not move a recipe closer to deletion."""
+    m.escalate(
+        "core/python/demo", _issue(400), dry=False, now=NOW, advance=False
+    )
+    assert calls == []
+
+
+def test_deletion_rungs_tag_a_maintainer_not_only_the_owner(calls):
+    """An unresponsive owner is the reason we got here, so both deletion
+    notices have to reach someone who can decide."""
+    for already in (
+        {m.LABEL_REMINDED, m.LABEL_ROTTING},
+        {m.LABEL_REMINDED, m.LABEL_ROTTING, m.LABEL_DELETION},
+    ):
+        calls.clear()
+        m.escalate("core/python/demo", _issue(400, already), dry=False, now=NOW)
+        bodies = [c[2] for c in calls if c[0] == "comment"]
+        assert bodies and all(f"@{m.MAINTAINER}" in b for b in bodies)
+
+
+def test_a_recipe_with_no_poc_is_not_mentioned_twice(calls, monkeypatch):
+    """`mention` already falls back to the maintainer, so naming them again
+    rendered "@happyhuman @happyhuman" on the deletion-scheduled notice."""
+    monkeypatch.setattr(m, "read_owner", lambda r, repo_root=None: None)
+    already = {m.LABEL_REMINDED, m.LABEL_ROTTING}
+    m.escalate("core/python/demo", _issue(400, already), dry=False, now=NOW)
+    body = next(c[2] for c in calls if c[0] == "comment")
+    assert body.count(f"@{m.MAINTAINER}") == 1
+
+
+def test_a_recipe_with_a_poc_still_tags_both(calls):
+    """The dedupe must not cost the maintainer ping when there IS an owner."""
+    already = {m.LABEL_REMINDED, m.LABEL_ROTTING}
+    m.escalate("core/python/demo", _issue(400, already), dry=False, now=NOW)
+    body = next(c[2] for c in calls if c[0] == "comment")
+    assert f"@{m.MAINTAINER}" in body
+    assert "@owner-x" in body
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +364,9 @@ def _drive_main(tmp_path, monkeypatch, results, issue):
         m, "open_issue", lambda r, j, u, d: acted.append(("open", r))
     )
     monkeypatch.setattr(
-        m, "escalate", lambda r, i, d: acted.append(("escalate", r))
+        m,
+        "escalate",
+        lambda r, i, d, **kw: acted.append(("escalate", r, kw)),
     )
     monkeypatch.setattr(
         m, "close_recovered", lambda r, i, d: acted.append(("close", r))
@@ -350,7 +405,24 @@ def test_a_genuine_pass_still_closes_the_issue(tmp_path, monkeypatch):
 def test_a_still_failing_recipe_escalates(tmp_path, monkeypatch):
     results = [{"recipe": "contrib/foo", "python": "3.11", "outcome": "fail"}]
     acted = _drive_main(tmp_path, monkeypatch, results, _issue(35))
-    assert acted == [("escalate", "contrib/foo")]
+    assert acted == [("escalate", "contrib/foo", {"advance": True})]
+
+
+def test_no_escalate_flag_reaches_escalate(tmp_path, monkeypatch):
+    """The workflow passes `--no-escalate` on every non-scheduled run."""
+    results = [{"recipe": "contrib/foo", "python": "3.11", "outcome": "fail"}]
+    acted: list[tuple] = []
+    monkeypatch.setattr(m, "ensure_labels", lambda: None)
+    monkeypatch.setattr(m, "find_issue", lambda r: _issue(35))
+    monkeypatch.setattr(
+        m,
+        "escalate",
+        lambda r, i, d, **kw: acted.append(("escalate", r, kw)),
+    )
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps(results), encoding="utf-8")
+    assert m.main(["--results", str(path), "--no-escalate"]) == 0
+    assert acted == [("escalate", "contrib/foo", {"advance": False})]
 
 
 def test_gh_failure_is_raised_not_swallowed(monkeypatch):

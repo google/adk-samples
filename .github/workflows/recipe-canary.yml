@@ -35,10 +35,16 @@ name: 🐤 Recipe Canary
 
 on:
   schedule:
-    # 06:00 UTC on the 1st. Monthly, per the policy decision: the canary
-    # reports genuine breakage, which is rare, and a weekly cadence would
-    # spend CI re-confirming the same green result.
-    - cron: "0 6 1 * *"
+    # Monthly, per the policy decision: the canary reports genuine breakage,
+    # which is rare, and a weekly cadence would spend CI re-confirming the
+    # same green result.
+    #
+    # The 5th at :17 rather than the 1st at :00 on purpose. Scheduled
+    # workflows are best-effort and GitHub drops or delays them under
+    # scheduler load, and the 1st of the month on the hour is the single most
+    # contended slot there is. That matters more than it looks: escalation
+    # advances one rung per run, so a dropped run is a rung not advanced.
+    - cron: "17 6 5 * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -349,11 +355,17 @@ jobs:
           # claiming to have opened a PR it cannot open.
           CANARY_APP_TOKEN: ${{ secrets.CANARY_APP_TOKEN }}
           DRY: ${{ github.event.inputs.dry_run }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           ARGS=(--results "$RUNNER_TEMP/results.json"
                 --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
           [ "${DRY:-false}" = "true" ] && ARGS+=(--dry-run)
+          # Only the scheduled run advances the ladder. A manual re-run — to
+          # check something, or scoped to one recipe with the `recipe` input
+          # — still opens and closes issues, but must never move a recipe
+          # closer to a deletion proposal.
+          [ "$EVENT_NAME" != "schedule" ] && ARGS+=(--no-escalate)
           python3 .github/scripts/canary_issues.py "${ARGS[@]}"
 
       - name: Summary

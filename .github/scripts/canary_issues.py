@@ -5,18 +5,26 @@ Drive the issue lifecycle for .github/workflows/recipe-canary.yml.
 Reads the canary's per-job results and decides, for each recipe, what to do
 about its tracking issue: open one, nudge it, escalate it, or close it.
 
-The lifecycle, clocked off the ISSUE's created_at
--------------------------------------------------
-    day   0   open an issue, notify the recipe's owner
-    day  30   reminder comment
-    day  60   propose marking the recipe `status: inactive`
-    day  90   warn that deletion is scheduled
-    day 120   propose deleting the recipe, tagging a maintainer
-    passing   close the issue, and propose restoring `status: active`
+The lifecycle, advanced ONE RUNG PER FAILING RUN
+------------------------------------------------
+    run 1   open an issue, notify the recipe's owner
+    run 2   reminder comment
+    run 3   the recipe should be marked `status: inactive`
+    run 4   warn that deletion is scheduled
+    run 5   propose deleting the recipe, tagging a maintainer
+    passing close the issue
 
-The issue is the clock deliberately: no new manifest field, no archaeology
-over git history to work out when something started failing, and a stage that
-cannot fire twice because the label recording it is right there on the issue.
+On the monthly cron that is roughly a month per rung, so about four months
+from the first failure to a deletion proposal. The ladder can stretch — a
+missed or delayed run costs a rung, which is the safe direction — but it can
+never compress, so an owner always gets four separate notices before deletion
+is proposed. See the comment on LADDER for why an age-in-days gate did not
+survive contact with a monthly cron.
+
+The issue carries the state deliberately: no new manifest field, no
+archaeology over git history to work out when something started failing, and
+a rung that cannot fire twice because the label recording it is right there
+on the issue.
 
 Why "propose" and not "do"
 --------------------------
@@ -65,15 +73,43 @@ LABEL_TRACKING = "recipe-canary"
 LABEL_ROTTING = "recipe:rotting"
 LABEL_DELETION = "recipe:deletion-scheduled"
 
-# Stage -> (age in days, label that records it having fired).
+LABEL_REMINDED = "recipe:reminded"
+LABEL_PROPOSED = "recipe:deletion-proposed"
+
+# The ladder, in order. The LABEL IS THE STATE — the whole state machine is
+# "which of these labels does the issue already carry", which is durable,
+# visible, and free to inspect.
 #
-# The label IS the state. Without it the day-30 comment would repeat on every
-# run past day 30, which is the monthly nagging this whole system exists to
-# stop.
-STAGE_REMIND = (30, "recipe:reminded")
-STAGE_INACTIVE = (60, LABEL_ROTTING)
-STAGE_WARN_DELETE = (90, LABEL_DELETION)
-STAGE_DELETE = (120, "recipe:deletion-proposed")
+# Escalation advances by RUN, not by clock: one rung per failing scheduled
+# run, in this order. An earlier version gated each rung on an age in days
+# (30/60/90/120) as well, and the interaction between the two was a bug.
+# Thresholds sit 30 days apart while a monthly cron advances the clock by
+# 28-31, so whether a run crossed one threshold, two, or none depended on
+# month length and on the arbitrary phase between issue creation and the
+# cron. An issue opened on 31 January could reach 1 April at age 60 and fire
+# "here is a reminder" and "this is being marked inactive" in the same run,
+# with no grace between them at all; `.days` flooring separately lost a rung
+# outright for issues opened in short months.
+#
+# Advancing one rung per run removes the arithmetic entirely. The ladder can
+# stretch — a missed or delayed run costs a month, which is the safe
+# direction — but it can never compress, so an owner always gets four
+# separate monthly notices before deletion is proposed. Age is still shown in
+# the comment text, where being approximate is fine; it just no longer drives
+# an irreversible decision.
+LADDER = (
+    LABEL_REMINDED,
+    LABEL_ROTTING,
+    LABEL_DELETION,
+    LABEL_PROPOSED,
+)
+
+# Minimum days between rungs, as a floor rather than a driver. A floor can
+# only ever delay a rung, never skip or double-fire one, so it does not
+# reintroduce the collapse above. It exists so that changing the cron to
+# something more frequent cannot quietly turn a four-month ladder into a
+# four-week one.
+MIN_DAYS_BETWEEN_STAGES = 21
 
 
 class GhError(RuntimeError):
@@ -278,12 +314,16 @@ def build_body(recipe: str, jobs: list[dict], run_url: str) -> str:
         "",
         "## What happens if nobody acts",
         "",
-        "| after | then |",
+        "The canary runs monthly. Each run that still fails advances one "
+        "stage — so this is roughly a month per step, and the schedule only "
+        "ever slips later, never sooner.",
+        "",
+        "| next failing run | then |",
         "|---|---|",
-        "| 30 days | a reminder comment here |",
-        "| 60 days | a PR marking the recipe `status: inactive` |",
-        "| 90 days | notice that deletion is scheduled |",
-        f"| 120 days | a PR deleting the recipe, for @{MAINTAINER} to decide |",
+        "| 1st | a reminder comment here |",
+        "| 2nd | the recipe should be marked `status: inactive` |",
+        "| 3rd | notice that deletion is scheduled |",
+        f"| 4th | removal of the recipe proposed, for @{MAINTAINER} to decide |",
         "",
         "Fix the recipe and this issue closes itself on the next run.",
         "",
@@ -298,10 +338,10 @@ def ensure_labels() -> None:
     """Create the canary's labels if the repo does not have them yet."""
     for name, colour, description in [
         (LABEL_TRACKING, "0e8a16", "Opened by the monthly recipe canary"),
-        (LABEL_ROTTING, "fbca04", "Canary-failing for 60+ days"),
-        (LABEL_DELETION, "d93f0b", "Canary-failing for 90+ days"),
-        (STAGE_REMIND[1], "c5def5", "Canary reminder sent"),
-        (STAGE_DELETE[1], "b60205", "Deletion PR proposed"),
+        (LABEL_REMINDED, "c5def5", "Canary reminder sent (rung 1 of 4)"),
+        (LABEL_ROTTING, "fbca04", "Should be status: inactive (rung 2 of 4)"),
+        (LABEL_DELETION, "d93f0b", "Deletion scheduled (rung 3 of 4)"),
+        (LABEL_PROPOSED, "b60205", "Deletion proposed (rung 4 of 4)"),
     ]:
         subprocess.run(
             [
@@ -360,68 +400,94 @@ def add_label(number: int, label: str, dry: bool) -> None:
     gh("issue", "edit", str(number), "--repo", REPO, "--add-label", label)
 
 
-def escalate(recipe: str, issue: dict, dry: bool, now=None) -> None:
-    """Fire whichever stages the issue's age has reached and not yet recorded.
+def _stage_body(label: str, recipe: str, age: int, mention: str) -> str:
+    """The comment posted when `label` is reached."""
+    if label == LABEL_REMINDED:
+        return (
+            f"{mention} — still failing, {age} days on. Nothing has changed "
+            f"on the canary's side; the recipe still does not install and "
+            f"pass from its committed lockfile.\n\nEach monthly run that "
+            f"still fails advances one stage. The next one marks this "
+            f"recipe `status: inactive`."
+        )
+    if label == LABEL_ROTTING:
+        return (
+            f"{mention} — {age} days and still failing, so this recipe is "
+            f"being marked **`status: inactive`**.\n\nThat is not deletion. "
+            f"It records that nobody is currently accountable for the recipe "
+            f"working, and it is reversible.\n\n"
+            f"{_write_note(recipe, 'status: inactive')}"
+        )
+    if label == LABEL_DELETION:
+        # `mention` is ALREADY @MAINTAINER when the recipe declares no usable
+        # poc, so naming them again renders "@someone @someone".
+        audience = (
+            mention
+            if mention == f"@{MAINTAINER}"
+            else f"@{MAINTAINER} {mention}"
+        )
+        return (
+            f"{audience} — {age} days. **Deletion is "
+            f"scheduled.** One more failing run and the canary proposes "
+            f"removing `{recipe}` from the repository.\n\nA maintainer "
+            f"decides whether that happens; the canary only proposes it. To "
+            f"stop the clock, fix the recipe or say here that it should be "
+            f"kept."
+        )
+    return (
+        f"@{MAINTAINER} — {age} days, and this is the fourth failing run. "
+        f"Removal of `{recipe}` is now due.\n\n"
+        f"{_write_note(recipe, 'deletion')}\n\nNothing is removed without a "
+        f"human deciding to."
+    )
 
-    Stages are checked oldest-first and each is gated on its own label, so a
-    canary that was down for two months catches up in one run instead of
-    skipping straight to the last stage.
+
+def escalate(
+    recipe: str, issue: dict, dry: bool, now=None, advance: bool = True
+) -> None:
+    """Advance the ladder by AT MOST ONE rung.
+
+    The labels on the issue are the state: the next rung is the first entry
+    in `LADDER` the issue does not already carry. Firing exactly one per run
+    is what makes the ladder impossible to collapse — see the comment on
+    `LADDER` for why gating on an age in days did not survive contact with a
+    monthly cron.
+
+    `advance=False` reports without moving anything, which is what a manual
+    `workflow_dispatch` run gets: re-running the canary by hand to check
+    something should never march a recipe closer to deletion.
     """
     number = issue["number"]
     age = age_days(issue["createdAt"], now)
     labels = issue["labelNames"]
+
+    next_rung = next((lbl for lbl in LADDER if lbl not in labels), None)
+    if next_rung is None:
+        # Every rung has fired. Stay quiet rather than nag monthly forever;
+        # the issue is still open and still says everything it needs to.
+        return
+
+    if not advance:
+        print(f"  {recipe}: not a scheduled run, ladder held at {next_rung}")
+        return
+
+    # Floor, not driver: rung N cannot fire before N * MIN_DAYS_BETWEEN_STAGES
+    # days. Under the monthly cron this never binds — it is there so that
+    # making the cron more frequent cannot quietly compress a four-month
+    # ladder into a four-week one.
+    rung = LADDER.index(next_rung)
+    floor = (rung + 1) * MIN_DAYS_BETWEEN_STAGES
+    if age < floor:
+        print(
+            f"  {recipe}: {next_rung} held, {age}d < {floor}d floor for "
+            f"rung {rung + 1}"
+        )
+        return
+
     owner = read_owner(recipe)
     mention = f"@{owner}" if owner else f"@{MAINTAINER}"
-
-    days, label = STAGE_REMIND
-    if age >= days and label not in labels:
-        comment(
-            number,
-            f"{mention} — still failing {age} days on. Nothing has changed "
-            f"on the canary's side; the recipe still does not install and "
-            f"pass from its committed lockfile.\n\nAt 60 days the canary "
-            f"will open a PR marking this recipe `status: inactive`.",
-            dry,
-        )
-        add_label(number, label, dry)
-
-    days, label = STAGE_INACTIVE
-    if age >= days and label not in labels:
-        comment(
-            number,
-            f"{mention} — {age} days without a fix, so this recipe is being "
-            f"marked **`status: inactive`**.\n\nThat is not deletion. It "
-            f"records that nobody is currently accountable for the recipe "
-            f"working, and it is reversible: fix the recipe and the canary "
-            f"restores `status: active` on its next run.\n\n"
-            f"{_write_note(recipe, 'status: inactive')}",
-            dry,
-        )
-        add_label(number, label, dry)
-
-    days, label = STAGE_WARN_DELETE
-    if age >= days and label not in labels:
-        comment(
-            number,
-            f"@{MAINTAINER} {mention} — {age} days. **Deletion is "
-            f"scheduled.** At 120 days the canary will open a PR removing "
-            f"`{recipe}` from the repository.\n\nA maintainer decides whether "
-            f"that PR is merged; the canary only proposes it. To stop the "
-            f"clock, fix the recipe or say here that it should be kept.",
-            dry,
-        )
-        add_label(number, label, dry)
-
-    days, label = STAGE_DELETE
-    if age >= days and label not in labels:
-        comment(
-            number,
-            f"@{MAINTAINER} — {age} days. Deletion of `{recipe}` is now due."
-            f"\n\n{_write_note(recipe, 'deletion')}\n\nNothing is removed "
-            f"without a human merging that PR.",
-            dry,
-        )
-        add_label(number, label, dry)
+    comment(number, _stage_body(next_rung, recipe, age, mention), dry)
+    add_label(number, next_rung, dry)
 
 
 def _write_note(recipe: str, what: str) -> str:
@@ -471,6 +537,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--results", required=True, type=Path)
     parser.add_argument("--run-url", default="")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--no-escalate",
+        action="store_true",
+        help=(
+            "Open and close issues as usual, but do not advance the "
+            "escalation ladder. The workflow passes this on every run that "
+            "is not `schedule`-triggered: re-running the canary by hand, or "
+            "against a single recipe, must never move something closer to "
+            "deletion."
+        ),
+    )
     args = parser.parse_args(argv)
 
     results = json.loads(args.results.read_text(encoding="utf-8"))
@@ -511,7 +588,12 @@ def main(argv: list[str] | None = None) -> int:
                     f"{recipe}: FAILING, issue #{issue['number']} already "
                     f"open ({age_days(issue['createdAt'])}d)"
                 )
-                escalate(recipe, issue, args.dry_run)
+                escalate(
+                    recipe,
+                    issue,
+                    args.dry_run,
+                    advance=not args.no_escalate,
+                )
         elif issue is None:
             continue
         elif recipe in recovered:
