@@ -19,6 +19,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 # ---------------------------------------------------------------------------
 # Session-level cleanup
@@ -39,7 +40,7 @@ def cleanup_downloaded_assets():
     yield
     if _ASSETS_DIR.exists():
         shutil.rmtree(_ASSETS_DIR, ignore_errors=True)
-from PIL import Image
+
 
 # PNG magic bytes (minimal valid PNG header)
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"

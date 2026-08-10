@@ -12,9 +12,11 @@ on:
       - "skills/**/*.py"
       - "**/pyproject.toml"
 
+# Read-only by default. `pull-requests: write` is granted per job below
+# rather than here, because a workflow-level grant is handed to every job in
+# the file — including any future job that has no business posting comments.
 permissions:
   contents: read
-  pull-requests: write # Essential for posting reviewdog suggestion comments
 
 # Cancel superseded runs on the same PR to save runner minutes and avoid
 # stale suggestion comments from an older commit lingering on the PR.
@@ -33,23 +35,26 @@ jobs:
   ruff-format:
     name: Ruff Format Suggestions
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # Essential for posting reviewdog suggestion comments
     # Ruff on the PR-diff is fast; 10 min is a generous ceiling that still
     # protects against a stuck reviewdog HTTP call to the GitHub API.
     timeout-minutes: 10
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
         with:
           python-version: "3.11"
           enable-cache: false
 
       - name: Install Reviewdog
-        uses: reviewdog/action-setup@v1
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # ratchet:reviewdog/action-setup@v1
         with:
           # Pinned rather than `latest` so a reviewdog release cannot turn every
           # open PR red without warning. Bump deliberately.
@@ -82,34 +87,78 @@ jobs:
           # 3. Format ONLY the modified python files (rules come from pyproject.toml)
           uvx ruff format --force-exclude "${CHANGED_FILES[@]}"
 
-          # 4. Post formatting suggestion comments strictly targeting modified files.
-          #    --no-color is defensive: CI git doesn't colorize by default, but a
-          #    self-hosted runner or global git config could break the diff parser.
-          git diff --no-color "${CHANGED_FILES[@]}" | reviewdog -f=diff \
-                                                                -name="ruff-formatter" \
-                                                                -reporter=github-pr-review \
-                                                                -filter-mode=added \
-                                                                -fail-on-error=true
+          # 4. Print the findings BEFORE handing them to reviewdog.
+          #
+          #    reviewdog cannot post review comments on a PR from a fork: the
+          #    GITHUB_TOKEN is read-only there, the API answers "403 Resource
+          #    not accessible by integration", and reviewdog degrades to
+          #    annotations. Piping the diff straight into it therefore left
+          #    external contributors with a red X and NOTHING else — the
+          #    findings existed only inside a pipe that produced no output.
+          #    The job log is the one surface that always works, so write to
+          #    it first and treat reviewdog as the enhancement it is.
+          #    --no-color is defensive: CI git doesn't colorize by default,
+          #    but a self-hosted runner or global git config could break the
+          #    diff parser.
+          FORMAT_DIFF=$(git diff --no-color "${CHANGED_FILES[@]}")
+
+          if [ -z "$FORMAT_DIFF" ]; then
+            echo "[PASS] All modified Python files are already formatted."
+            exit 0
+          fi
+
+          mapfile -t UNFORMATTED < <(git diff --name-only "${CHANGED_FILES[@]}")
+
+          echo "::group::Reformatting diff (what ruff would change)"
+          echo "$FORMAT_DIFF"
+          echo "::endgroup::"
+          echo ""
+          echo "[FAIL] ${#UNFORMATTED[@]} file(s) are not formatted:"
+          printf '  - %s\n' "${UNFORMATTED[@]}"
+          echo ""
+          echo "Fix locally by running:"
+          echo ""
+          echo "  uv run ruff format ${UNFORMATTED[*]}"
+          echo ""
+          echo "Then commit the result. Docs: docs/recipe-handbook/troubleshooting.md#ruff-format-or-check-failed"
+
+          for f in "${UNFORMATTED[@]}"; do
+            echo "::error file=$f::This file is not formatted. Run 'uv run ruff format $f' and commit the result. See docs/recipe-handbook/troubleshooting.md#ruff-format-or-check-failed"
+          done
+
+          # Inline suggestions are best-effort: on a fork PR this 403s, which
+          # is fine because everything above is already in the log. Never let
+          # its exit status decide the job's.
+          echo "$FORMAT_DIFF" | reviewdog -f=diff \
+                                          -name="ruff-formatter" \
+                                          -reporter=github-pr-review \
+                                          -filter-mode=added \
+                                          -fail-on-error=false || true
+
+          exit 1
 
   ruff-lint:
     name: Ruff Lint Suggestions
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # Essential for posting reviewdog suggestion comments
     # Same rationale as ruff-format above.
     timeout-minutes: 10
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
         with:
           python-version: "3.11"
           enable-cache: false
 
       - name: Install Reviewdog
-        uses: reviewdog/action-setup@v1
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # ratchet:reviewdog/action-setup@v1
         with:
           # Pinned rather than `latest` — see ruff-format job for rationale.
           reviewdog_version: v0.21.0
@@ -140,22 +189,54 @@ jobs:
           uvx ruff check --force-exclude --fix "${CHANGED_FILES[@]}" || true
 
           # 4. Post auto-fix suggestion comments strictly targeting modified files.
+          #    Best-effort only — see step 6 for why the log is authoritative.
           git diff --no-color "${CHANGED_FILES[@]}" | reviewdog -f=diff \
                                                                 -name="ruff-linter-suggestions" \
                                                                 -reporter=github-pr-review \
                                                                 -filter-mode=added \
-                                                                -fail-on-error=false
+                                                                -fail-on-error=false || true
 
           # 5. Restore files so we can check non-fixable violations on the
           #    original user commits (not the auto-fixed versions).
           git checkout -- .
 
-          # 6. Run strict diagnostic linter in RDJSON format on only the modified
-          #    python files. --exit-zero tells ruff to exit 0 on lint VIOLATIONS
-          #    (so reviewdog gets the full JSON and can annotate them).
-          #    set -o pipefail still catches a ruff CRASH (bad file, missing dep)
-          #    — that path exits non-zero and would otherwise be swallowed by
-          #    reviewdog's success exit.
+          # 6. Print the violations to the log FIRST, in human form.
+          #
+          #    The rdjson pipe below is machine-readable and produces no
+          #    console output, and reviewdog 403s on a fork PR (read-only
+          #    GITHUB_TOKEN). Together that meant an external contributor saw
+          #    a red X with no rule, no file and no line — the violation was
+          #    real but invisible. `--output-format=concise` costs one extra
+          #    ruff invocation and makes the log self-sufficient.
+          LINT_OUTPUT=$(uvx ruff check \
+            --force-exclude \
+            --output-format=concise \
+            --exit-zero "${CHANGED_FILES[@]}")
+
+          if [ -n "$LINT_OUTPUT" ]; then
+            echo "::group::Ruff lint violations"
+            echo "$LINT_OUTPUT"
+            echo "::endgroup::"
+            echo ""
+            echo "[FAIL] Ruff reported the violations listed above."
+            echo ""
+            echo "Most are auto-fixable:"
+            echo ""
+            echo "  uv run ruff check --fix ${CHANGED_FILES[*]}"
+            echo ""
+            echo "Anything left after that needs a manual edit; ruff names the"
+            echo "rule ID on each line and https://docs.astral.sh/ruff/rules/"
+            echo "explains it."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#ruff-format-or-check-failed"
+          else
+            echo "[PASS] No Ruff lint violations in the modified Python files."
+          fi
+
+          # 7. Hand the same findings to reviewdog for inline annotations.
+          #    --exit-zero keeps ruff quiet about violations so reviewdog gets
+          #    the full JSON; `set -o pipefail` still catches a ruff CRASH
+          #    (bad file, missing dep), which must not be mistaken for "clean".
           uvx ruff check \
             --force-exclude \
             --output-format=rdjson \
@@ -163,4 +244,11 @@ jobs:
                                                           -name="ruff-linter" \
                                                           -reporter=github-pr-review \
                                                           -filter-mode=added \
-                                                          -fail-on-error=true
+                                                          -fail-on-error=false || true
+
+          # The log above is authoritative, so decide the job here rather than
+          # letting reviewdog's exit status (which depends on token scope) do
+          # it. A fork PR and a branch PR now fail identically.
+          if [ -n "$LINT_OUTPUT" ]; then
+            exit 1
+          fi

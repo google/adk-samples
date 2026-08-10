@@ -109,11 +109,17 @@ route exposes — and the credentials the `secrets`/`oauth` routes inject — is
 | `LHA_SCHEDULER_AUDIENCE` | — | Expected `aud` on that token. Unset ⇒ endpoints reject. |
 | `LHA_SCHEDULER_AUTH_DISABLED` | _(off)_ | Skips scheduler token verification. Local testing only. |
 
-### Snapshot (Phase C, off by default)
+### Snapshot (Phase C, off in code — **on** after `make deploy`)
+
+> The code default is off, but `terraform/cloud_run.tf` sets
+> `LHA_SNAPSHOT_ENABLED = "1"` on the deployed backend and
+> `terraform/cloud_scheduler.tf` creates the daily job unconditionally. A
+> `make deploy` therefore ships with Phase C **on**. Set the env var to `0` in
+> `cloud_run.tf` if you don't want it.
 
 | Var | Default | Notes |
 |---|---|---|
-| `LHA_SNAPSHOT_ENABLED` | _(off)_ | Master switch for the daily snapshot+prune job and restore-on-session-start. |
+| `LHA_SNAPSHOT_ENABLED` | _(off locally; `1` on Cloud Run via Terraform)_ | Master switch for the daily snapshot+prune job and restore-on-session-start. |
 | `LHA_SNAPSHOT_TTL` | `30d` | Snapshot retention TTL. |
 | `LHA_SNAPSHOT_KEEP` | `2` | Snapshots kept per user. |
 

@@ -227,9 +227,9 @@ required_files:
     #   SKILL.md  — the conversational installer: runs the interview,
     #               writes the design spec, performs setup.
     #   EVAL.yaml — self-verifying proof of performance (eval rubrics).
-    # The directories a vertical skill must also ship (scripts/, assets/,
-    # references/, tests/unit/) are listed under `required_dirs` below —
-    # this section can only express files.
+    # The one directory a vertical skill must also ship (scripts/) is
+    # listed under `required_dirs` below — this section can only express
+    # files.
     #
     # A Python vertical skill additionally picks up
     # required_files.by_language.python (pyproject.toml, uv.lock,
@@ -250,9 +250,15 @@ required_files:
       # Every Go recipe is its own module. go.mod is required for three
       # reasons, in increasing order of subtlety:
       #   1. Without it the recipe cannot be built, tested, or versioned.
-      #   2. .github/scripts/generate_dependabot.py detects Go recipes by
-      #      the presence of go.mod (`_is_gomod`), so a recipe without one
-      #      silently receives no dependency updates.
+      #   2. Dependabot's `gomod` ecosystem keys off go.mod, so a recipe
+      #      without one silently receives no dependency updates. Note that
+      #      go.mod alone is not sufficient today: .github/dependabot.yml
+      #      declares no `gomod` entry yet, so the FIRST Go recipe must add
+      #      one. That is enforced, not left to memory —
+      #      test_dependabot_config.py fails any ecosystem present in the
+      #      tree but missing from the config. The orphan cleanup in
+      #      .github/scripts/recipe_manifests.py detects Go recipes the same
+      #      way (`_is_gomod`).
       #   3. .github/workflows/go-format.yml groups changed files by their
       #      owning go.mod and SKIPS any file it cannot attribute to a
       #      module — because gci's `localmodule` import section reads
@@ -281,9 +287,23 @@ required_files:
 # a `scripts` entry under required_files could never be satisfied, since
 # that check requires a file.
 #
-# An empty directory PASSES. assets/ and references/ are legitimately
-# empty for some skills, and git cannot commit an empty directory, so in
-# practice they carry a .gitkeep.
+# An empty directory PASSES, which is why this section is kept as small as
+# possible. A rule that is satisfied by an empty folder enforces nothing:
+# git cannot commit an empty directory, so the author adds a .gitkeep whose
+# only purpose is to satisfy a check that already said it does not care
+# what is inside. That is pure ceremony, and it reliably confuses people —
+# the folder is right there in their editor while CI insists it is missing.
+#
+# So the bar for listing a directory here is: the recipe is BROKEN without
+# it, not merely unconventional. assets/, references/ and tests/unit/ were
+# removed under that bar — plenty of vertical skills legitimately ship no
+# demo data and no deep-dive docs, and tests/unit/ implied a testing
+# discipline it could not enforce (an empty folder passed) while
+# tests/test_runnability.py already covers the real requirement as a FILE.
+#
+# They remain the convention, and the skills scaffold template still
+# creates them — prompting an author to fill a folder is the scaffold's
+# job, not CI's. See docs/recipe-handbook/anatomy.md.
 # --------------------------------------------------------------------------
 required_dirs:
   always: []
@@ -291,17 +311,11 @@ required_dirs:
   by_root:
     core: []
     contrib: []
-    # The shape every vertical skill ships:
-    #   scripts/     — functional code: ADK agents, model implementations,
-    #                  one-shot GCP setup scripts.
-    #   assets/      — demo data, e.g. sample catalogs.
-    #   references/  — deep-dive documentation for human review.
-    #   tests/unit/  — unit tests, for reliability.
+    # scripts/ — functional code: ADK agents, model implementations,
+    #            one-shot GCP setup scripts. A vertical skill with no
+    #            scripts/ has nothing to run, so this one is load-bearing.
     skills:
       - scripts
-      - assets
-      - references
-      - tests/unit
 
   by_language:
     python: []
