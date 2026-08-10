@@ -110,6 +110,7 @@ class Doc(str, Enum):
     RUFF_FAILED = "ruff-format-or-check-failed"
 
     ADK_MAJOR = "core-recipe-is-behind-the-current-adk-major"
+    RECIPE_INACTIVE = "recipe-is-marked-inactive"
 
     CI_FAULT = "ci-infrastructure-failure"
 

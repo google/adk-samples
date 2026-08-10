@@ -60,6 +60,19 @@ Generate with the `generate-manifest` AI skill.
 | `ownership.team` | Team name |
 | `ownership.poc` (Point of Contact) | GitHub user ID of the accountable owner |
 
+Two of those are not just metadata — the
+[recipe canary](../../.github/workflows/recipe-canary.yml) acts on them:
+
+- **`ownership.poc` is a delivery address.** When the canary finds your
+  recipe no longer installs from its committed lockfile, it opens an issue
+  and @-mentions this user. Put a real GitHub ID here; a wrong one means
+  nobody hears that the recipe is broken.
+- **`status: inactive` means "on the way out".** The canary asks for it after
+  a recipe has failed three monthly runs, and proposes removal two runs
+  later. Nothing sets it back automatically, so if you fix a recipe that was
+  marked inactive, set it to `active` in the same PR. See
+  [Recipe is marked inactive](troubleshooting.md#recipe-is-marked-inactive).
+
 **Common optional fields:**
 
 | Field | Purpose |

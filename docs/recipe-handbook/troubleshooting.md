@@ -60,6 +60,7 @@ CI log, or [jump to Something else](#something-else).
 **Other**
 - [CI infrastructure failure](#ci-infrastructure-failure)
 - [Core recipe is behind the current ADK major](#core-recipe-is-behind-the-current-adk-major)
+- [Recipe is marked inactive](#recipe-is-marked-inactive)
 - [Non-blocking notices](#non-blocking-notices)
 - [Something else](#something-else)
 
@@ -544,6 +545,45 @@ rather than in CI, which is strictly worse than the notice you started with.
 If you are only passing through, leave it — that is what "non-blocking"
 means. The recipe's owner (`ownership.poc` in its `manifest.yaml`) owns this.
 
+## Recipe is marked inactive
+
+**Workflow:** [`validate-recipe-structure.yml`](../../.github/workflows/validate-recipe-structure.yml)
+
+CI output contains: `recipe-inactive`, or `is marked ` followed by `` `status: inactive` ``
+
+**This will not block your PR.** It is a notice.
+
+The recipe's `manifest.yaml` declares `status: inactive`. That is not a
+label for "we don't use this much" — it is a position on a clock.
+
+The monthly recipe canary (`.github/workflows/recipe-canary.yml`) installs
+each recipe from its committed lockfile and runs its tests. Each run that
+still fails advances the recipe's tracking issue by one stage:
+
+| failing run | what happens |
+|---|---|
+| 1st | a tracking issue is opened and the owner notified |
+| 2nd | reminder on that issue |
+| 3rd | the canary asks for the recipe to be marked `status: inactive` |
+| 4th | notice that deletion is scheduled |
+| 5th | removal of the recipe is proposed |
+
+The canary runs monthly, so that is roughly a month per stage. The schedule
+only ever slips later — a missed run costs a stage — never sooner.
+
+**The canary cannot make any of these file changes itself.** It has no write
+access to the repository, so `status: inactive` is only ever a request left
+on the tracking issue: a human applies it, or nobody does. It follows that
+the canary also cannot tell whether the manifest was ever actually changed.
+
+**If you are reviving the recipe**, set `status: active` in the same PR.
+Nothing else will. Fixing the recipe closes the tracking issue, but the
+manifest keeps whatever a human last wrote in it.
+
+**If you are just passing through** — editing docs, fixing a typo — ignore
+this. The recipe's owner (`ownership.poc` in its `manifest.yaml`) owns the
+decision.
+
 ## Non-blocking notices
 
 **The following will not block your PR.** Fix them when convenient.
@@ -553,6 +593,7 @@ means. The recipe's owner (`ownership.poc` in its `manifest.yaml`) owns this.
 - **`GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` / `MODEL_NAME`
   missing from `.env.example`** — add them if your recipe uses them.
 - **Core recipe behind the current ADK major** — see the section above.
+- **Recipe marked `status: inactive`** — see the section above.
 
 ## Something else
 
