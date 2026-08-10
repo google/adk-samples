@@ -1,0 +1,234 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Unit tests for recipe_canary_matrix.py.
+
+The matrix decides what the canary looks at, so anything it drops is a recipe
+nobody is watching — a silent gap, which is the failure mode the canary was
+built to remove. These tests pin the dropping rules, not the happy path.
+"""
+
+from pathlib import Path
+
+import pytest
+import recipe_canary_matrix as m
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+
+def _recipe(
+    tmp_path: Path,
+    rel: str,
+    requires_python: str | None = ">=3.11,<3.14",
+    language: str = "python",
+    status: str = "active",
+) -> Path:
+    d = tmp_path / rel
+    d.mkdir(parents=True)
+    (d / "manifest.yaml").write_text(
+        f'language: "{language}"\nstatus: {status}\n', encoding="utf-8"
+    )
+    if requires_python is not None:
+        (d / "pyproject.toml").write_text(
+            f'[project]\nname = "x"\nrequires-python = "{requires_python}"\n',
+            encoding="utf-8",
+        )
+    return d
+
+
+# ---------------------------------------------------------------------------
+# Which Python versions a recipe is tested on
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("requires_python", "expected"),
+    [
+        # The case that motivated the whole rule: a recipe claiming <3.14 is
+        # broken on 3.13 today (google-genai 2.10.0, SyntaxError on import)
+        # and passes on 3.11, so a floor-only canary reports it healthy.
+        (">=3.11,<3.14", ["3.11", "3.13"]),
+        (">=3.11,<3.13", ["3.11", "3.12"]),
+        ("<=3.12,>=3.11", ["3.11", "3.12"]),
+        # No upper bound claims everything; test up to what we can provision.
+        (">=3.11", ["3.11", "3.13"]),
+        # A ceiling at the floor means one job, not two identical ones.
+        (">=3.11,<3.12", ["3.11"]),
+        # Beyond what the runners have: clamped, never invented.
+        (">=3.11,<3.99", ["3.11", "3.13"]),
+    ],
+)
+def test_python_targets(tmp_path, requires_python, expected):
+    d = _recipe(tmp_path, "core/python/demo", requires_python)
+    assert m.python_targets(d) == expected
+
+
+@pytest.mark.parametrize(
+    "requires_python", ["", "not-a-specifier", "~=3.11", ">=3.11,!=3.12.*"]
+)
+def test_unparseable_upper_bound_tests_more_not_less(tmp_path, requires_python):
+    """No readable ceiling falls back to the maximum, deliberately.
+
+    A surplus job costs a few CI minutes. A skipped one costs a recipe that
+    silently stops working on a Python it claims to support.
+    """
+    d = _recipe(tmp_path, "core/python/demo", requires_python)
+    assert m.python_targets(d) == ["3.11", "3.13"]
+
+
+def test_missing_or_broken_pyproject_still_yields_the_floor(tmp_path):
+    """A recipe is never dropped from the matrix for a malformed pyproject —
+    the validate workflow owns that complaint, and dropping it here would
+    remove the recipe from the canary entirely."""
+    d = _recipe(tmp_path, "core/python/demo", requires_python=None)
+    assert m.python_targets(d) == ["3.11"]
+
+    (d / "pyproject.toml").write_text("[project\nbroken", encoding="utf-8")
+    assert m.python_targets(d) == ["3.11"]
+
+
+# ---------------------------------------------------------------------------
+# Which recipes are in the matrix at all
+# ---------------------------------------------------------------------------
+
+
+def test_discovers_python_recipes_across_all_three_roots(tmp_path):
+    _recipe(tmp_path, "core/python/a")
+    _recipe(tmp_path, "contrib/python/b")
+    _recipe(tmp_path, "skills/retail/c")
+    assert m.discover_recipes(tmp_path) == [
+        "contrib/python/b",
+        "core/python/a",
+        "skills/retail/c",
+    ]
+
+
+def test_non_python_recipes_are_not_in_the_matrix(tmp_path):
+    _recipe(tmp_path, "core/go/g", language="go")
+    _recipe(tmp_path, "core/python/p")
+    assert m.discover_recipes(tmp_path) == ["core/python/p"]
+
+
+def test_inactive_recipes_are_still_tested(tmp_path):
+    """Deliberate. A recipe on the retirement path is deleted after 120 days,
+    so "fixed but nobody flipped status back" has to be detectable — and it
+    only is if the canary keeps running it."""
+    _recipe(tmp_path, "core/python/retired", status="inactive")
+    assert m.discover_recipes(tmp_path) == ["core/python/retired"]
+
+
+def test_vendored_directories_are_pruned(tmp_path):
+    """A manifest.yaml inside .venv or node_modules belongs to a dependency,
+    not to this repo."""
+    _recipe(tmp_path, "core/python/real")
+    _recipe(tmp_path, "core/python/real/.venv/lib/pkg/vendored")
+    _recipe(tmp_path, "core/python/real/node_modules/thing")
+    assert m.discover_recipes(tmp_path) == ["core/python/real"]
+
+
+def test_legacy_duplicates_are_skipped(tmp_path):
+    _recipe(tmp_path, "core/rag-agent-search")
+    _recipe(tmp_path, "core/python/rag-agent-search")
+    assert m.discover_recipes(tmp_path) == ["core/python/rag-agent-search"]
+
+
+def test_every_skip_entry_still_names_a_real_recipe():
+    """A skip that matches nothing is dead config; a skip that quietly starts
+    matching a live recipe removes it from every canary run with no signal.
+
+    Fails once the legacy duplicates are deleted — which is the intended
+    prompt to delete the SKIP_RECIPES entries in the same change.
+    """
+    for rel in sorted(m.SKIP_RECIPES):
+        assert (REPO_ROOT / rel / "manifest.yaml").is_file(), (
+            f"SKIP_RECIPES lists {rel}, which no longer exists. Remove the "
+            f"entry from recipe_canary_matrix.py."
+        )
+
+
+# ---------------------------------------------------------------------------
+# The matrix as the workflow consumes it
+# ---------------------------------------------------------------------------
+
+
+def test_matrix_is_one_entry_per_recipe_and_version(tmp_path):
+    _recipe(tmp_path, "core/python/a", ">=3.11,<3.14")
+    _recipe(tmp_path, "core/python/b", ">=3.11,<3.12")
+    assert m.build_matrix(tmp_path) == [
+        {"recipe": "core/python/a", "python": "3.11"},
+        {"recipe": "core/python/a", "python": "3.13"},
+        {"recipe": "core/python/b", "python": "3.11"},
+    ]
+
+
+def test_real_repo_matrix_covers_every_live_python_recipe():
+    """Guards the regex-based manifest matcher against the real tree: a
+    tightening that stopped recognising `language: "python"` would empty the
+    matrix, and an empty matrix is a canary that passes by testing nothing."""
+    matrix = m.build_matrix()
+    recipes = {entry["recipe"] for entry in matrix}
+    assert len(recipes) >= 10, f"only found {sorted(recipes)}"
+    assert all(entry["python"].startswith("3.") for entry in matrix)
+    # Every recipe gets at least the floor.
+    for recipe in recipes:
+        assert {"recipe": recipe, "python": m.FLOOR} in matrix
+
+
+def test_empty_scan_is_an_error_not_a_pass(tmp_path, monkeypatch, capsys):
+    """An empty matrix must never read as success. Every recipe vanishing and
+    the scanner breaking look identical from the outside."""
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    assert m.main([]) == 1
+    assert "refuses to report success" in capsys.readouterr().err
+
+
+def test_discovery_agrees_with_python_tests_yml():
+    """The canary and python-tests.yml discover recipes independently — one in
+    Python here, one in bash there — and must not drift.
+
+    They were deliberately NOT unified: python-tests.yml is a required check
+    whose discovery also does diff-to-recipe mapping, and rewriting it to
+    share this code is a change to the gate every PR passes through. Pinning
+    agreement is the cheaper half of that trade, and it is the half that
+    catches the failure that matters — a recipe visible to one and invisible
+    to the other.
+
+    The only legitimate difference is SKIP_RECIPES.
+    """
+    import subprocess
+
+    script = r"""
+    for root in core contrib skills; do
+      [ -d "$root" ] || continue
+      while IFS= read -r manifest; do
+        if grep -qiE "^[[:space:]]*language:[[:space:]]*[\"']?python[\"']?[[:space:]]*(#.*)?$" "$manifest"; then
+          dirname "$manifest"
+        fi
+      done < <(find "$root" -name "manifest.yaml" -not -path "*/.venv/*" -not -path "*/node_modules/*")
+    done
+    """
+    out = subprocess.run(
+        ["bash", "-c", script],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    from_bash = {line for line in out.stdout.split() if line}
+    from_python = set(m.discover_recipes()) | set(m.SKIP_RECIPES)
+
+    assert from_python == from_bash, (
+        "recipe_canary_matrix.discover_recipes() and the discovery in "
+        "python-tests.yml disagree. Symmetric difference: "
+        f"{from_python ^ from_bash}"
+    )

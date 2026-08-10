@@ -1,0 +1,311 @@
+name: 🐤 Recipe Canary
+
+# Monthly check that every Python recipe STILL WORKS — installs from its
+# committed lockfile and passes its tests — and files an issue against the
+# recipe's owner when it does not.
+#
+# Why this exists
+# ---------------
+# .github/dependabot.yml no longer opens version-update PRs for recipes (see
+# its header). A recipe's uv.lock is treated as a verified snapshot rather
+# than a living artifact, so the question worth asking monthly is not "are
+# these versions current?" but "does this still work for someone who clones
+# it today?".
+#
+# A frozen lockfile does not decay on its own. What decays around it:
+#   * a pinned release is yanked or pulled from the index;
+#   * the interpreter moves and a pinned wheel has no build for it;
+#   * a transitive pin turns out to be broken on a Python the recipe claims
+#     to support.
+# The third is not hypothetical — core/python/rag-agent-search declares
+# `requires-python = ">=3.11,<3.14"` and cannot be imported on 3.13 at all,
+# while passing on 3.11.
+#
+# `uv sync --frozen`, not `uv sync`
+# ---------------------------------
+# python-tests.yml uses plain `uv sync`, which silently RE-LOCKS when the
+# lockfile has drifted from pyproject.toml. That is the right behaviour for a
+# PR check and the wrong one here: it would quietly repair the exact condition
+# this workflow exists to detect.
+#
+# Two Python versions per recipe
+# ------------------------------
+# The floor everyone uses, plus the ceiling each recipe claims in
+# `requires-python`. See .github/scripts/recipe_canary_matrix.py.
+
+on:
+  schedule:
+    # 06:00 UTC on the 1st. Monthly, per the policy decision: the canary
+    # reports genuine breakage, which is rare, and a weekly cadence would
+    # spend CI re-confirming the same green result.
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run the checks but do not create or update any issue"
+        type: boolean
+        default: false
+      recipe:
+        description: "Limit to one recipe path (e.g. core/python/deep-search)"
+        type: string
+        required: false
+
+# Declared per job. At workflow level `check` would inherit `issues: write`
+# purely because `report` needs it (zizmor `excessive-permissions`).
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  matrix:
+    name: Build canary matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Build matrix
+        id: build
+        env:
+          ONLY_RECIPE: ${{ github.event.inputs.recipe }}
+        run: |
+          set -euo pipefail
+          # The script exits non-zero on an empty scan rather than emitting
+          # []. An empty matrix would skip every check job and let the gate
+          # report success having tested nothing.
+          if [ -n "${ONLY_RECIPE:-}" ]; then
+            MATRIX=$(uv run --no-project python \
+              .github/scripts/recipe_canary_matrix.py --recipe "$ONLY_RECIPE")
+          else
+            MATRIX=$(uv run --no-project python \
+              .github/scripts/recipe_canary_matrix.py)
+          fi
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "$MATRIX" | python3 -m json.tool
+
+  check:
+    name: "${{ matrix.entry.recipe }} @ py${{ matrix.entry.python }}"
+    needs: matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      # One broken recipe must not hide the state of the others — the whole
+      # output of this workflow is the per-recipe verdict.
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        entry: ${{ fromJson(needs.matrix.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
+        with:
+          python-version: ${{ matrix.entry.python }}
+
+      - name: Install from the committed lockfile
+        id: sync
+        working-directory: ${{ matrix.entry.recipe }}
+        continue-on-error: true
+        env:
+          PYVER: ${{ matrix.entry.python }}
+        run: |
+          set -uo pipefail
+          # --frozen: install exactly what uv.lock says, and fail rather than
+          # re-resolve. --python: honour the matrix version instead of
+          # whatever uv would pick.
+          uv sync --dev --frozen --python "$PYVER" > sync.log 2>&1
+          rc=$?
+          tail -40 sync.log
+          # Propagate the real status. `continue-on-error` keeps the job
+          # going while still recording outcome=failure; an `echo` here
+          # instead of `exit` would make every step report success and the
+          # classifier would call every recipe healthy.
+          exit $rc
+
+      - name: Set up .env
+        if: steps.sync.outcome == 'success'
+        working-directory: ${{ matrix.entry.recipe }}
+        run: |
+          set -euo pipefail
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          fi
+
+      - name: Run tests
+        id: tests
+        if: steps.sync.outcome == 'success'
+        working-directory: ${{ matrix.entry.recipe }}
+        continue-on-error: true
+        env:
+          PYVER: ${{ matrix.entry.python }}
+        run: |
+          set -uo pipefail
+          uv run --python "$PYVER" pytest \
+            --ignore=tests/integration \
+            --ignore-glob='**/test_integration.py' \
+            -q > pytest.log 2>&1
+          rc=$?
+          tail -60 pytest.log
+          exit $rc
+
+      # Classification happens here, in the job that has the logs, and is the
+      # only thing the report job reads. Distinguishing "the recipe is broken"
+      # from "CI had a bad day" is what keeps the canary from filing an issue
+      # against an owner for a registry timeout.
+      - name: Classify outcome
+        id: classify
+        if: always()
+        working-directory: ${{ matrix.entry.recipe }}
+        env:
+          RECIPE: ${{ matrix.entry.recipe }}
+          PYVER: ${{ matrix.entry.python }}
+          SYNC_OUTCOME: ${{ steps.sync.outcome }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          set -uo pipefail
+          OUTCOME=pass
+          STEP=""
+          DETAIL=""
+
+          if [ "$SYNC_OUTCOME" != "success" ]; then
+            STEP="uv sync --frozen"
+            DETAIL=$(tail -5 sync.log 2>/dev/null | tr '\n' ' ')
+            # A lockfile that will not install is a genuine recipe problem
+            # (yanked release, no wheel for this interpreter). A network or
+            # registry failure is not — and uv says which in its own words.
+            if echo "$DETAIL" | grep -qiE 'network|timed out|temporary failure|503|502|connection reset'; then
+              OUTCOME=infra
+            else
+              OUTCOME=fail
+            fi
+          elif [ "$TESTS_OUTCOME" != "success" ]; then
+            OUTCOME=fail
+            STEP="pytest"
+            DETAIL=$(grep -E '^(FAILED|ERROR|E  )' pytest.log 2>/dev/null | head -3 | tr '\n' ' ')
+            [ -z "$DETAIL" ] && DETAIL=$(tail -5 pytest.log 2>/dev/null | tr '\n' ' ')
+          fi
+
+          # Exported, not passed through `env:` — these are computed in this
+          # shell, and a workflow-level `env:` entry would resolve before the
+          # script ran and hand the classifier empty strings.
+          export OUTCOME STEP DETAIL
+          python3 - <<'PY' > "$RUNNER_TEMP/result.json"
+          import json, os, sys
+          json.dump({
+              "recipe": os.environ["RECIPE"],
+              "python": os.environ["PYVER"],
+              "outcome": os.environ["OUTCOME"],
+              "step": os.environ["STEP"],
+              "detail": os.environ["DETAIL"][:400],
+          }, sys.stdout)
+          PY
+          cat "$RUNNER_TEMP/result.json"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4.6.2
+        with:
+          name: canary-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/result.json
+          retention-days: 7
+
+  report:
+    name: File and update canary issues
+    needs: [matrix, check]
+    if: always() && needs.matrix.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # ratchet:actions/download-artifact@v4.3.0
+        with:
+          pattern: canary-*
+          path: ${{ runner.temp }}/results
+          merge-multiple: false
+
+      - name: Collate
+        id: collate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, os
+          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "results"
+          entries = [
+              json.loads(p.read_text())
+              for p in sorted(root.rglob("result.json"))
+          ]
+          out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "results.json"
+          out.write_text(json.dumps(entries, indent=1))
+          fails = [e for e in entries if e["outcome"] == "fail"]
+          infra = [e for e in entries if e["outcome"] == "infra"]
+          print(f"{len(entries)} jobs, {len(fails)} failing, {len(infra)} infra")
+          for e in entries:
+              print(f"  {e['outcome']:5}  {e['recipe']} @ py{e['python']}")
+          PY
+
+      - name: Update issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # Set once a dedicated App identity exists (see the repo's branch
+          # protection ruleset). Until then the script says plainly, on the
+          # issue, that a human must apply file changes by hand rather than
+          # claiming to have opened a PR it cannot open.
+          CANARY_APP_TOKEN: ${{ secrets.CANARY_APP_TOKEN }}
+          DRY: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          ARGS=(--results "$RUNNER_TEMP/results.json"
+                --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          [ "${DRY:-false}" = "true" ] && ARGS+=(--dry-run)
+          python3 .github/scripts/canary_issues.py "${ARGS[@]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Recipe canary"
+            echo ""
+            python3 -c "
+          import json, os
+          e = json.load(open(os.environ['RUNNER_TEMP'] + '/results.json'))
+          bad = sorted({x['recipe'] for x in e if x['outcome'] == 'fail'})
+          print(f\"{len({x['recipe'] for x in e})} recipes checked across {len(e)} jobs.\")
+          print('')
+          if bad:
+              print('Failing:')
+              for r in bad:
+                  vers = ', '.join(sorted(x['python'] for x in e if x['recipe'] == r and x['outcome'] == 'fail'))
+                  print(f'- \`{r}\` (py {vers})')
+          else:
+              print('All recipes install from their lockfiles and pass.')
+          "
+          } >> "$GITHUB_STEP_SUMMARY"

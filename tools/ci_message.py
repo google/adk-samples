@@ -109,6 +109,8 @@ class Doc(str, Enum):
     RUNNABILITY = "runnability-test-missing"
     RUFF_FAILED = "ruff-format-or-check-failed"
 
+    RECIPE_INACTIVE = "recipe-is-marked-inactive"
+
     CI_FAULT = "ci-infrastructure-failure"
 
     @property

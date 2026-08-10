@@ -59,6 +59,7 @@ CI log, or [jump to Something else](#something-else).
 
 **Other**
 - [CI infrastructure failure](#ci-infrastructure-failure)
+- [Recipe is marked inactive](#recipe-is-marked-inactive)
 - [Non-blocking notices](#non-blocking-notices)
 - [Something else](#something-else)
 
@@ -502,6 +503,36 @@ unusual file encoding, a hand-edited `uv.lock` — say so in the issue.
 The checker should report that as a clear error rather than crash, so
 it is a bug in the checker either way.
 
+## Recipe is marked inactive
+
+**This will not block your PR.** It is a notice.
+
+The recipe's `manifest.yaml` declares `status: inactive`. That is not a
+label for "we don't use this much" — it is a position on a clock.
+
+The monthly recipe canary (`.github/workflows/recipe-canary.yml`) installs
+each recipe from its committed lockfile and runs its tests. When a recipe
+fails and nobody fixes it, the canary escalates:
+
+| after | what happens |
+|---|---|
+| 30 days | reminder on the tracking issue |
+| 60 days | the recipe is marked `status: inactive` |
+| 90 days | notice that deletion is scheduled |
+| 120 days | a PR is opened to delete the recipe |
+
+So a recipe sitting at `inactive` is on its way out unless something changes.
+
+**If you are reviving it**, set `status: active` in the same PR. This matters
+more than it looks: a recipe that gets fixed but never flipped back keeps
+counting down and can be deleted while working. The canary restores `active`
+itself when it sees the recipe pass again, but only if it is still being
+tested — which it is, deliberately, for exactly this reason.
+
+**If you are just passing through** — editing docs, fixing a typo — ignore
+this. The recipe's owner (`ownership.poc` in its `manifest.yaml`) owns the
+decision.
+
 ## Non-blocking notices
 
 **The following will not block your PR.** Fix them when convenient.
@@ -510,6 +541,7 @@ it is a bug in the checker either way.
   Run `extract-python-environment-variables`.
 - **`GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` / `MODEL_NAME`
   missing from `.env.example`** — add them if your recipe uses them.
+- **Recipe marked `status: inactive`** — see the section above.
 
 ## Something else
 
