@@ -15,7 +15,7 @@ description: >
 metadata:
   author: Google
   license: Apache-2.0
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Align Recipe pyproject.toml
@@ -28,16 +28,38 @@ Scope: **`pyproject.toml` only**. Standalone `ruff.toml` / `.ruff.toml` files ar
 
 ## What This Skill Checks
 
-Runs `scripts/align_pyproject.py` against a recipe directory. Six rules:
+Runs `scripts/align_pyproject.py` against a recipe directory. Eight rules:
 
 | Rule ID | What it checks | Auto-fix |
 |---|---|---|
 | `no-local-ruff-config` | Recipe `pyproject.toml` must not declare any `[tool.ruff*]` table. Ruff config is centralized in the root `pyproject.toml`. | Yes — removes the tables. |
 | `python-version-floor` | `[project].requires-python` must **accept Python 3.11 exactly** — it must neither permit anything below (loose floors like `>=3.10`) nor exclude 3.11 by requiring higher (`>=3.12`, `~=3.12`, etc.). Per `AGENTS.md` "Minimum python version: 3.11" and CI in `.github/workflows/python-dependency-policy.yml`, which pins Python 3.11 and would otherwise emit a misleading "lockfile is out of date" error whose real cause is the interpreter mismatch. | Yes — rewrites the specifier so its lower bound is `>=3.11` while preserving every upper bound, exclusion, compatible-release (`~=`) ceiling, and pin (only pure `>=`/`>` are dropped or replaced). Applies to BOTH failure modes (loose floors AND higher-than-min floors). If the result would still exclude 3.11 (e.g. `>=3.10,!=3.11` → `>=3.11,!=3.11`, or `~=3.12` → `>=3.11,~=3.12` == `>=3.12,<4`), refuses to apply and returns `needs_input` for a human to resolve (typically: relax the ceiling, or raise the recipe with the maintainers to update CI's pinned interpreter). |
-| `project-name-matches-folder` | `[project].name` must equal the recipe folder basename. | Yes — sets it. |
+| `project-name-matches-folder` | `[project].name` must equal the recipe's required name: the folder basename under `core/`/`contrib/`, but `<vertical>-<solution>` under `skills/`, whose mandatory vertical namespace (`skills/<vertical>/<solution>`) makes the basename non-unique — `skills/retail/product-search` and `skills/grocery/product-search` would otherwise both claim `product-search`. | Yes — sets it. |
 | `description-matches-manifest` | If `[project].description` is set, it must equal `manifest.description`. Field is optional; skipped when absent. | Only with `--description-source={pyproject,manifest,delete}`. Refuses to touch description otherwise. |
 | `build-system-present` | `[build-system]` must have both `requires` and `build-backend`. Without it, `uv build` and `pip install .` fail. | **No** — backend choice is editorial. Reported for the human to fix. |
 | `default-pypi-index` | `[[tool.uv.index]]` must have an entry with `default = true` pointing at public PyPI (`https://pypi.org/simple[/]`). Required so `uv sync` works on Google corp workstations without corp Airlock auth — see the block comment in the root `pyproject.toml` for the full rationale. | Yes when the block is entirely missing — appends it. **No** when a default entry exists but points elsewhere (custom private index, TestPyPI, mirror) — reported for the human to reconcile, since the divergence may be intentional. |
+| `stale-python-version-refs` | Scans **every text file in the recipe** for references to a Python version below the 3.11 floor. Raising `requires-python` is not a self-contained edit: the version is typically repeated in prose (`README.md`, `SKILL.md`) and in executable setup code. | **No** — report-only. Which references are stale and how to reword them is editorial. |
+| `runnability-test-in-testpaths` | If `[tool.pytest.ini_options].testpaths` is set, at least one entry must collect `tests/test_runnability.py` (which `.github/policy.yml` requires every Python recipe to have). | **No** — report-only. Broadening `testpaths` changes what CI collects. |
+
+#### Why `stale-python-version-refs` exists
+
+A bootstrap script that picks an interpreter from an allowlist still
+containing the old floor will happily build a venv the recipe then refuses to
+install into:
+
+```bash
+for py in python3.13 python3.12 python3.11 python3.10 python3; do
+# ...
+# ERROR: Package requires a different Python: 3.10.x not in '>=3.11'
+```
+
+The scan requires a Python-ish context (`python 3.10`, `Python :: 3.10`,
+`>=3.10`) rather than matching bare digits, so a model name like
+`gemini-3.5-flash` is not a false positive. It skips lockfiles, virtualenvs,
+caches, and binary files, and ignores `requires-python` in `pyproject.toml`
+itself (owned by `python-version-floor`, and still pre-rewrite in memory when
+this check runs). Hits are capped at 40 in `details.hits`, but
+`details.files` always lists every affected file.
 
 ### Edit safety
 
@@ -66,9 +88,13 @@ Runs `scripts/align_pyproject.py` against a recipe directory. Six rules:
 
 7. **If `default-pypi-index` returns `report_only`**, the recipe declares a default index that is NOT public PyPI (e.g. a private mirror, TestPyPI). The skill will not overwrite an intentional choice. Show the user the current `url` from `details.current_url` and ask whether it's deliberate. If yes, they can `# noqa`-comment it or update the repo standard; if no, they should change the URL to `https://pypi.org/simple/`. Do not auto-rewrite.
 
-8. **After apply mode succeeds**, remind the user to run `uv sync` in the recipe directory if the pyproject changes touched dependencies (the script emits this in `notes` when relevant).
+8. **If `stale-python-version-refs` returns `report_only`**, list the affected files from `details.files` and call out any **executable** ones first (`.sh`, `.py`, `Makefile`, CI YAML) — a stale interpreter allowlist in a bootstrap script is a live bug, not a docs nit, and it produces a confusing `requires a different Python` failure at install time. Prose files (`README.md`, `SKILL.md`) are lower priority but still inconsistent. Offer to update them; do not rewrite without asking, since some references are legitimately historical ("dropped 3.10 support in v2").
 
-9. **Do not commit any changes.** Show the diff or file contents; let the user commit.
+9. **If `runnability-test-in-testpaths` returns `report_only`**, the recipe's `testpaths` excludes `tests/test_runnability.py`, so a bare `uv run pytest` never runs it — the recipe looks tested while its import-smoke test silently never executes. Show `details.testpaths` and suggest adding `"tests"`. Do not auto-rewrite.
+
+10. **After apply mode succeeds**, remind the user to run `uv sync` in the recipe directory if the pyproject changes touched dependencies (the script emits this in `notes` when relevant).
+
+11. **Do not commit any changes.** Show the diff or file contents; let the user commit.
 
 ---
 
@@ -168,7 +194,7 @@ Status-specific guidance for what to put in the **Details** cell:
 - **`would_fix`** (dry-run) — describe the current-state problem, then say what apply would do. Include the `from` → `to` or the list of tables to be removed.
 - **`fixed`** (apply) — one-liner confirming the change (new value or list of removed tables).
 - **`needs_input`** (only `description-matches-manifest`) — the Details cell says something like `"descriptions differ — needs --description-source={pyproject,manifest,delete}"`. Do not put the two long descriptions inside the table. See "Follow-up content" below.
-- **`report_only`** (two rules can hit this: `build-system-present` and `default-pypi-index` when a non-PyPI default is declared) — the Details cell names what's missing or non-conforming (e.g. `"[build-system] missing; recipe cannot be built as a package"` or `"default index is TestPyPI, not public PyPI"`). Follow-up content goes below the table (see next section).
+- **`report_only`** (four rules can hit this: `build-system-present`, `default-pypi-index` when a non-PyPI default is declared, `stale-python-version-refs`, and `runnability-test-in-testpaths`) — the Details cell names what's missing or non-conforming (e.g. `"[build-system] missing; recipe cannot be built as a package"` or `"default index is TestPyPI, not public PyPI"`). Follow-up content goes below the table (see next section).
 - **`error`** — the Details cell shows the message verbatim; if it's very long, truncate with `…` and put the full text below.
 
 ### Follow-up content below the table
@@ -210,6 +236,8 @@ Only for statuses that need extra context. Order: table first, then this content
 - **Dry-run with only `report_only`** (and no `would_fix` rows) — after the table, address the specific case:
   - `build-system-present`: show the two `[build-system]` template snippets and stop. This is a manual edit; the skill does not auto-fix it.
   - `default-pypi-index`: quote `details.current_url`, explain that this is not public PyPI, and ask whether it's intentional. If not, tell the user to change the URL to `https://pypi.org/simple/`. Do not auto-rewrite.
+  - `stale-python-version-refs`: list `details.files`, executable files first, and offer to update them.
+  - `runnability-test-in-testpaths`: quote `details.testpaths` and suggest adding `"tests"`.
 
 - **Dry-run with only `error` rows** — do not offer to apply. Errors mean the script bailed before it could compute a fix; the user has to resolve the underlying issue first.
 

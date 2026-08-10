@@ -4,11 +4,13 @@ description: >
   End-to-end orchestration to prepare or update a Python recipe under
   core/python/, contrib/python/, or skills/<vertical>/<solution>/ so it
   passes every check in .github/workflows/python-validate-recipe.yml.
-  Runs seven phases in
+  Runs eight phases in
   order on an already-in-place recipe: manifest.yaml generation,
   environment-variable extraction, pyproject.toml alignment, ruff
-  format+check, per-recipe `uv lock`, runnability-test generation, and a
-  final `py_compile` verification of the generated test file. Assumes
+  format+check, per-recipe `uv lock`, runnability-test generation,
+  compile-and-run verification of the generated test file, and a final
+  pass through the repo's own `validate manifest` / `validate structure`
+  validators. Assumes
   the user has
   already done the manual prep (deactivated any venv, `git pull` and
   `uv sync` from the repo root, placed the recipe at its target path,
@@ -25,7 +27,7 @@ description: >
 metadata:
   author: Google
   license: Apache-2.0
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Prepare Python Recipe
@@ -65,25 +67,28 @@ If the user has NOT done these and asks you to run the skill anyway, tell them t
 
 ## What This Skill Does
 
-Runs seven ordered phases against a target recipe. Each phase either invokes an existing sub-skill (or its underlying script) or runs a repo-standard command:
+Runs eight ordered phases against a target recipe. Each phase either invokes an existing sub-skill (or its underlying script) or runs a repo-standard command:
 
 1. **Manifest** — generate `manifest.yaml` if missing. Ownership placeholders (`ownership.team`, `ownership.poc`) are LEFT AS-IS — never replaced mid-pipeline. See "Canonical placeholder strings" above.
 2. **Environment variables** — extract env vars used by the recipe into `.env.example`; ensure `load_dotenv()` is bootstrapped and `python-dotenv` is a dep.
-3. **Align pyproject.toml** — remove `[tool.ruff*]`, raise `requires-python` floor, ensure `[project].name` matches folder, reconcile description with manifest, and ensure `[[tool.uv.index]]` declares public PyPI as default (needed to bypass corp Airlock).
+3. **Align pyproject.toml** — remove `[tool.ruff*]`, raise `requires-python` floor, ensure `[project].name` matches folder, reconcile description with manifest, ensure `[[tool.uv.index]]` declares public PyPI as default (needed to bypass corp Airlock), and report stale sub-3.11 version references plus a `testpaths` that would exclude the runnability test.
 4. **Lint** — `ruff format` + `ruff check --fix` on the recipe (from the repo root, so the root ruff config wins). **Must run AFTER Phase 3** — align removes any recipe-local `[tool.ruff*]` block, and that removal is what makes the root config the effective one. Running lint before align would check against the recipe's (often more permissive) local config and miss violations that CI will later catch.
 5. **Recipe `uv lock`** — regenerate `uv.lock` so it reflects the post-align `pyproject.toml`. Does NOT install into `.venv/` — that's a heavier step the user runs after they've reviewed the diff. `uv lock` just resolves and records; `uv sync` would download and install every wheel, which is scope-creep for a "prepare" pipeline.
-6. **Runnability test** — generate `tests/test_runnability.py` if missing (or ask before overwriting).
-7. **Verify (compile-check)** — `uv run --no-project python3 -m py_compile <RECIPE>/tests/test_runnability.py` — a lightweight sanity check that the generated (or existing) test file is syntactically valid Python. Deterministic; does NOT execute the test, resolve imports, or require `.env` to exist. If it fails, the master reports the error verbatim and moves on (the summary marks Phase 7 as failed). The master does NOT attempt to diagnose or fix — that's a human review task.
+6. **Runnability test** — generate `tests/test_runnability.py` if missing (or ask before overwriting), plus a `tests/conftest.py` path shim when the recipe isn't installable.
+7. **Verify (compile + run)** — `py_compile` the runnability test, then run it with pytest. The compile step is a syntax check; running it is what proves the test's `import` can actually resolve (`--collect-only` would not — the guarded test shape puts the import inside the test function). The test is side-effect-free by construction.
+8. **Validate (repo validators)** — run `uv run validate manifest` and `uv run validate structure` on the recipe. This is the phase that catches everything the seven build phases don't model: required files, required directories (`tests/unit/` for vertical skills), size limits, naming.
 
 At the end, print a summary table and remind the user to `git diff` and commit — the skill never commits.
+
+**Why Phase 8 exists.** The pipeline used to end at Phase 7 and report a clean run while `uv run validate structure` failed — the recipe passed every phase the skill modelled and was still rejected by CI. Reimplementing policy checks inside this skill would guarantee drift, so the pipeline defers to the repo's own validators as the last word.
 
 ---
 
 ## Rules for the Agent
 
-1. **Ask for `--recipe-dir` up front** if the user hasn't given one. All seven phases operate on the same recipe.
+1. **Ask for `--recipe-dir` up front** if the user hasn't given one. All eight phases operate on the same recipe.
 
-2. **Confirm before starting**. The pipeline touches many files. Show the user the plan (the seven phases + the target recipe path) and ask for a single "yes, go ahead" before Phase 1. Do NOT prompt again for each phase unless a decision is required (see rules 5 and 6).
+2. **Confirm before starting**. The pipeline touches many files. Show the user the plan (the eight phases + the target recipe path) and ask for a single "yes, go ahead" before Phase 1. Do NOT prompt again for each phase unless a decision is required (see rules 5 and 6).
 
 3. **Invoke sub-skill SCRIPTS directly** (not the sub-skills' own agent-facing SKILL.md). Reason: sub-skills each have their own "want me to apply?" prompt. In master-orchestration mode the user has already opted into apply for the whole pipeline; individual prompts would be noise. Command lines for each sub-script are given in each phase below.
 
@@ -143,7 +148,7 @@ If the user has not specified the recipe directory, ask for it before proceeding
 
 If it isn't a directory, stop immediately with that message — do NOT show the plan or prompt.
 
-**Step 0b — Verify the recipe folder name matches CI's naming rules.** `python-validate-recipe.yml`'s Check 1 (folder-name regex + max length) rejects folders that don't match `^[a-z][a-z-]*$` or exceed `.github/policy.yml` `recipe_naming.max_folder_name_length`. Historically the pipeline was BLIND to this — it would run all 7 phases against a folder named `data_science` or `MyBadName`, report success, and let CI reject the PR later (or worse: Phase 3's `project-name-matches-folder` would propagate the bad name into `[project].name`). This check catches it up front.
+**Step 0b — Verify the recipe folder name matches CI's naming rules.** `python-validate-recipe.yml`'s Check 1 (folder-name regex + max length) rejects folders that don't match `^[a-z][a-z-]*$` or exceed `.github/policy.yml` `recipe_naming.max_folder_name_length`. Historically the pipeline was BLIND to this — it would run every phase against a folder named `data_science` or `MyBadName`, report success, and let CI reject the PR later (or worse: Phase 3's `project-name-matches-folder` would propagate the bad name into `[project].name`). This check catches it up front.
 
 ```bash
 MAX_LEN=$(uv run --no-project --with pyyaml python3 .github/scripts/load_policy.py recipe_naming.max_folder_name_length)
@@ -157,7 +162,30 @@ The check exits 0 silently on a compliant name; on violation it exits 1 with the
 
 **Only proceed past this step if the folder-name check passed.**
 
-**Step 0c — Show the plan and get confirmation.** Before composing the plan, glance at the recipe for anything non-standard (package not called `app/`, `.env.example` outside root, missing `tests/`, extra Python source dirs, deprecated model literals per `AGENTS.md`). If any will affect what the pipeline does, flag them briefly in the plan message so the user isn't surprised mid-pipeline. Skip the flags entirely for a standard recipe.
+**Step 0c — For a recipe under `skills/`, check the required directories.** `.github/policy.yml` `required_dirs.by_root.skills` mandates a fixed shape for every vertical skill — `scripts/`, `assets/`, `references/`, and `tests/unit/`. None of the eight phases creates these, so a missing one survives the whole pipeline and fails `validate structure` in Phase 8 (and CI). Surfacing it here means the user can create the directory before anything else runs, rather than reading about it in the final summary.
+
+Skip this step entirely for `core/` and `contrib/` recipes — `required_dirs.by_root` is empty for both.
+
+```bash
+uv run --no-project --with pyyaml python3 -c "
+import pathlib, sys, yaml
+recipe = pathlib.Path('<RECIPE_DIR>')
+policy = yaml.safe_load(open('.github/policy.yml'))
+needed = policy.get('required_dirs', {}).get('by_root', {}).get('skills', []) or []
+missing = [d for d in needed if not (recipe / d).is_dir()]
+print('MISSING_DIRS: ' + (', '.join(missing) if missing else '(none)'))
+"
+```
+
+This is INFORMATIONAL, not a halt. An empty directory satisfies the check, and git cannot commit an empty directory, so the fix is a `.gitkeep`:
+
+```bash
+mkdir -p <RECIPE_DIR>/tests/unit && touch <RECIPE_DIR>/tests/unit/.gitkeep
+```
+
+Mention any missing directories in the Step 0d plan message and offer to create them with `.gitkeep` files as part of the run. If the user agrees, create them right after they confirm the plan and before Phase 1; record them in the summary's "Files created" list. If they decline, carry the item into the final TODO list. Do NOT create them unasked — an empty scaffold directory the user didn't want is still clutter.
+
+**Step 0d — Show the plan and get confirmation.** Before composing the plan, glance at the recipe for anything non-standard (package not called `app/`, `.env.example` outside root, missing `tests/`, extra Python source dirs, deprecated model literals per `AGENTS.md`). If any will affect what the pipeline does, flag them briefly in the plan message so the user isn't surprised mid-pipeline. Skip the flags entirely for a standard recipe.
 
 Then flag the assumptions the pipeline is making and show the user the plan. Do NOT frame these as "prerequisites" — they're a heads-up so the user can push back if any assumption is wrong, not a preflight checklist for the user to tick off:
 
@@ -166,16 +194,22 @@ Then flag the assumptions the pipeline is making and show the user the plan. Do 
 >   - You've run `git pull` and `uv sync` at the repo root.
 >   - `<RECIPE_DIR>` is already at its target path (and renamed to its final basename).
 >
-> I'll run the prepare-python-recipe pipeline on `<RECIPE_DIR>` — 7 phases:
+> I'll run the prepare-python-recipe pipeline on `<RECIPE_DIR>` — 8 phases:
 > 1. Generate manifest.yaml (if missing)
 > 2. Extract env vars into .env.example
 > 3. Align pyproject.toml
 > 4. Ruff format + check --fix
 > 5. uv lock inside the recipe (regenerates uv.lock; does NOT install .venv/)
 > 6. Generate tests/test_runnability.py (if missing)
-> 7. Compile-check the runnability test (`py_compile`; reports failure but does not debug)
+> 7. Verify the runnability test compiles and runs
+> 8. Run the repo validators (`validate manifest`, `validate structure`)
 >
 > Nothing gets committed — you'll `git diff` at the end. Proceed?
+
+If Step 0c found missing required directories, add one line before "Nothing gets committed":
+
+> `<RECIPE_DIR>` is a vertical skill and is missing `tests/unit/`, which
+> `.github/policy.yml` requires. Want me to create it with a `.gitkeep`?
 
 Get a yes-or-no. If no, stop.
 
@@ -239,9 +273,11 @@ uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
   [--description-source=<CHOICE>]
 ```
 
-**The align script exits `1` (non-zero) whenever any check is `report_only`** — that is expected, not a hard error, so do NOT apply rule 7's halt to it. Decide from the JSON, not the exit code: if the apply run's only non-clean checks are `report_only`, note them in the summary (the master does NOT auto-fix these) and continue; halt only if a check has status `error`. Two rules can produce `report_only`:
-  - `build-system-present` (missing `[build-system]` — backend choice is editorial)
+**The align script exits `1` (non-zero) whenever any check is `report_only`** — that is expected, not a hard error, so do NOT apply rule 7's halt to it. Decide from the JSON, not the exit code: if the apply run's only non-clean checks are `report_only`, note them in the summary (the master does NOT auto-fix these) and continue; halt only if a check has status `error`. Four rules can produce `report_only`:
+  - `build-system-present` (missing `[build-system]` — backend choice is editorial). **Note the knock-on for Phase 6:** with no `[build-system]` the recipe is never installed, so the runnability test's `import` cannot resolve on its own and the generator will emit a `tests/conftest.py` path shim. Mention both together in the summary rather than as two unrelated items.
   - `default-pypi-index` (a default index is declared but points somewhere other than public PyPI — divergence may be intentional)
+  - `stale-python-version-refs` (files still referencing a Python below the 3.11 floor). Relay `details.files` in the summary and flag **executable** files first — a bootstrap script whose interpreter allowlist still accepts 3.10 will build a venv the recipe then refuses to install into. Prose files are lower priority.
+  - `runnability-test-in-testpaths` (a `testpaths` setting that excludes `tests/test_runnability.py`, so a bare `pytest` never collects it)
 
 Progress line: `Phase 3 (align): <N> fix(es) applied; <M> report-only issue(s) left.`
 
@@ -306,32 +342,83 @@ uv run --no-project python3 .agents/skills/generate-python-runnability-test/scri
 
 If the script errors (no `agent.py` found), surface the message and offer to re-run with `--agent-file <path>` when the user tells you where the entry point is.
 
-Progress line: `Phase 6 (runnability test): generated | kept existing | regenerated.`
+**Read the report's `import_support`, `conftest_action`, and `warnings` fields.** The generated test does `import <module>`, which only resolves if the recipe root is on `sys.path` — not automatic under pytest. When the recipe declares no `[build-system]` the generator also writes a `tests/conftest.py` path shim (`conftest_action: wrote`) and explains why in `warnings`. Relay every warning; do not silently drop them. If `conftest_action` is `skipped`, an existing `tests/conftest.py` was left untouched and may not provide the shim — carry that into the summary as a Manual TODO.
 
-### Phase 7 — verify (compile-check the runnability test)
+Progress line: `Phase 6 (runnability test): generated | kept existing | regenerated[; tests/conftest.py path shim written (recipe has no [build-system])].`
 
-Runs LAST. Lightweight sanity check that the generated (or existing) `tests/test_runnability.py` is at least syntactically valid Python. Deliberately weaker than `uv run pytest`: it does NOT execute the test, resolve imports, or require `.env` to be populated. Its only purpose is to catch generator bugs (invalid Python emitted by Phase 6) and gross syntax errors in a hand-edited test file.
+### Phase 7 — verify (compile + run the runnability test)
 
-**7a. Check the test file exists.** If Phase 6 skipped generation (agent.py not found, so no test was written) or the user chose not to regenerate an existing broken test, there may be nothing to compile. Skip and record it.
+Two escalating checks on the generated (or existing) `tests/test_runnability.py`. The test is designed to be side-effect-free (it patches `vertexai.init` and `google.auth.default`), so neither step needs `.env`, ADC, or network.
+
+**7a. Check the test file exists.** If Phase 6 skipped generation (agent.py not found, so no test was written) or the user chose not to regenerate an existing broken test, there may be nothing to check. Skip and record it.
 
 ```bash
 [ -f <RECIPE_DIR>/tests/test_runnability.py ] && echo exists || echo missing
 ```
 
-**7b. Compile.**
+**7b. Compile** — is it valid Python?
 
 ```bash
 uv run --no-project python3 -m py_compile <RECIPE_DIR>/tests/test_runnability.py
 ```
 
-Use `uv run --no-project python3` here too — not a bare `python`/`python3`. Two reasons: `python` may not be on PATH at all on some systems, and (more importantly) a guarded test with multiple patches emits a parenthesized `with (...)` block, which is **Python 3.10+ syntax**. Compiling it under an older system interpreter would report a spurious `SyntaxError` on a file that is actually valid. uv's managed interpreter is 3.11+, so this is a true syntax check rather than a version artifact.
+Use `uv run --no-project python3` here — not a bare `python`/`python3`. Two reasons: `python` may not be on PATH at all on some systems, and (more importantly) a guarded test with multiple patches emits a parenthesized `with (...)` block, which is **Python 3.10+ syntax**. Compiling it under an older system interpreter would report a spurious `SyntaxError` on a file that is actually valid. uv's managed interpreter is 3.11+, so this is a true syntax check rather than a version artifact.
+
+**7c. Run it** — does the import actually resolve?
+
+```bash
+uv run --no-project --with pytest pytest tests/test_runnability.py -q
+```
+
+Run this WITH `workdir = <RECIPE_DIR>` so pytest's rootdir matches what a user would get running the test themselves.
+
+**Why run it rather than `--collect-only`.** `py_compile` only parses; it passes happily on a test whose `import app.agent` can never resolve. But `--collect-only` is no better here: the *guarded* test shape (the common one for ADK recipes) puts the import INSIDE the test function, under a `with patch(...)` block, so collection imports the test module without ever touching the recipe's module. Only actually running the test exercises the import.
+
+**A third-party `ModuleNotFoundError` is EXPECTED here, not a finding.** Phase 5 ran `uv lock`, not `uv sync`, so the recipe's dependencies are NOT installed. Classify by the module named in the error:
+
+- The name is a **dependency** (`vertexai`, `google.adk`, `pandas`) → expected. Report `deps not installed`. Note that this outcome is **inconclusive** about the import path: the dependency failure fires before the recipe's own import is reached, so the test proves nothing either way. Fall back to Phase 6's `import_support` field for that question (`installable` / `pythonpath-ini` / `existing-conftest` / `generated-conftest` all mean the path is provided; only `unresolved` is a problem).
+- The name is the recipe's **own top-level module** (the first segment of Phase 6's `module_name` — e.g. `scripts` from `scripts.agent`) → REAL finding. The import path is broken and the test can never pass, whatever else is installed.
 
 Report per outcome:
-- Exit 0 → **pass.** Progress line: `Phase 7 (verify): compile OK.`
-- Exit non-zero → **fail.** Print the stderr verbatim in the summary as a Manual TODO. Do NOT attempt to diagnose, retry, or auto-fix. Do NOT halt the pipeline (Phase 7 is the last phase anyway; the summary still gets printed). Progress line: `Phase 7 (verify): compile FAILED — <one-line snippet of the error>.`
+- Compile 0, test passes → **pass.** Progress line: `Phase 7 (verify): compile OK, test passes.`
+- Compile 0, fails on a dependency → **pass with note.** Progress line: `Phase 7 (verify): compile OK; test not run (<module> not installed — run uv sync). Import path: <import_support from Phase 6>.`
+- Compile 0, fails on the recipe's own module → **fail.** Progress line: `Phase 7 (verify): compile OK but <module> is not importable.` Record as a Manual TODO; the usual cause is a missing `[build-system]` (Phase 3 report-only) with no conftest shim.
+- Compile 0, fails an ASSERTION (`root_agent is None`) → **fail.** A genuine recipe defect, not an environment one. Report it verbatim.
+- Compile non-zero → **fail.** Print the stderr verbatim in the summary as a Manual TODO and SKIP 7c (a file that doesn't parse cannot run). Do NOT attempt to diagnose, retry, or auto-fix. Progress line: `Phase 7 (verify): compile FAILED — <one-line snippet>.`
 - File missing → **skip.** Progress line: `Phase 7 (verify): skipped (no tests/test_runnability.py to check).`
 
-Note: passing Phase 7 does NOT mean the recipe actually runs — it means the test file is valid Python. Actually running the test (which validates that `agent.py` imports and `root_agent` is non-None) is still a manual `uv run pytest` step listed under "Next steps" in the summary.
+Never halt the pipeline on Phase 7 — Phase 8 still runs and the summary still prints.
+
+Note: a `deps not installed` result means Phase 7 has NOT proven the recipe runs. Say so plainly in the summary rather than implying a clean bill of health; the real confirmation is the manual `uv sync && uv run pytest` step under "Next steps".
+
+### Phase 8 — validate (the repo's own validators)
+
+Runs LAST. Phases 1–7 model what the pipeline knows how to *build*; this phase asks the repo whether the result is actually acceptable. It is deliberately a thin wrapper: the checks live in `tools/` and `.github/policy.yml`, and reimplementing any of them here would guarantee drift.
+
+**Historical gap this closes:** the pipeline ended at Phase 7 and printed a clean summary for a recipe that `validate structure` rejected for a missing `tests/unit/` directory. Every modelled phase passed; CI still failed the PR.
+
+**8a. Validate the manifest.**
+
+```bash
+uv run validate manifest <RECIPE_DIR>
+```
+
+**8b. Validate the structure.**
+
+```bash
+uv run validate structure <RECIPE_DIR>
+```
+
+Both run from the repo root with a repo-root-relative `<RECIPE_DIR>`, never an absolute path. Both exit non-zero on failure — do NOT apply rule 7's halt (Phase 8 is last, and its failures are findings to report, not crashes).
+
+**Interpreting the output — two distinct kinds of failure:**
+
+- **Ownership placeholder failures are EXPECTED.** `ownership.team` / `ownership.poc` still hold the canonical placeholders, and the validator fails deliberately until a human replaces them. Report these as `expected` in the summary, not as a problem the pipeline caused. They are already item 1 of the TODO list.
+- **Everything else is a REAL finding.** Missing required files or directories, size-limit violations, schema errors, naming violations. List each verbatim in Section 3 with the fix.
+
+Progress line: `Phase 8 (validate): manifest <clean|placeholders only|N issue(s)>; structure <clean|N issue(s)>.`
+
+If the only failures across both validators are the two ownership placeholders, the recipe is in the expected end state — say so plainly rather than presenting it as a failure.
 
 ---
 
@@ -340,9 +427,9 @@ Note: passing Phase 7 does NOT mean the recipe actually runs — it means the te
 While the pipeline runs, print a short progress line per phase (see above). Do NOT dump raw JSON. Do NOT re-render sub-skill tables.
 
 **Track three things as the pipeline runs** so you can report them at the end:
-- Every file the pipeline created or modified (across all seven phases). Observe this from each sub-script's stdout plus your own knowledge of what each phase touches (Phase 1 → `manifest.yaml`; Phase 2 → `.env.example`, package `__init__.py`, `pyproject.toml`, any source files where a hardcoded model name was replaced; Phase 3 → `pyproject.toml`; Phase 4 → any `.py` under the recipe; Phase 5 → `uv.lock`; Phase 6 → `tests/test_runnability.py`; Phase 7 → nothing).
-- Every action the pipeline **attempted but couldn't complete** (a phase halted by rule 7, Phase 4 unfixable ruff, Phase 7 compile fail).
-- Every deferred item that needs human follow-up (Phase 3 `report_only`).
+- Every file the pipeline created or modified (across all eight phases). Observe this from each sub-script's stdout plus your own knowledge of what each phase touches (Phase 0c → `tests/unit/.gitkeep` and any other required dir, if the user opted in; Phase 1 → `manifest.yaml`; Phase 2 → `.env.example`, package `__init__.py`, `pyproject.toml`, any source files where a hardcoded model name was replaced; Phase 3 → `pyproject.toml`; Phase 4 → any `.py` under the recipe; Phase 5 → `uv.lock`; Phase 6 → `tests/test_runnability.py` and possibly `tests/conftest.py`; Phases 7 and 8 → nothing).
+- Every action the pipeline **attempted but couldn't complete** (a phase halted by rule 7, Phase 4 unfixable ruff, Phase 7 compile or run failure).
+- Every deferred item that needs human follow-up (Phase 3 `report_only`, Phase 8 real validator findings).
 
 At the end, print the sections below in order. Section 3 is **conditional** — omit it entirely if nothing belongs in it. Sections 1, 2, and 4 always print.
 
@@ -356,9 +443,12 @@ At the end, print the sections below in order. Section 3 is **conditional** — 
 | 4. Lint | ok | 12 files formatted, 4 issues auto-fixed |
 | 5. Recipe lock | ok | done |
 | 6. Runnability test | ok | generated |
-| 7. Verify (compile-check) | ok | tests/test_runnability.py compiles |
+| 7. Verify (compile + run) | ok | compiles; test passes |
+| 8. Validate (repo validators) | ok | manifest + structure clean except ownership placeholders |
 
 Use plain words in the Outcome column (`ok` / `skipped` / `failed`). No emoji unless the user asked for them.
+
+Phase 8 is `ok` when the only failures are the two ownership placeholders — that is the expected end state, not a defect. Use `failed` only for real validator findings.
 
 ### 2. Files created or modified
 
@@ -369,13 +459,15 @@ Example:
 > **Created**
 > - `manifest.yaml` (Phase 1)
 > - `tests/test_runnability.py` (Phase 6)
+> - `tests/conftest.py` (Phase 6 — sys.path shim; recipe has no `[build-system]`)
+> - `tests/unit/.gitkeep` (Phase 0c — required for `skills/` recipes)
 > - `uv.lock` (Phase 5)
 >
 > **Modified**
 > - `pyproject.toml` (Phases 2, 3 — added `python-dotenv`; aligned rules)
 > - `<pkg>/__init__.py` (Phase 2 — added `load_dotenv()`)
 > - `.env.example` (Phase 2 — 3 vars added)
-> - `agent.py` (Phase 2 — replaced hardcoded model name with `os.getenv("MODEL_NAME")`)
+> - `agent.py` (Phase 2 — replaced hardcoded model name with `os.getenv("EMBEDDING_MODEL")`)
 > - 12 `.py` files formatted, 4 auto-fixed (Phase 4)
 
 ### 3. What the skill tried but couldn't complete (conditional — omit section if empty)
@@ -388,12 +480,16 @@ Cases that go here:
 
 - **Halted phase (rule 7 hard error)**: a phase's script exited non-zero and the pipeline stopped. Show the phase, the command that failed, and a one-line snippet of the stderr. Explicitly note which phases did NOT run as a result.
 - **Phase 4 unfixable ruff**: `ruff check --fix` ran but couldn't auto-fix some violations. Show `<file>:<line>` — `<codes>` for each.
+- **Phase 6 conftest skipped**: an existing `tests/conftest.py` blocked the path shim the generator wanted to write.
 - **Phase 7 compile fail**: `py_compile` on `tests/test_runnability.py` returned an error. Show a one-line snippet of the stderr.
+- **Phase 7 failure on the recipe's own module**: the test's import can't resolve. (A dependency-not-installed failure does NOT belong here — that's expected after `uv lock`.)
+- **Phase 8 real validator findings**: anything `validate manifest` / `validate structure` reported other than the two ownership placeholders. One line each, verbatim.
 
 Example:
 
 > - **Phase 4 (ruff)** — 2 violations remain that `ruff check --fix` can't auto-fix: `app/deploy.py:276` (`C901`, `PLR0915`), `app/tools.py:52` (`C901`). Refactor or add `# noqa: <codes>` at the def line.
 > - **Phase 7 (verify)** — `uv run --no-project python3 -m py_compile tests/test_runnability.py` failed: `SyntaxError: invalid syntax (line 14)`. Likely a generator bug or hand-edit; regenerate or fix before running pytest.
+> - **Phase 8 (validate)** — `validate structure` reports `Required directory 'tests/unit/' is missing`. Create it with a `.gitkeep`.
 
 ### 4. What you still need to do
 
@@ -407,8 +503,12 @@ A single short TODO list. Keep every entry to one line. Standard items come firs
 
 **Conditional — include ONLY if the phase raised it:**
 
-- **Phase 3 report-only, `build-system`**: add a `[build-system]` block to `pyproject.toml` — see `.agents/skills/align-recipe-pyproject/SKILL.md` for hatchling / uv_build templates.
+- **Phase 3 report-only, `build-system`**: add a `[build-system]` block to `pyproject.toml` — see `.agents/skills/align-recipe-pyproject/SKILL.md` for hatchling / uv_build templates. If Phase 6 also wrote a `tests/conftest.py` shim, note that adding the build-system makes the shim redundant and it can be deleted.
 - **Phase 3 report-only, `pypi-index`**: `[[tool.uv.index]]` default points somewhere other than public PyPI — verify this is intentional or fix per the align skill.
+- **Phase 3 report-only, `stale-python-version-refs`**: list the files, executable ones first (a bootstrap script's interpreter allowlist is a live bug; prose is cosmetic).
+- **Phase 3 report-only, `runnability-test-in-testpaths`**: add `"tests"` to `[tool.pytest.ini_options].testpaths`, or the runnability test never runs under a bare `pytest`.
+- **Phase 0c / Phase 8, missing required directory**: create it with a `.gitkeep` (e.g. `mkdir -p <RECIPE_DIR>/tests/unit && touch <RECIPE_DIR>/tests/unit/.gitkeep`) if the user declined during Phase 0c.
+- **Phase 8, other validator findings**: one line per finding with the fix.
 
 **Commands — always show:**
 
@@ -419,6 +519,6 @@ uv run pytest tests/test_runnability.py -v     # confirm the runnability test ac
 # commit when you're happy
 ```
 
-`uv sync` is what actually installs the recipe's dependencies into `.venv/`. The pipeline stopped at `uv lock` on purpose — installing is heavier and better done after you've reviewed the diff.
+`uv sync` is what actually installs the recipe's dependencies into `.venv/`. The pipeline stopped at `uv lock` on purpose — installing is heavier and better done after you've reviewed the diff. It is also why Phase 7 usually cannot run the test to completion — it stops at the first missing dependency.
 
 Then stop. Do NOT commit. End your turn.

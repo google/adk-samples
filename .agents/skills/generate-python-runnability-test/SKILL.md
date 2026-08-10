@@ -15,7 +15,7 @@ description: >
 metadata:
   author: Google
   license: Apache-2.0
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Generate Python Runnability Test
@@ -45,12 +45,28 @@ Runs `scripts/generate_runnability_test.py` against a recipe directory. Steps:
 
    Emission is post-processed through `ruff format` when available, so multi-patch `with (...):` blocks come out already wrapped per the repo's ruff config.
 
-5. **Write it** to `<recipe-dir>/tests/test_runnability.py` (creating `tests/` if needed). Refuses to clobber an existing file unless `--overwrite` is passed.
+5. **Check that the import can actually resolve.** The generated test does `import <module_name>`, which only works if the RECIPE ROOT is on `sys.path`. That is not automatic — under pytest's default `prepend` import mode only the test file's own directory (`<recipe>/tests`) is inserted. The recipe root gets there in one of these ways, reported as `import_support`:
+
+   | `import_support` | Meaning |
+   |---|---|
+   | `installable` | `pyproject.toml` declares a `[build-system]`, so `uv sync` installs the project and the package is importable. |
+   | `pythonpath-ini` | `[tool.pytest.ini_options].pythonpath` includes `"."`. |
+   | `existing-conftest` | A `conftest.py` sits at the recipe root (sufficient whatever it contains — pytest puts each conftest's own directory on `sys.path`, and for that one it IS the recipe root), or a `tests/conftest.py` that demonstrably extends `sys.path`. |
+   | `generated-conftest` | None of the above held, so the skill wrote `tests/conftest.py` with a path shim. |
+
+   A `tests/conftest.py` is judged by AST, not text search: it counts only if it really touches `sys.path`, so a comment or docstring that merely *mentions* `sys.path` cannot wrongly certify it.
+
+   **Historical bug closed by this:** the recipe root being importable was assumed rather than checked. A recipe with no `[build-system]` — common for vertical skills under `skills/`, where code lives in a plain `scripts/` directory rather than an installed package — got a test that always died with `ModuleNotFoundError`, while `prepare-python-recipe`'s `py_compile` verification still reported success.
+
+   Adding a `[build-system]` is the better fix; the generated conftest says so and tells the maintainer to delete it once they do.
+
+6. **Write it** to `<recipe-dir>/tests/test_runnability.py` (creating `tests/` if needed), plus `tests/conftest.py` when step 5 called for it. Refuses to clobber an existing file unless `--overwrite` is passed.
 
 ### Edit safety
 
 - No files outside the target recipe directory are read (beyond the recipe's own `.py` files) or written.
 - Existing `tests/test_runnability.py` is never silently overwritten. The user must explicitly opt in with `--overwrite`.
+- An existing `tests/conftest.py` is **never** overwritten, not even with `--overwrite` — the skill reports `conftest_action: skipped` and warns instead. A conftest it did not write may do something clobbering would break.
 - `tests/` directory is created if missing (`mkdir -p` equivalent). No other directory or file is added.
 - Ruff-clean by construction — the generated file passes `ruff check` and `ruff format --check` under the root config.
 
@@ -102,7 +118,7 @@ uv run --no-project python3 .agents/skills/generate-python-runnability-test/scri
   --recipe-dir <RECIPE_DIR> --dry-run
 ```
 
-Output on stdout: JSON with `agent_file`, `module_name`, `detections`, `test_content`, `action` (`would_write` / `refused_overwrite` / `error`), and `message`. Exit code `0`.
+Output on stdout: JSON with `agent_file`, `module_name`, `detections`, `import_support`, `conftest_path`, `conftest_action` (`would_write` / `wrote` / `skipped` / `null`), `test_content`, `action` (`would_write` / `refused_overwrite` / `error`), `message`, and `warnings` (a list — surface every entry to the user). Exit code `0`.
 
 Note: no `--with` flags are needed — the script only uses Python's stdlib (`ast`, `argparse`, `json`, `pathlib`, `dataclasses`, `os`, `sys`, `subprocess`, `textwrap`). `uv run --no-project python3` is used (rather than a bare `python3`) to guarantee a modern managed interpreter, consistent with the other Python recipe skills; the system `python3` on macOS can still be an old version. Dry-runs remain cheap and side-effect-free.
 
