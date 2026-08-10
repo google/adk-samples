@@ -687,6 +687,15 @@ def inactive_recipes(recipe_dirs: list[Path]) -> list[str]:
             text = manifest_path.read_text(encoding="utf-8")
         except OSError:
             continue
+        # No `\r` in the trailing class, and none is needed: read_text()
+        # opens in text mode, so universal-newline translation has already
+        # turned any CRLF into LF before the regex sees it. A test pins that,
+        # because it looks like a bug and invites the same "fix" twice.
+        #
+        # IGNORECASE is deliberate even though the schema enum is lowercase-
+        # only. `status: INACTIVE` fails validation on its own, and matching
+        # it here too tells the author both things at once rather than only
+        # the schema complaint.
         if re.search(
             r"""^[ \t]*status:[ \t]*["']?inactive["']?[ \t]*(?:\#.*)?$""",
             text,
@@ -727,6 +736,13 @@ def report_inactive(recipe_dirs: list[Path]) -> None:
         # hand: the type is what forces a why, a fix and a doc link to exist,
         # and tools/tests/test_ci_message.py enforces that nothing bypasses
         # it. Severity.WARNING keeps it out of the exit code.
+        #
+        # WARNING under a `[NOTICE]` header is not a mismatch: `[NOTICE]` is
+        # the name of the non-blocking channel — see report_advisories() in
+        # ci_message.py, which prints the same header for WARNING-severity
+        # advisories — while the severity picks the annotation colour. A
+        # `::notice` annotation is easy to miss, and a recipe sliding toward
+        # deletion should not be.
         notice = Diagnostic(
             check="recipe-inactive",
             severity=Severity.WARNING,

@@ -395,11 +395,15 @@ def open_issue(recipe: str, jobs: list[dict], run_url: str, dry: bool) -> None:
         "--label",
         LABEL_TRACKING,
     ]
-    if owner and is_assignable(owner):
-        args += ["--assignee", owner]
+    # The dry-run guard comes BEFORE is_assignable, which shells out to
+    # `gh api`. A dry run is supposed to touch nothing and work offline;
+    # making an API call in it meant a run that changes nothing could still
+    # fail, or burn rate limit, for no reason.
     if dry:
         print(f"  [dry-run] would open: {issue_title(recipe)}")
         return
+    if owner and is_assignable(owner):
+        args += ["--assignee", owner]
     print(f"  opened: {gh(*args)}")
 
 

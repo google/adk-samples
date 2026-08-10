@@ -171,14 +171,42 @@ def test_matrix_is_one_entry_per_recipe_and_version(tmp_path):
     ]
 
 
+# Every Python recipe the canary is expected to test, as of this commit.
+#
+# An EXACT set, not a `>=` count. `assert len(recipes) >= 10` against a real
+# count of 11 was the guard here before, and it could not see a recipe
+# disappear: adding a live recipe to SKIP_RECIPES — removing it from the
+# canary permanently — left the whole file green. Both directions matter, so
+# both are asserted, and adding or removing a recipe is expected to edit this
+# list in the same change.
+EXPECTED_RECIPES = {
+    "contrib/python/financial-advisor",
+    "contrib/python/market-research-agent",
+    "core/python/ambient-expense-agent",
+    "core/python/cross-session-memory",
+    "core/python/deep-search",
+    "core/python/genmedia-for-commerce",
+    "core/python/long-horizon-harness",
+    "core/python/oauth-user-consent-flow",
+    "core/python/rag-agent-search",
+    "core/python/rag-vector-search",
+    "core/python/safety-plugins",
+}
+
+
 def test_real_repo_matrix_covers_every_live_python_recipe():
     """Guards the regex-based manifest matcher against the real tree: a
     tightening that stopped recognising `language: "python"` would empty the
     matrix, and an empty matrix is a canary that passes by testing nothing."""
     matrix = m.build_matrix()
     recipes = {entry["recipe"] for entry in matrix}
-    assert len(recipes) >= 10, f"only found {sorted(recipes)}"
-    assert all(entry["python"].startswith("3.") for entry in matrix)
+    assert recipes == EXPECTED_RECIPES, (
+        "the set of canaried recipes changed. Added: "
+        f"{sorted(recipes - EXPECTED_RECIPES)}; missing: "
+        f"{sorted(EXPECTED_RECIPES - recipes)}. If that is intended, update "
+        "EXPECTED_RECIPES in the same change — a recipe silently dropping "
+        "out of the canary is never tested again."
+    )
     # Every recipe gets at least the floor.
     for recipe in recipes:
         assert {"recipe": recipe, "python": m.FLOOR} in matrix
@@ -203,28 +231,55 @@ def test_discovery_agrees_with_python_tests_yml():
     catches the failure that matters — a recipe visible to one and invisible
     to the other.
 
-    The only legitimate difference is SKIP_RECIPES.
+    The bash is EXTRACTED FROM THE WORKFLOW, not retyped here. A hand-copied
+    version was what this test ran before, and it had already drifted: the
+    copy pruned `.venv` and `node_modules` with `-not -path`, while the real
+    `find` in python-tests.yml prunes nothing. So it compared the canary
+    against a script that does not exist, and could never have caught the
+    difference it was written to catch.
+
+    Two differences are legitimate and accounted for below:
+      * SKIP_RECIPES — the canary deliberately skips the legacy duplicates;
+      * SKIP_DIRS — the canary prunes vendored trees and the workflow does
+        not, so a manifest the bash finds inside one is not a disagreement.
     """
     import subprocess
+    import textwrap
 
-    script = r"""
-    for root in core contrib skills; do
-      [ -d "$root" ] || continue
-      while IFS= read -r manifest; do
-        if grep -qiE "^[[:space:]]*language:[[:space:]]*[\"']?python[\"']?[[:space:]]*(#.*)?$" "$manifest"; then
-          dirname "$manifest"
-        fi
-      done < <(find "$root" -name "manifest.yaml" -not -path "*/.venv/*" -not -path "*/node_modules/*")
-    done
-    """
+    workflow = (
+        REPO_ROOT / ".github" / "workflows" / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    # Pull the two shell functions straight out of the workflow's `run:`
+    # block, so this exercises the real discovery rather than a copy of it.
+    blocks = []
+    for name in ("is_python_recipe", "all_python_recipes"):
+        start = workflow.index(f"{name}() {{")
+        depth, i = 0, start
+        while True:
+            if workflow[i] == "{":
+                depth += 1
+            elif workflow[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        blocks.append(textwrap.dedent(workflow[start : i + 1]))
+
     out = subprocess.run(
-        ["bash", "-c", script],
+        ["bash", "-c", "\n".join(blocks) + "\nall_python_recipes\n"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=True,
     )
+
     from_bash = {line for line in out.stdout.split() if line}
+    from_bash = {
+        r
+        for r in from_bash
+        if not any(part in m.SKIP_DIRS for part in Path(r).parts)
+    }
     from_python = set(m.discover_recipes()) | set(m.SKIP_RECIPES)
 
     assert from_python == from_bash, (

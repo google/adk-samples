@@ -298,9 +298,21 @@ def _manifest(tmp_path: Path, body: str) -> Path:
     return tmp_path
 
 
-def test_reads_quoted_and_unquoted_poc(tmp_path):
+@pytest.mark.parametrize(
+    "line",
+    [
+        '  poc: "someone"',
+        "  poc: 'someone'",
+        "  poc: someone",
+        "  poc:   someone",
+        "  poc: someone  # the owner",
+    ],
+)
+def test_reads_quoted_and_unquoted_poc(tmp_path, line):
+    """The name promised "quoted and unquoted" but only the double-quoted
+    form was ever exercised. Real manifests use all of these."""
     root = _manifest(
-        tmp_path, 'status: active\nownership:\n  team: t\n  poc: "someone"\n'
+        tmp_path, f"status: active\nownership:\n  team: t\n{line}\n"
     )
     assert m.read_owner("core/python/demo", root) == "someone"
 
@@ -366,10 +378,26 @@ def test_body_states_this_is_not_a_dependency_bump_nag(monkeypatch):
 
 
 def test_title_is_stable_because_it_is_the_dedupe_key():
-    """Anything varying in the title makes the canary fail to recognise its
-    own issue and open a fresh one every month."""
-    assert m.issue_title("core/python/x") == m.issue_title("core/python/x")
-    assert "core/python/x" in m.issue_title("core/python/x")
+    """Anything varying in the title — a date, a version, the error text —
+    stops the canary recognising its own issue, so it files a fresh one every
+    month and no ladder ever advances.
+
+    Pinned as an exact string. `issue_title(x) == issue_title(x)` was the
+    assertion here before, and a function always equals itself: putting
+    `date.today()` in the title left this green.
+    """
+    assert (
+        m.issue_title("core/python/x")
+        == "Recipe canary: core/python/x is failing"
+    )
+
+
+def test_the_title_carries_nothing_that_varies_between_runs():
+    """The complement, as cheap insurance against a future f-string reaching
+    for the clock or the interpreter version."""
+    title = m.issue_title("core/python/x")
+    for token in (str(datetime.now(timezone.utc).year), "3.11", "T00:"):
+        assert token not in title
 
 
 # ---------------------------------------------------------------------------
@@ -530,3 +558,82 @@ def test_one_api_failure_does_not_skip_every_recipe_after_it(
     assert m.main(["--results", str(path), "--dry-run"]) == 1
     assert seen == names
     assert "could not be processed: core/python/b" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# The write path: dedupe, closing, and dry-run suppression
+# ---------------------------------------------------------------------------
+
+
+def _gh_stub(monkeypatch, issues):
+    """Stand in for `gh`, recording every invocation."""
+    seen: list[tuple] = []
+
+    def fake(*args, **kwargs):
+        seen.append(args)
+        if args[:2] == ("issue", "list"):
+            return json.dumps(issues)
+        return ""
+
+    monkeypatch.setattr(m, "gh", fake)
+    return seen
+
+
+def test_find_issue_matches_the_title_exactly(monkeypatch):
+    """A prefix match would hand `rag-agent-search` the issue belonging to
+    `rag-agent-search-v2`, escalating one recipe's clock on another's
+    failures. Making the comparison a prefix left every test green."""
+    _gh_stub(
+        monkeypatch,
+        [
+            {
+                "number": 7,
+                "title": m.issue_title("core/python/rag-agent-search-v2"),
+                "createdAt": NOW.isoformat(),
+                "labels": [],
+            }
+        ],
+    )
+    assert m.find_issue("core/python/rag-agent-search") is None
+    assert m.find_issue("core/python/rag-agent-search-v2")["number"] == 7
+
+
+def test_recovery_actually_closes_the_issue(monkeypatch):
+    """Deleting the `gh issue close` call entirely left every test green."""
+    seen = _gh_stub(monkeypatch, [])
+    m.close_recovered("core/python/x", _issue(40), dry=False)
+    assert ("issue", "close", "42", "--repo", m.REPO) in seen
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        lambda: m.comment(42, "body", dry=True),
+        lambda: m.add_label(42, "lbl", dry=True),
+        lambda: m.close_recovered("core/python/x", _issue(40), dry=True),
+        lambda: m.open_issue("core/python/x", [], "url", True),
+    ],
+)
+def test_dry_run_performs_no_write(monkeypatch, action):
+    """Every write path must be suppressed by --dry-run. Disabling the guard
+    in `comment` and `open_issue` left every test green, so a dry run would
+    have posted to real issues."""
+    seen = _gh_stub(monkeypatch, [])
+    monkeypatch.setattr(m, "read_owner", lambda r, repo_root=None: None)
+    monkeypatch.setattr(m, "is_assignable", lambda u: False)
+    action()
+    writes = [
+        a for a in seen if a[:2] not in {("issue", "list"), ("api", "repos")}
+    ]
+    assert writes == [], f"dry run performed writes: {writes}"
+
+
+def test_is_assignable_is_not_called_during_a_dry_run(monkeypatch):
+    """It shells out to `gh api`, so a dry run was not offline and could fail
+    or rate-limit on a run that is supposed to change nothing."""
+    called: list[str] = []
+    monkeypatch.setattr(m, "gh", lambda *a, **k: "")
+    monkeypatch.setattr(m, "read_owner", lambda r, repo_root=None: "someone")
+    monkeypatch.setattr(m, "is_assignable", lambda u: called.append(u) or True)
+    m.open_issue("core/python/x", [], "url", True)
+    assert called == []

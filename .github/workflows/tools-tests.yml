@@ -28,11 +28,22 @@ on:
       #     version-update entry. That file is hand-edited, so a
       #     dependabot.yml-only PR is exactly the case that must run these
       #     tests.
+      #   */**/manifest.yaml
+      #     test_recipe_canary_matrix.py walks the real recipe tree and pins
+      #     the exact set of recipes the canary tests. A PR that ADDS or
+      #     DELETES a recipe is precisely the PR that changes that set — and
+      #     was precisely the PR that did not run these tests, so the pin was
+      #     unenforceable on the only change that could break it. Scoped to
+      #     manifest.yaml rather than all of core/**, because the recipe set
+      #     is a function of which manifests exist, not of their contents.
       # Without these entries such a PR merges green and the failure only
       # surfaces later, on an unrelated PR that happens to touch tools/.
       - ".github/policy.yml"
       - ".github/schemas/**"
       - ".github/dependabot.yml"
+      - "core/**/manifest.yaml"
+      - "contrib/**/manifest.yaml"
+      - "skills/**/manifest.yaml"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/tools-tests.yml"
@@ -49,6 +60,9 @@ on:
       - ".github/policy.yml"
       - ".github/schemas/**"
       - ".github/dependabot.yml"
+      - "core/**/manifest.yaml"
+      - "contrib/**/manifest.yaml"
+      - "skills/**/manifest.yaml"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/tools-tests.yml"
