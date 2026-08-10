@@ -13,25 +13,25 @@
 # limitations under the License.
 """Consistency tests for .github/dependabot.yml.
 
-That file is static and glob-based, so nothing regenerates it and no CI gate
-compares it to the tree. Two things could therefore drift unnoticed:
+The repo does NOT configure version updates for recipe ecosystems. Recipe
+owners own dependency freshness, and a monthly canary landing separately in
+#2502 detects rot instead of Dependabot preventing it — the reasoning is in
+the header of dependabot.yml.
 
-  1. The globs stop covering directories that actually hold manifests — for
-     example someone adds a recipe root, or narrows a pattern in a way that
-     silently drops recursion. Recipes then receive no dependency updates,
-     and nothing says so.
-  2. The globs and recipe_manifests.SCAN_ROOTS disagree about which roots
-     exist. That one is worse than it looks: the orphan cleanup treats
-     anything outside SCAN_ROOTS as dead, so a root present in the config but
-     missing from SCAN_ROOTS means its PRs get closed with --delete-branch.
+That inverts what these tests used to guard. The old invariant was "every
+ecosystem in the tree has a config entry", so that a new Go or Java recipe
+failed loudly rather than silently going unmanaged. Under the current policy
+the *presence* of such an entry is the thing worth catching, because it would
+quietly restart the PR flood the policy exists to stop.
 
-These tests pin both. They cannot verify Dependabot's own glob implementation
-— only a merge to the default branch can — so they check the patterns under
-standard globstar semantics, which is what the GitHub documentation describes.
+So the tests below pin the absence deliberately, and still pin the one entry
+that remains. What they cannot do is verify Dependabot's own behaviour — only
+a merge to the default branch can.
 """
 
 from pathlib import Path
 
+import close_orphan_dependabot_prs as orphans
 import pytest
 import recipe_manifests as rm
 import yaml
@@ -44,88 +44,12 @@ def config() -> dict:
     return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
-@pytest.fixture(scope="module")
-def globbed_entries(config) -> list[dict]:
-    """Entries that use `directories` (i.e. everything but github-actions)."""
-    return [u for u in config["updates"] if "directories" in u]
-
-
-def _segments_match(pattern: list[str], path: list[str]) -> bool:
-    """Standard globstar matching over path segments.
-
-    `**` matches zero or more segments; `*` matches exactly one, and never
-    spans a separator.
-
-    Implemented rather than delegated to Path.glob() because expanding
-    `/core/**/*` against the working tree walks .venv and node_modules and
-    takes minutes. Matching the scanner's output against the pattern is the
-    same question asked in the cheap direction.
-    """
-    if not pattern:
-        return not path
-    head, rest = pattern[0], pattern[1:]
-    if head == "**":
-        # Zero segments, or consume one and retry.
-        if _segments_match(rest, path):
-            return True
-        return bool(path) and _segments_match(pattern, path[1:])
-    if not path:
-        return False
-    if head != "*" and head != path[0]:
-        return False
-    return _segments_match(rest, path[1:])
-
-
-def _matches_any(patterns: list[str], directory: str) -> bool:
-    segs = directory.strip("/").split("/")
-    return any(_segments_match(p.strip("/").split("/"), segs) for p in patterns)
-
-
-# ---------------------------------------------------------------------------
-# The matcher itself
-#
-# Every config test below depends on _segments_match. A matcher that returned
-# True unconditionally would make all of them pass while proving nothing, so
-# it is pinned first — negative cases included.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("pattern", "directory", "expected"),
-    [
-        # The depth question the globs hinge on: does `/core/**/*` reach a
-        # directory only one level below the root? Under standard globstar
-        # `**` matches zero segments, so yes.
-        ("/core/**/*", "/core/rag-vector-search", True),
-        ("/core/**/*", "/core/python/deep-search", True),
-        ("/core/**/*", "/core/python/rag/data_ingestion", True),
-        ("/core/**/*", "/core/python/lhh/web/server", True),
-        # The root itself holds no manifest and should not match.
-        ("/core/**/*", "/core", False),
-        # Other roots must not be caught by this pattern.
-        ("/core/**/*", "/contrib/python/x", False),
-        ("/core/**/*", "/skills/retail/x", False),
-        # Retired roots must not match.
-        ("/core/**/*", "/python/agents/legacy", False),
-        # A single `*` never spans a separator.
-        ("/core/*", "/core/python/deep-search", False),
-        ("/core/*", "/core/rag-vector-search", True),
-        # A directory that merely starts with the root name is not the root.
-        ("/core/**/*", "/coreutils/x", False),
-    ],
-)
-def test_segments_match(pattern, directory, expected):
-    assert _matches_any([pattern], directory) is expected
-
-
-def test_matcher_is_not_vacuously_true():
-    assert not _matches_any(["/nope/**/*"], "/core/python/deep-search")
-    assert not _matches_any([], "/core/python/deep-search")
-
-
-# ---------------------------------------------------------------------------
-# The config
-# ---------------------------------------------------------------------------
+# Ecosystems recipe_manifests.py can detect in the tree. Every one of these
+# is a RECIPE ecosystem, so none of them may appear in dependabot.yml while
+# the current policy stands. Derived from the detector list rather than
+# retyped, so a newly supported ecosystem is covered here the moment it is
+# added there.
+RECIPE_ECOSYSTEMS = {eco for eco, _ in rm.DETECTORS}
 
 
 def test_config_is_valid_yaml_with_version_2(config):
@@ -133,109 +57,68 @@ def test_config_is_valid_yaml_with_version_2(config):
     assert config["updates"]
 
 
-def test_every_detected_manifest_directory_is_covered_by_a_glob(config):
-    """The core invariant: if the scanner can see a manifest there, the config
-    must be telling Dependabot to look there."""
-    by_eco = {u["package-ecosystem"]: u for u in config["updates"]}
+def test_no_version_updates_for_recipe_ecosystems(config):
+    """The core invariant of the current policy.
 
-    uncovered = []
-    for ecosystem, directory in rm.scan():
-        entry = by_eco.get(ecosystem)
-        assert entry is not None, (
-            f"{directory} has a {ecosystem} manifest but dependabot.yml "
-            f"declares no {ecosystem} entry — it receives no updates"
-        )
-        if not _matches_any(entry["directories"], directory):
-            uncovered.append((ecosystem, directory))
+    Recipes own their own dependency freshness; the repo does not open
+    version-update PRs against them. An entry here for a recipe ecosystem
+    would restart that flood — 98 open PRs last time, none of them mergeable,
+    with the review load landing on the CODEOWNERS catch-all rather than on
+    the recipe's declared owner.
 
-    assert not uncovered, (
-        "these directories hold manifests but no glob matches them, so they "
-        f"receive no dependency updates: {uncovered}"
-    )
-
-
-def test_tree_still_spans_several_manifest_depths():
-    """Canary for the coverage test above, which only proves the globs reach
-    every depth that actually EXISTS. Manifests sit one to four levels below
-    a root today (`core/rag-vector-search` up to
-    `core/python/long-horizon-harness/web/server`), which is why recursion is
-    load-bearing rather than decorative.
-
-    If the tree ever flattened to a single depth, the coverage test would
-    keep passing while silently no longer exercising recursion — so assert
-    the premise separately rather than re-walking the same scan.
-    """
-    depths = {d.strip("/").count("/") + 1 for _, d in rm.scan()}
-    assert len(depths) > 1, (
-        f"all manifests are now at depth {depths}; the glob-coverage test no "
-        "longer demonstrates that `**` recursion works"
-    )
-
-
-def test_glob_roots_and_scan_roots_agree(globbed_entries):
-    """A root in the config but not in SCAN_ROOTS is actively dangerous: the
-    orphan cleanup treats anything outside SCAN_ROOTS as dead and closes its
-    PRs with --delete-branch."""
-    for entry in globbed_entries:
-        roots = {p.strip("/").split("/")[0] for p in entry["directories"]}
-        assert roots == set(rm.SCAN_ROOTS), (
-            f"{entry['package-ecosystem']} globs {sorted(roots)} but "
-            f"recipe_manifests.SCAN_ROOTS is {sorted(rm.SCAN_ROOTS)}"
-        )
-
-
-def test_retired_roots_are_not_globbed(globbed_entries):
-    """Retired roots (`frozen_paths` in .github/policy.yml) are closed to new
-    work. Globbing them would resurrect dependency updates for recipes the
-    repo has deliberately stopped maintaining."""
-    policy = yaml.safe_load(
-        (rm.REPO_ROOT / ".github" / "policy.yml").read_text(encoding="utf-8")
-    )
-    retired = {p.split("/")[0] for p in policy["frozen_paths"]}
-    for entry in globbed_entries:
-        roots = {p.strip("/").split("/")[0] for p in entry["directories"]}
-        assert not (roots & retired), (
-            f"{entry['package-ecosystem']} globs retired root(s) "
-            f"{sorted(roots & retired)}"
-        )
-
-
-def test_every_ecosystem_present_in_the_tree_has_a_config_entry(config):
-    """The guard that lets dependabot.yml safely omit ecosystems it does not
-    need yet.
-
-    recipe_manifests.py detects five ecosystems; the config declares only
-    those that have recipes, because a glob matching zero directories risks
-    the whole file being rejected — which would stop every dependency update,
-    security ones included.
-
-    This test keeps that from becoming a silent gap: the first Go, Java, or
-    Kotlin recipe fails here with an explicit instruction, rather than
-    merging green and quietly receiving no updates.
+    This is not a ban. It is a tripwire: re-enabling version updates should be
+    a deliberate change with a reviewer attached, so update this test in the
+    same PR and say why.
     """
     configured = {u["package-ecosystem"] for u in config["updates"]}
-    present = {eco for eco, _ in rm.scan()}
-    missing = present - configured
-    assert not missing, (
-        f"{sorted(missing)} manifests exist in the tree but dependabot.yml "
-        "declares no entry for them, so those recipes receive no dependency "
-        "updates. Add a block for each, copying the shape of the `uv` entry."
+    offenders = configured & RECIPE_ECOSYSTEMS
+    assert not offenders, (
+        f"dependabot.yml declares version updates for {sorted(offenders)}, "
+        "which are recipe ecosystems. Recipe dependency freshness is the "
+        "recipe owner's responsibility and rot is caught by the monthly "
+        "recipe canary — see the header of dependabot.yml. If re-enabling "
+        "this is intentional, update this test in the same change."
     )
 
 
-def test_static_entries_match_recipe_manifests(config):
-    """Every non-glob entry in the config must be in STATIC_ENTRIES.
+def test_security_updates_are_not_what_this_file_controls():
+    """Guard against the most likely misreading of the change above.
+
+    Dependabot security updates are a repository setting; GitHub documents
+    that dependabot.yml and security alerts do not interact. Someone could
+    reasonably assume that removing the recipe entries also switched security
+    PRs off and "restore" them for the wrong reason.
+
+    There is nothing in the file to assert against, so this pins the
+    explanation instead: the reasoning must stay written down where the next
+    person will look for it.
+    """
+    text = CONFIG_PATH.read_text(encoding="utf-8").lower()
+    assert "security" in text, (
+        "dependabot.yml no longer explains that security updates are "
+        "unaffected by this file. Removing recipe entries does not disable "
+        "them; say so, or the next reader will re-add entries to 'restore' "
+        "security coverage that was never lost."
+    )
+
+
+def test_every_entry_is_a_known_static_entry(config):
+    """With recipe ecosystems gone, every remaining entry is a static one.
 
     A static entry is configured, never discovered, so
-    close_orphan_dependabot_prs.py can only know about it by being told.
-    One present here but missing from STATIC_ENTRIES has its PRs classified
-    as orphans and closed with --delete-branch — and since such an entry
+    close_orphan_dependabot_prs.py can only know about it by being told. One
+    present here but missing from STATIC_ENTRIES has its PRs classified as
+    orphans and closed with --delete-branch — and since such an entry
     produces roughly one grouped PR a week, the --max-close circuit breaker
     would never trip on it.
-
-    While a generator owned this file it kept the two in step. Nothing does
-    now, which is exactly why this assertion exists.
     """
+    for entry in config["updates"]:
+        assert "directories" not in entry, (
+            f"{entry['package-ecosystem']} uses a `directories` glob. Globs "
+            "existed to cover the recipe tree, which this file no longer "
+            "manages; a remaining entry should target a fixed directory."
+        )
+
     configured_static = {
         (u["package-ecosystem"], u["directory"])
         for u in config["updates"]
@@ -255,6 +138,34 @@ def test_static_entries_match_recipe_manifests(config):
         f"{sorted(stale)} are in recipe_manifests.STATIC_ENTRIES but not in "
         "dependabot.yml. Harmless, but the list is now describing an entry "
         "that does not exist — remove it."
+    )
+
+
+def test_orphan_cleanup_still_sees_the_recipe_tree(config):
+    """Removing entries here must not make live recipes look abandoned.
+
+    close_orphan_dependabot_prs.live_pairs() derives liveness from
+    recipe_manifests.scan() — the tree — not from this file, which is what
+    keeps the 98 PRs that were open when the policy changed from being swept
+    up and closed with --delete-branch on the next housekeeping run. That
+    indirection is easy to "simplify" away later, so pin it.
+
+    Asserting that the live set reaches BEYOND what this file configures is
+    what makes the pin real: a live_pairs() rewritten to read dependabot.yml
+    could only ever return a subset of it, and this goes red.
+    """
+    configured = {
+        orphans.BRANCH_PREFIX.get(eco, eco)
+        for eco in (u["package-ecosystem"] for u in config["updates"])
+    }
+    tracked = {eco for eco, _ in orphans.live_pairs()}
+
+    assert tracked - configured, (
+        "close_orphan_dependabot_prs.live_pairs() no longer tracks any "
+        "ecosystem beyond the ones dependabot.yml configures, which is what "
+        "it looks like when liveness starts being read from this file "
+        "instead of from the tree. The cleanup treats anything it cannot see "
+        "as dead and closes it with --delete-branch."
     )
 
 
@@ -283,21 +194,10 @@ def test_github_actions_entry_declares_no_semver_cooldown(config):
 
 
 def test_group_by_is_not_set_anywhere(config):
-    """Without `group-by`, Dependabot opens one PR per directory, matching the
-    behaviour the previous per-directory config had. Setting
-    `group-by: dependency-name` would collapse a bump across every recipe
-    into a single repo-wide PR.
-
-    The real home for the key is `groups.<name>.group-by`; the schema puts it
-    nowhere else and sets `additionalProperties: false` on an update entry,
-    so an entry-level `group-by` is rejected outright. Both levels are
-    checked anyway, so the test's scope matches its name and a reader does
-    not have to go and confirm that against the schema.
-
-    Takes `config` rather than `globbed_entries`: that fixture drops the
-    github-actions entry, which carries a `groups: all-actions` block of its
-    own. Iterating it would have let `groups.all-actions.group-by` slip
-    through a test called "not set anywhere".
+    """`group-by` at entry level is not valid config and would have Dependabot
+    reject the whole file. The real home for the key is
+    `groups.<name>.group-by`; both levels are checked so the test's scope
+    matches its name.
     """
     for entry in config["updates"]:
         assert "group-by" not in entry, (
@@ -307,23 +207,7 @@ def test_group_by_is_not_set_anywhere(config):
         for name, group in entry.get("groups", {}).items():
             assert "group-by" not in group, (
                 f"{entry['package-ecosystem']}.groups.{name}: `group-by` "
-                "collapses every directory's update into one repo-wide PR"
-            )
-
-
-def test_open_pr_limits_leave_room_for_every_directory(config):
-    """If the limit is enforced per entry rather than per directory, a cap
-    below the directory count would throttle updates for whichever recipes
-    happen to lose the race."""
-    counts: dict[str, int] = {}
-    for ecosystem, _ in rm.scan():
-        counts[ecosystem] = counts.get(ecosystem, 0) + 1
-
-    for entry in config["updates"]:
-        eco = entry["package-ecosystem"]
-        needed = counts.get(eco, 0)
-        if needed:
-            assert entry["open-pull-requests-limit"] >= needed, (
-                f"{eco} covers {needed} directories but caps open PRs at "
-                f"{entry['open-pull-requests-limit']}"
+                "changes how updates are batched into PRs. Nothing needs it "
+                "while this file configures a single directory — add it "
+                "deliberately or not at all."
             )

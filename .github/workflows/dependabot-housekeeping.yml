@@ -8,12 +8,20 @@ name: Dependabot Housekeeping
 #
 # Replaces the old "Sync Dependabot Config" workflow, which regenerated
 # .github/dependabot.yml and opened a PR with the result. That file is now
-# static and glob-based — nothing to regenerate — but the orphan cleanup it
-# also performed is still needed, so it survives here on its own schedule.
+# static — nothing to regenerate — but the orphan cleanup it also performed
+# is still needed, so it survives here on its own schedule.
+#
+# Still needed even though dependabot.yml no longer configures version
+# updates for recipes: Dependabot security updates are a repository setting
+# and keep opening PRs regardless of that file, so a recipe that is removed
+# or renamed can still leave orphaned security PRs behind.
 #
 # The cleanup derives the set of live directories by scanning the recipe tree
-# (.github/scripts/recipe_manifests.py), not by parsing dependabot.yml, which
-# no longer enumerates directories.
+# (.github/scripts/recipe_manifests.py), not by parsing dependabot.yml. That
+# indirection is load-bearing now rather than incidental: the recipe
+# ecosystems are absent from the config but very much present in the tree, so
+# a cleanup that trusted the config would classify every open recipe PR as an
+# orphan and close the lot with --delete-branch.
 #
 # Because closing is destructive (`--delete-branch`), the script refuses to
 # act when the scan comes back empty, and refuses to close a batch larger than
@@ -25,7 +33,7 @@ name: Dependabot Housekeeping
 
 on:
   schedule:
-    # Mondays at 04:00 UTC, a couple of hours after the 02:00 Dependabot
+    # Mondays at 04:00 UTC, a couple of hours after the 02:00 github-actions
     # schedule in .github/dependabot.yml. Ordering barely matters — an orphan
     # is by definition an old PR for a directory that is gone, so it cannot be
     # something Dependabot opened minutes earlier — but running after the
