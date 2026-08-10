@@ -24,11 +24,20 @@ Rules enforced (see .github/workflows/python-validate-recipe.yml):
     Airlock auth (see the block comment in the root pyproject.toml for
     the full rationale).
 
+Reported as a WARNING, never as a failure:
+
+  - adk-major-current: a recipe under core/ should resolve to the current
+    google-adk major. Read from the LOCK as well as the specifier, because
+    `google-adk>=1.8.0` permits 2.x while still installing 1.28.0. Warn-only
+    because crossing an ADK major is a code migration, so a blocking check
+    would wedge unrelated contributors behind that work. Advisories do not
+    affect the exit code.
+
 Note: no-local-ruff-config (forbid [tool.ruff*] blocks in recipe
 pyproject.toml) is enforced by a grep in the workflow itself, not here.
 
-MAINTENANCE NOTE — keep in sync with the align skill. These four rules are
-also implemented (as auto-fixes) by
+MAINTENANCE NOTE — keep in sync with the align skill. The four BLOCKING
+rules above are also implemented (as auto-fixes) by
 .agents/skills/align-recipe-pyproject/scripts/align_pyproject.py. This script
 only READS/validates (stdlib tomllib + pyyaml); that one REWRITES
 (comment-preserving tomlkit + ruamel.yaml). They are intentionally separate
@@ -38,7 +47,8 @@ mirror it there (and vice versa).
 Usage: python check_recipe_pyproject.py <recipe-dir>
 
 Exit codes:
-  0  every rule passed
+  0  every blocking rule passed. A warn-only advisory may still have been
+     printed — those never affect the exit code.
   1  contributor-fixable problems found; every one has been reported with
      a fix, both as a human block and as a ::error annotation
   2  CI fault — the checker crashed, or its own environment is missing a
@@ -678,9 +688,10 @@ def _normalise_dist(name: str) -> str:
 def _adk_requirement(project: dict) -> Requirement | None:
     """The `google-adk` entry from `[project].dependencies`, if declared.
 
-    Malformed entries are skipped rather than reported: `check_name` and the
-    resolver both fail loudly on those already, and a freshness notice is the
-    wrong place to first learn your dependency list does not parse.
+    Malformed entries are skipped rather than reported: the resolver fails
+    loudly on those already (`uv lock --check`, in the dependency-policy
+    workflow), and a freshness notice is the wrong place to first learn your
+    dependency list does not parse.
     """
     for raw in project.get("dependencies") or []:
         if not isinstance(raw, str):
@@ -844,34 +855,37 @@ def check_adk_major(
     if locked is None:
         return advisories
 
-    if locked.major < CURRENT_ADK_MAJOR:
-        advisories.append(
-            Diagnostic(
-                check="adk-major-current",
-                severity=Severity.WARNING,
-                what=(
-                    f"{recipe_dir}/uv.lock pins google-adk {locked}, but "
-                    f"{pyproject_path} declares `{req.specifier or 'no bound'}`"
-                    f" which already permits {CURRENT_ADK_MAJOR}.x."
-                ),
-                why=(
-                    f"The specifier is not what a reader installs — the lock "
-                    f"is. `uv sync` resolves this recipe to {locked}, so the "
-                    f"sample demonstrates google-adk {locked.major}.x however "
-                    f"permissive the declaration looks."
-                ),
-                how=(
-                    f"Port the recipe to {CURRENT_ADK_MAJOR}.x if it is not "
-                    f"already, then:\n"
-                    f"  uv lock --upgrade-package google-adk "
-                    f"--project {recipe_dir}\n"
-                    f"Check the recipe still runs afterwards; crossing a "
-                    f"major is not expected to be a no-op."
-                ),
-                doc=Doc.ADK_MAJOR,
-                file=str(pyproject_path),
-            )
+    # Only one case is left. The `>=` lock returned at the top and an
+    # excluding specifier returned just above, so `locked.major` is
+    # necessarily below the current one while the declaration already permits
+    # it — the pyproject is fine and only the lock is behind.
+    advisories.append(
+        Diagnostic(
+            check="adk-major-current",
+            severity=Severity.WARNING,
+            what=(
+                f"{recipe_dir}/uv.lock pins google-adk {locked}, but "
+                f"{pyproject_path} declares `{req.specifier or 'no bound'}`"
+                f" which already permits {CURRENT_ADK_MAJOR}.x."
+            ),
+            why=(
+                f"The specifier is not what a reader installs — the lock "
+                f"is. `uv sync` resolves this recipe to {locked}, so the "
+                f"sample demonstrates google-adk {locked.major}.x however "
+                f"permissive the declaration looks."
+            ),
+            how=(
+                f"Port the recipe to {CURRENT_ADK_MAJOR}.x if it is not "
+                f"already, then:\n"
+                f"  uv lock --upgrade-package google-adk "
+                f"--project {recipe_dir}\n"
+                f"Check the recipe still runs afterwards; crossing a "
+                f"major is not expected to be a no-op."
+            ),
+            doc=Doc.ADK_MAJOR,
+            file=str(pyproject_path),
         )
+    )
 
     return advisories
 

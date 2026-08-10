@@ -505,6 +505,10 @@ it is a bug in the checker either way.
 
 ## Core recipe is behind the current ADK major
 
+**Workflow:** [`python-validate-recipe.yml`](../../.github/workflows/python-validate-recipe.yml)
+
+CI output contains: `adk-major-current`, alongside either `cannot resolve to google-adk` or `pins google-adk`
+
 **This will not block your PR.** It is a notice, not an error.
 
 A recipe under `core/` resolves to a `google-adk` major older than the one
@@ -529,7 +533,7 @@ a dependency that can change with no deprecation path.
 
 **Fix:** port the recipe to the current major, then
 
-```
+```bash
 uv lock --upgrade-package google-adk --project <recipe-dir>
 ```
 

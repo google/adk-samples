@@ -27,21 +27,22 @@
 #   - Freshness is the recipe owner's call. Every manifest.yaml declares
 #     `ownership.poc`, and an owner who has a reason to move versions is free
 #     to do so.
-#   - Rot is detected rather than prevented: .github/workflows/recipe-canary.yml
-#     verifies monthly that each recipe still installs from its committed
-#     lockfile (`uv sync --frozen`) and still passes its tests, and files an
-#     issue against the recipe's poc when it does not. That catches the
-#     failure modes a frozen lock really has — a yanked release, a package
-#     pulled from the index, wheels with no build for a newer interpreter —
-#     without asking anyone to review a bump that changes nothing they need.
+#   - Rot is detected rather than prevented, by a monthly canary that lands
+#     separately in #2502 as .github/workflows/recipe-canary.yml. It verifies
+#     that each recipe still installs from its committed lockfile
+#     (`uv sync --frozen`) and still passes its tests, and files an issue
+#     against the recipe's poc when it does not. That catches the failure
+#     modes a frozen lock really has — a yanked release, a package pulled
+#     from the index, wheels with no build for a newer interpreter — without
+#     asking anyone to review a bump that changes nothing they need.
 #
 # Security updates are NOT affected by this file
 # ----------------------------------------------
 # Dependabot security updates are a repository setting, and GitHub documents
 # that there is no interaction between dependabot.yml and Dependabot security
-# alerts. Removing the entries below does not disable security PRs; they keep
-# arriving for any advisory with an available patch. Deleting this file
-# entirely would not stop them either.
+# alerts. Dropping the recipe ecosystems from this file does not disable
+# security PRs; they keep arriving for any advisory with an available patch.
+# Deleting this file entirely would not stop them either.
 #
 # Why github-actions stays
 # ------------------------

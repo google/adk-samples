@@ -14,8 +14,9 @@
 """Consistency tests for .github/dependabot.yml.
 
 The repo does NOT configure version updates for recipe ecosystems. Recipe
-owners own dependency freshness, and recipe-canary.yml detects rot instead of
-Dependabot preventing it — the reasoning is in the header of dependabot.yml.
+owners own dependency freshness, and a monthly canary landing separately in
+#2502 detects rot instead of Dependabot preventing it — the reasoning is in
+the header of dependabot.yml.
 
 That inverts what these tests used to guard. The old invariant was "every
 ecosystem in the tree has a config entry", so that a new Go or Java recipe
@@ -30,6 +31,7 @@ a merge to the default branch can.
 
 from pathlib import Path
 
+import close_orphan_dependabot_prs as orphans
 import pytest
 import recipe_manifests as rm
 import yaml
@@ -73,10 +75,9 @@ def test_no_version_updates_for_recipe_ecosystems(config):
     assert not offenders, (
         f"dependabot.yml declares version updates for {sorted(offenders)}, "
         "which are recipe ecosystems. Recipe dependency freshness is the "
-        "recipe owner's responsibility and rot is caught by "
-        ".github/workflows/recipe-canary.yml — see the header of "
-        "dependabot.yml. If re-enabling this is intentional, update this "
-        "test in the same change."
+        "recipe owner's responsibility and rot is caught by the monthly "
+        "recipe canary — see the header of dependabot.yml. If re-enabling "
+        "this is intentional, update this test in the same change."
     )
 
 
@@ -140,20 +141,31 @@ def test_every_entry_is_a_known_static_entry(config):
     )
 
 
-def test_orphan_cleanup_still_sees_the_recipe_tree():
+def test_orphan_cleanup_still_sees_the_recipe_tree(config):
     """Removing entries here must not make live recipes look abandoned.
 
-    close_orphan_dependabot_prs.py derives liveness from recipe_manifests.scan()
-    — the tree — not from this file, which is what keeps the 98 PRs that were
-    open when the policy changed from being swept up and closed with
-    --delete-branch on the next housekeeping run. That indirection is easy to
-    "simplify" away later, so pin it.
+    close_orphan_dependabot_prs.live_pairs() derives liveness from
+    recipe_manifests.scan() — the tree — not from this file, which is what
+    keeps the 98 PRs that were open when the policy changed from being swept
+    up and closed with --delete-branch on the next housekeeping run. That
+    indirection is easy to "simplify" away later, so pin it.
+
+    Asserting that the live set reaches BEYOND what this file configures is
+    what makes the pin real: a live_pairs() rewritten to read dependabot.yml
+    could only ever return a subset of it, and this goes red.
     """
-    discovered = {eco for eco, _ in rm.scan()}
-    assert discovered & RECIPE_ECOSYSTEMS, (
-        "recipe_manifests.scan() no longer finds any recipe ecosystem in the "
-        "tree. Either the tree moved or the scanner broke — and the orphan "
-        "cleanup treats anything it cannot see as dead."
+    configured = {
+        orphans.BRANCH_PREFIX.get(eco, eco)
+        for eco in (u["package-ecosystem"] for u in config["updates"])
+    }
+    tracked = {eco for eco, _ in orphans.live_pairs()}
+
+    assert tracked - configured, (
+        "close_orphan_dependabot_prs.live_pairs() no longer tracks any "
+        "ecosystem beyond the ones dependabot.yml configures, which is what "
+        "it looks like when liveness starts being read from this file "
+        "instead of from the tree. The cleanup treats anything it cannot see "
+        "as dead and closes it with --delete-branch."
     )
 
 
@@ -195,5 +207,7 @@ def test_group_by_is_not_set_anywhere(config):
         for name, group in entry.get("groups", {}).items():
             assert "group-by" not in group, (
                 f"{entry['package-ecosystem']}.groups.{name}: `group-by` "
-                "collapses every directory's update into one repo-wide PR"
+                "changes how updates are batched into PRs. Nothing needs it "
+                "while this file configures a single directory — add it "
+                "deliberately or not at all."
             )

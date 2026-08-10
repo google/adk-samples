@@ -538,9 +538,6 @@ def _advise(tmp_path, monkeypatch, spec, locked, root="core/python/demo"):
 @pytest.mark.parametrize(
     ("spec", "locked"),
     [
-        # The two shapes that were WRONGLY flagged during development: a floor
-        # inside the current major excludes X.0.0 exactly, so a naive
-        # `contains(Version("2.0.0"))` test calls a current recipe stale.
         ("google-adk[gcp]>=2.5.0,<3.0.0", "2.5.0"),
         ("google-adk[mcp,otel-gcp,a2a]>=2.5.0,<3.0.0", "2.5.0"),
         ("google-adk[gcp]>=2.0.0,<3.0.0", "2.3.0"),
@@ -551,7 +548,34 @@ def _advise(tmp_path, monkeypatch, spec, locked, root="core/python/demo"):
 def test_recipes_on_the_current_major_are_silent(
     tmp_path, monkeypatch, spec, locked
 ):
+    """Every case here locks on the current major, so what is pinned is the
+    LOCK-FIRST ordering: the specifier is never consulted, however unusual it
+    looks, because the lock demonstrably admitted what got installed.
+
+    These do NOT reach `_specifier_admits_major` — the test below covers it.
+    """
     assert _advise(tmp_path, monkeypatch, spec, locked) == []
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "google-adk>=2.5.0,<3.0.0",  # floor inside the current series
+        "google-adk==2.3.0",  # exact pin inside the current series
+    ],
+)
+def test_specifier_inside_the_current_major_without_a_lock_is_silent(
+    tmp_path, monkeypatch, spec
+):
+    """The regression `_specifier_admits_major` exists for, on the only path
+    that reaches it: with no lock to settle the question, the specifier is all
+    there is.
+
+    A naive `contains(Version("2.0.0"))` calls both of these stale, because a
+    floor inside the series and an exact pin inside it each exclude X.0.0
+    exactly. Two recipes were wrongly flagged that way during development.
+    """
+    assert _advise(tmp_path, monkeypatch, spec, None) == []
 
 
 @pytest.mark.parametrize(
