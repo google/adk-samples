@@ -39,7 +39,11 @@ mirror it there (and vice versa).
         resolve (typically: relax the ceiling, or raise the recipe with
         the maintainers to update CI's pinned interpreter).
   - project-name-matches-folder
-        [project].name must equal the recipe folder basename.
+        [project].name must equal the recipe's expected name: the folder
+        basename for core/ and contrib/, but "<vertical>-<solution>" for
+        skills/, whose layout interposes a mandatory vertical namespace
+        (skills/<vertical>/<solution>) that makes the basename alone
+        non-unique. See expected_project_name() for the full rationale.
         Auto-fix: set it.
   - description-matches-manifest
         If [project].description is set, it must equal manifest.description.
@@ -79,6 +83,8 @@ Output:
 
 import argparse
 import json
+import os
+import re
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -112,6 +118,51 @@ BELOW_MIN = (
     ]
     + [Version(f"{MIN_PYTHON[0] - 1}.99")]
 )
+
+# Recipe roots whose layout interposes a mandatory NAMESPACE between the root
+# and the solution folder: <root>/<namespace>/<solution>.
+#
+# Only `skills/` does this today. Its middle segment is a VERTICAL, not a
+# language (see AGENTS.md and the `recipe_size_limits` comment in
+# .github/policy.yml), and tools/validate_placement.py rejects a solution
+# dropped directly under skills/.
+#
+# core/ and contrib/ look superficially similar (core/<language>/<recipe>)
+# but are NOT listed here: their middle segment is a language, and their
+# basenames are already unique repo-wide.
+#
+# Maps the root name to what its namespace segment is CALLED, purely so
+# messages can say "<vertical>-<solution>" rather than mechanically
+# depluralising "skills" into something meaningless.
+# NOTE: mirrored in .github/scripts/check_recipe_pyproject.py — keep in sync.
+NAMESPACED_ROOTS = {"skills": "vertical"}
+
+# This script lives at .agents/skills/<skill>/scripts/, four levels down.
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _repo_relative_parts(
+    recipe_dir: Path, repo_root: Path | None = None
+) -> tuple[str, ...]:
+    """Path segments of `recipe_dir` relative to the repository root.
+
+    An absolute path is made relative to `repo_root` so that a segment's
+    POSITION is meaningful. A relative path is taken as already
+    repo-relative. A path outside the repository yields its own segments,
+    which will not match the three-segment shape the caller looks for — the
+    safe outcome.
+
+    NOTE: mirrored in .github/scripts/check_recipe_pyproject.py —
+    keep in sync.
+    """
+    root = REPO_ROOT if repo_root is None else repo_root
+    if recipe_dir.is_absolute():
+        try:
+            return recipe_dir.resolve().relative_to(root.resolve()).parts
+        except ValueError:
+            return recipe_dir.parts
+    return recipe_dir.parts
+
 
 # Status values for a Check entry.
 OK = "ok"  # nothing to do
@@ -170,9 +221,7 @@ class Report:
 # ---------- no-local-ruff-config: no [tool.ruff*] tables -------------------
 
 
-def check_no_local_ruff_config(
-    doc: tomlkit.TOMLDocument, apply: bool
-) -> Check:
+def check_no_local_ruff_config(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
     """Remove any [tool.ruff*] table from pyproject.toml.
 
     Assumes doc["tool"] (if present) is a table — run() validates that the
@@ -321,9 +370,7 @@ def _validate_and_apply_python_floor_rewrite(
     )
 
 
-def check_python_version_floor(
-    doc: tomlkit.TOMLDocument, apply: bool
-) -> Check:
+def check_python_version_floor(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
     """Ensure [project].requires-python is compatible with MIN_PYTHON.
 
     Interpretation B (aligned with CI in .github/workflows/
@@ -420,50 +467,104 @@ def _rewrite_requires_python(spec: SpecifierSet) -> str:
 # ---------- project-name-matches-folder ------------------------------------
 
 
+def expected_project_name(
+    recipe_dir: Path, repo_root: Path | None = None
+) -> str:
+    """Return the [project].name this recipe directory is required to declare.
+
+    For most recipes this is just the folder basename. For a recipe under a
+    namespaced root it is "<namespace>-<solution>", for two reasons:
+
+    1. The basename is not unique. `skills/retail/product-search` and a future
+       `skills/grocery/product-search` would both be forced to declare
+       [project].name = "product-search" — two distribution packages with the
+       same name. The vertical exists precisely to namespace solutions, so the
+       project name has to carry it.
+    2. It matches the skill's own identity. A vertical skill's SKILL.md
+       frontmatter `name:`, its slash command, and its installed directory all
+       use "<vertical>-<solution>"; the Python distribution name should not be
+       the odd one out.
+
+    The namespaced form requires the root to sit at the START of the
+    repo-relative path with exactly two segments after it — a position test,
+    not a name test. Matching on the third-from-last segment alone would fire
+    on any path that merely happens to contain a directory called "skills",
+    so `align_pyproject.py --recipe-dir /home/me/skills/core/rag-vector-search`
+    would WRITE [project].name = "core-rag-vector-search". This script edits
+    files, so that mattered more here than in the read-only validator.
+
+    Paths outside `repo_root` (and relative paths that are not exactly
+    <root>/<namespace>/<solution>) fall back to the basename.
+
+    NOTE: mirrored in .github/scripts/check_recipe_pyproject.py —
+    keep in sync.
+    """
+    parts = _repo_relative_parts(recipe_dir, repo_root)
+    if len(parts) == 3 and parts[0] in NAMESPACED_ROOTS:
+        return f"{parts[1]}-{parts[2]}"
+    return recipe_dir.name
+
+
+def _name_derivation(recipe_dir: Path, expected: str) -> str:
+    """Human-readable note explaining a non-obvious expected name.
+
+    Empty for the common case where the expected name is just the basename,
+    so core/ and contrib/ messages stay as terse as they were.
+    """
+    if expected == recipe_dir.name:
+        return "recipe folder basename"
+    namespace_term = NAMESPACED_ROOTS[recipe_dir.parts[-3]]
+    return (
+        f"recipes under {recipe_dir.parts[-3]}/ are named "
+        f"'<{namespace_term}>-<solution>'"
+    )
+
+
 def check_project_name_matches_folder(
     recipe_dir: Path,
     doc: tomlkit.TOMLDocument,
     apply: bool,
 ) -> Check:
-    folder = recipe_dir.name
+    expected = expected_project_name(recipe_dir)
+    derivation = _name_derivation(recipe_dir, expected)
     project = doc.get("project")
     current = None if project is None else project.get("name")
 
-    if current == folder:
+    if current == expected:
         return Check(
             "project-name-matches-folder",
             OK,
-            f"[project].name matches folder name: '{folder}'.",
+            f"[project].name matches the required name: '{expected}'.",
         )
 
     if apply:
         if project is None:
             doc["project"] = tomlkit.table()
             project = doc["project"]
-        project["name"] = folder
+        project["name"] = expected
         if current is None:
-            msg = f"Added [project].name = '{folder}'."
+            msg = f"Added [project].name = '{expected}'."
         else:
-            msg = f"Rewrote [project].name: '{current}' -> '{folder}'."
+            msg = f"Rewrote [project].name: '{current}' -> '{expected}'."
         return Check(
             "project-name-matches-folder",
             FIXED,
             msg,
-            {"from": current, "to": folder},
+            {"from": current, "to": expected},
         )
 
     if current is None:
-        msg = f"Would add [project].name = '{folder}' (recipe folder basename)."
+        msg = f"Would add [project].name = '{expected}' ({derivation})."
     else:
         msg = (
-            f"Would rewrite [project].name: '{current}' -> '{folder}' "
-            f"(recipe folder basename)."
+            f"Would rewrite [project].name: '{current}' -> '{expected}' "
+            f"({derivation})."
         )
     return Check(
         "project-name-matches-folder",
         WOULD_FIX,
         msg,
-        {"from": current, "to": folder},
+        {"from": current, "to": expected},
     )
 
 
@@ -905,6 +1006,224 @@ def check_default_pypi_index(doc: tomlkit.TOMLDocument, apply: bool) -> Check:
     )
 
 
+# ---------- stale-python-version-refs (report-only) ------------------------
+#
+# Raising [project].requires-python is not a self-contained edit. A recipe
+# typically repeats its supported Python version in prose (README, SKILL.md)
+# and — far more importantly — in EXECUTABLE setup code. A bootstrap script
+# that picks an interpreter from an allowlist still containing the old floor
+# will happily build a venv the recipe then refuses to install into:
+#
+#     for py in python3.13 python3.12 python3.11 python3.10 python3; do
+#     ...
+#     ERROR: Package requires a different Python: 3.10.x not in '>=3.11'
+#
+# This check is report-only: which of the hits matter, and how to reword
+# them, is the maintainer's call. Its job is simply that the bump never lands
+# silently.
+
+# Directories that are never the recipe's own source.
+_SCAN_SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".pytest_cache",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "env",
+        "build",
+        "dist",
+        "node_modules",
+    }
+)
+
+# Files whose Python-version mentions are generated, not authored.
+_SCAN_SKIP_NAMES = frozenset({"uv.lock", "poetry.lock", "Pipfile.lock"})
+
+# Two contexts that make "3.x" a Python-version reference rather than a
+# coincidence. Without the context requirement, a model name like
+# "gemini-3.5-flash" would match and drown the report in false positives.
+_PY_REF_PATTERNS = (
+    # python3.10 / python 3.10 / Python 3.10 / python@3.10 / python_3.10, and
+    # the trove classifier "Programming Language :: Python :: 3.10" (hence
+    # ':' in the separator class and a width of 4).
+    re.compile(r"python[\s@._:-]{0,4}3\.(\d+)", re.IGNORECASE),
+    # >=3.10 / ==3.9 / ~=3.10 — version-specifier syntax
+    re.compile(r"[<>=~!]=\s*3\.(\d+)"),
+)
+
+# Cap the reported hits so a pathological recipe can't produce a wall of JSON.
+_MAX_REPORTED_REFS = 40
+
+
+def _iter_scannable_files(recipe_dir: Path) -> list[Path]:
+    """Every text-ish file in the recipe that could carry a version claim."""
+    found: list[Path] = []
+    for root, dirs, files in os.walk(recipe_dir):
+        dirs[:] = [
+            d
+            for d in dirs
+            if d not in _SCAN_SKIP_DIRS and not d.endswith(".egg-info")
+        ]
+        for name in sorted(files):
+            if name in _SCAN_SKIP_NAMES:
+                continue
+            found.append(Path(root) / name)
+    return sorted(found)
+
+
+# `requires-python` is owned by the python-version-floor check, which rewrites
+# it in-memory and persists only at the end of run(). Scanning it here would
+# report the pre-rewrite value as a stale reference in apply mode even though
+# the file on disk ends up correct — a pure false positive either way, since
+# the floor check already reports that key authoritatively.
+_REQUIRES_PYTHON_LINE_RE = re.compile(r"^\s*requires-python\s*=")
+
+
+def _sub_floor_refs_in_text(
+    text: str, skip_requires_python: bool = False
+) -> list[tuple[int, str]]:
+    """Return (line_number, line) for lines claiming a sub-floor Python."""
+    hits: list[tuple[int, str]] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if skip_requires_python and _REQUIRES_PYTHON_LINE_RE.match(line):
+            continue
+        for pattern in _PY_REF_PATTERNS:
+            if any(
+                int(minor) < MIN_PYTHON[1]
+                for minor in pattern.findall(line)
+                if minor.isdigit()
+            ):
+                hits.append((lineno, line.strip()))
+                break
+    return hits
+
+
+def check_stale_python_version_refs(recipe_dir: Path) -> Check:
+    """Report references to a Python version below the enforced floor."""
+    offenders: dict[str, list[dict[str, Any]]] = {}
+    total = 0
+    for path in _iter_scannable_files(recipe_dir):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue  # binary or unreadable — not a prose/version claim
+        rel = str(path.relative_to(recipe_dir))
+        hits = _sub_floor_refs_in_text(
+            text, skip_requires_python=(rel == "pyproject.toml")
+        )
+        if not hits:
+            continue
+        offenders[rel] = [
+            {"line": lineno, "text": line} for lineno, line in hits
+        ]
+        total += len(hits)
+
+    if not offenders:
+        return Check(
+            "stale-python-version-refs",
+            OK,
+            f"No references to a Python version below {MIN_PYTHON_STR}.",
+        )
+
+    # Trim the payload without losing the file list.
+    trimmed = dict(offenders)
+    if total > _MAX_REPORTED_REFS:
+        budget = _MAX_REPORTED_REFS
+        trimmed = {}
+        for rel, hits in offenders.items():
+            if budget <= 0:
+                break
+            trimmed[rel] = hits[:budget]
+            budget -= len(trimmed[rel])
+
+    return Check(
+        "stale-python-version-refs",
+        REPORT_ONLY,
+        f"{total} reference(s) to a Python version below {MIN_PYTHON_STR} "
+        f"across {len(offenders)} file(s): {', '.join(sorted(offenders))}. "
+        f"[project].requires-python is enforced at >={MIN_PYTHON_STR}, so "
+        f"these are now inconsistent. Executable ones matter most — an "
+        f"interpreter-picking loop in a bootstrap script that still accepts "
+        f"the old floor will build a venv the recipe then refuses to install "
+        f"into. This skill does not auto-fix: which references are stale and "
+        f"how to reword them is editorial.",
+        {
+            "floor": MIN_PYTHON_STR,
+            "total": total,
+            "files": sorted(offenders),
+            "hits": trimmed,
+            "truncated": total > _MAX_REPORTED_REFS,
+        },
+    )
+
+
+# ---------- runnability-test-in-testpaths (report-only) --------------------
+
+
+def _testpaths_cover_runnability(entries: list[str]) -> bool:
+    """Whether any testpaths entry collects tests/test_runnability.py."""
+    for raw in entries:
+        entry = str(raw).strip().rstrip("/")
+        if entry in {"", ".", "tests", "tests/test_runnability.py"}:
+            return True
+    return False
+
+
+def check_runnability_test_in_testpaths(doc: tomlkit.TOMLDocument) -> Check:
+    """Report a `testpaths` setting that excludes the runnability test.
+
+    `tests/test_runnability.py` is a required file for Python recipes
+    (.github/policy.yml), but a narrower `testpaths` — e.g.
+    `["tests/unit", "tests/integration"]` — means a bare `uv run pytest`
+    never collects it. The recipe then looks tested while its one
+    import-smoke test silently never runs.
+    """
+    ini = (
+        doc.get("tool", {}).get("pytest", {}).get("ini_options", {})
+        if doc.get("tool") is not None
+        else {}
+    )
+    entries = ini.get("testpaths") if hasattr(ini, "get") else None
+    if entries is None:
+        return Check(
+            "runnability-test-in-testpaths",
+            OK,
+            "No [tool.pytest.ini_options].testpaths — pytest collects the "
+            "whole recipe, including tests/test_runnability.py.",
+        )
+    if isinstance(entries, str):
+        entries = [entries]
+    if not isinstance(entries, (list, tuple)):
+        return Check(
+            "runnability-test-in-testpaths",
+            OK,
+            "testpaths is not a list; nothing to check.",
+        )
+
+    listed = [str(e) for e in entries]
+    if _testpaths_cover_runnability(listed):
+        return Check(
+            "runnability-test-in-testpaths",
+            OK,
+            f"testpaths {listed} collects tests/test_runnability.py.",
+        )
+
+    return Check(
+        "runnability-test-in-testpaths",
+        REPORT_ONLY,
+        f"[tool.pytest.ini_options].testpaths is {listed}, none of which "
+        f"collects tests/test_runnability.py — the required runnability "
+        f'test would never run under a bare `pytest`. Add "tests" to '
+        f"testpaths, or narrow it deliberately and run the file by path. "
+        f"Not auto-fixed: broadening testpaths changes what CI collects, "
+        f"which is the maintainer's call.",
+        {"testpaths": listed, "expected": "tests/test_runnability.py"},
+    )
+
+
 # ---------- Orchestration -------------------------------------------------
 
 
@@ -1081,9 +1400,7 @@ def run(
     report.add(
         _run_check(
             "project-name-matches-folder",
-            lambda: check_project_name_matches_folder(
-                recipe_dir, doc, apply
-            ),
+            lambda: check_project_name_matches_folder(recipe_dir, doc, apply),
         )
     )
     report.add(
@@ -1105,6 +1422,18 @@ def run(
         _run_check(
             "default-pypi-index",
             lambda: check_default_pypi_index(doc, apply),
+        )
+    )
+    report.add(
+        _run_check(
+            "stale-python-version-refs",
+            lambda: check_stale_python_version_refs(recipe_dir),
+        )
+    )
+    report.add(
+        _run_check(
+            "runnability-test-in-testpaths",
+            lambda: check_runnability_test_in_testpaths(doc),
         )
     )
 

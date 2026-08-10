@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>Long Horizon Harness</title>
+    <meta
+      name="description"
+      content="A self-improving coding agent built on Google's ADK, with a web UI over A2A."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Boot script sets content from the saved theme; default matches the
+         dark --background. Must precede THEME_BOOT so getElementById finds it. -->
+    <meta name="theme-color" id="lha-theme-color" content="#101010" />
+    <script>
+      // Runs before paint to apply saved appearance (theme + skin + font-size)
+      // — prevents a flash of the wrong scheme/accent when a non-default is
+      // saved. Must agree with THEME_COLOR in lib/use-appearance.ts and the
+      // [data-skin] / [data-font-size] selectors in globals.css.
+      (function () {
+        var root = document.documentElement;
+        var dark = true,
+          skin = null,
+          fontSize = null;
+        try {
+          var t = localStorage.getItem("lha.theme");
+          dark = t ? t === "dark" : true;
+          skin = localStorage.getItem("lha.skin") || "slate";
+          fontSize = localStorage.getItem("lha.fontSize");
+        } catch (e) {}
+        root.classList.toggle("dark", dark);
+        if (skin && skin !== "default") root.dataset.skin = skin;
+        if (fontSize && fontSize !== "default") root.dataset.fontSize = fontSize;
+        var meta = document.getElementById("lha-theme-color");
+        if (meta) meta.setAttribute("content", dark ? "#101010" : "#fefdfb");
+      })();
+    </script>
+  </head>
+  <body class="min-h-dvh bg-background font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

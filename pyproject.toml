@@ -16,8 +16,21 @@ validate = "validate:main"
 [dependency-groups]
 # Test-only dependencies for the repo tooling (tools/) and skill scripts
 # (.agents/skills/*/scripts/). Install with `uv sync --dev`.
+#
+# tomlkit, ruamel.yaml and packaging are imported directly by
+# .agents/skills/align-recipe-pyproject/scripts/align_pyproject.py, which
+# pytest imports via that skill's tests. Without them, collection of the
+# whole suite fails. They live here rather than in [project.dependencies]
+# because nothing under tools/ needs them at runtime.
+#
+# packaging is also imported by .github/scripts/check_recipe_pyproject.py,
+# but that gate injects its own deps via `uv run --with` and does not read
+# this group -- so it is declared here for the test run, not for that gate.
 dev = [
   "pytest>=8",
+  "tomlkit>=0.13",
+  "ruamel.yaml>=0.18",
+  "packaging>=24",
 ]
 
 [build-system]
@@ -45,7 +58,13 @@ line-length = 80
 target-version = "py310"
 # Resolve first-party imports per recipe, so a package not named `app` is
 # still first-party to its own recipe.
-src = [".", "core/*/*", "contrib/*/*"]
+#
+# All three recipe roots sit two levels deep, but the middle segment differs:
+# it is a LANGUAGE under core/ and contrib/, and a VERTICAL under skills/
+# (skills/<vertical>/<solution>). Omitting skills/*/* made ruff treat a
+# vertical skill's own sibling modules as third-party and sort its imports
+# into the wrong block.
+src = [".", "core/*/*", "contrib/*/*", "skills/*/*"]
 
 [tool.ruff.lint]
 select = [
