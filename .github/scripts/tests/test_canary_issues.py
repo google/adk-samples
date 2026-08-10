@@ -468,3 +468,65 @@ def test_gh_failure_is_raised_not_swallowed(monkeypatch):
     )
     with pytest.raises(m.GhError, match="nope"):
         m.gh("issue", "list")
+
+
+def test_a_mass_failure_refuses_to_file_issues(tmp_path, monkeypatch, capsys):
+    """Circuit breaker, mirroring close_orphan_dependabot_prs.py. Half the
+    repo failing at once is a bad runner image or an ecosystem-wide yank, not
+    that many independent rotting recipes — and filing against every owner
+    for it is how the channel gets muted."""
+    results = [
+        {"recipe": f"core/python/r{i}", "python": "3.11", "outcome": "fail"}
+        for i in range(m.DEFAULT_MAX_ISSUES + 1)
+    ]
+    called: list[str] = []
+    monkeypatch.setattr(m, "find_issue", lambda r: called.append(r) or None)
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps(results), encoding="utf-8")
+    assert m.main(["--results", str(path), "--dry-run"]) == 1
+    assert called == []
+    assert "Refusing to act" in capsys.readouterr().err
+
+
+def test_the_breaker_allows_a_normal_month(tmp_path, monkeypatch):
+    results = [
+        {"recipe": f"core/python/r{i}", "python": "3.11", "outcome": "fail"}
+        for i in range(m.DEFAULT_MAX_ISSUES)
+    ]
+    opened: list[str] = []
+    monkeypatch.setattr(m, "ensure_labels", lambda: None)
+    monkeypatch.setattr(m, "find_issue", lambda r: None)
+    monkeypatch.setattr(m, "open_issue", lambda r, j, u, d: opened.append(r))
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps(results), encoding="utf-8")
+    assert m.main(["--results", str(path), "--dry-run"]) == 0
+    assert len(opened) == m.DEFAULT_MAX_ISSUES
+
+
+def test_one_api_failure_does_not_skip_every_recipe_after_it(
+    tmp_path, monkeypatch, capsys
+):
+    """The loop used to abort on the first GhError, leaving an arbitrary tail
+    of the recipe list unexamined with nothing saying which."""
+    names = ["core/python/a", "core/python/b", "core/python/c"]
+    results = [
+        {"recipe": n, "python": "3.11", "outcome": "fail"} for n in names
+    ]
+    seen: list[str] = []
+
+    def flaky(recipe):
+        seen.append(recipe)
+        if recipe == "core/python/b":
+            raise m.GhError("rate limited")
+
+    monkeypatch.setattr(m, "ensure_labels", lambda: None)
+    monkeypatch.setattr(m, "find_issue", flaky)
+    monkeypatch.setattr(m, "open_issue", lambda r, j, u, d: None)
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps(results), encoding="utf-8")
+
+    # Every recipe examined, and the run still fails so nobody reads the
+    # month as clean.
+    assert m.main(["--results", str(path), "--dry-run"]) == 1
+    assert seen == names
+    assert "could not be processed: core/python/b" in capsys.readouterr().err

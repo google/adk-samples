@@ -88,6 +88,14 @@ SKIP_RECIPES = {
     "core/rag-vector-search",
 }
 
+# GitHub fails a workflow outright above 256 matrix jobs.
+MAX_MATRIX_JOBS = 256
+
+
+class MatrixError(RuntimeError):
+    """The matrix cannot be built as asked. Always fatal: a canary that
+    cannot say which recipes to test must not report success."""
+
 
 def _is_python_recipe(manifest_path: Path) -> bool:
     """`language: python` in manifest.yaml, without requiring a YAML parser.
@@ -95,10 +103,34 @@ def _is_python_recipe(manifest_path: Path) -> bool:
     Mirrors the tolerant matcher in python-tests.yml: optional quotes, any
     case, an optional trailing comment. Kept regex-based so the canary matrix
     can be produced with the standard library alone.
+
+    An unreadable manifest is reported on stderr rather than swallowed. A
+    recipe silently dropped from the matrix is the worst outcome this script
+    has: it is never tested, so it never fails, so it looks healthy forever.
     """
     try:
         text = manifest_path.read_text(encoding="utf-8")
-    except OSError:
+    except UnicodeDecodeError:
+        # Not UTF-8. Say so and move on rather than taking the whole month's
+        # run down with an uncaught exception.
+        #
+        # Plain stderr, not a `::warning` annotation: GitHub only collects
+        # annotations from stdout, and stdout here is the matrix JSON the
+        # workflow parses. tools/tests/test_ci_message.py also forbids
+        # hand-built annotations outside Diagnostic, which this stdlib-only
+        # script deliberately cannot import.
+        print(
+            f"WARNING: {manifest_path} is not valid UTF-8; the canary "
+            f"cannot read it and is skipping this recipe",
+            file=sys.stderr,
+        )
+        return False
+    except OSError as exc:
+        print(
+            f"WARNING: cannot read {manifest_path} ({exc}); the canary is "
+            f"skipping this recipe",
+            file=sys.stderr,
+        )
         return False
     return bool(
         re.search(
@@ -118,19 +150,40 @@ def discover_recipes(repo_root: Path | None = None) -> list[str]:
         if not root_path.is_dir():
             continue
         for manifest in sorted(root_path.rglob("manifest.yaml")):
-            if any(part in SKIP_DIRS for part in manifest.parts):
+            rel = manifest.parent.relative_to(root).as_posix()
+            # Match SKIP_DIRS against the REPO-RELATIVE path. Testing
+            # `manifest.parts` matched the absolute path, so a checkout under
+            # any directory happening to be named `build`, `dist` or `.venv`
+            # — which is every self-hosted runner with a `build/` workspace —
+            # excluded every recipe in the repo and produced an empty matrix.
+            # recipe_manifests.scan() gets this right; the two now agree.
+            if any(part in SKIP_DIRS for part in Path(rel).parts):
                 continue
             if not _is_python_recipe(manifest):
                 continue
-            rel = manifest.parent.relative_to(root).as_posix()
             if rel in SKIP_RECIPES:
                 continue
             found.append(rel)
     return sorted(found)
 
 
+def _lower_bound_minor(requires_python: str) -> int | None:
+    """Lowest 3.x minor admitted by a lower bound, if any.
+
+    The mirror of `_upper_bound_minor`, and the same scope: only `>=` and
+    `>` are interpreted, and anything else yields None so the caller falls
+    back to the repo floor. `>3.11` admits 3.12; `>=3.11` admits 3.11.
+    """
+    best: int | None = None
+    for op, ver in re.findall(r"(>=|>)\s*3\.(\d+)(?:\.\d+)?", requires_python):
+        minor = int(ver)
+        lowest = minor + 1 if op == ">" else minor
+        best = lowest if best is None else max(best, lowest)
+    return best
+
+
 def _upper_bound_minor(requires_python: str) -> int | None:
-    """Highest 3.x minor admitted by an exclusive upper bound, if any.
+    """Highest 3.x minor admitted by an upper bound, if any.
 
     Only `<` and `<=` are interpreted, because they are the only forms the
     repo's recipes use and the only ones with an unambiguous "highest minor I
@@ -151,8 +204,8 @@ def _upper_bound_minor(requires_python: str) -> int | None:
 def python_targets(recipe_dir: Path) -> list[str]:
     """The Python versions the canary should run for one recipe.
 
-    Always the floor. Plus the ceiling the recipe claims, when that is higher
-    and we can actually provision it.
+    The floor the recipe actually accepts, plus the ceiling it claims when
+    that is higher and we can provision it.
     """
     targets = [FLOOR]
     pyproject = recipe_dir / "pyproject.toml"
@@ -171,11 +224,22 @@ def python_targets(recipe_dir: Path) -> list[str]:
     if not isinstance(requires, str):
         return targets
 
+    # Respect a recipe that declares a floor above the repo's. The
+    # python-version-floor rule in check_recipe_pyproject.py requires every
+    # recipe to accept 3.11, so this should be unreachable — but if one ever
+    # declares `>=3.12`, running it on 3.11 produces a guaranteed install
+    # failure that the canary would file against its owner as rot. A false
+    # accusation is the one outcome that costs this channel its credibility.
+    floor_minor = int(FLOOR.split(".")[1])
+    declared_floor = _lower_bound_minor(requires)
+    if declared_floor is not None and declared_floor > floor_minor:
+        floor_minor = min(declared_floor, MAX_TESTABLE_MINOR)
+        targets = [f"3.{floor_minor}"]
+
     declared = _upper_bound_minor(requires)
     ceiling = MAX_TESTABLE_MINOR if declared is None else declared
     ceiling = min(ceiling, MAX_TESTABLE_MINOR)
 
-    floor_minor = int(FLOOR.split(".")[1])
     if ceiling > floor_minor:
         targets.append(f"3.{ceiling}")
     return targets
@@ -185,11 +249,36 @@ def build_matrix(
     repo_root: Path | None = None, only: str | None = None
 ) -> list[dict[str, str]]:
     root = REPO_ROOT if repo_root is None else repo_root
-    recipes = [only] if only else discover_recipes(root)
+    discovered = discover_recipes(root)
+
+    if only is None:
+        recipes = discovered
+    elif only in discovered:
+        recipes = [only]
+    else:
+        # `--recipe` used to be taken on trust, so a typo produced a matrix
+        # pointing at a directory that does not exist (every job failing for
+        # a reason that is not the recipe's fault), and a path in
+        # SKIP_RECIPES bypassed the skip entirely — canarying by hand exactly
+        # the duplicate the skip list exists to keep quiet.
+        raise MatrixError(
+            f"{only!r} is not a Python recipe the canary tests. Known "
+            f"recipes:\n  " + "\n  ".join(discovered)
+        )
+
     matrix: list[dict[str, str]] = []
     for recipe in recipes:
         for version in python_targets(root / recipe):
             matrix.append({"recipe": recipe, "python": version})
+
+    if len(matrix) > MAX_MATRIX_JOBS:
+        # GitHub rejects a matrix above 256 jobs with a scheduling error that
+        # names no cause. Failing here, with the count, is readable.
+        raise MatrixError(
+            f"matrix has {len(matrix)} jobs, above GitHub's "
+            f"{MAX_MATRIX_JOBS}-job cap, from {len(recipes)} recipes. "
+            f"Shard the canary or reduce the versions tested per recipe."
+        )
     return matrix
 
 
@@ -201,7 +290,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    matrix = build_matrix(only=args.recipe)
+    try:
+        matrix = build_matrix(only=args.recipe)
+    except MatrixError as exc:
+        print(f"{exc}", file=sys.stderr)
+        return 1
+
     if not matrix:
         print(
             "No Python recipes found. The canary refuses to report success "

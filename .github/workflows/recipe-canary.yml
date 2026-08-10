@@ -351,10 +351,16 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           DRY: ${{ github.event.inputs.dry_run }}
           EVENT_NAME: ${{ github.event_name }}
+          # Through `env:` rather than interpolated into the script below.
+          # These particular values are controlled, but the rule that no
+          # `${{ }}` reaches a `run:` block is worth keeping unconditional —
+          # see the comment in python-tests.yml.
+          RUN_URL: >-
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
+            github.run_id }}
         run: |
           set -euo pipefail
-          ARGS=(--results "$RUNNER_TEMP/results.json"
-                --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          ARGS=(--results "$RUNNER_TEMP/results.json" --run-url "$RUN_URL")
           [ "${DRY:-false}" = "true" ] && ARGS+=(--dry-run)
           # Only the scheduled run advances the ladder. A manual re-run — to
           # check something, or scoped to one recipe with the `recipe` input

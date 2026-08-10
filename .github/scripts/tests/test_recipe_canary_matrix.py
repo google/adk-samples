@@ -232,3 +232,109 @@ def test_discovery_agrees_with_python_tests_yml():
         "python-tests.yml disagree. Symmetric difference: "
         f"{from_python ^ from_bash}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Guards added after review
+# ---------------------------------------------------------------------------
+
+
+def test_skip_dirs_is_matched_against_the_repo_relative_path(
+    tmp_path, monkeypatch
+):
+    """SKIP_DIRS used to be tested against `manifest.parts`, the ABSOLUTE
+    path. Any checkout living under a directory named `build`, `dist` or
+    `.venv` — which is every self-hosted runner with a `build/` workspace —
+    therefore excluded every recipe in the repo and produced an empty
+    matrix."""
+    checkout = tmp_path / "build" / "adk-samples"
+    recipe = checkout / "core" / "python" / "demo"
+    recipe.mkdir(parents=True)
+    (recipe / "manifest.yaml").write_text(
+        'language: "python"\n', encoding="utf-8"
+    )
+    assert m.discover_recipes(checkout) == ["core/python/demo"]
+
+
+def test_a_vendored_manifest_is_still_skipped(tmp_path):
+    """The other direction: SKIP_DIRS must still work on path components
+    inside the repo."""
+    recipe = tmp_path / "core" / "python" / "demo"
+    (recipe / "node_modules" / "pkg").mkdir(parents=True)
+    recipe.mkdir(parents=True, exist_ok=True)
+    (recipe / "manifest.yaml").write_text(
+        'language: "python"\n', encoding="utf-8"
+    )
+    (recipe / "node_modules" / "pkg" / "manifest.yaml").write_text(
+        'language: "python"\n', encoding="utf-8"
+    )
+    assert m.discover_recipes(tmp_path) == ["core/python/demo"]
+
+
+def test_an_unreadable_manifest_is_reported_not_swallowed(tmp_path, capsys):
+    """A recipe silently dropped is never tested, so it never fails, so it
+    looks healthy forever. Dropping it is acceptable; doing so in silence is
+    not."""
+    recipe = tmp_path / "core" / "python" / "broken"
+    recipe.mkdir(parents=True)
+    (recipe / "manifest.yaml").write_bytes(b"language: \xff\xfe python\n")
+    assert m.discover_recipes(tmp_path) == []
+    captured = capsys.readouterr()
+    assert "not valid UTF-8" in captured.err
+    # Deliberately not a `::warning` annotation: GitHub collects those from
+    # stdout, and stdout here carries the matrix JSON the workflow parses.
+    assert "::warning" not in captured.err
+    assert captured.out == ""
+
+
+def test_an_unknown_recipe_argument_is_rejected():
+    """`--recipe` was taken on trust, so a typo produced a matrix pointing at
+    a directory that does not exist and every job failed for a reason that
+    was not the recipe's fault."""
+    with pytest.raises(m.MatrixError, match="not a Python recipe"):
+        m.build_matrix(only="core/python/does-not-exist")
+
+
+def test_a_skipped_recipe_cannot_be_canaried_by_hand():
+    """`--recipe` also bypassed SKIP_RECIPES entirely, so a maintainer could
+    hand-run the canary against exactly the duplicate the skip list exists to
+    keep quiet."""
+    skipped = sorted(m.SKIP_RECIPES)[0]
+    with pytest.raises(m.MatrixError):
+        m.build_matrix(only=skipped)
+
+
+def test_a_known_recipe_argument_is_accepted():
+    known = m.discover_recipes()[0]
+    matrix = m.build_matrix(only=known)
+    assert matrix and {e["recipe"] for e in matrix} == {known}
+
+
+def test_a_recipe_declaring_a_higher_floor_is_not_tested_below_it(tmp_path):
+    """Running a `>=3.12` recipe on 3.11 is a guaranteed install failure that
+    the canary would file against its owner as rot. The repo's
+    python-version-floor rule should prevent this ever arising, but a false
+    accusation is the one outcome that costs the channel its credibility."""
+    recipe = tmp_path / "demo"
+    recipe.mkdir()
+    (recipe / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.12,<3.14"\n', encoding="utf-8"
+    )
+    assert m.python_targets(recipe) == ["3.12", "3.13"]
+
+
+def test_the_ordinary_floor_is_still_used(tmp_path):
+    recipe = tmp_path / "demo"
+    recipe.mkdir()
+    (recipe / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.11,<3.14"\n', encoding="utf-8"
+    )
+    assert m.python_targets(recipe) == [m.FLOOR, "3.13"]
+
+
+def test_an_oversized_matrix_is_refused(monkeypatch):
+    """GitHub rejects a matrix above 256 jobs with a scheduling error that
+    names no cause."""
+    monkeypatch.setattr(m, "MAX_MATRIX_JOBS", 3)
+    with pytest.raises(m.MatrixError, match="above GitHub's"):
+        m.build_matrix()

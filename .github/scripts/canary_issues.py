@@ -120,6 +120,14 @@ LADDER = (
 # four-week one.
 MIN_DAYS_BETWEEN_STAGES = 21
 
+# Upper bound on how many failing recipes one run will act on. Sized well
+# above routine rot — the canary tests 11 recipes today and a normal month
+# fails none — and well below "something is systemically wrong". Mirrors
+# DEFAULT_MAX_CLOSE in close_orphan_dependabot_prs.py, which exists for the
+# same reason: destructive-ish automation should refuse a batch that implies
+# its own inputs are broken.
+DEFAULT_MAX_ISSUES = 8
+
 
 class GhError(RuntimeError):
     """A `gh` invocation failed. Never silently swallowed: a canary that
@@ -552,6 +560,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-url", default="")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
+        "--max-issues",
+        type=int,
+        default=DEFAULT_MAX_ISSUES,
+        help=(
+            "Refuse to act if more than this many recipes are failing in one "
+            "run. That many at once is a systemic problem rather than that "
+            "many independent rotting recipes, and filing against every "
+            "owner for it is how the channel gets muted."
+        ),
+    )
+    parser.add_argument(
         "--no-escalate",
         action="store_true",
         help=(
@@ -586,40 +605,83 @@ def main(argv: list[str] | None = None) -> int:
         f"{len(recovered)} passing, {len(inconclusive)} inconclusive."
     )
 
+    # Circuit breaker, mirroring close_orphan_dependabot_prs.py's
+    # DEFAULT_MAX_CLOSE. Routine rot is a handful of recipes; half the repo
+    # failing at once means something systemic — a bad runner image, an
+    # ecosystem-wide yank — and filing an issue against every owner for it is
+    # exactly how a notification channel gets muted. Escalation is what stops;
+    # the failures are still printed and the run still fails.
+    if len(failures) > args.max_issues:
+        print(
+            f"Refusing to act on {len(failures)} failing recipes in one run "
+            f"(limit {args.max_issues}). That many at once is a systemic "
+            f"problem, not {len(failures)} independent rotting recipes. "
+            f"Investigate, then re-run with --max-issues if it really is "
+            f"this bad.\nFailing: {', '.join(sorted(failures))}",
+            file=sys.stderr,
+        )
+        return 1
+
     if not args.dry_run:
         ensure_labels()
 
+    errors: list[tuple[str, Exception]] = []
     for recipe in sorted(all_recipes):
-        issue = find_issue(recipe)
-        if recipe in failures:
-            if issue is None:
-                print(f"{recipe}: FAILING, opening issue")
-                open_issue(
-                    recipe, by_recipe[recipe], args.run_url, args.dry_run
-                )
-            else:
-                print(
-                    f"{recipe}: FAILING, issue #{issue['number']} already "
-                    f"open ({age_days(issue['createdAt'])}d)"
-                )
-                escalate(
-                    recipe,
-                    issue,
-                    args.dry_run,
-                    advance=not args.no_escalate,
-                )
-        elif issue is None:
-            continue
-        elif recipe in recovered:
-            print(f"{recipe}: recovered, closing #{issue['number']}")
-            close_recovered(recipe, issue, args.dry_run)
-        else:
-            print(
-                f"{recipe}: inconclusive (no passing job this run), leaving "
-                f"#{issue['number']} open"
-            )
+        # One recipe's API failure must not skip every recipe after it. The
+        # loop used to abort on the first GhError, leaving an arbitrary tail
+        # of the list unexamined with nothing saying which.
+        try:
+            _process(recipe, by_recipe, failures, recovered, args)
+        except GhError as exc:
+            print(f"{recipe}: ERROR {exc}", file=sys.stderr)
+            errors.append((recipe, exc))
+
+    if errors:
+        names = ", ".join(r for r, _ in errors)
+        print(
+            f"\n{len(errors)} recipe(s) could not be processed: {names}. "
+            f"The rest were handled; re-run once the cause is fixed.",
+            file=sys.stderr,
+        )
+        return 1
 
     return 0
+
+
+def _process(
+    recipe: str,
+    by_recipe: dict[str, list[dict]],
+    failures: dict[str, list[dict]],
+    recovered: set[str],
+    args: argparse.Namespace,
+) -> None:
+    """Decide and apply this recipe's issue action."""
+    issue = find_issue(recipe)
+    if recipe in failures:
+        if issue is None:
+            print(f"{recipe}: FAILING, opening issue")
+            open_issue(recipe, by_recipe[recipe], args.run_url, args.dry_run)
+        else:
+            print(
+                f"{recipe}: FAILING, issue #{issue['number']} already "
+                f"open ({age_days(issue['createdAt'])}d)"
+            )
+            escalate(
+                recipe,
+                issue,
+                args.dry_run,
+                advance=not args.no_escalate,
+            )
+    elif issue is None:
+        return
+    elif recipe in recovered:
+        print(f"{recipe}: recovered, closing #{issue['number']}")
+        close_recovered(recipe, issue, args.dry_run)
+    else:
+        print(
+            f"{recipe}: inconclusive (no passing job this run), leaving "
+            f"#{issue['number']} open"
+        )
 
 
 if __name__ == "__main__":
