@@ -18,8 +18,8 @@ Checks performed, in order, for each recipe:
      manifest.yaml itself is NOT listed in policy.required_files; check 1
      is authoritative for it, and duplicating the rule would double-report.
   6. Required directories present — the same three-way union over
-     policy.required_dirs. Vertical skills use this for scripts/,
-     assets/, references/ and tests/unit/. An empty directory passes.
+     policy.required_dirs. Vertical skills use this for scripts/.
+     An empty directory passes.
 
 Name matching for checks 5 and 6 is done in Python rather than by asking
 the filesystem, so a case-mismatched file fails identically on macOS and
@@ -57,11 +57,13 @@ import argparse
 import fnmatch
 import re
 import sys
+from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 
 import validate_manifest as vm
 import yaml
+from ci_message import EXIT_VIOLATIONS, Diagnostic, Doc, guard, report
 
 REPO_ROOT = Path(__file__).parent.parent
 POLICY_PATH = REPO_ROOT / ".github" / "policy.yml"
@@ -98,45 +100,145 @@ def load_policy() -> dict:
 
 def _resolve_required(
     policy: dict, section: str, root: str, language: str | None
-) -> list[str]:
+) -> list[tuple[str, str]]:
     """Union of `always`, `by_root[root]`, and `by_language[language]`
-    from the named policy section. Missing sections and missing keys
-    degrade silently to an empty list so partial policy configs remain
-    usable (e.g. a root with no entries yet)."""
+    from the named policy section, each entry paired with the rule that
+    contributed it (`always`, `by_root.<root>`, `by_language.<language>`).
+
+    The provenance travels with the entry because it is the answer to the
+    only question the contributor actually has: not "is README.md
+    required" but "why is it required of MY recipe". Recovering it later
+    from the entry name alone is impossible — the same name can arrive
+    from more than one rule.
+
+    Missing sections and missing keys degrade silently to an empty list so
+    partial policy configs remain usable (e.g. a root with no entries yet).
+    """
     config = policy.get(section) or {}
-    entries: list[str] = []
-    entries.extend(config.get("always") or [])
-    entries.extend((config.get("by_root") or {}).get(root) or [])
+    entries: list[tuple[str, str]] = []
+    for name in config.get("always") or []:
+        entries.append((name, "always"))
+    for name in (config.get("by_root") or {}).get(root) or []:
+        entries.append((name, f"by_root.{root}"))
     if language:
-        entries.extend((config.get("by_language") or {}).get(language) or [])
+        for name in (config.get("by_language") or {}).get(language) or []:
+            entries.append((name, f"by_language.{language}"))
     # Preserve order but drop duplicates — an entry could be listed under
-    # multiple sources without meaning it's required twice.
+    # multiple sources without meaning it's required twice. The FIRST
+    # source wins, which keeps the reported rule stable as policy grows.
     seen: set[str] = set()
-    deduped: list[str] = []
-    for entry in entries:
-        if entry not in seen:
-            seen.add(entry)
-            deduped.append(entry)
+    deduped: list[tuple[str, str]] = []
+    for name, source in entries:
+        if name not in seen:
+            seen.add(name)
+            deduped.append((name, source))
     return deduped
 
 
 def required_files_for(
     policy: dict, root: str, language: str | None
-) -> list[str]:
-    """Files every recipe under this root/language must ship."""
+) -> list[tuple[str, str]]:
+    """(file, rule) pairs every recipe under this root/language must ship."""
     return _resolve_required(policy, "required_files", root, language)
 
 
 def required_dirs_for(
     policy: dict, root: str, language: str | None
-) -> list[str]:
-    """Directories every recipe under this root/language must ship.
+) -> list[tuple[str, str]]:
+    """(directory, rule) pairs every recipe under this root/language ships.
 
     Separate from required_files because the two need different existence
     tests; a `scripts` entry in required_files could never be satisfied by
     a directory.
     """
     return _resolve_required(policy, "required_dirs", root, language)
+
+
+def _provenance(
+    section: str, source: str, root: str, language: str | None
+) -> str:
+    """Why THIS recipe has to ship the entry, naming the policy key."""
+    rule = f"policy.{section}.{source}"
+    if source.startswith("by_language."):
+        return f"Required because manifest.language is '{language}' ({rule})."
+    if source.startswith("by_root."):
+        return f"Required for every recipe under {root}/ ({rule})."
+    return f"Required for every recipe in the repository ({rule})."
+
+
+# Concrete fixes, keyed by required entry. A message that says a file is
+# missing and stops there leaves the contributor to discover that a
+# generator exists at all — which is the difference between a two-minute
+# fix and an afternoon of hand-writing a lockfile.
+_FILE_REMEDIATION: dict[str, str] = {
+    "manifest.yaml": "Run the `generate-manifest` AI skill.",
+    ".env.example": (
+        "Run the `extract-python-environment-variables` AI skill — it "
+        "finds every os.environ/os.getenv read in the recipe and writes "
+        "the file for you."
+    ),
+    "tests/test_runnability.py": (
+        "Run the `generate-python-runnability-test` AI skill — it writes "
+        "the import-and-assert-root_agent smoke test."
+    ),
+    "pyproject.toml": (
+        "Run the `align-recipe-pyproject` AI skill — it writes a "
+        "pyproject.toml that already satisfies the repo's checks."
+    ),
+    "README.md": (
+        "Add a README.md covering three things: what the recipe does, how "
+        "to set it up, and the exact command to run it (in a fenced code "
+        "block)."
+    ),
+    "AGENTS.md": (
+        "Add an AGENTS.md holding the maintainer-facing context an AI "
+        "coding assistant needs: layout, conventions, and how to test."
+    ),
+    "SKILL.md": (
+        "Add a SKILL.md — the conversational installer for a vertical "
+        "skill: it runs the interview, writes the design spec, and "
+        "performs setup."
+    ),
+    "EVAL.yaml": (
+        "Add an EVAL.yaml holding the eval rubrics that prove the skill "
+        "performs — see docs/recipe-handbook/anatomy.md."
+    ),
+    "go.mod": (
+        "Every Go recipe is its own module: run `go mod init` in the "
+        "recipe directory."
+    ),
+}
+
+
+def _file_remediation(rel: str, recipe_rel: str) -> str:
+    """The fix for one missing required file."""
+    if rel == "uv.lock":
+        # Needs the recipe path, so it cannot live in the static table.
+        return f"cd {recipe_rel} && uv lock"
+    return _FILE_REMEDIATION.get(
+        rel,
+        (
+            f"Add {rel} to the recipe. There is no generator for this one — "
+            f"docs/recipe-checklist.md lists what it has to contain."
+        ),
+    )
+
+
+def _dir_remediation(rel: str, recipe_rel: str) -> str:
+    """The fix for a missing required directory.
+
+    Always leads with the git detail: the overwhelmingly common report is
+    "the folder is right there in my editor". It is, locally — git simply
+    never committed it, because git tracks files and an empty directory
+    has none.
+    """
+    return (
+        f"git cannot commit an empty directory, so a folder with nothing "
+        f"in it never reaches CI. Add a placeholder and commit it:\n"
+        f"  touch {recipe_rel}/{rel}/.gitkeep && "
+        f"git add {recipe_rel}/{rel}/.gitkeep\n"
+        f"If the directory should have content, add the content instead."
+    )
 
 
 def case_insensitive_entries(policy: dict) -> set[str]:
@@ -203,28 +305,64 @@ def is_large_recipe(manifest_path: Path) -> bool:
 
 
 # ===========================================================================
-# Individual checks (each returns list[str]; empty list means pass)
+# Individual checks (each returns list[Diagnostic]; empty list means pass)
 # ===========================================================================
 
 
-def check_folder_name(recipe_dir: Path, max_length: int) -> list[str]:
+def _suggest_folder_name(name: str) -> str:
+    """A legal name close to the one the author tried to use."""
+    cleaned = re.sub(r"[^a-z-]+", "-", name.lower()).strip("-")
+    return re.sub(r"-{2,}", "-", cleaned) or "my-recipe"
+
+
+def check_folder_name(recipe_dir: Path, max_length: int) -> list[Diagnostic]:
     """Folder basename must match ^[a-z][a-z-]*$ and stay within the
     length limit. Two independent violations are reported independently
     so the maintainer sees both in one CI run."""
     name = recipe_dir.name
-    errors: list[str] = []
+    rel = vm.repo_relative(recipe_dir, REPO_ROOT)
+    parent = str(Path(rel).parent)
+    diagnostics: list[Diagnostic] = []
     if not _FOLDER_NAME_RE.match(name):
-        errors.append(
-            f"Folder name '{name}' is invalid. Only lowercase letters and "
-            "hyphens are allowed (must start with a letter; no underscores, "
-            "digits, or uppercase)."
+        suggestion = _suggest_folder_name(name)
+        diagnostics.append(
+            Diagnostic(
+                check="folder-name",
+                what=f"Folder name '{name}' is invalid.",
+                why=(
+                    "Recipe folder names must match ^[a-z][a-z-]*$ — "
+                    "lowercase letters and hyphens only, starting with a "
+                    "letter. The name is used verbatim in URLs, package "
+                    "names and shell commands, where underscores, digits "
+                    "and capitals all behave differently across platforms."
+                ),
+                how=f"git mv {rel} {parent}/{suggestion}",
+                doc=Doc.FOLDER_NAME,
+                file=rel,
+            )
         )
     if len(name) > max_length:
-        errors.append(
-            f"Folder name '{name}' is {len(name)} characters long; the "
-            f"maximum allowed is {max_length}."
+        diagnostics.append(
+            Diagnostic(
+                check="folder-name",
+                what=(
+                    f"Folder name '{name}' is {len(name)} characters; the "
+                    f"maximum is {max_length}."
+                ),
+                why=(
+                    f"policy.recipe_naming.max_folder_name_length is "
+                    f"{max_length}, so the path stays readable in CI logs "
+                    f"and short enough for every filesystem in play."
+                ),
+                how=(
+                    f"Rename the folder to at most {max_length} characters, "
+                    f"e.g. git mv {rel} {parent}/{name[:max_length]}"
+                ),
+                doc=Doc.FOLDER_NAME,
+                file=rel,
+            )
         )
-    return errors
+    return diagnostics
 
 
 def _iter_excluded_dirs_files(policy: dict) -> tuple[set[str], set[str]]:
@@ -276,13 +414,52 @@ def _walk_counted_files(recipe_dir: Path, policy: dict) -> list[Path]:
     return counted
 
 
+def _fmt_bytes(count: int) -> str:
+    if count >= 1024 * 1024:
+        return f"{count / (1024 * 1024):.1f} MB"
+    if count >= 1024:
+        return f"{count // 1024} KB"
+    return f"{count} B"
+
+
+def _worst_contributors(
+    items: Iterable[tuple[str, int]], overage: int, limit: int = 5
+) -> list[tuple[str, int]]:
+    """The biggest contributors, cut off once removing them clears the
+    overage.
+
+    Always padding the list out to `limit` puts a 60 MB blob next to a
+    7-byte README, which makes the culprit harder to spot, not easier.
+    The truncated list is also a promise: delete exactly these and the
+    check passes.
+    """
+    picked: list[tuple[str, int]] = []
+    for name, weight in sorted(items, key=lambda kv: -kv[1])[:limit]:
+        picked.append((name, weight))
+        overage -= weight
+        if overage <= 0:
+            break
+    return picked
+
+
+def _describe_tier(tier_limits: dict | None) -> str:
+    if not isinstance(tier_limits, dict):
+        return "not defined for this root"
+    return (
+        f"max_files={tier_limits.get('max_files')}, "
+        f"max_size_mb={tier_limits.get('max_size_mb')}"
+    )
+
+
 def check_size_and_count(
     recipe_dir: Path, root: str, policy: dict, manifest_path: Path
-) -> list[str]:
+) -> list[Diagnostic]:
     """Enforce the size (MB) and file-count tiers from policy.yml.
     Tier is chosen by `root` (core vs contrib) then by manifest.large.
     Recipes under roots not covered by recipe_size_limits (e.g. a
     future 'skills' root without limits) skip these checks."""
+    rel = vm.repo_relative(recipe_dir, REPO_ROOT)
+    manifest_rel = vm.repo_relative(manifest_path, REPO_ROOT)
     limits_by_root = policy.get("recipe_size_limits") or {}
     root_limits = limits_by_root.get(root)
     if not isinstance(root_limits, dict):
@@ -296,16 +473,31 @@ def check_size_and_count(
     # Fail loudly when `large: true` is set but the requested tier is not
     # defined for this root. Previously the code silently fell back to
     # `default` via a boolean chain, so the recipe author got no signal
-    # that their opt-in was being ignored. Either add a `large:` block
-    # under `recipe_size_limits.<root>` in policy.yml or drop `large:
-    # true` from the manifest — the current combination is a bug.
+    # that their opt-in was being ignored.
     if tier_limits is None:
         if tier != "default":
             return [
-                f"manifest.large=true, but recipe_size_limits.{root} in "
-                ".github/policy.yml does not define a 'large' tier. Add a "
-                f"'{root}.large' block in policy.yml with max_files / "
-                "max_size_mb, or remove 'large: true' from the manifest."
+                Diagnostic(
+                    check="size",
+                    what=(
+                        f"manifest.large is true, but .github/policy.yml "
+                        f"defines no 'large' size tier for {root}/."
+                    ),
+                    why=(
+                        f"recipe_size_limits.{root} defines only: "
+                        f"{', '.join(sorted(root_limits)) or '(nothing)'}. "
+                        f"The opt-in would be silently ignored, so it is "
+                        f"reported instead of quietly falling back."
+                    ),
+                    how=(
+                        f"Remove `large: true` from {vm.MANIFEST_FILENAME} "
+                        f"and stay within the default tier, or ask a "
+                        f"maintainer to add a `{root}.large` block "
+                        f"(max_files / max_size_mb) to .github/policy.yml."
+                    ),
+                    doc=Doc.SIZE_LIMIT,
+                    file=manifest_rel,
+                )
             ]
         # No `default` tier and no `large` tier requested — nothing to
         # enforce, matches the no-root-limits case.
@@ -314,26 +506,111 @@ def check_size_and_count(
     max_files = tier_limits.get("max_files")
     max_size_mb = tier_limits.get("max_size_mb")
 
-    counted = _walk_counted_files(recipe_dir, policy)
+    counted = [
+        p for p in _walk_counted_files(recipe_dir, policy) if p.is_file()
+    ]
+    sizes = {p: p.stat().st_size for p in counted}
+    total_bytes = sum(sizes.values())
     file_count = len(counted)
-    total_bytes = sum(p.stat().st_size for p in counted if p.is_file())
-    total_kb = total_bytes // 1024
 
-    errors: list[str] = []
+    # The walk above already knows every offending path and its size.
+    # Reporting only the total made the contributor re-derive that with
+    # `du -a | sort -n`, on a tree whose exclusions they cannot see.
+    tier_note = (
+        f"The {root}/{tier} tier applies: the recipe is under {root}/ and "
+        f"its manifest {'sets' if is_large else 'does not set'} "
+        f"`large: true`"
+    )
+    escape_hatch = (
+        "This recipe is already on the relaxed `large: true` tier — there "
+        "is no higher one, so the content itself has to come down."
+        if is_large
+        else (
+            f"If the recipe genuinely needs the room, set `large: true` in "
+            f"{vm.MANIFEST_FILENAME} to opt into the relaxed tier "
+            f"({_describe_tier(root_limits.get('large'))})."
+        )
+    )
+    excluded_note = (
+        "Paths listed under policy.excluded_paths (.venv/, __pycache__/, "
+        "uv.lock, build output …) are not counted."
+    )
+
+    diagnostics: list[Diagnostic] = []
     if max_size_mb is not None:
         max_bytes = int(max_size_mb) * 1024 * 1024
         if total_bytes > max_bytes:
-            errors.append(
-                f"Recipe folder exceeds {max_size_mb} MB "
-                f"({total_kb} KB, excluding paths listed in "
-                ".github/policy.yml). Remove large files or binaries."
+            listing = "\n".join(
+                f"  {_fmt_bytes(size):>9}  {name}"
+                for name, size in _worst_contributors(
+                    (
+                        (str(path.relative_to(recipe_dir)), size)
+                        for path, size in sizes.items()
+                    ),
+                    total_bytes - max_bytes,
+                )
+            )
+            diagnostics.append(
+                Diagnostic(
+                    check="size",
+                    what=(
+                        f"Recipe folder is {_fmt_bytes(total_bytes)}; the "
+                        f"limit is {max_size_mb} MB."
+                    ),
+                    why=(
+                        f"{tier_note} "
+                        f"(policy.recipe_size_limits.{root}.{tier}"
+                        f".max_size_mb = {max_size_mb}). {excluded_note}"
+                    ),
+                    how=(
+                        f"Largest counted files:\n{listing}\n"
+                        f"Move data and media out to a storage bucket and "
+                        f"link them from README.md, or delete generated "
+                        f"output that should not be committed.\n"
+                        f"{escape_hatch}"
+                    ),
+                    doc=Doc.SIZE_LIMIT,
+                    file=rel,
+                )
             )
     if max_files is not None and file_count > int(max_files):
-        errors.append(
-            f"Recipe folder contains {file_count} files, exceeding the "
-            f"limit of {max_files}."
+        # Directories, not individual filenames: when a recipe is 400 files
+        # over the limit, five arbitrary paths say nothing, while the
+        # directory holding 380 of them says everything.
+        per_dir = Counter(
+            str(path.parent.relative_to(recipe_dir)) for path in counted
         )
-    return errors
+        listing = "\n".join(
+            f"  {n:>5} file{'s' if n != 1 else ''}  "
+            f"{name if name != '.' else '(recipe root)'}"
+            for name, n in _worst_contributors(
+                per_dir.items(), file_count - int(max_files)
+            )
+        )
+        diagnostics.append(
+            Diagnostic(
+                check="size",
+                what=(
+                    f"Recipe folder contains {file_count} counted files; "
+                    f"the limit is {max_files}."
+                ),
+                why=(
+                    f"{tier_note} "
+                    f"(policy.recipe_size_limits.{root}.{tier}.max_files = "
+                    f"{max_files}). {excluded_note}"
+                ),
+                how=(
+                    f"Directories contributing the most files:\n{listing}\n"
+                    f"Delete generated output, or add the directory that "
+                    f"holds it to policy.excluded_paths if it is tool "
+                    f"output that every recipe produces.\n"
+                    f"{escape_hatch}"
+                ),
+                doc=Doc.SIZE_LIMIT,
+                file=rel,
+            )
+        )
+    return diagnostics
 
 
 def _find_entry(
@@ -381,52 +658,100 @@ def _note_inexact(rel: str, found: Path) -> None:
 
 def check_required_files(
     recipe_dir: Path, root: str, language: str | None, policy: dict
-) -> list[str]:
+) -> list[Diagnostic]:
     """Every path in the union list must exist as a file (not a dir).
     Paths are recipe-relative and may include subdirectories
     (e.g. tests/test_runnability.py)."""
-    required = required_files_for(policy, root, language)
+    recipe_rel = vm.repo_relative(recipe_dir, REPO_ROOT)
     lenient = case_insensitive_entries(policy)
-    errors: list[str] = []
-    for rel in required:
+    diagnostics: list[Diagnostic] = []
+    for rel, source in required_files_for(policy, root, language):
         found, exact = _find_entry(
             recipe_dir, rel, case_insensitive=rel in lenient
         )
+        why = _provenance("required_files", source, root, language)
+        fix = _file_remediation(rel, recipe_rel)
         if found is None:
-            errors.append(f"Required file '{rel}' is missing.")
+            diagnostics.append(
+                Diagnostic(
+                    check="required-files",
+                    what=f"Required file '{rel}' is missing.",
+                    why=why,
+                    how=fix,
+                    doc=Doc.REQUIRED_FILES,
+                    file=f"{recipe_rel}/{rel}",
+                )
+            )
         elif not found.is_file():
-            errors.append(f"Required file '{rel}' exists but is not a file.")
+            diagnostics.append(
+                Diagnostic(
+                    check="required-files",
+                    what=(
+                        f"Required file '{rel}' exists but is a "
+                        f"{'directory' if found.is_dir() else 'non-file'}."
+                    ),
+                    why=why,
+                    how=(
+                        f"Remove or rename {recipe_rel}/{rel}, then add the "
+                        f"file.\n{fix}"
+                    ),
+                    doc=Doc.REQUIRED_FILES,
+                    file=f"{recipe_rel}/{rel}",
+                )
+            )
         elif not exact:
             _note_inexact(rel, found)
-    return errors
+    return diagnostics
 
 
 def check_required_dirs(
     recipe_dir: Path, root: str, language: str | None, policy: dict
-) -> list[str]:
+) -> list[Diagnostic]:
     """Every path in the union list must exist as a directory.
 
-    An empty directory passes: some required folders (assets/,
-    references/) legitimately have nothing in them for a given recipe,
-    and git cannot commit an empty directory anyway, so in practice they
-    carry a .gitkeep.
+    An empty directory passes: some required folders legitimately have
+    nothing in them for a given recipe, and git cannot commit an empty
+    directory anyway, so in practice they carry a .gitkeep.
     """
-    required = required_dirs_for(policy, root, language)
+    recipe_rel = vm.repo_relative(recipe_dir, REPO_ROOT)
     lenient = case_insensitive_entries(policy)
-    errors: list[str] = []
-    for rel in required:
+    diagnostics: list[Diagnostic] = []
+    for rel, source in required_dirs_for(policy, root, language):
         found, exact = _find_entry(
             recipe_dir, rel, case_insensitive=rel in lenient
         )
+        why = _provenance("required_dirs", source, root, language)
         if found is None:
-            errors.append(f"Required directory '{rel}/' is missing.")
+            diagnostics.append(
+                Diagnostic(
+                    check="required-dirs",
+                    what=f"Required directory '{rel}/' is missing.",
+                    why=why,
+                    how=_dir_remediation(rel, recipe_rel),
+                    doc=Doc.REQUIRED_FILES,
+                    file=f"{recipe_rel}/{rel}",
+                )
+            )
         elif not found.is_dir():
             # Reporting this as "missing" would send the author hunting
             # for something that is right there under the wrong kind.
-            errors.append(f"Required directory '{rel}/' exists but is a file.")
+            diagnostics.append(
+                Diagnostic(
+                    check="required-dirs",
+                    what=f"Required directory '{rel}/' exists but is a file.",
+                    why=why,
+                    how=(
+                        f"Rename or delete the file at {recipe_rel}/{rel}, "
+                        f"then create a directory in its place:\n"
+                        f"  mkdir -p {recipe_rel}/{rel}"
+                    ),
+                    doc=Doc.REQUIRED_FILES,
+                    file=f"{recipe_rel}/{rel}",
+                )
+            )
         elif not exact:
             _note_inexact(rel, found)
-    return errors
+    return diagnostics
 
 
 # ===========================================================================
@@ -434,24 +759,41 @@ def check_required_dirs(
 # ===========================================================================
 
 
-def validate_recipe(recipe_dir: Path, policy: dict, schema: dict) -> list[str]:
+def validate_recipe(
+    recipe_dir: Path, policy: dict, schema: dict
+) -> list[Diagnostic]:
     """Run every applicable check on one recipe. Returns the list of
-    error strings (empty list means everything passed). Errors are
-    prefixed with the check name so the CI output stays parseable."""
-    errors: list[str] = []
+    diagnostics (empty list means everything passed)."""
+    diagnostics: list[Diagnostic] = []
+    rel = vm.repo_relative(recipe_dir, REPO_ROOT)
 
     root = recipe_root_of(recipe_dir)
     if root is None or root not in RECIPE_ROOTS:
+        roots = ", ".join(f"{r}/" for r in RECIPE_ROOTS)
         return [
-            f"Recipe path must live under one of {RECIPE_ROOTS}; "
-            f"got '{recipe_dir}'."
+            Diagnostic(
+                check="placement",
+                what=f"'{rel}' is not inside a recipe root.",
+                why=(
+                    f"Recipes are only collected from {roots}, so a "
+                    f"directory anywhere else is never validated, indexed "
+                    f"or published — it would look fine and reach nobody."
+                ),
+                how=(
+                    "Move it under one of them: core/ for curated recipes, "
+                    "contrib/ for community ones, "
+                    "skills/<vertical>/<solution> for a vertical skill."
+                ),
+                doc=Doc.PLACEMENT,
+                file=rel,
+            )
         ]
 
     # Check 1: manifest.yaml presence.
     manifest_path = recipe_dir / vm.MANIFEST_FILENAME
     manifest_present = manifest_path.is_file()
     if not manifest_present:
-        errors.append(f"[manifest] {vm.MANIFEST_FILENAME} is missing.")
+        diagnostics.append(vm.missing_manifest_diagnostic(manifest_path))
         # Continue with the checks that don't need the manifest —
         # folder-name and (best-effort) size — so the maintainer sees
         # every problem in one shot rather than fix-and-retry chains.
@@ -459,18 +801,17 @@ def validate_recipe(recipe_dir: Path, policy: dict, schema: dict) -> list[str]:
     # Check 2: manifest.yaml schema (only if the file exists — a missing
     # manifest is already reported by check 1).
     if manifest_present:
-        for err in vm.validate_manifest(manifest_path, schema):
-            errors.append(f"[manifest] {err.strip()}")
+        diagnostics.extend(vm.validate_manifest(manifest_path, schema))
 
     # Check 3: folder name.
     naming = policy.get("recipe_naming") or {}
     max_length = int(naming.get("max_folder_name_length", 30))
-    for err in check_folder_name(recipe_dir, max_length):
-        errors.append(f"[folder-name] {err}")
+    diagnostics.extend(check_folder_name(recipe_dir, max_length))
 
     # Check 4: folder size + file count.
-    for err in check_size_and_count(recipe_dir, root, policy, manifest_path):
-        errors.append(f"[size] {err}")
+    diagnostics.extend(
+        check_size_and_count(recipe_dir, root, policy, manifest_path)
+    )
 
     # Check 5: required files (union of always + by_root + by_language).
     # Language detection is intentionally decoupled from schema validation:
@@ -478,16 +819,13 @@ def validate_recipe(recipe_dir: Path, policy: dict, schema: dict) -> list[str]:
     # here we simply use whatever the manifest declares (or None) so this
     # check still runs even if the manifest has unrelated schema issues.
     language = detect_language(manifest_path) if manifest_present else None
-    for err in check_required_files(recipe_dir, root, language, policy):
-        errors.append(f"[required-files] {err}")
+    diagnostics.extend(check_required_files(recipe_dir, root, language, policy))
 
     # Check 6: required directories. Same union, different existence test —
-    # a vertical skill must ship scripts/, assets/, references/ and
-    # tests/unit/, none of which required_files could express.
-    for err in check_required_dirs(recipe_dir, root, language, policy):
-        errors.append(f"[required-dirs] {err}")
+    # a `scripts` entry under required_files could never be satisfied.
+    diagnostics.extend(check_required_dirs(recipe_dir, root, language, policy))
 
-    return errors
+    return diagnostics
 
 
 # ===========================================================================
@@ -499,42 +837,28 @@ def main(scope: str | None = None) -> int:
     policy = load_policy()
     schema = vm.load_schema()
     recipe_dirs = vm.collect_recipe_dirs(scope)
+    if vm.report_empty_scope(scope, recipe_dirs):
+        return EXIT_VIOLATIONS
 
-    failed: dict[str, list[str]] = {}
+    diagnostics: list[Diagnostic] = []
     for recipe_dir in recipe_dirs:
-        errors = validate_recipe(recipe_dir, policy, schema)
-        if errors:
-            failed[str(recipe_dir.relative_to(REPO_ROOT))] = errors
+        diagnostics.extend(validate_recipe(recipe_dir, policy, schema))
 
-    if failed:
-        print("\n[FAIL] Recipes with structural problems:")
-        for rel, errors in failed.items():
-            print(f"\n  {rel}/:")
-            for e in errors:
-                print(f"    - {e}")
-            # One GitHub annotation per recipe, pointing at the recipe root.
-            first = errors[0]
-            extra = f" (+{len(errors) - 1} more)" if len(errors) > 1 else ""
-            print(f"::error file={rel}::{first}{extra}")
-
-        print(
-            "\n========================================"
-            "\n  ACTION REQUIRED: recipe structure invalid"
-            "\n========================================"
-            "\n"
-            "\nFix the issue(s) listed above, then push again."
-            "\n"
-            "\nReference:"
-            "\n  Policy:  .github/policy.yml (required_files, "
-            "recipe_size_limits, recipe_naming)"
-            "\n  Schema:  .github/schemas/manifest-schema.json"
-        )
-        return 1
-
-    print(
-        f"\n[PASS] All {len(recipe_dirs)} recipe(s) passed structural checks."
+    return report(
+        diagnostics,
+        header="Recipes with structural problems",
+        passed_message=(
+            f"All {len(recipe_dirs)} recipe(s) passed structural checks."
+        ),
+        next_step=(
+            f"{vm.AUTHORING_DOCS}\n"
+            f"\nRe-run locally:\n"
+            f"  uv run validate structure <recipe-path>\n"
+            f"\nThe rules themselves live in .github/policy.yml "
+            f"(required_files, required_dirs, recipe_size_limits, "
+            f"recipe_naming)."
+        ),
     )
-    return 0
 
 
 if __name__ == "__main__":
@@ -551,4 +875,4 @@ if __name__ == "__main__":
         ),
     )
     args = parser.parse_args()
-    sys.exit(main(args.scope))
+    sys.exit(guard("validate_structure.py", lambda: main(args.scope)))

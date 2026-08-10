@@ -175,7 +175,7 @@ lha/
 | `before_agent_callback` | `on_session_start_callback` → `bind_session_skills_callback` |
 | `before_model_callback` | `select_model_callback` → `prune_tool_outputs_callback` → `redact_artifact_urls_callback` → `_slash_command_dispatcher` → `system_prompt_assembly_callback` → `reminder_injection_callback` → `subagent_description_callback` (halt short-circuit lives in `GuardrailsPlugin`, runs first via plugin layer) |
 | `after_model_callback` | (empty on agent — no-progress detection in `GuardrailsPlugin.after_model_callback`) |
-| `before_tool_callback` | `before_tool_log_callback` → `exfil_guard` → `policies_guard` (Layer C; consults `command_safety.classify()` + seed/overlay; headless child chains — background `agent`/routine — pass `ask_is_deny=True` so "ask" verdicts hard-block, but a **blocking `delegate` child resurfaces** the ask to the user) → `permission_guard` (Layer D interactive ask-layer, runs last; **shell tools default `allow`** — `_shell_decision` demotes to a prompt only on a `command_safety` "ask" verdict or command-substitution, and that demotion is **skipped for an explicit grant/overlay allow** so "approve this session/always" sticks; the seed opens `add_memory`/`reload`/`reminder` and keeps `routine`/`run_skill_script` + other non-shell tools on the `*: ask_user` fallback; YOLO mode auto-approves; `delegate` + background `agent` exempt via `SUBAGENT_TOOLS` — spawning grants the child nothing its own guard chain doesn't already gate, so the spawn-time prompt is friction) |
+| `before_tool_callback` | `before_tool_log_callback` → `exfil_guard` → `policies_guard` (Layer C; consults `command_safety.classify()` + seed/overlay; headless child chains — background `agent`/routine — pass `ask_is_deny=True` so "ask" verdicts hard-block, but a **blocking `delegate` child resurfaces** the ask to the user) → `permission_guard` (Layer D interactive ask-layer, runs last; **shell tools default `allow`** — `_shell_decision` demotes to a prompt only on a `command_safety` "ask" verdict or command-substitution; the **`command_safety` demotion is skipped for an explicit grant/overlay allow** so "approve this session/always" sticks, while genuine command-substitution always prompts (the anti-obfuscation net a grant can't buy off). Substitution detection is **quote-aware** — a backtick-quoted BigQuery table ref inside `'…'` expands nothing and is not substitution; ANSI-C `$'…'` processes escapes (`$'\''` is one literal quote) and unbalanced quoting fails closed. Auto-derived `commandPrefix` skips self-contained `--flag=value` tokens between binary and subcommand (`gcloud --project=p compute instances delete` → `gcloud compute`, not the whole binary) and matches flag-tolerantly when the prefix names no flag, so one approval covers any flag ordering; a **bare** flag stops the scan (`kubectl -n default delete` → `kubectl`) since it may consume the next token as its value, and `sudo` is never unwrapped (`sudo python3 -c …` → `sudo python3`) so a plain grant can't cover the escalated form — derivation and matching share one token walk (`command_classify.significant_tokens`) so they can't disagree; the seed opens `add_memory`/`reload`/`reminder` and keeps `routine`/`run_skill_script` + other non-shell tools on the `*: ask_user` fallback; YOLO mode auto-approves; `delegate` + background `agent` exempt via `SUBAGENT_TOOLS` — spawning grants the child nothing its own guard chain doesn't already gate, so the spawn-time prompt is friction) |
 | `after_tool_callback` | `skill_telemetry_callback` → `tool_call_log_callback` — repeated-failure halt in `GuardrailsPlugin.after_tool_callback` |
 | `after_agent_callback` | `auto_capture_callback` → `skill_curator_callback` → `review_fork_callback` (post-turn memory sync, skill promote/demote, judge fork — all throttled) |
 
@@ -234,8 +234,10 @@ All four SQL paths — ADK web-path session service, lifespan Runner session ser
 uv run pytest tests/unit tests/integration              # deterministic — default
 RUN_SMOKE=1 uv run pytest tests/smoke                   # hits FastAPI, no LLM
 RUN_SMOKE=1 RUN_SMOKE_LLM=1 uv run pytest tests/smoke   # adds LLM-hitting smokes
-RUN_SANDBOX_PROBE=1 uv run pytest tests/...             # sandbox-tier probes
-RUN_CUJ_PROBE=1 uv run pytest tests/...                 # critical-user-journey probes
+# Probes are `probe_*.py`, which pytest's default `python_files` does NOT collect
+# from a directory argument — name the file explicitly.
+RUN_SANDBOX_PROBE=1 uv run pytest tests/integration/probes/probe_cuj1_ephemeral.py
+RUN_CUJ_PROBE=1 uv run pytest tests/integration/cuj_probes/probe_cuj10_reminder_fire.py
 agents-cli eval run                                     # ADK evals (LLM behavior)
 agents-cli lint --fix                                   # ruff + ty + codespell
 ```
@@ -265,6 +267,12 @@ The dev stack is **fail-fast and single-instance**: `dev` depends on `dev-prefli
 When `horizon/sandbox/runtime/` changes (Dockerfile, server.py, protocol.py, entrypoint.sh), rebuild via **Cloud Build** — never local `docker build`:
 
 ```bash
+# One-time: nothing in terraform/ creates the `lha-sandbox` repo, and the APIs
+# below are only enabled by Terraform at `make deploy` — too late for this build.
+gcloud services enable artifactregistry.googleapis.com cloudbuild.googleapis.com --project=$PROJECT_ID
+gcloud artifacts repositories create lha-sandbox \
+  --repository-format=docker --location=us-central1 --project=$PROJECT_ID
+
 gcloud builds submit horizon/sandbox/runtime \
   --tag=us-central1-docker.pkg.dev/$PROJECT_ID/lha-sandbox/runtime:vX.Y.Z \
   --project=$PROJECT_ID

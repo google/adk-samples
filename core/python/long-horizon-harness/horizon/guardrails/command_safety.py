@@ -142,8 +142,38 @@ _CLOUD_DELETE: dict[str, frozenset[str]] = {
 }
 
 
+# git's global options that consume the NEXT token as a separate value, so the
+# value can't be mistaken for the subcommand (`git -C /repo push --force`). The
+# `--opt=value` form needs no entry: it lexes as a single flag token.
+_GIT_VALUE_FLAGS = frozenset(
+    {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix"}
+)
+_GIT_GATED_SUBCOMMANDS = frozenset(
+    {"push", "reset", "clean", "filter-branch", "filter-repo"}
+)
+
+
+def _git_positionals(argv: list[str]) -> list[str]:
+    out: list[str] = []
+    i = 1
+    while i < len(argv):
+        tok = argv[i]
+        if tok in _GIT_VALUE_FLAGS:
+            i += 2
+        elif tok.startswith("-"):
+            i += 1
+        else:
+            out.append(tok)
+            i += 1
+    return out
+
+
 def _git_verdict(argv: list[str]) -> tuple[str, str] | None:
-    sub = next((t for t in argv[1:] if not t.startswith("-")), None)
+    positionals = _git_positionals(argv)
+    # Scan for a gated verb rather than trusting the first positional: an unknown
+    # global flag's value would otherwise shadow it, and a path named `push`
+    # would otherwise fake it.
+    sub = next((t for t in positionals if t in _GIT_GATED_SUBCOMMANDS), None)
     if sub is None:
         return None
     flags = [t for t in argv[1:] if t.startswith("-")]
@@ -155,7 +185,6 @@ def _git_verdict(argv: list[str]) -> tuple[str, str] | None:
             return ("ask", "git force-push rewrites remote history")
         if any(f in {"--delete", "-d", "--mirror"} for f in flags):
             return ("ask", "git push deletes or mirrors a remote ref")
-        positionals = [t for t in argv[1:] if not t.startswith("-")]
         if any(p.startswith("+") for p in positionals):
             return (
                 "ask",

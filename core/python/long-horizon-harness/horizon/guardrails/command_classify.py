@@ -27,7 +27,10 @@ _WRAPPER_RE = re.compile(
 )
 _REDIRECTION_RE = re.compile(r"(>>|>|<)")
 _BARE_WORD_RE = re.compile(r"^[a-z][a-z0-9-]*$")
-_SKIP_PREFIXES = frozenset({"sudo", "env"})
+# `sudo` is deliberately absent: unwrapping it would let a plain `npm install`
+# grant cover `sudo npm install`, and a grant skips the command_safety
+# privilege-escalation demotion. The prefix must name the escalation.
+_SKIP_PREFIXES = frozenset({"env"})
 
 
 def strip_wrapper(command: str) -> str:
@@ -108,17 +111,45 @@ def split_segments(command: str) -> list[str]:
     return parts
 
 
-def command_prefix(segment: str) -> str:
-    """Binary + first bare-word subcommand token (the auto-scope prefix)."""
-    tokens = segment.split()
+def _skip_leading(tokens: list[str]) -> int:
+    """Index of the binary: past leading VAR=val assignments and env wrappers."""
     i = 0
-    # Skip leading VAR=val assignments and sudo/env wrappers.
     while i < len(tokens) and ("=" in tokens[i] or tokens[i] in _SKIP_PREFIXES):
         i += 1
-    if i >= len(tokens):
+    return i
+
+
+def significant_tokens(segment: str) -> list[str]:
+    """Binary + positional tokens, past wrappers and self-contained flags.
+
+    ``bq --project_id=X query …`` → ``["bq", "query", …]``, so a saved prefix
+    matches wherever the flags sit. Scanning **stops at a bare flag** (``-n``,
+    ``--context``): it may consume the next token as its value and nothing here
+    knows which CLI does that, so ``kubectl -n get delete …`` yields ``["kubectl"]``
+    rather than letting a namespace named ``get`` impersonate the subcommand.
+    """
+    tokens = segment.split()
+    positional: list[str] = []
+    for token in tokens[_skip_leading(tokens) :]:
+        if token.startswith("-"):
+            if "=" in token:
+                continue
+            break
+        positional.append(token)
+    return positional
+
+
+def command_prefix(segment: str) -> str:
+    """Binary + first bare-word subcommand token (the auto-scope prefix)."""
+    # Same token walk as the matcher, so a derived prefix always matches the
+    # command it came from: `bq --project_id=X query` scopes to `bq query`, not to
+    # the whole `bq` binary (which would carry `bq rm` with it, since a grant
+    # skips the command_safety demotion).
+    positional = significant_tokens(segment)
+    if not positional:
         return segment.strip()
-    binary = tokens[i]
-    nxt = tokens[i + 1] if i + 1 < len(tokens) else None
+    binary = positional[0]
+    nxt = positional[1] if len(positional) > 1 else None
     # Only a plain-name binary takes a bare-word subcommand; a path-like binary
     # (e.g. ``./run.sh``) has positional args, not subcommands.
     if (
@@ -148,18 +179,57 @@ def has_redirection(segment: str) -> bool:
     return _REDIRECTION_RE.search(cleaned) is not None
 
 
-_CMD_SUBSTITUTION_RE = re.compile(r"\$\(|`|<\(|>\(")
-
-
 def has_command_substitution(segment: str) -> bool:
-    """True if the segment embeds a nested command via $(...), backticks, or <()/>()."""
-    return _CMD_SUBSTITUTION_RE.search(segment) is not None
+    """True if the segment embeds a nested command via $(...), backticks, or <()/>().
+
+    Quote-aware, matching what the shell actually expands: single quotes suppress
+    everything (a backtick-quoted BigQuery table ref is literal, not a nested
+    command), double quotes still expand ``$(…)`` and backticks but not process
+    substitution, and a backslash escapes the next character. Unbalanced quoting
+    is unanalyzable, so it fails closed.
+    """
+    i, n = 0, len(segment)
+    in_single = in_double = False
+    while i < n:
+        ch = segment[i]
+        if in_single:
+            in_single = ch != "'"
+            i += 1
+        elif ch == "\\" and i + 1 < n:
+            i += 2
+        elif in_double:
+            if ch == "`" or segment[i : i + 2] == "$(":
+                return True
+            in_double = ch != '"'
+            i += 1
+        elif segment[i : i + 2] == "$'":
+            # ANSI-C quoting processes backslash escapes, so `$'\''` is ONE
+            # literal quote. Scanning it as a plain single-quoted run desyncs
+            # quote state and hides every expansion that follows.
+            i += 2
+            while i < n and segment[i] != "'":
+                i += 2 if segment[i] == "\\" else 1
+            if i >= n:
+                return True
+            i += 1
+        elif ch == "'":
+            in_single = True
+            i += 1
+        elif ch == '"':
+            in_double = True
+            i += 1
+        elif ch == "`" or segment[i : i + 2] in ("$(", "<(", ">("):
+            return True
+        else:
+            i += 1
+    return in_single or in_double
 
 
 __all__ = [
     "command_prefix",
     "has_command_substitution",
     "has_redirection",
+    "significant_tokens",
     "split_segments",
     "strip_wrapper",
 ]
