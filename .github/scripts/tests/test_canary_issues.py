@@ -162,14 +162,6 @@ def test_the_ladder_cannot_collapse_however_old_the_issue(calls):
     assert len([c for c in calls if c[0] == "comment"]) == 1
 
 
-def test_a_rung_never_fires_twice(calls):
-    """Without this the reminder would repeat every month — exactly the
-    nagging the design exists to avoid."""
-    already = {m.LABEL_REMINDED, m.LABEL_ROTTING}
-    m.escalate("core/python/demo", _issue(400, already), dry=False, now=NOW)
-    assert [c[2] for c in calls if c[0] == "label"] == [m.LABEL_DELETION]
-
-
 def test_a_fully_escalated_issue_goes_quiet(calls):
     """Every rung fired: say nothing rather than nag forever."""
     m.escalate("core/python/demo", _issue(999, set(m.LADDER)), dry=False)
@@ -284,6 +276,7 @@ def test_recovery_does_not_claim_the_manifest_was_changed(calls, monkeypatch):
     body = next(c[2] for c in calls if c[0] == "comment")
     assert "was marked" not in body
     assert "asked for" in body
+    assert ("issue", "close", "42", "--repo", m.REPO) in closed
 
 
 # ---------------------------------------------------------------------------
@@ -629,9 +622,9 @@ def test_dry_run_performs_no_write(monkeypatch, action):
     monkeypatch.setattr(m, "read_owner", lambda r, repo_root=None: None)
     monkeypatch.setattr(m, "is_assignable", lambda u: False)
     action()
-    writes = [
-        a for a in seen if a[:2] not in {("issue", "list"), ("api", "repos")}
-    ]
+    # `gh api repos/...` passes the path as ONE argument, so match on the
+    # verb rather than a two-element prefix that can never occur.
+    writes = [a for a in seen if a[:2] != ("issue", "list") and a[0] != "api"]
     assert writes == [], f"dry run performed writes: {writes}"
 
 

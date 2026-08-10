@@ -484,7 +484,7 @@ def _stage_body(label: str, recipe: str, age: int, mention: str) -> str:
             f"kept."
         )
     return (
-        f"@{MAINTAINER} — {age} days, and this is the fourth failing run. "
+        f"@{MAINTAINER} — {age} days, and the last stage of the ladder. "
         f"Removal of `{recipe}` is now due.\n\n"
         f"{_write_note(recipe, 'deletion')}\n\nNothing is removed without a "
         f"human deciding to."

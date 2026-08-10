@@ -34,8 +34,9 @@ on:
       #     DELETES a recipe is precisely the PR that changes that set — and
       #     was precisely the PR that did not run these tests, so the pin was
       #     unenforceable on the only change that could break it. Scoped to
-      #     manifest.yaml rather than all of core/**, because the recipe set
-      #     is a function of which manifests exist, not of their contents.
+      #     manifest.yaml rather than all of core/**: the recipe set is a
+      #     function of which manifests exist AND of the `language:` line
+      #     inside them, and nothing else under a recipe can change it.
       # Without these entries such a PR merges green and the failure only
       # surfaces later, on an unrelated PR that happens to touch tools/.
       - ".github/policy.yml"

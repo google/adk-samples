@@ -233,7 +233,21 @@ def python_targets(recipe_dir: Path) -> list[str]:
     floor_minor = int(FLOOR.split(".")[1])
     declared_floor = _lower_bound_minor(requires)
     if declared_floor is not None and declared_floor > floor_minor:
-        floor_minor = min(declared_floor, MAX_TESTABLE_MINOR)
+        if declared_floor > MAX_TESTABLE_MINOR:
+            # The recipe needs an interpreter newer than any this canary
+            # provisions. Clamping to MAX_TESTABLE_MINOR would hand back a
+            # floor BELOW the one the recipe declared — testing a `>=3.15`
+            # recipe on 3.13, guaranteeing an install failure, and filing it
+            # against the owner as rot. That is the exact false accusation
+            # this block exists to prevent, so decline to test it instead.
+            print(
+                f"WARNING: {recipe_dir} requires >=3.{declared_floor}, above "
+                f"the newest interpreter the canary provisions "
+                f"(3.{MAX_TESTABLE_MINOR}); not testing it",
+                file=sys.stderr,
+            )
+            return []
+        floor_minor = declared_floor
         targets = [f"3.{floor_minor}"]
 
     declared = _upper_bound_minor(requires)

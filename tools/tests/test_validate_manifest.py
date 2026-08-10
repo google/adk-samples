@@ -489,15 +489,8 @@ def test_main_invalid_manifest_emits_github_annotation(
 # inactive_recipes / report_inactive
 #
 # `status` gained its first consumer with the recipe canary, and all 85 lines
-# of it shipped untested — which is how the detection regex came to miss a
-# CRLF manifest.
+# of it shipped untested.
 # ---------------------------------------------------------------------------
-
-
-def _recipe(tmp_path: Path, name: str, manifest: str) -> Path:
-    d = tmp_path / name
-    _write(d / "manifest.yaml", manifest)
-    return d
 
 
 @pytest.mark.parametrize(
@@ -513,7 +506,7 @@ def _recipe(tmp_path: Path, name: str, manifest: str) -> Path:
 )
 def test_inactive_is_detected_in_every_spelling(tmp_path, monkeypatch, line):
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
-    d = _recipe(tmp_path, "core/python/a", f"type: standalone\n{line}\n")
+    d = _make_recipe(tmp_path, "core/python/a", f"type: standalone\n{line}\n")
     assert m.inactive_recipes([d]) == ["core/python/a"]
 
 
@@ -546,16 +539,15 @@ def test_inactive_is_detected_in_a_crlf_manifest(tmp_path, monkeypatch):
 )
 def test_active_and_near_misses_are_not_reported(tmp_path, monkeypatch, line):
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
-    d = _recipe(tmp_path, "core/python/a", f"type: standalone\n{line}\n")
+    d = _make_recipe(tmp_path, "core/python/a", f"type: standalone\n{line}\n")
     assert m.inactive_recipes([d]) == []
 
 
-def test_an_unreadable_manifest_is_skipped_not_raised(tmp_path, monkeypatch):
-    """This runs AFTER validation, so a manifest that already failed must not
-    produce a traceback on top of its diagnostic."""
+def test_a_missing_manifest_is_skipped_not_raised(tmp_path, monkeypatch):
+    """This runs AFTER validation, so a recipe whose manifest is absent or
+    unreadable must not produce a traceback on top of its diagnostic."""
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
-    d = tmp_path / "core/python/a"
-    d.mkdir(parents=True)
+    d = _make_recipe(tmp_path, "core/python/a", manifest=None)
     assert m.inactive_recipes([d]) == []
 
 
@@ -563,9 +555,9 @@ def test_results_are_sorted(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
     body = "type: standalone\nstatus: inactive\n"
     dirs = [
-        _recipe(tmp_path, "core/python/c", body),
-        _recipe(tmp_path, "core/python/a", body),
-        _recipe(tmp_path, "core/python/b", body),
+        _make_recipe(tmp_path, "core/python/c", body),
+        _make_recipe(tmp_path, "core/python/a", body),
+        _make_recipe(tmp_path, "core/python/b", body),
     ]
     assert m.inactive_recipes(dirs) == [
         "core/python/a",
@@ -578,7 +570,9 @@ def test_report_inactive_prints_nothing_when_all_active(
     tmp_path, monkeypatch, capsys
 ):
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
-    d = _recipe(tmp_path, "core/python/a", "type: standalone\nstatus: active\n")
+    d = _make_recipe(
+        tmp_path, "core/python/a", "type: standalone\nstatus: active\n"
+    )
     m.report_inactive([d])
     assert capsys.readouterr().out == ""
 
@@ -589,7 +583,7 @@ def test_report_inactive_annotates_without_failing(
     """Non-blocking by construction: it returns None, so no caller can fold
     it into an exit code by accident."""
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
-    d = _recipe(
+    d = _make_recipe(
         tmp_path, "core/python/a", "type: standalone\nstatus: inactive\n"
     )
     assert m.report_inactive([d]) is None

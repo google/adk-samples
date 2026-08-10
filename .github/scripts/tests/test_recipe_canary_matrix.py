@@ -294,9 +294,7 @@ def test_discovery_agrees_with_python_tests_yml():
 # ---------------------------------------------------------------------------
 
 
-def test_skip_dirs_is_matched_against_the_repo_relative_path(
-    tmp_path, monkeypatch
-):
+def test_skip_dirs_is_matched_against_the_repo_relative_path(tmp_path):
     """SKIP_DIRS used to be tested against `manifest.parts`, the ABSOLUTE
     path. Any checkout living under a directory named `build`, `dist` or
     `.venv` — which is every self-hosted runner with a `build/` workspace —
@@ -316,7 +314,6 @@ def test_a_vendored_manifest_is_still_skipped(tmp_path):
     inside the repo."""
     recipe = tmp_path / "core" / "python" / "demo"
     (recipe / "node_modules" / "pkg").mkdir(parents=True)
-    recipe.mkdir(parents=True, exist_ok=True)
     (recipe / "manifest.yaml").write_text(
         'language: "python"\n', encoding="utf-8"
     )

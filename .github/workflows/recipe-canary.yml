@@ -177,7 +177,12 @@ jobs:
           # the log tail that makes the failure diagnosable.
           set -uo pipefail
           set +e
-          uv run --python "$PYVER" pytest \
+          # `--frozen` here too, for the same reason the sync step uses it:
+          # `uv run` will re-lock a drifted lockfile on its way to running
+          # the command, quietly repairing the condition this workflow
+          # exists to detect. Sync has already installed from the lock, so
+          # this only stops uv changing its mind.
+          uv run --frozen --python "$PYVER" pytest \
             --ignore=tests/integration \
             --ignore-glob='**/test_integration.py' \
             -q > pytest.log 2>&1
@@ -192,8 +197,14 @@ jobs:
       - name: Classify outcome
         id: classify
         if: always()
-        working-directory: ${{ matrix.entry.recipe }}
+        # Deliberately NOT `working-directory: <recipe>`. This step must run
+        # even when checkout is what failed, and then the recipe directory
+        # does not exist — the step could not start, no result.json would be
+        # written, and the recipe would vanish from the report. Which is the
+        # opposite of the point: it is exactly the run where the classifier
+        # needs to say "infra". It cd's below only if the directory is there.
         env:
+          RECIPE_DIR: ${{ matrix.entry.recipe }}
           RECIPE: ${{ matrix.entry.recipe }}
           PYVER: ${{ matrix.entry.python }}
           SYNC_OUTCOME: ${{ steps.sync.outcome }}
@@ -210,6 +221,10 @@ jobs:
           # a canary is for.
           set -uo pipefail
           set +e
+          # The logs live in the recipe directory when there is one. If
+          # checkout failed there is not, and the log reads below simply find
+          # nothing — which the evidence rule turns into `infra`, correctly.
+          cd "$RECIPE_DIR" 2>/dev/null || true
           OUTCOME=pass
           STEP=""
           DETAIL=""
