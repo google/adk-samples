@@ -80,14 +80,14 @@ jobs:
       - name: 'Checkout PR code (pull_request)'
         if: |-
           ${{ inputs.event_name == 'pull_request' }}
-        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
         with:
           fetch-depth: 1 # PR diff and metadata come from the gh API; git history is not needed.
 
       - name: 'Checkout PR code (workflow_dispatch)'
         if: |-
           ${{ inputs.event_name == 'workflow_dispatch' }}
-        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
         with:
           fetch-depth: 1
           ref: 'refs/pull/${{ inputs.pr_number_dispatch }}/head'
@@ -95,7 +95,7 @@ jobs:
       - name: 'Checkout PR code (issue_comment)'
         if: |-
           ${{ inputs.event_name == 'issue_comment' }}
-        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
         with:
           fetch-depth: 1
           ref: 'refs/pull/${{ inputs.pr_number_issue }}/head'
@@ -103,7 +103,7 @@ jobs:
       - name: 'Checkout PR code (pull_request_review & pull_request_review_comment)'
         if: |-
           ${{ inputs.event_name == 'pull_request_review' || inputs.event_name == 'pull_request_review_comment' }}
-        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
         with:
           fetch-depth: 1
           ref: 'refs/pull/${{ inputs.pr_number_review }}/head'
@@ -127,7 +127,7 @@ jobs:
         id: 'generate_token'
         if: |-
           ${{ inputs.app_id != '' }}
-        uses: 'actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42' # ratchet:actions/create-github-app-token@v2
+        uses: 'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1' # ratchet:actions/create-github-app-token@v2
         with:
           app-id: '${{ inputs.app_id }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
@@ -365,7 +365,7 @@ jobs:
       - name: 'Post PR review failure comment'
         if: |-
           ${{ failure() && (steps.gemini_pr_review.outcome == 'failure' || steps.gemini_pr_review.outcome == 'skipped') }}
-        uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
+        uses: 'actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3'
         with:
           github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           script: |-
