@@ -1,30 +1,40 @@
 name: 🧪 Tooling & Skill Tests
 
-# Unit tests for repo tooling (tools/) and skill scripts
-# (.agents/skills/*/scripts/). Recipe tests under core/ and contrib/ are
-# handled separately by python-tests.yml.
+# Unit tests for repo tooling (tools/), skill scripts
+# (.agents/skills/*/scripts/), and CI helper scripts (.github/scripts/).
+# Recipe tests under core/ and contrib/ are handled separately by
+# python-tests.yml.
 on:
   pull_request:
     paths:
       - "tools/**"
       - ".agents/**"
       - ".github/scripts/**"
-      # The three .github entries below are not cosmetic. Several tests load
-      # the REAL repo config rather than a fixture, so editing one of these
-      # files can break the suite even though nothing under tools/ changed:
+      # The .github entries below are not cosmetic. Several tests load the
+      # REAL repo config rather than a fixture, so editing one of these files
+      # can break the suite even though nothing under tools/ changed:
       #   .github/policy.yml
       #     tools/tests/test_check_frozen_paths.py::
       #       test_real_policy_file_declares_the_retired_roots calls
       #       load_frozen_paths() with no argument, which falls back to
       #       POLICY_PATH (tools/check_frozen_paths.py:38).
+      #     .github/scripts/tests/test_dependabot_config.py::
+      #       test_retired_roots_are_not_globbed reads frozen_paths directly.
       #   .github/schemas/manifest-schema.json
       #     test_validate_manifest.py and test_validate_structure.py call
       #     load_schema(), which hardcodes SCHEMA_PATH and takes no override
       #     parameter (tools/validate_manifest.py:40,113).
+      #   .github/dependabot.yml
+      #     .github/scripts/tests/test_dependabot_config.py loads it from
+      #     CONFIG_PATH to check its globs still cover every recipe manifest.
+      #     That file is hand-edited now that no generator owns it, so a
+      #     dependabot.yml-only PR is exactly the case that must run these
+      #     tests.
       # Without these entries such a PR merges green and the failure only
       # surfaces later, on an unrelated PR that happens to touch tools/.
       - ".github/policy.yml"
       - ".github/schemas/**"
+      - ".github/dependabot.yml"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/tools-tests.yml"
@@ -40,6 +50,7 @@ on:
       - ".github/scripts/**"
       - ".github/policy.yml"
       - ".github/schemas/**"
+      - ".github/dependabot.yml"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/tools-tests.yml"
@@ -56,7 +67,7 @@ concurrency:
 
 jobs:
   pytest:
-    name: pytest (tools + skills)
+    name: pytest (tools + skills + CI scripts)
     runs-on: ubuntu-latest
     # Tooling + skills tests are lightweight (pytest plus a few pure-Python
     # parsing libs in the dev group); 15 min leaves headroom for cold

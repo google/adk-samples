@@ -26,7 +26,6 @@ on:
       - '.github/schemas/manifest-schema.json'
       - '.github/policy.yml'
       - '.github/workflows/validate-recipe-structure.yml'
-      - '.github/scripts/generate_dependabot.py'
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'
@@ -45,7 +44,6 @@ on:
       - '.github/schemas/manifest-schema.json'
       - '.github/policy.yml'
       - '.github/workflows/validate-recipe-structure.yml'
-      - '.github/scripts/generate_dependabot.py'
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'
@@ -149,12 +147,74 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Exit status carries whose fault it is: 1 = rules the contributor
+          # must fix, 2 = one of our validators crashed. `|| FAILED=1` used
+          # to flatten the two, so a tooling bug printed the "here is how to
+          # fix your recipe" banner over a traceback.
+          run_validator() {
+            set +e
+            uv run validate "$@"
+            local status=$?
+            set -e
+            case "$status" in
+              0) ;;
+              1) FAILED=1 ;;
+              2) CI_FAULT=1 ;;
+              *)
+                echo "::error::'uv run validate $*' exited with an undefined status ($status). This is a CI tooling bug, not a problem with your recipe."
+                CI_FAULT=1
+                ;;
+            esac
+          }
+
+          ci_fault_banner() {
+            echo ""
+            echo "========================================"
+            echo "  CI TOOLING FAILURE — not your changes"
+            echo "========================================"
+            echo ""
+            echo "A validator crashed, so we do not know whether your recipe"
+            echo "is valid. Re-run the job; if it fails again, open an issue"
+            echo "with the detail above."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+          }
+
+          FAILED=0
+          CI_FAULT=0
+
           if [ "$VALIDATE_ALL" = "true" ]; then
             # Both validators walk core/, contrib/, and skills/ in one pass.
-            FAILED=0
-            uv run validate structure || FAILED=1
-            uv run validate readme    || FAILED=1
-            exit $FAILED
+            run_validator structure
+            run_validator readme
+
+            if [ "$CI_FAULT" -eq 1 ]; then
+              ci_fault_banner
+              exit 1
+            fi
+
+            # This branch used to `exit $FAILED` with no message while the
+            # per-recipe branch below printed a banner. It is the branch
+            # taken whenever a PR touches pyproject.toml, policy.yml, the
+            # schema or a validation tool, so the silent variant was hit
+            # often — a red X with nothing to read.
+            if [ "$FAILED" -eq 1 ]; then
+              echo ""
+              echo "========================================"
+              echo "  ACTION REQUIRED: recipe validation failed"
+              echo "========================================"
+              echo ""
+              echo "Every recipe was re-validated because this PR changed the"
+              echo "schema, the policy, or a validation tool. Failures may"
+              echo "therefore be in recipes you did not touch — that is"
+              echo "expected, and they still have to be fixed or the rule"
+              echo "change reverted."
+              echo ""
+              echo "Each problem above says why the rule applies and how to"
+              echo "fix it. Docs: docs/recipe-handbook/troubleshooting.md"
+              exit 1
+            fi
+            exit 0
           fi
 
           if [ -z "$CHANGED_RECIPES" ]; then
@@ -165,19 +225,30 @@ jobs:
           # Per-recipe invocation: keeps annotations scoped to the recipe
           # under review and lets one broken recipe not short-circuit
           # validation of the others in the same PR.
-          FAILED=0
+          #
+          # A here-string feeds the loop rather than a pipe, so the body runs
+          # in this shell and the FAILED / CI_FAULT assignments survive it.
           while IFS= read -r recipe; do
             [ -z "$recipe" ] && continue
-            uv run validate structure "$recipe" || FAILED=1
-            uv run validate readme    "$recipe" || FAILED=1
+            run_validator structure "$recipe"
+            run_validator readme    "$recipe"
           done <<< "$CHANGED_RECIPES"
+
+          if [ "$CI_FAULT" -eq 1 ]; then
+            ci_fault_banner
+            exit 1
+          fi
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
             echo "========================================"
-            echo "  One or more recipes failed structural validation."
-            echo "  See errors above for details."
+            echo "  ACTION REQUIRED: recipe validation failed"
             echo "========================================"
+            echo ""
+            echo "Each problem above says which rule applies, why it applies"
+            echo "to this recipe, and how to fix it."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md"
             exit 1
           fi
 
@@ -266,23 +337,38 @@ jobs:
         run: uv sync
 
       - name: Check every recipe sits at its required path
-        run: uv run python tools/validate_placement.py
-
-  check-dependabot-config:
-    name: Check dependabot.yml is up to date
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # ratchet:actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Check dependabot.yml is fresh
         run: |
-          python .github/scripts/generate_dependabot.py --check
-          echo "[PASS] dependabot.yml matches the current recipe tree."
+          set -euo pipefail
+
+          # Distinguish "a recipe is misplaced" (1) from "the placement
+          # validator crashed" (2); a bare invocation would surface the
+          # second as the first.
+          set +e
+          uv run python tools/validate_placement.py
+          status=$?
+          set -e
+          case "$status" in
+            0) ;;
+            1) exit 1 ;;
+            2|*)
+              echo ""
+              echo "========================================"
+              echo "  CI TOOLING FAILURE — not your changes"
+              echo "========================================"
+              echo ""
+              echo "The placement validator could not complete, so we do not"
+              echo "know whether every recipe is correctly placed. Re-run the"
+              echo "job; if it fails again, open an issue with the detail above."
+              echo ""
+              echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+              exit 1
+              ;;
+          esac
+
+  # The `check-dependabot-config` job used to live here. It failed a
+  # contributor's PR when .github/dependabot.yml no longer matched the recipe
+  # tree, because that file enumerated one entry per directory and had to be
+  # regenerated by hand on every recipe add or remove.
+  #
+  # dependabot.yml is now static and glob-based, so there is nothing to keep
+  # in sync and nothing to gate. See the header of that file.

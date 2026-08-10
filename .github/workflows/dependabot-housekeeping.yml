@@ -1,0 +1,114 @@
+name: Dependabot Housekeeping
+
+# Closes Dependabot PRs whose target directory no longer exists.
+#
+# When a recipe is removed or renamed, Dependabot stops opening PRs for the
+# old directory but never closes the ones already open, so they linger
+# indefinitely. This sweeps them up.
+#
+# Replaces the old "Sync Dependabot Config" workflow, which regenerated
+# .github/dependabot.yml and opened a PR with the result. That file is now
+# static and glob-based — nothing to regenerate — but the orphan cleanup it
+# also performed is still needed, so it survives here on its own schedule.
+#
+# The cleanup derives the set of live directories by scanning the recipe tree
+# (.github/scripts/recipe_manifests.py), not by parsing dependabot.yml, which
+# no longer enumerates directories.
+#
+# Because closing is destructive (`--delete-branch`), the script refuses to
+# act when the scan comes back empty, and refuses to close a batch larger than
+# its --max-close limit. If this job fails with "exceeds the --max-close
+# limit", read the listed PRs first: a large batch usually means healthy PRs
+# were reclassified, not that a lot of recipes were removed. Once you are
+# satisfied, re-run it from the Actions tab with the `max_close` input set to
+# the reported count.
+
+on:
+  schedule:
+    # Mondays at 04:00 UTC, a couple of hours after the 02:00 Dependabot
+    # schedule in .github/dependabot.yml. Ordering barely matters — an orphan
+    # is by definition an old PR for a directory that is gone, so it cannot be
+    # something Dependabot opened minutes earlier — but running after the
+    # weekly wave keeps the log for a given week in one place.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List orphans without closing them"
+        type: boolean
+        default: false
+      max_close:
+        description: >-
+          Max orphans to close in one run. Blank uses the script default.
+          Raise it only after reviewing a dry run.
+        type: string
+        required: false
+        default: ""
+
+# Nothing granted at workflow level; each job asks for what it needs. With a
+# single job the effective scope is identical either way, but a job added
+# later would silently inherit `contents: write`. dependabot-auto-merge.yml
+# and go-format.yml use the same shape, for zizmor's `excessive-permissions`.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  close-orphans:
+    name: Close orphaned Dependabot PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # `contents: write` is required by `--delete-branch`, not by the
+      # checkout: deleting a branch is a git-ref write. Without it every
+      # close fails with "Resource not accessible by integration" AFTER the
+      # PR has already been closed, leaving the branch behind.
+      contents: write
+      # `gh pr close` itself.
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        with:
+          # The whole tree at one commit: the script decides what to close by
+          # scanning for recipe manifests, so a sparse checkout would
+          # under-report live directories and make valid PRs look orphaned.
+          # History is irrelevant, hence depth 1.
+          fetch-depth: 1
+          # This job runs with `contents: write` but never uses git — the
+          # script talks to the API via `gh` with GITHUB_TOKEN from the
+          # environment. Leaving a push-capable credential in .git/config
+          # would be attack surface for nothing.
+          persist-credentials: false
+
+      # setup-uv rather than setup-python, matching every other Python
+      # workflow in this directory. `uv run --no-project` is used below: the
+      # script imports only the standard library plus its sibling
+      # recipe_manifests, so there is nothing to sync and no lockfile to read.
+      - name: Install uv
+        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
+        with:
+          # Minimum supported Python version, as in tools-tests.yml.
+          python-version: "3.11"
+
+      - name: Close orphaned Dependabot PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Both are empty on a schedule run, which is why each is defaulted
+          # below rather than interpolated straight into the command.
+          DRY_RUN: ${{ inputs.dry_run }}
+          MAX_CLOSE: ${{ inputs.max_close }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          if [ -n "${MAX_CLOSE:-}" ]; then
+            args+=(--max-close "${MAX_CLOSE}")
+          fi
+          uv run --no-project python \
+            .github/scripts/close_orphan_dependabot_prs.py "${args[@]}"

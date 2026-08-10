@@ -1,0 +1,20 @@
+{
+  "name": "lha-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "IAP-fronted static + reverse proxy for the lha backend",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "google-auth-library": "^9.15.0",
+    "http-proxy-middleware": "^3.0.3",
+    "jose": "^5.9.6"
+  }
+}

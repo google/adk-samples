@@ -23,6 +23,9 @@ CI log, or [jump to Something else](#something-else).
 - [ownership.team or poc is a placeholder](#ownershipteam-or-poc-is-a-placeholder)
 - [Directory name too long or invalid](#directory-name-too-long-or-invalid)
 - [Recipe exceeds size or file limit](#recipe-exceeds-size-or-file-limit)
+- [Required file or directory missing](#required-file-or-directory-missing)
+- [Recipe is in the wrong folder](#recipe-is-in-the-wrong-folder)
+- [Changes inside a retired folder](#changes-inside-a-retired-folder)
 
 **README.md**
 - [README.md is missing or empty](#readmemd-is-missing-or-empty)
@@ -34,10 +37,11 @@ CI log, or [jump to Something else](#something-else).
 **pyproject.toml**
 - [pyproject.toml has a local ruff configuration](#pyprojecttoml-has-a-local-ruff-configuration)
 - [Standalone Ruff config file](#standalone-ruff-config-file)
-- [Project name doesn't match folder name](#project-name-doesnt-match-folder-name)
+- [Project name doesn't match the required name](#project-name-doesnt-match-the-required-name)
 - [Project description doesn't match manifest](#project-description-doesnt-match-manifest)
 - [requires-python below 3.11](#requires-python-below-311)
 - [pyproject.toml has no sibling uv.lock](#pyprojecttoml-has-no-sibling-uvlock)
+- [Missing [[tool.uv.index]] block](#missing-tooluvindex-block)
 
 **Environment variables**
 - [Env var missing from .env.example](#env-var-missing-from-envexample)
@@ -54,6 +58,7 @@ CI log, or [jump to Something else](#something-else).
 - [Ruff format or check failed](#ruff-format-or-check-failed)
 
 **Other**
+- [CI infrastructure failure](#ci-infrastructure-failure)
 - [Non-blocking notices](#non-blocking-notices)
 - [Something else](#something-else)
 
@@ -157,6 +162,98 @@ and reference them in `README.md`. Delete generated files that
 shouldn't be committed (`.venv/`, IDE configs, build output — check
 the workflow output for the actual counted paths).
 
+## Required file or directory missing
+
+**Workflow:** [`validate-recipe-structure.yml`](../../.github/workflows/validate-recipe-structure.yml)
+
+CI output contains: `Required file '<name>' is missing` or
+`Required directory '<name>/' is missing`
+
+The set of required entries is the **union** of three rules in
+[`.github/policy.yml`](../../.github/policy.yml). The CI message names
+which one applied to your recipe:
+
+| Rule | Applies to | Entries |
+| --- | --- | --- |
+| `always` | every recipe | `README.md` |
+| `by_root.core` | anything under `core/` | `AGENTS.md` |
+| `by_root.skills` | anything under `skills/` | `SKILL.md`, `EVAL.yaml`, `scripts/` |
+| `by_language.python` | `manifest.language: python` | `pyproject.toml`, `uv.lock`, `.env.example`, `tests/test_runnability.py` |
+
+`manifest.yaml` is required for every recipe and reported separately.
+
+Note that language requirements come from **`manifest.language`**, not
+from the folder path. A vertical skill at `skills/retail/product-search`
+picks up the Python list because its manifest says so — the middle folder
+is a vertical, not a language.
+
+Most of these have a generator:
+
+| Missing | Fix |
+| --- | --- |
+| `manifest.yaml` | `generate-manifest` (AI skill) |
+| `.env.example` | `extract-python-environment-variables` (AI skill) |
+| `tests/test_runnability.py` | `generate-python-runnability-test` (AI skill) |
+| `uv.lock` | `uv lock` in the recipe directory |
+| `pyproject.toml` | `align-recipe-pyproject` (AI skill) |
+| everything at once | `scaffold-python-recipe` (AI skill) |
+
+**Directory looks present but CI says it's missing?** Git cannot commit an
+empty directory. Add a placeholder file and commit that:
+
+```bash
+touch scripts/.gitkeep && git add scripts/.gitkeep
+```
+
+## Recipe is in the wrong folder
+
+**Workflow:** [`validate-recipe-structure.yml`](../../.github/workflows/validate-recipe-structure.yml)
+
+CI output contains: `sits directly under` or `is nested too deeply`
+
+Every recipe under `skills/` must live at
+`skills/<vertical>/<solution>/`. The vertical (`retail/`, `hr/`,
+`finance/`) is mandatory — it surfaces ownership and lets a team see its
+whole surface at a glance. A solution dropped directly under `skills/`
+has no owning vertical and is rejected.
+
+```
+skills/retail/product-search/manifest.yaml    valid
+skills/product-search/manifest.yaml           too shallow — no vertical
+skills/retail/product-search/x/manifest.yaml  too deep
+```
+
+Move the directory to the path shown in the error, then re-run
+`uv run validate placement`.
+
+Remember that `[project].name` in `pyproject.toml` is
+`<vertical>-<solution>` for a vertical skill (`retail-product-search`),
+not the folder basename — see
+[Project name doesn't match the required name](#project-name-doesnt-match-the-required-name).
+
+## Changes inside a retired folder
+
+**Workflow:** [`validate-recipe-structure.yml`](../../.github/workflows/validate-recipe-structure.yml)
+
+CI output contains: `is in a retired folder and no longer accepts changes`
+
+Recipes used to live at `<language>/agents/<recipe>` in the repo root (for
+example `python/agents/academic-research`). Those roots are closed. The
+retired roots are listed under `frozen_paths` in
+[`.github/policy.yml`](../../.github/policy.yml).
+
+Move the whole recipe to `contrib/<language>/<recipe>` and make the change
+there. The error names the destination it expects.
+
+Deletions and renames are exempt, so migrating a recipe *out* of a retired
+folder is never blocked by this check — only adding to or editing one in
+place is.
+
+After moving, the recipe has to meet the current contribution
+requirements, which the retired copy predates: see
+[the checklist](../recipe-checklist.md) and
+[Required file or directory missing](#required-file-or-directory-missing).
+
 ## pyproject.toml has a local ruff configuration
 
 **Workflow:** [`python-validate-recipe.yml`](../../.github/workflows/python-validate-recipe.yml)
@@ -196,17 +293,28 @@ If the reported variable is a false positive (for example,
 checker's ignore list. If it isn't, file an issue against
 [`.github/scripts/check_env_vars.py`](../../.github/scripts/check_env_vars.py).
 
-## Project name doesn't match folder name
+## Project name doesn't match the required name
 
 **Workflow:** [`python-validate-recipe.yml`](../../.github/workflows/python-validate-recipe.yml)
 
-CI output contains: `[project].name` and `does not match the recipe folder name`
+CI output contains: `[project].name` and `does not match the required name`
 
-Set `[project].name` in `pyproject.toml` to the recipe folder
-basename. A recipe at `contrib/python/my-recipe` needs:
+Set `[project].name` in `pyproject.toml` to the name CI reports as
+required. It is derived from where the recipe lives:
+
+- `core/` and `contrib/` — the recipe folder basename. A recipe at
+  `contrib/python/my-recipe` needs `name = "my-recipe"`.
+- `skills/` — `<vertical>-<solution>`, because `skills/` interposes a
+  mandatory vertical namespace. A skill at
+  `skills/retail/product-search` needs
+  `name = "retail-product-search"`, not `product-search`.
 
 ```toml
+# contrib/python/my-recipe
 name = "my-recipe"
+
+# skills/retail/product-search
+name = "retail-product-search"
 ```
 
 ## Project description doesn't match manifest
@@ -275,6 +383,33 @@ cd contrib/python/my-recipe
 uv lock
 ```
 
+## Missing [[tool.uv.index]] block
+
+**Workflow:** [`python-validate-recipe.yml`](../../.github/workflows/python-validate-recipe.yml)
+
+CI output contains: `Missing required [[tool.uv.index]] block` or
+`has default=true but url=`
+
+Every recipe must declare public PyPI as its default index. Add this to
+the recipe's `pyproject.toml`:
+
+```toml
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true
+```
+
+Note the **double** brackets: `[[tool.uv.index]]` is an array of tables.
+A single-bracket `[tool.uv.index]` is a different TOML construct and uv
+will not accept it.
+
+Why it is required: on a Google corp workstation a system-wide
+`/etc/uv/uv.toml` redirects package resolution to an authenticated proxy.
+uv concatenates project-level indexes ahead of system-level ones, so
+declaring PyPI here puts it first and `uv sync` works without that auth.
+
+`align-recipe-pyproject` (AI skill) adds the block for you.
+
 ## Lockfile references a non-PyPI URL
 
 **Workflow:** [`python-dependency-policy.yml`](../../.github/workflows/python-dependency-policy.yml)
@@ -342,9 +477,34 @@ the rule ID.
 
 ---
 
-**The following will not block your PR.** Fix them when convenient.
+## CI infrastructure failure
 
-### Non-blocking notices
+CI output contains: `[ci-fault]` or `CI tooling failure in`
+
+**This is not caused by your changes.** One of the repo's own checker
+scripts crashed, or the CI environment failed (network, a missing
+dependency, an unhandled file encoding).
+
+You will see this instead of a normal error when the failure is ours
+rather than yours. It is annotated against the workflow, not against
+your files, precisely so you do not go hunting for a bug in your PR.
+
+What to do:
+
+1. Re-run the failed job. Genuinely transient failures (network, registry
+   timeouts) clear on a retry.
+2. If it fails again, it needs a repo maintainer. Open an issue with the
+   workflow name, the `Detail:` line from the output, and a link to the
+   run. Do not change your recipe to work around it.
+
+If the crash was triggered by something unusual in your recipe — an
+unusual file encoding, a hand-edited `uv.lock` — say so in the issue.
+The checker should report that as a clear error rather than crash, so
+it is a bug in the checker either way.
+
+## Non-blocking notices
+
+**The following will not block your PR.** Fix them when convenient.
 
 - **Hardcoded model name** — replace with `os.getenv("MODEL_NAME")`.
   Run `extract-python-environment-variables`.
