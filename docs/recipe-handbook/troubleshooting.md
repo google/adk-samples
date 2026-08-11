@@ -1,10 +1,14 @@
-<!-- word count: 2840 (target 500+, no cap) -->
+<!-- word count: 2890 (target 500+, no cap) -->
 
 # Troubleshooting
 
 A check failed on your recipe and you need to get it green. Find your error
 on this page, follow the steps, and run the command at the end of the
 section to confirm the fix worked before you push again.
+
+Run every command from the repo root, and replace `<recipe-path>` with the
+path to your recipe — `core/python/my-recipe`, `contrib/python/my-recipe`,
+or `skills/retail/my-skill`.
 
 ## Contents
 
@@ -124,7 +128,8 @@ and 2 MB.
    configuration, build output.
 3. Move data files over 1 MB to a storage bucket and link them from
    `README.md`.
-4. Convert screenshots to WebP: `cwebp -q 85 shot.png -o shot.webp`.
+4. Convert screenshots to WebP:
+   `cwebp -q 85 <recipe-path>/shot.png -o <recipe-path>/shot.webp`.
 
 **Confirm** — `uv run validate structure <recipe-path>`
 
@@ -152,7 +157,7 @@ because its manifest says `language: python`.
 | `manifest.yaml` | `generate-manifest` (AI skill) |
 | `.env.example` | `extract-python-environment-variables` (AI skill) |
 | `tests/test_runnability.py` | `generate-python-runnability-test` (AI skill) |
-| `uv.lock` | `uv lock` in the recipe directory |
+| `uv.lock` | `uv lock --project <recipe-path>` |
 | `pyproject.toml` | `align-recipe-pyproject` (AI skill) |
 | everything at once | `scaffold-python-recipe` (AI skill) |
 
@@ -160,7 +165,8 @@ Directory looks present but still reported missing? Git cannot commit an
 empty directory. Commit a placeholder:
 
 ```bash
-touch scripts/.gitkeep && git add scripts/.gitkeep
+touch <recipe-path>/scripts/.gitkeep
+git add <recipe-path>/scripts/.gitkeep
 ```
 
 **Confirm** — `uv run validate structure <recipe-path>`
@@ -486,7 +492,12 @@ assistant, copy the template from
 [python.md — Copy-paste starters](./languages/python.md#copy-paste-starters)
 and point it at your agent.
 
-**Confirm** — `uv run pytest <recipe-path>/tests/test_runnability.py`
+**Confirm** —
+`uv run --project <recipe-path> pytest <recipe-path>/tests/test_runnability.py`
+
+The `--project` flag matters: a recipe installs into its own environment, so
+plain `uv run pytest` uses the repo's environment and fails on imports the
+recipe declares.
 
 ## Ruff format or check failed
 
@@ -524,7 +535,7 @@ keeps sliding toward removal.
 1. Check the recipe still installs and passes:
    ```bash
    uv sync --dev --frozen --project <recipe-path>
-   uv run --frozen --project <recipe-path> pytest
+   uv run --frozen --project <recipe-path> pytest <recipe-path>/tests
    ```
 2. Update the package versions and re-lock if either step fails:
    `uv lock --project <recipe-path>`.
