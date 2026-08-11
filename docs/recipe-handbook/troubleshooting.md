@@ -1,50 +1,18 @@
-<!-- word count: 2950 (target 500+, no cap) -->
+<!-- word count: 2840 (target 500+, no cap) -->
 
 # Troubleshooting
 
-Every error a recipe can hit, the fix, and a command that proves it worked.
-
-## Start here
-
-1. Read the `Docs:` line printed under the failure. It names the section
-   below that covers your error.
-2. No `Docs:` line? Look up the file named in the error in the
-   [Contents](#contents).
-3. Fix missing or misplaced files first. One absent `manifest.yaml` or one
-   stale `uv.lock` turns several checks red at once.
-
-Run the structural checks on your own machine before pushing again:
-
-```bash
-uv run validate all <recipe-path>
-```
-
-Pushing to your PR branch re-runs every check automatically. Ask a reviewer
-to re-run a job only when one appears stuck.
-
-<!-- Table separators above the Contents block use ':..' style, not three
-     hyphens: tools/tests/test_ci_message.py treats the first horizontal
-     rule as the end of the Contents list, and a three-hyphen separator row
-     here would truncate it. -->
-
-| The error says | Go to |
-| :-- | :-- |
-| `is out of date — run: uv lock` | [uv.lock out of sync](#uvlock-out-of-sync) |
-| `Would reformat`, or a rule ID such as `E501` | [Ruff format or check failed](#ruff-format-or-check-failed) |
-| `Required file '<name>' is missing` | [Required file or directory missing](#required-file-or-directory-missing) |
-| `Environment variable '<VAR>' is read by Python source` | [Env var missing from .env.example](#env-var-missing-from-envexample) |
-| `[ci-fault]` or `CI tooling failure in` | [CI infrastructure failure](#ci-infrastructure-failure) |
+A check failed on your recipe and you need to get it green. Find your error
+on this page, follow the steps, and run the command at the end of the
+section to confirm the fix worked before you push again.
 
 ## Contents
 
-**Structure and placement**
+### General
+
+**manifest.yaml**
 - [manifest.yaml is missing, or fails the schema](#manifestyaml-missing-or-invalid)
 - [ownership.team or ownership.poc still holds scaffold text](#ownershipteam-or-poc-is-a-placeholder)
-- [The recipe folder name breaks the naming rule](#directory-name-too-long-or-invalid)
-- [The recipe is too big, or has too many files](#recipe-exceeds-size-or-file-limit)
-- [A file or directory the recipe must have is absent](#required-file-or-directory-missing)
-- [The recipe sits at the wrong path](#recipe-is-in-the-wrong-folder)
-- [The recipe lives in a folder that no longer accepts edits](#changes-inside-a-retired-folder)
 
 **README.md**
 - [README.md is absent or empty](#readmemd-is-missing-or-empty)
@@ -52,6 +20,15 @@ to re-run a job only when one appears stuck.
 - [README.md is under the 100-word minimum](#readmemd-is-too-short)
 - [README.md has no setup heading](#readmemd-is-missing-a-setup-section)
 - [README.md has no run heading, or no command to copy](#readmemd-is-missing-a-run-section-or-code-block)
+
+**Files and folders**
+- [The recipe folder name breaks the naming rule](#directory-name-too-long-or-invalid)
+- [The recipe is too big, or has too many files](#recipe-exceeds-size-or-file-limit)
+- [A file or directory the recipe must have is absent](#required-file-or-directory-missing)
+- [The recipe sits at the wrong path](#recipe-is-in-the-wrong-folder)
+- [The recipe lives in a folder that no longer accepts edits](#changes-inside-a-retired-folder)
+
+### Python
 
 **pyproject.toml**
 - [pyproject.toml configures Ruff locally](#pyprojecttoml-has-a-local-ruff-configuration)
@@ -76,6 +53,8 @@ to re-run a job only when one appears stuck.
 - [The recipe has no runnability test](#runnability-test-missing)
 - [Formatting or lint rules failed](#ruff-format-or-check-failed)
 
+### Warnings and unknown failures
+
 **Warnings that do not block your PR**
 - [The recipe is flagged as unhealthy](#recipe-is-marked-inactive)
 - [A core recipe is on an old ADK major](#core-recipe-is-behind-the-current-adk-major)
@@ -89,16 +68,17 @@ to re-run a job only when one appears stuck.
 
 ## manifest.yaml missing or invalid
 
-**Symptom** — `[manifest] manifest.yaml is missing.` or `[manifest]` followed
-by a schema error.
+**Symptom** — `[manifest-missing] manifest.yaml is missing.`,
+`[manifest-empty] manifest.yaml has no content — it is either empty or
+contains only comments.`, or a schema error naming the failing field.
 
 **Cause** — every recipe needs a `manifest.yaml` matching the
 [schema](../../.github/schemas/manifest-schema.json).
 
 **Fix**
 
-- File absent: run `generate-manifest` (AI skill), or copy the
-  [minimum example](./anatomy.md#manifestyaml) and edit it.
+- File absent, empty, or only comments: run `generate-manifest` (AI skill),
+  or copy the [minimum example](./anatomy.md#manifestyaml) and edit it.
 - File present but rejected: the error names the failing field. Every
   manifest needs `type`, `status`, `language`, `description`,
   `ownership.team` and `ownership.poc`.
@@ -107,8 +87,8 @@ by a schema error.
 
 ## ownership.team or poc is a placeholder
 
-**Symptom** — `[ownership.team] is still set to the placeholder value`, or the
-same for `[ownership.poc]`.
+**Symptom** — `[ownership-placeholder] ownership.team is still the scaffold
+placeholder`, or the same for `ownership.poc`.
 
 **Cause** — the scaffold's placeholder text is still in `manifest.yaml`.
 
@@ -131,7 +111,8 @@ with a letter, 30 characters at most.
 
 ## Recipe exceeds size or file limit
 
-**Symptom** — `Recipe folder exceeds` or `exceeding the limit`
+**Symptom** — `Recipe folder is 3.4 MB; the limit is 2 MB.`, or
+`Recipe folder contains 91 counted files; the limit is 70.`
 
 **Cause** — the recipe passes its budget. Under `contrib/` that is 70 files
 and 2 MB.
@@ -209,7 +190,7 @@ skills/retail/product-search/x/manifest.yaml  too deep
 
 ## Changes inside a retired folder
 
-**Symptom** — `is in a retired folder and no longer accepts changes`
+**Symptom** — `is in a retired folder, which no longer accepts changes.`
 
 **Cause** — recipes used to live at `<language>/agents/<recipe>` in the repo
 root. Those roots are closed.
@@ -230,18 +211,19 @@ out is never blocked.
 
 ## README.md is missing or empty
 
-**Symptom** — `README.md is missing` or `README.md is empty`
+**Symptom** — `README.md is missing.`, `README.md is empty.`,
+`README.md is not valid UTF-8`, or `README.md could not be read`.
 
-**Cause** — every recipe needs a `README.md`.
+**Cause** — every recipe needs a `README.md`, and CI reads it as UTF-8.
 
-**Fix** — create it, covering what the recipe does, how to set it up, and how
-to run it.
+**Fix** — create the file, covering what the recipe does, how to set it up,
+and how to run it. If the error names an encoding, re-save it as UTF-8.
 
 **Confirm** — `uv run validate readme <recipe-path>`
 
 ## README.md contains TODO placeholders
 
-**Symptom** — `README.md contains TODO: placeholders`
+**Symptom** — `README.md still contains 3 TODO: placeholder(s).`
 
 **Cause** — scaffold text or draft notes survived into the PR.
 
@@ -251,7 +233,7 @@ to run it.
 
 ## README.md is too short
 
-**Symptom** — `README.md is too short`
+**Symptom** — `README.md is 47 words; the minimum is 100.`
 
 **Cause** — the README is under 100 words.
 
@@ -262,7 +244,7 @@ to run it.
 
 ## README.md is missing a setup section
 
-**Symptom** — `README.md is missing a setup section`
+**Symptom** — `README.md has no setup section.`
 
 **Cause** — no heading matches the accepted set.
 
@@ -274,8 +256,8 @@ to run it.
 
 ## README.md is missing a run section or code block
 
-**Symptom** — `README.md is missing a run section` or
-`README.md has no fenced code block`
+**Symptom** — `README.md has no run section.` or
+`README.md has no fenced code block.`
 
 **Cause** — no run heading, or a run heading with no command to copy.
 
@@ -384,7 +366,7 @@ uv lock --project <recipe-path>
 
 ## Missing [[tool.uv.index]] block
 
-**Symptom** — `Missing required [[tool.uv.index]] block`, or
+**Symptom** — ``pyproject.toml has no `[[tool.uv.index]]` block.``, or
 `has default=true but url=`
 
 **Cause** — the recipe does not declare public PyPI as its default index.
@@ -480,7 +462,7 @@ nothing beyond `editable = "."`.
 
 ## Missing package hash in uv.lock
 
-**Symptom** — `All distributions must have sha256 hashes`
+**Symptom** — `Every distribution needs a sha256 hash for supply-chain`
 
 **Cause** — the lockfile was hand-edited, or generated by another tool.
 
@@ -495,7 +477,7 @@ uv lock --project <recipe-path>
 
 ## Runnability test missing
 
-**Symptom** — `No test_runnability.py found under`
+**Symptom** — `No test_runnability.py under <recipe>/tests/.`
 
 **Cause** — every Python recipe needs a test proving its agent imports.
 

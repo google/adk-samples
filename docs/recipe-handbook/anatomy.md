@@ -62,8 +62,8 @@ Generate with the `generate-manifest` AI skill.
 
 Two of those are not just metadata — CI acts on them:
 
-- **`ownership.poc` is a delivery address.** We may contact this point of
-  contact if any maintenance work is needed for the recipe.
+- **`ownership.poc` is the person we contact.** We reach out to them if the
+  recipe needs maintenance work.
 - **`status` tracks the health of the recipe.** It is `active` by default.
   The recipe's health is checked and evaluated on a schedule, and if issues
   go unresolved for long enough the status is eventually set to `inactive`.
