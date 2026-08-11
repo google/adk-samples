@@ -1,4 +1,4 @@
-<!-- word count: 3040 (target 500+, no cap) -->
+<!-- word count: 3010 (target 500+, no cap) -->
 
 # Troubleshooting
 
@@ -6,9 +6,9 @@ A check failed on your recipe and you need to get it green. Find your error
 on this page, follow the steps, and run the command at the end of the
 section to confirm the fix worked before you push again.
 
-Run every command from the repo root, and replace `<recipe-path>` with the
-path to your recipe — `core/python/my-recipe`, `contrib/python/my-recipe`,
-or `skills/retail/my-skill`.
+Each command below says which directory to run it from. Replace
+`<recipe-path>` with the path to your recipe — `core/python/my-recipe`,
+`contrib/python/my-recipe`, or `skills/retail/my-skill`.
 
 ## Contents
 
@@ -503,12 +503,8 @@ assistant, copy the template from
 [python.md — Copy-paste starters](./languages/python.md#copy-paste-starters)
 and point it at your agent.
 
-**Confirm**, from the repo root —
-`uv run --project <recipe-path> pytest <recipe-path>/tests/test_runnability.py`
-
-The `--project` flag matters: a recipe installs into its own environment, so
-plain `uv run pytest` uses the repo's environment and fails on imports the
-recipe declares.
+**Confirm**, from the recipe folder —
+`uv run pytest tests/test_runnability.py`
 
 ## Ruff format or check failed
 
@@ -546,19 +542,19 @@ keeps sliding toward removal.
 
 1. Check the recipe still installs and passes:
    ```bash
-   # from the repo root
-   uv sync --dev --frozen --project <recipe-path>
-   uv run --frozen --project <recipe-path> pytest <recipe-path>/tests
+   # from the recipe folder
+   uv sync --dev --frozen
+   uv run --frozen pytest \
+     --ignore=tests/integration \
+     --ignore-glob='**/test_integration.py'
    ```
-2. Update the package versions and re-lock if either step fails:
-   `uv lock --project <recipe-path>`.
+2. Update the package versions and re-lock if either step fails: `uv lock`.
 3. Set `status: active` in `manifest.yaml` in the same PR. Nothing sets it
    back for you.
 
 Editing docs or fixing a typo in an inactive recipe? Ignore this warning.
 
-**Confirm**, from the repo root —
-`grep -n "status:" <recipe-path>/manifest.yaml`
+**Confirm**, from the recipe folder — `grep -n "status:" manifest.yaml`
 
 ## Core recipe is behind the current ADK major
 
