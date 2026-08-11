@@ -1,4 +1,4 @@
-<!-- word count: 2890 (target 500+, no cap) -->
+<!-- word count: 3040 (target 500+, no cap) -->
 
 # Troubleshooting
 
@@ -87,7 +87,7 @@ contains only comments.`, or a schema error naming the failing field.
   manifest needs `type`, `status`, `language`, `description`,
   `ownership.team` and `ownership.poc`.
 
-**Confirm** — `uv run validate manifest <recipe-path>`
+**Confirm**, from the repo root — `uv run validate manifest <recipe-path>`
 
 ## ownership.team or poc is a placeholder
 
@@ -99,7 +99,7 @@ placeholder`, or the same for `ownership.poc`.
 **Fix** — set `ownership.team` to a real team name and `ownership.poc` to a
 real GitHub user ID.
 
-**Confirm** — `uv run validate manifest <recipe-path>`
+**Confirm**, from the repo root — `uv run validate manifest <recipe-path>`
 
 ## Directory name too long or invalid
 
@@ -111,7 +111,7 @@ real GitHub user ID.
 **Fix** — rename the folder: lowercase letters and hyphens only, starting
 with a letter, 30 characters at most.
 
-**Confirm** — `uv run validate structure <recipe-path>`
+**Confirm**, from the repo root — `uv run validate structure <recipe-path>`
 
 ## Recipe exceeds size or file limit
 
@@ -131,7 +131,7 @@ and 2 MB.
 4. Convert screenshots to WebP:
    `cwebp -q 85 <recipe-path>/shot.png -o <recipe-path>/shot.webp`.
 
-**Confirm** — `uv run validate structure <recipe-path>`
+**Confirm**, from the repo root — `uv run validate structure <recipe-path>`
 
 ## Required file or directory missing
 
@@ -165,11 +165,12 @@ Directory looks present but still reported missing? Git cannot commit an
 empty directory. Commit a placeholder:
 
 ```bash
+# from the repo root
 touch <recipe-path>/scripts/.gitkeep
 git add <recipe-path>/scripts/.gitkeep
 ```
 
-**Confirm** — `uv run validate structure <recipe-path>`
+**Confirm**, from the repo root — `uv run validate structure <recipe-path>`
 
 ## Recipe is in the wrong folder
 
@@ -192,7 +193,7 @@ skills/retail/product-search/x/manifest.yaml  too deep
    `<vertical>-<solution>`, not the folder basename. See
    [Project name doesn't match the required name](#project-name-doesnt-match-the-required-name).
 
-**Confirm** — `uv run validate placement`
+**Confirm**, from the repo root — `uv run validate placement`
 
 ## Changes inside a retired folder
 
@@ -213,7 +214,8 @@ root. Those roots are closed.
 Deleting or renaming inside a retired folder is allowed, so moving a recipe
 out is never blocked.
 
-**Confirm** — `uv run validate structure contrib/<language>/<recipe>`
+**Confirm**, from the repo root —
+`uv run validate structure contrib/<language>/<recipe>`
 
 ## README.md is missing or empty
 
@@ -225,7 +227,7 @@ out is never blocked.
 **Fix** — create the file, covering what the recipe does, how to set it up,
 and how to run it. If the error names an encoding, re-save it as UTF-8.
 
-**Confirm** — `uv run validate readme <recipe-path>`
+**Confirm**, from the repo root — `uv run validate readme <recipe-path>`
 
 ## README.md contains TODO placeholders
 
@@ -235,7 +237,7 @@ and how to run it. If the error names an encoding, re-save it as UTF-8.
 
 **Fix** — replace every `TODO:` line with real content.
 
-**Confirm** — `uv run validate readme <recipe-path>`
+**Confirm**, from the repo root — `uv run validate readme <recipe-path>`
 
 ## README.md is too short
 
@@ -246,7 +248,7 @@ and how to run it. If the error names an encoding, re-save it as UTF-8.
 **Fix** — add a real description, setup instructions and run steps. Aim for
 200–300 words.
 
-**Confirm** — `uv run validate readme <recipe-path>`
+**Confirm**, from the repo root — `uv run validate readme <recipe-path>`
 
 ## README.md is missing a setup section
 
@@ -258,7 +260,7 @@ and how to run it. If the error names an encoding, re-save it as UTF-8.
 `Prerequisites`, `Installation`, `Requirements`, `Configuration`,
 `Getting Started`, `Before You Begin`, `Environment`.
 
-**Confirm** — `uv run validate readme <recipe-path>`
+**Confirm**, from the repo root — `uv run validate readme <recipe-path>`
 
 ## README.md is missing a run section or code block
 
@@ -274,7 +276,7 @@ and how to run it. If the error names an encoding, re-save it as UTF-8.
 2. Under it, add a fenced code block with the exact command that starts the
    agent.
 
-**Confirm** — `uv run validate readme <recipe-path>`
+**Confirm**, from the repo root — `uv run validate readme <recipe-path>`
 
 ## pyproject.toml has a local ruff configuration
 
@@ -287,7 +289,8 @@ a recipe-level block would override it.
 recipe's `pyproject.toml`. `align-recipe-pyproject` (AI skill) does this for
 you.
 
-**Confirm** — `grep -n "tool.ruff" <recipe-path>/pyproject.toml` prints
+**Confirm**, from the repo root —
+`grep -n "tool.ruff" <recipe-path>/pyproject.toml` prints
 nothing.
 
 ## Standalone Ruff config file
@@ -299,7 +302,8 @@ nothing.
 **Fix** — delete the file. Ruff configuration lives in the repo root
 `pyproject.toml`.
 
-**Confirm** — `ls <recipe-path>/ruff.toml <recipe-path>/.ruff.toml` reports
+**Confirm**, from the repo root —
+`ls <recipe-path>/ruff.toml <recipe-path>/.ruff.toml` reports
 no such file.
 
 ## Project name doesn't match the required name
@@ -324,7 +328,7 @@ name = "my-recipe"
 name = "retail-product-search"
 ```
 
-**Confirm** —
+**Confirm**, from the repo root —
 `uv run python .github/scripts/check_recipe_pyproject.py <recipe-path>`
 
 ## Project description doesn't match manifest
@@ -336,7 +340,7 @@ name = "retail-product-search"
 **Fix** — copy `manifest.description` verbatim into `[project].description`,
 or delete `[project].description`, which is optional.
 
-**Confirm** —
+**Confirm**, from the repo root —
 `uv run python .github/scripts/check_recipe_pyproject.py <recipe-path>`
 
 ## requires-python below 3.11
@@ -352,7 +356,7 @@ or delete `[project].description`, which is optional.
 requires-python = ">=3.11"
 ```
 
-**Confirm** —
+**Confirm**, from the repo root —
 `uv run python .github/scripts/check_recipe_pyproject.py <recipe-path>`
 
 ## pyproject.toml has no sibling uv.lock
@@ -365,10 +369,11 @@ section needs a `uv.lock` next to it.
 **Fix**
 
 ```bash
+# from the repo root
 uv lock --project <recipe-path>
 ```
 
-**Confirm** — `ls <recipe-path>/uv.lock`
+**Confirm**, from the repo root — `ls <recipe-path>/uv.lock`
 
 ## Missing [[tool.uv.index]] block
 
@@ -389,7 +394,7 @@ default = true
 Use **double** brackets. `[tool.uv.index]` with single brackets is a
 different TOML construct, and uv rejects it.
 
-**Confirm** —
+**Confirm**, from the repo root —
 `uv run python .github/scripts/check_recipe_pyproject.py <recipe-path>`
 
 ## Env var missing from .env.example
@@ -408,7 +413,8 @@ A false positive such as `os.getenv("HOME")` should already be suppressed.
 If one slips through, file an issue against
 [`check_env_vars.py`](../../.github/scripts/check_env_vars.py).
 
-**Confirm** — `python3 .github/scripts/check_env_vars.py <recipe-path>`
+**Confirm**, from the repo root —
+`python3 .github/scripts/check_env_vars.py <recipe-path>`
 
 ## uv.lock out of sync
 
@@ -421,10 +427,11 @@ else.
 **Fix**
 
 ```bash
+# from the repo root
 uv lock --project <recipe-path>
 ```
 
-**Confirm** — `uv lock --check --project <recipe-path>`
+**Confirm**, from the repo root — `uv lock --check --project <recipe-path>`
 
 ## Lockfile references a non-PyPI URL
 
@@ -437,7 +444,8 @@ Artifactory are not allowed.
 **Fix** — replace the dependency with a package published on PyPI, then
 `uv lock --project <recipe-path>`.
 
-**Confirm** — `grep -n "url = " <recipe-path>/uv.lock` shows only
+**Confirm**, from the repo root —
+`grep -n "url = " <recipe-path>/uv.lock` shows only
 `pypi.org` and `files.pythonhosted.org`.
 
 ## VCS dependency in uv.lock
@@ -450,7 +458,8 @@ reproducible and skip the registry's security verification.
 **Fix** — depend on a PyPI-published package instead, then
 `uv lock --project <recipe-path>`.
 
-**Confirm** — `grep -n "git = " <recipe-path>/uv.lock` prints nothing.
+**Confirm**, from the repo root —
+`grep -n "git = " <recipe-path>/uv.lock` prints nothing.
 
 ## Local path dependency in uv.lock
 
@@ -463,7 +472,8 @@ workspace root is the one exception.
 **Fix** — remove the local source, depend on the published package, then
 `uv lock --project <recipe-path>`.
 
-**Confirm** — `grep -n "editable\|directory = " <recipe-path>/uv.lock` shows
+**Confirm**, from the repo root —
+`grep -n "editable\|directory = " <recipe-path>/uv.lock` shows
 nothing beyond `editable = "."`.
 
 ## Missing package hash in uv.lock
@@ -475,11 +485,12 @@ nothing beyond `editable = "."`.
 **Fix**
 
 ```bash
+# from the repo root
 rm <recipe-path>/uv.lock
 uv lock --project <recipe-path>
 ```
 
-**Confirm** — `uv lock --check --project <recipe-path>`
+**Confirm**, from the repo root — `uv lock --check --project <recipe-path>`
 
 ## Runnability test missing
 
@@ -492,7 +503,7 @@ assistant, copy the template from
 [python.md — Copy-paste starters](./languages/python.md#copy-paste-starters)
 and point it at your agent.
 
-**Confirm** —
+**Confirm**, from the repo root —
 `uv run --project <recipe-path> pytest <recipe-path>/tests/test_runnability.py`
 
 The `--project` flag matters: a recipe installs into its own environment, so
@@ -510,13 +521,14 @@ double quotes.
 **Fix**
 
 ```bash
+# from the repo root
 uv run ruff format <recipe-path>
 uv run ruff check --fix <recipe-path>
 ```
 
 Ruff cannot auto-fix everything. What is left is reported with its rule ID.
 
-**Confirm** —
+**Confirm**, from the repo root —
 `uv run ruff format --check <recipe-path> && uv run ruff check <recipe-path>`
 
 ---
@@ -534,6 +546,7 @@ keeps sliding toward removal.
 
 1. Check the recipe still installs and passes:
    ```bash
+   # from the repo root
    uv sync --dev --frozen --project <recipe-path>
    uv run --frozen --project <recipe-path> pytest <recipe-path>/tests
    ```
@@ -544,7 +557,8 @@ keeps sliding toward removal.
 
 Editing docs or fixing a typo in an inactive recipe? Ignore this warning.
 
-**Confirm** — `grep -n "status:" <recipe-path>/manifest.yaml`
+**Confirm**, from the repo root —
+`grep -n "status:" <recipe-path>/manifest.yaml`
 
 ## Core recipe is behind the current ADK major
 
@@ -569,10 +583,11 @@ different fixes:
    produces a recipe that fails at runtime instead of in CI.
 3. Re-lock:
    ```bash
+   # from the repo root
    uv lock --upgrade-package google-adk --project <recipe-path>
    ```
 
-**Confirm** —
+**Confirm**, from the repo root —
 `grep -n "google-adk" <recipe-path>/pyproject.toml <recipe-path>/uv.lock`
 
 ## Non-blocking notices
@@ -611,8 +626,8 @@ on the checker and not on your files.
 **Fix**
 
 1. Search this page for keywords from the error message.
-2. Run `uv run validate all <recipe-path>` locally — a second failure is
-   often the cause of the first.
+2. Run `uv run validate all <recipe-path>` from the repo root — a second
+   failure is often the cause of the first.
 3. Open an issue at
    [github.com/google/adk-samples/issues](https://github.com/google/adk-samples/issues):
 
