@@ -14,7 +14,7 @@
   "dependencies": {
     "express": "^4.21.0",
     "google-auth-library": "^9.15.0",
-    "http-proxy-middleware": "^3.0.3",
+    "http-proxy-middleware": "^3.0.7",
     "jose": "^5.9.6"
   }
 }
