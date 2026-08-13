@@ -1,0 +1,128 @@
+name: 'AI PR Review — AGY Smoke Test (temporary)'
+
+# THROWAWAY VALIDATION WORKFLOW — delete once ADC auth is confirmed working.
+#
+# Proves that Antigravity CLI (agy) can authenticate headlessly via
+# Application Default Credentials (ADC) derived from this repo's existing
+# GitHub Actions Workload Identity Federation setup (the same
+# GCP_WIF_PROVIDER / SERVICE_ACCOUNT_EMAIL / GOOGLE_CLOUD_PROJECT vars used
+# by the current gemini-cli-based ai-pr-review-*.yml workflows), before any
+# production workflow is migrated off gemini-cli onto agy.
+#
+# aiplatform.googleapis.com is enabled and wif-service-account@... has
+# roles/aiplatform.user on adk-samples-repo-gcp-support as of 2026-08-12.
+# The remaining unknown this test resolves: whether a context-aware-access
+# policy on this project (confirmed to block plain `gcloud` calls from an
+# unmanaged machine, while Cloud Shell — a Google-managed environment — goes
+# through fine) also blocks WIF-based service-account auth from a GitHub
+# Actions runner, or only gates interactive human (`user:`) sign-ins.
+#
+# Run it manually from the Actions tab (workflow_dispatch). It does not
+# touch any PR, issue, or repo content — it only proves the auth + headless
+# invocation path.
+
+on:
+  # TEMPORARY: `workflow_dispatch` only works once a workflow is on the
+  # default branch, so this push trigger is how the smoke test runs before
+  # anything is merged. Remove it (along with this whole file) once ADC auth
+  # is confirmed.
+  push:
+    branches:
+      - 'test/agy-pr-review-migration'
+    paths:
+      - '.github/workflows/ai-agy-smoke-test.yml'
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Prompt to send to agy for the smoke test'
+        required: false
+        type: 'string'
+        default: 'Reply with exactly the single word: OK'
+
+permissions:
+  contents: 'read'
+  id-token: 'write'
+
+jobs:
+  agy-smoke-test:
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 10
+    steps:
+      # Required by google-github-actions/auth so it has a $GITHUB_WORKSPACE
+      # to write the generated credentials file into.
+      - name: 'Checkout'
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 'Authenticate to Google Cloud (Workload Identity Federation)'
+        id: 'auth'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # ratchet:google-github-actions/auth@v2.1.13
+        with:
+          project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
+          service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
+
+      - name: 'Install Antigravity CLI (agy)'
+        run: |-
+          set -euo pipefail
+          curl -fsSL https://antigravity.google/cli/install.sh | bash
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      - name: 'Print agy version'
+        run: |-
+          set -euo pipefail
+          agy --version
+
+      # google-github-actions/auth exports GOOGLE_APPLICATION_CREDENTIALS
+      # pointing at a gha-creds-*.json file inside $GITHUB_WORKSPACE — it does
+      # NOT write to the gcloud-CLI well-known ADC path. Google's standard ADC
+      # resolution checks GOOGLE_APPLICATION_CREDENTIALS first, so agy should
+      # pick it up automatically; the copy below is a belt-and-suspenders
+      # fallback in case agy only checks the well-known path as its docs
+      # example suggests. This step reports which of the two actually exists
+      # so we know which mechanism agy relies on.
+      - name: 'Mirror credentials to the well-known gcloud ADC path'
+        run: |-
+          set -euo pipefail
+          echo "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-<unset>}"
+          mkdir -p "${HOME}/.config/gcloud"
+          cp "${GOOGLE_APPLICATION_CREDENTIALS}" "${HOME}/.config/gcloud/application_default_credentials.json"
+          echo "Mirrored to ${HOME}/.config/gcloud/application_default_credentials.json"
+
+      - name: 'Run agy in headless mode via ADC'
+        id: 'agy_smoke'
+        env:
+          AGY_ADC_AUTH: 'true'
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
+          # `inputs` is empty on a push event, so fall back to the default.
+          PROMPT: '${{ inputs.prompt || ''Reply with exactly the single word: OK'' }}'
+        run: |-
+          set -euo pipefail
+
+          RESULT="$(agy -p "${PROMPT}" \
+            --model gemini-3.5-flash \
+            --output-format json \
+            --print-timeout 3m)"
+
+          echo "${RESULT}" > agy_result.json
+          cat agy_result.json
+
+          STATUS="$(jq -r '.status' agy_result.json)"
+          echo "status=${STATUS}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${STATUS}" != "SUCCESS" ]]; then
+            echo "::error::agy smoke test failed with status=${STATUS}: $(jq -r '.error // "unknown error"' agy_result.json)"
+            exit 1
+          fi
+
+          echo "::notice::agy responded: $(jq -r '.response' agy_result.json)"
+
+      - name: 'Upload result for inspection'
+        if: always()
+        uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' # ratchet:actions/upload-artifact@v4
+        with:
+          name: 'agy-smoke-result'
+          path: 'agy_result.json'
+          if-no-files-found: 'ignore'
