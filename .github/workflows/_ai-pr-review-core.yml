@@ -364,18 +364,26 @@ jobs:
           }
           MCP_EOF
 
+          # TEST-ONLY allowlist — do not ship without reading this.
+          #
+          # agy's `command(...)` rule matches the BINARY only, so the
+          # gemini-cli-style `command(gh pr diff)` never matched the real
+          # argv `gh pr diff 2509 --patch` and was silently auto-denied.
+          # `command(gh)` does match, but the model improvises commands the
+          # prompt never named, and a single unlisted one auto-denies the
+          # turn in headless mode with no retry. It also reaches for the
+          # native `read_file` tool, which needs its own `read_file(*)` rule.
+          #
+          # `command(*)` is strictly weaker than the `coreTools` list it
+          # replaces. It is set here only to prove the MCP comment-posting
+          # path end to end.
           cat > "${HOME}/.gemini/antigravity-cli/settings.json" <<'SETTINGS_EOF'
           {
             "enableTelemetry": false,
             "permissions": {
               "allow": [
-                "command(echo)",
-                "command(gh pr view)",
-                "command(gh pr diff)",
-                "command(cat)",
-                "command(head)",
-                "command(tail)",
-                "command(grep)",
+                "command(*)",
+                "read_file(*)",
                 "mcp(github/create_pull_request_review_comment)"
               ]
             }
