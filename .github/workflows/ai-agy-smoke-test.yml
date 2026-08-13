@@ -83,12 +83,26 @@ jobs:
       # example suggests. This step reports which of the two actually exists
       # so we know which mechanism agy relies on.
       - name: 'Mirror credentials to the well-known gcloud ADC path'
+        env:
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
         run: |-
           set -euo pipefail
           echo "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-<unset>}"
+
+          # agy reads `quota_project_id` straight out of the ADC JSON and
+          # passes it to the Code Assist backend. google-github-actions/auth
+          # does not write that field, so agy authenticated with an empty
+          # quota project and every backend call came back "You are not
+          # logged into Antigravity". Inject it.
+          jq --arg p "${GOOGLE_CLOUD_PROJECT}" '. + {quota_project_id: $p}' \
+            "${GOOGLE_APPLICATION_CREDENTIALS}" > /tmp/adc_with_quota.json
+
+          echo "credential type: $(jq -r '.type // "?"' /tmp/adc_with_quota.json)"
+          echo "quota_project_id: $(jq -r '.quota_project_id // "?"' /tmp/adc_with_quota.json)"
+
           mkdir -p "${HOME}/.config/gcloud"
-          cp "${GOOGLE_APPLICATION_CREDENTIALS}" "${HOME}/.config/gcloud/application_default_credentials.json"
-          echo "Mirrored to ${HOME}/.config/gcloud/application_default_credentials.json"
+          cp /tmp/adc_with_quota.json "${HOME}/.config/gcloud/application_default_credentials.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/adc_with_quota.json" >> "${GITHUB_ENV}"
 
       # DIAGNOSTIC: `agy models` fetches the model list from the server, so
       # the ids it returns depend on how the CLI is authenticated. The ids a
