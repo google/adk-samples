@@ -302,8 +302,28 @@ jobs:
         if: steps.new_files_only_guard.outputs.skip != 'true'
         uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # ratchet:google-github-actions/auth@v2.1.13
         with:
+          project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
           service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
+
+      # REQUIRED, not belt-and-braces. agy reads `quota_project_id` out of the
+      # ADC JSON and forwards it to the Code Assist backend that serves its
+      # models. google-github-actions/auth does not write that field, and
+      # without it agy authenticates as the service account with an EMPTY quota
+      # project: every backend call then fails with "You are not logged into
+      # Antigravity", the model catalog never loads, and since --model is
+      # validated against that catalog the run dies with the badly misleading
+      # "model <name> is not recognized as a known model".
+      - name: 'Add the quota project to the ADC credential'
+        if: steps.new_files_only_guard.outputs.skip != 'true'
+        env:
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+        run: |-
+          set -euo pipefail
+
+          jq --arg p "${GOOGLE_CLOUD_PROJECT}" '. + {quota_project_id: $p}' \
+            "${GOOGLE_APPLICATION_CREDENTIALS}" > "${RUNNER_TEMP}/adc.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=${RUNNER_TEMP}/adc.json" >> "${GITHUB_ENV}"
 
       # The installer always fetches the latest build — it has no version flag,
       # so the old `gemini_cli_version` pin has no equivalent here.
@@ -373,18 +393,32 @@ jobs:
           PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'
           CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files || steps.get_pr_review.outputs.changed_files }}'
           ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions || steps.get_pr_review.outputs.additional_instructions }}'
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           REPOSITORY: '${{ github.repository }}'
           PROMPT: '${{ inputs.prompt }}'
         run: |-
           set -euo pipefail
 
-          # agy exits non-zero and prints diagnostics to stderr on failure, so
-          # `set -e` covers that; this only adds the exit-0-but-not-SUCCESS case.
-          agy -p "${PROMPT}" --model 'gemini-3.5-flash-medium' --output-format json > agy_result.json
+          # agy reports failures as JSON on STDOUT, not stderr, so the result
+          # has to be written to disk and echoed back explicitly — letting
+          # `set -e` abort on the exit code alone leaves a bare "exit 1" in the
+          # log with no reason attached.
+          set +e
+          agy -p "${PROMPT}" \
+            --model 'gemini-3.5-flash' \
+            --output-format json \
+            --print-timeout 10m > agy_result.json 2> agy_stderr.log
+          AGY_EXIT=$?
+          set -e
 
-          STATUS="$(jq -r '.status // "MISSING"' agy_result.json)"
-          if [[ "${STATUS}" != "SUCCESS" ]]; then
-            echo "::error::agy finished with status=${STATUS}: $(jq -r '.error // "unknown"' agy_result.json)"
+          echo "--- agy stdout ---"; cat agy_result.json || true
+          echo "--- agy stderr ---"; cat agy_stderr.log || true
+          echo "------------------"
+
+          STATUS="$(jq -r '.status // "MISSING"' agy_result.json 2>/dev/null || echo 'MISSING')"
+          if [[ "${AGY_EXIT}" -ne 0 || "${STATUS}" != "SUCCESS" ]]; then
+            echo "::error::agy exited ${AGY_EXIT} with status=${STATUS}: $(jq -r '.error // "unknown"' agy_result.json 2>/dev/null || echo 'no JSON output')"
             exit 1
           fi
 
