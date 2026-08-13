@@ -134,7 +134,12 @@ jobs:
         ## Guidelines
 
         1. Only comment if there is a concrete, demonstrable bug in the changed lines.
-        2. Only comment on lines prefixed with `+` or `-` in the diff. Never on context lines.
+        2. Only comment on ADDED lines — those prefixed with `+`. Never comment
+           on removed lines (`-`) or on context lines. Removed code is being
+           deleted by this PR, so there is nothing to fix; flagging it is both
+           wrong and impossible to attach, because a removed line has no
+           position on the RIGHT side of the diff and the comment is rejected.
+           If a file is deleted entirely by this PR, skip it completely.
         3. Do not comment on license headers, copyright, or hardcoded dates/times.
         4. Do not explain what the code does. Only comment when there is an actual defect.
         5. Keep each comment to 1-2 plain sentences: what the problem is and how to fix it.
