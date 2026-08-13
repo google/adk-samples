@@ -102,11 +102,26 @@ jobs:
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
         run: |-
+          set +e
+
+          echo "=== identity ADC resolves to ==="
+          gcloud auth list 2>&1 | head -10
+
           echo "=== agy models ==="
-          agy models; echo "exit=$?"
+          agy models 2>&1; echo "models exit=$?"
+
           echo "=== default model (no --model flag) ==="
           agy -p 'Reply with exactly the single word: OK' \
-            --output-format json --print-timeout 3m; echo "exit=$?"
+            --output-format json --print-timeout 3m 2>&1
+          echo "default-model exit=$?"
+
+          # agy's own log records the auth method, the resolved identity and
+          # the reason the model catalog fetch failed — none of which reach
+          # stdout. This is the line that actually explains the timeout.
+          echo "=== agy internal log (auth + model lines) ==="
+          grep -hiE "adcAuth|applyAuthResult|authMethod|ChainedAuth|fetchAvailableModels|model_config|Auth mode|token source|codeAssist" \
+            "${HOME}"/.gemini/antigravity-cli/log/*.log 2>/dev/null \
+            | sed 's/^ERROR: logging before google.Init: //' | tail -40
 
       - name: 'Run agy in headless mode via ADC'
         id: 'agy_smoke'
