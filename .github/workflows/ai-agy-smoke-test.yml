@@ -90,6 +90,24 @@ jobs:
           cp "${GOOGLE_APPLICATION_CREDENTIALS}" "${HOME}/.config/gcloud/application_default_credentials.json"
           echo "Mirrored to ${HOME}/.config/gcloud/application_default_credentials.json"
 
+      # DIAGNOSTIC: `agy models` fetches the model list from the server, so
+      # the ids it returns depend on how the CLI is authenticated. The ids a
+      # personal Antigravity sign-in offers are not necessarily the ids a
+      # WIF service account sees, and agy validates --model against exactly
+      # this list. Print it so the runner tells us its own valid ids.
+      - name: 'List models visible under ADC'
+        continue-on-error: true
+        env:
+          AGY_ADC_AUTH: 'true'
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
+        run: |-
+          echo "=== agy models ==="
+          agy models; echo "exit=$?"
+          echo "=== default model (no --model flag) ==="
+          agy -p 'Reply with exactly the single word: OK' \
+            --output-format json --print-timeout 3m; echo "exit=$?"
+
       - name: 'Run agy in headless mode via ADC'
         id: 'agy_smoke'
         env:
