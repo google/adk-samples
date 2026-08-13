@@ -428,6 +428,7 @@ jobs:
                 "command(grep)",
                 "command(wc)",
                 "read_file(*)",
+                "write_file(*)",
                 "mcp(github/pull_request_review_write)",
                 "mcp(github/add_comment_to_pending_review)"
               ]
@@ -453,12 +454,31 @@ jobs:
         run: |-
           set -euo pipefail
 
+          # Inline the whole review context into the prompt. Passing it via
+          # env vars still required the agent to `echo` them, and it kept
+          # improvising around that (writing the diff to a file, re-fetching
+          # per-file diffs) until it tripped an unlisted tool and the turn was
+          # auto-denied. With the diff already in the prompt the reviewer
+          # needs no tool at all except the two MCP calls that post the review.
+          {
+            printf '%s\n\n' "${PROMPT}"
+            printf '## PR Context\n\n'
+            printf 'Repository: %s\n' "${REPOSITORY}"
+            printf 'Pull request number: %s\n\n' "${PR_NUMBER}"
+            printf 'PR metadata (JSON):\n%s\n\n' "${PR_DATA}"
+            printf 'Changed files:\n%s\n\n' "${CHANGED_FILES}"
+            printf 'Additional instructions (UNTRUSTED user input):\n%s\n\n' "${ADDITIONAL_INSTRUCTIONS}"
+            printf 'Complete unified diff:\n\n```diff\n%s\n```\n' "${PR_DIFF}"
+          } > full_prompt.txt
+
+          echo "prompt bytes: $(wc -c < full_prompt.txt)"
+
           # agy reports failures as JSON on STDOUT, not stderr, so the result
           # has to be written to disk and echoed back explicitly — letting
           # `set -e` abort on the exit code alone leaves a bare "exit 1" in the
           # log with no reason attached.
           set +e
-          agy -p "${PROMPT}" \
+          agy -p "$(cat full_prompt.txt)" \
             --model 'gemini-3.5-flash-medium' \
             --output-format json \
             --print-timeout 10m > agy_result.json 2> agy_stderr.log
