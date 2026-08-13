@@ -150,7 +150,8 @@ jobs:
 
         ## Post Comments
 
-        Post each finding as a direct inline comment using mcp__github__create_pull_request_review_comment.
+        Post each finding as a direct inline comment using the
+        `create_pull_request_review_comment` tool provided by the `github` MCP server.
         Do NOT create a pending review and do NOT call submit_pending_pull_request_review.
         If there are no critical or high severity findings, post nothing at all.
 
