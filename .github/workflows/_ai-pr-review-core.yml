@@ -350,7 +350,11 @@ jobs:
           # caps a SINGLE argv string at 131072 bytes. The whole prompt is
           # passed to agy as one `-p "<...>"` argument, so a bigger diff killed
           # the step with "Argument list too long" before agy even started.
-          # This leaves roughly 30KB of headroom for the instructions.
+          # 60KB rather than the ~125KB the argv limit would allow: three
+          # reviewers run concurrently on every PR, and a 100KB prompt drove
+          # ~296k input tokens each, which exhausted the model quota and
+          # returned 429s. A truncated diff still reviews the changed lines;
+          # a 429 reviews nothing.
           #
           # Truncate with bash parameter expansion, NOT `printf ... | head -c`:
           # head closes the pipe once it has its bytes, printf takes SIGPIPE,
@@ -360,7 +364,7 @@ jobs:
           #
           # LC_ALL=C makes ${#var} and ${var:0:n} count bytes rather than
           # characters, which is what the argv limit actually constrains.
-          MAX_BYTES=100000
+          MAX_BYTES=60000
           LC_ALL=C
           if (( ${#PR_DIFF} > MAX_BYTES )); then
             echo "::warning::diff exceeds ${MAX_BYTES} bytes; truncating for review"
@@ -546,10 +550,28 @@ jobs:
           echo "------------------"
 
           STATUS="$(jq -r '.status // "MISSING"' agy_result.json 2>/dev/null || echo 'MISSING')"
-          if [[ "${AGY_EXIT}" -ne 0 || "${STATUS}" != "SUCCESS" ]]; then
-            echo "::error::agy exited ${AGY_EXIT} with status=${STATUS}: $(jq -r '.error // "unknown"' agy_result.json 2>/dev/null || echo 'no JSON output')"
-            exit 1
+          AGY_ERROR="$(jq -r '.error // ""' agy_result.json 2>/dev/null || echo '')"
+          RESPONSE="$(jq -r '.response // ""' agy_result.json 2>/dev/null || echo '')"
+
+          if [[ "${STATUS}" == 'SUCCESS' && "${AGY_EXIT}" -eq 0 ]]; then
+            exit 0
           fi
+
+          # A quota 429 that arrives AFTER the model has produced a response
+          # means the review ran and its comments were already posted through
+          # MCP — the error is on the tail of the call, not the work. Failing
+          # here would turn a completed review into a red check plus a
+          # "there is a problem" comment on the PR, which is worse than the
+          # truth. Retrying is not an option either: the comments are already
+          # on the PR and a second pass would duplicate them.
+          if [[ -n "${RESPONSE}" ]] \
+            && grep -qiE 'resource exhausted|retryable error|429' <<< "${AGY_ERROR}"; then
+            echo "::warning::agy hit a transient quota error after completing the review; treating as done. Error: ${AGY_ERROR}"
+            exit 0
+          fi
+
+          echo "::error::agy exited ${AGY_EXIT} with status=${STATUS}: ${AGY_ERROR:-unknown}"
+          exit 1
 
       - name: 'Post PR review failure comment'
         if: |-
