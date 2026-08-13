@@ -406,7 +406,7 @@ jobs:
           # log with no reason attached.
           set +e
           agy -p "${PROMPT}" \
-            --model 'gemini-3.5-flash' \
+            --model 'gemini-3.5-flash-medium' \
             --output-format json \
             --print-timeout 10m > agy_result.json 2> agy_stderr.log
           AGY_EXIT=$?
