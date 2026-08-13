@@ -344,10 +344,20 @@ jobs:
           # passed to agy as one `-p "<...>"` argument, so a bigger diff killed
           # the step with "Argument list too long" before agy even started.
           # This leaves roughly 30KB of headroom for the instructions.
+          #
+          # Truncate with bash parameter expansion, NOT `printf ... | head -c`:
+          # head closes the pipe once it has its bytes, printf takes SIGPIPE,
+          # and `set -o pipefail` turns that into a failed step. That path only
+          # runs on a diff large enough to truncate, so it stayed hidden until
+          # a big PR hit it.
+          #
+          # LC_ALL=C makes ${#var} and ${var:0:n} count bytes rather than
+          # characters, which is what the argv limit actually constrains.
           MAX_BYTES=100000
-          if [[ "$(printf '%s' "${PR_DIFF}" | wc -c)" -gt "${MAX_BYTES}" ]]; then
+          LC_ALL=C
+          if (( ${#PR_DIFF} > MAX_BYTES )); then
             echo "::warning::diff exceeds ${MAX_BYTES} bytes; truncating for review"
-            PR_DIFF="$(printf '%s' "${PR_DIFF}" | head -c "${MAX_BYTES}")
+            PR_DIFF="${PR_DIFF:0:${MAX_BYTES}}
           [... diff truncated — review only what is shown above ...]"
           fi
 
