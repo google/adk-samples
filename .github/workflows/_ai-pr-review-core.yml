@@ -291,6 +291,42 @@ jobs:
             echo "skip=false" >> "${GITHUB_OUTPUT}"
           fi
 
+      # Fetch the diff HERE rather than letting the reviewer shell out for it.
+      # agy runs the agent in an empty scratch directory, not in the checked-out
+      # workspace, so the prompt's `gh pr diff "${PR_NUMBER}"` failed ("not a
+      # git clone"); the model then burned its single turn improvising `-R`
+      # flags, per-file diffs and shell redirects until it hit a command that
+      # was not on the allowlist, at which point the turn was auto-denied and
+      # the review posted nothing while still exiting 0. Handing the diff over
+      # in an env var removes the whole class of failure — and lets `gh` come
+      # off the reviewer's allowlist entirely.
+      - name: 'Fetch the PR diff for the reviewer'
+        id: 'get_diff'
+        if: steps.new_files_only_guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+        run: |-
+          set -euo pipefail
+
+          for attempt in 1 2 3; do
+            PR_DIFF="$(gh pr diff "${PR_NUMBER}" --patch)" && break
+            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
+
+          # Cap the payload so a huge PR cannot blow past the model's context
+          # or the 1MB limit on a single $GITHUB_OUTPUT value.
+          MAX_BYTES=400000
+          if [[ "$(printf '%s' "${PR_DIFF}" | wc -c)" -gt "${MAX_BYTES}" ]]; then
+            echo "::warning::diff exceeds ${MAX_BYTES} bytes; truncating for review"
+            PR_DIFF="$(printf '%s' "${PR_DIFF}" | head -c "${MAX_BYTES}")
+          [... diff truncated — review only what is shown above ...]"
+          fi
+
+          DELIM="EOF_$(uuidgen)"
+          { echo "pr_diff<<${DELIM}"; echo "${PR_DIFF}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
+
       - name: 'Pre-pull GitHub MCP server image'
         if: steps.new_files_only_guard.outputs.skip != 'true'
         run: docker pull ghcr.io/github/github-mcp-server:v1.5.0
@@ -385,15 +421,12 @@ jobs:
             "enableTelemetry": false,
             "permissions": {
               "allow": [
-                "command(gh)",
                 "command(echo)",
                 "command(cat)",
                 "command(head)",
                 "command(tail)",
                 "command(grep)",
                 "command(wc)",
-                "command(sed)",
-                "command(jq)",
                 "read_file(*)",
                 "mcp(github/pull_request_review_write)",
                 "mcp(github/add_comment_to_pending_review)"
@@ -407,11 +440,11 @@ jobs:
         id: 'agy_pr_review'
         env:
           AGY_ADC_AUTH: 'true'
-          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           GITHUB_PERSONAL_ACCESS_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
           PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'
           CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files || steps.get_pr_review.outputs.changed_files }}'
+          PR_DIFF: '${{ steps.get_diff.outputs.pr_diff }}'
           ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions || steps.get_pr_review.outputs.additional_instructions }}'
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
