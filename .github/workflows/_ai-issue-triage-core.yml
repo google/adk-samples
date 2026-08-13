@@ -225,6 +225,18 @@ jobs:
             printf '## Issues to triage\n\n%s\n' "${ISSUES_TO_TRIAGE}"
           } > full_prompt.txt
 
+          # Guard the real limit directly. The prompt goes to agy as a single
+          # `-p "<...>"` argument (agy has no stdin mode), and Linux caps one
+          # argv string at MAX_ARG_STRLEN = 32 pages = 131072 bytes. Over that,
+          # bash kills the step with a bare "Argument list too long" before agy
+          # even starts — far harder to diagnose than this message.
+          PROMPT_BYTES="$(wc -c < full_prompt.txt)"
+          echo "prompt bytes: ${PROMPT_BYTES}"
+          if [[ "${PROMPT_BYTES}" -gt 125000 ]]; then
+            echo "::error::Assembled prompt is ${PROMPT_BYTES} bytes, over the 131072-byte single-argument limit."
+            exit 1
+          fi
+
           # agy reports failures as JSON on STDOUT, not stderr, so the result
           # must be written to disk and echoed back explicitly — otherwise a
           # failure leaves a bare "exit 1" in the log with no reason attached.

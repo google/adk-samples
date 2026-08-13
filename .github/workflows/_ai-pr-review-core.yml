@@ -338,9 +338,13 @@ jobs:
             exit 1
           fi
 
-          # Cap the payload so a huge PR cannot blow past the model's context
-          # or the 1MB limit on a single $GITHUB_OUTPUT value.
-          MAX_BYTES=400000
+          # Cap the payload. The binding constraint is NOT the model context
+          # or the $GITHUB_OUTPUT limit — it is Linux's MAX_ARG_STRLEN, which
+          # caps a SINGLE argv string at 131072 bytes. The whole prompt is
+          # passed to agy as one `-p "<...>"` argument, so a bigger diff killed
+          # the step with "Argument list too long" before agy even started.
+          # This leaves roughly 30KB of headroom for the instructions.
+          MAX_BYTES=100000
           if [[ "$(printf '%s' "${PR_DIFF}" | wc -c)" -gt "${MAX_BYTES}" ]]; then
             echo "::warning::diff exceeds ${MAX_BYTES} bytes; truncating for review"
             PR_DIFF="$(printf '%s' "${PR_DIFF}" | head -c "${MAX_BYTES}")
@@ -494,7 +498,17 @@ jobs:
             printf 'Complete unified diff:\n\n```diff\n%s\n```\n' "${PR_DIFF}"
           } > full_prompt.txt
 
-          echo "prompt bytes: $(wc -c < full_prompt.txt)"
+          # Guard the real limit directly. The prompt goes to agy as a single
+          # `-p "<...>"` argument (agy has no stdin mode), and Linux caps one
+          # argv string at MAX_ARG_STRLEN = 32 pages = 131072 bytes. Over that,
+          # bash kills the step with a bare "Argument list too long" before agy
+          # even starts — far harder to diagnose than this message.
+          PROMPT_BYTES="$(wc -c < full_prompt.txt)"
+          echo "prompt bytes: ${PROMPT_BYTES}"
+          if [[ "${PROMPT_BYTES}" -gt 125000 ]]; then
+            echo "::error::Assembled prompt is ${PROMPT_BYTES} bytes, over the 131072-byte single-argument limit."
+            exit 1
+          fi
 
           # agy reports failures as JSON on STDOUT, not stderr, so the result
           # has to be written to disk and echoed back explicitly — letting
