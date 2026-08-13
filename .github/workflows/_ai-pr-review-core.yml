@@ -478,8 +478,10 @@ jobs:
           # `set -e` abort on the exit code alone leaves a bare "exit 1" in the
           # log with no reason attached.
           set +e
+          # agy requires an explicit reasoning effort alongside the model.
           agy -p "$(cat full_prompt.txt)" \
-            --model 'gemini-3.5-flash-medium' \
+            --model 'gemini-3.5-flash' \
+            --effort 'medium' \
             --output-format json \
             --print-timeout 10m > agy_result.json 2> agy_stderr.log
           AGY_EXIT=$?

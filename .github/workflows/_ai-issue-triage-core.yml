@@ -23,10 +23,17 @@ on:
         required: true
         type: 'string'
       model:
-        description: 'agy model id (must be effort-qualified)'
+        description: 'agy model id'
         required: false
         type: 'string'
-        default: 'gemini-3.5-flash-medium'
+        default: 'gemini-3.5-flash'
+      effort:
+        description: >-
+          Reasoning effort (low|medium|high). agy requires this alongside the
+          model and will not run without it.
+        required: false
+        type: 'string'
+        default: 'medium'
       print_timeout:
         description: 'How long agy may take for the single model call'
         required: false
@@ -162,6 +169,7 @@ jobs:
           AVAILABLE_LABELS: '${{ steps.context.outputs.labels }}'
           ISSUES_TO_TRIAGE: '${{ inputs.issues }}'
           AGY_MODEL: '${{ inputs.model }}'
+          AGY_EFFORT: '${{ inputs.effort }}'
           PRINT_TIMEOUT: '${{ inputs.print_timeout }}'
           PROMPT: |-
             ## Role
@@ -223,6 +231,7 @@ jobs:
           set +e
           agy -p "$(cat full_prompt.txt)" \
             --model "${AGY_MODEL}" \
+            --effort "${AGY_EFFORT}" \
             --output-format json \
             --print-timeout "${PRINT_TIMEOUT}" > agy_result.json 2> agy_stderr.log
           AGY_EXIT=$?
