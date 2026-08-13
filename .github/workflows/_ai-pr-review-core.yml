@@ -364,27 +364,39 @@ jobs:
           }
           MCP_EOF
 
-          # TEST-ONLY allowlist — do not ship without reading this.
+          # Three things differ from the Gemini CLI `coreTools` list this
+          # replaces, and all three silently produced empty reviews:
           #
-          # agy's `command(...)` rule matches the BINARY only, so the
-          # gemini-cli-style `command(gh pr diff)` never matched the real
-          # argv `gh pr diff 2509 --patch` and was silently auto-denied.
-          # `command(gh)` does match, but the model improvises commands the
-          # prompt never named, and a single unlisted one auto-denies the
-          # turn in headless mode with no retry. It also reaches for the
-          # native `read_file` tool, which needs its own `read_file(*)` rule.
-          #
-          # `command(*)` is strictly weaker than the `coreTools` list it
-          # replaces. It is set here only to prove the MCP comment-posting
-          # path end to end.
+          # 1. `command(...)` matches the BINARY ONLY. `command(gh pr diff)`
+          #    never matched the real argv `gh pr diff 2509 --patch`, so the
+          #    reviewer's very first tool call was auto-denied. Entries here
+          #    are bare binaries for that reason.
+          # 2. The model uses agy's native `read_file` tool, which is a
+          #    separate permission class from `command` and needs its own
+          #    rule. There was no Gemini CLI equivalent to port.
+          # 3. In headless mode an unlisted tool cannot prompt, so it is
+          #    auto-denied and the turn ends with NO output and a zero exit —
+          #    a review that posts nothing still looks like a pass. The list
+          #    below is deliberately a little wider than the prompt strictly
+          #    needs so that routine improvisation (`wc`, `sed`) does not
+          #    silently void an entire review.
           cat > "${HOME}/.gemini/antigravity-cli/settings.json" <<'SETTINGS_EOF'
           {
             "enableTelemetry": false,
             "permissions": {
               "allow": [
-                "command(*)",
+                "command(gh)",
+                "command(echo)",
+                "command(cat)",
+                "command(head)",
+                "command(tail)",
+                "command(grep)",
+                "command(wc)",
+                "command(sed)",
+                "command(jq)",
                 "read_file(*)",
-                "mcp(github/create_pull_request_review_comment)"
+                "mcp(github/pull_request_review_write)",
+                "mcp(github/add_comment_to_pending_review)"
               ]
             }
           }

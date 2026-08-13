@@ -147,10 +147,21 @@ jobs:
 
         ## Post Comments
 
-        Post each finding as a direct inline comment using the
-        `create_pull_request_review_comment` tool provided by the `github` MCP server.
-        Do NOT create a pending review and do NOT call submit_pending_pull_request_review.
-        If there are no critical or high severity findings, post nothing at all.
+        Post findings with the `github` MCP server. Version 1.5.0 of that
+        server has no single "post one inline comment" tool, so this takes
+        three calls, in this order:
+
+        1. `pull_request_review_write` with `method: "create"` — opens a
+           pending review on this PR.
+        2. `add_comment_to_pending_review` — once per finding, passing
+           `owner`, `repo`, `pullNumber`, `path`, `body`, the `line` the
+           comment applies to, `side: "RIGHT"` and `subjectType: "line"`.
+        3. `pull_request_review_write` with `method: "submit"` and
+           `event: "COMMENT"` — publishes the review. Use `COMMENT`, never
+           `APPROVE` or `REQUEST_CHANGES`.
+
+        If you have no findings worth reporting, do not open a review at all
+        and post nothing.
 
         ## Final Instructions
 
