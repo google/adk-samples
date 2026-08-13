@@ -32,10 +32,11 @@ defaults:
   run:
     shell: 'bash'
 
-permissions:
-  contents: 'read'
-  id-token: 'write'
-  issues: 'write'
+# Declared per job rather than here. At workflow level every job inherits
+# these — including any added later that only needs to read — which is what
+# zizmor's `excessive-permissions` audit flags. Same shape as go-format.yml
+# and recipe-canary.yml.
+permissions: {}
 
 jobs:
   resolve:
@@ -55,6 +56,8 @@ jobs:
       )
     timeout-minutes: 5
     runs-on: 'ubuntu-latest'
+    permissions:
+      issues: 'read'
     outputs:
       issues: '${{ steps.resolve_issue.outputs.issues }}'
     steps:

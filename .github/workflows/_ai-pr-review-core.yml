@@ -126,9 +126,16 @@ jobs:
         if: |-
           ${{ inputs.app_id != '' }}
         uses: 'actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42' # ratchet:actions/create-github-app-token@v2
+        # Scoped explicitly: an app token otherwise carries every permission
+        # the installation was granted, well beyond what a reviewer needs
+        # (zizmor `github-app`). These three are exactly what this workflow
+        # uses — read the PR, post review comments.
         with:
           app-id: '${{ inputs.app_id }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
+          permission-contents: 'read'
+          permission-issues: 'write'
+          permission-pull-requests: 'write'
 
       - name: 'Get PR details (pull_request & workflow_dispatch)'
         id: 'get_pr'
@@ -548,12 +555,26 @@ jobs:
         if: |-
           ${{ failure() && (steps.agy_pr_review.outcome == 'failure' || steps.agy_pr_review.outcome == 'skipped') }}
         uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
+        # Values reach the script through env, never by expanding `${{ }}`
+        # into the JS source — zizmor `template-injection`, a mandatory
+        # check. An expansion here is substituted as raw text before node
+        # sees it, so any quote in the expanded value can break out of the
+        # string literal and become executable code.
+        env:
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          REVIEW_LABEL: '${{ inputs.review_label }}'
         with:
           github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           script: |-
-            github.rest.issues.createComment({
+            const issueNumber = Number(process.env.PR_NUMBER);
+            if (!issueNumber) {
+              core.warning('No PR number available — cannot post failure comment.');
+              return;
+            }
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}',
-              body: 'There is a problem with the Antigravity CLI **${{ inputs.review_label }}** PR review. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
-            })
+              issue_number: issueNumber,
+              body: `There is a problem with the Antigravity CLI **${process.env.REVIEW_LABEL}** PR review. Please check the [action logs](${runUrl}) for details.`
+            });

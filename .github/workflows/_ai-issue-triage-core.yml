@@ -85,9 +85,14 @@ jobs:
         if: |-
           ${{ inputs.app_id != '' }}
         uses: 'actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42' # ratchet:actions/create-github-app-token@v2
+        # Scoped explicitly: an app token otherwise carries every permission
+        # the installation was granted (zizmor `github-app`). Triage only
+        # ever reads labels and edits issue labels.
         with:
           app-id: '${{ inputs.app_id }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
+          permission-contents: 'read'
+          permission-issues: 'write'
 
       - name: 'Fetch repository labels'
         id: 'context'
