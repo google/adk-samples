@@ -478,6 +478,8 @@ jobs:
                 "read_file(*)",
                 "write_file(*)",
                 "mcp(github/pull_request_read)",
+                "mcp(github/get_file_contents)",
+                "mcp(github/get_repository_tree)",
                 "mcp(github/pull_request_review_write)",
                 "mcp(github/add_comment_to_pending_review)"
               ]
@@ -560,7 +562,16 @@ jobs:
           # the check goes green — "no issues found" when the truth is "never
           # got to look". Never let that pass silently again.
           if grep -q 'no output produced' agy_stderr.log 2>/dev/null; then
-            echo "::error::agy auto-denied a tool and produced no output — this review posted nothing. The stderr above names the permission class; add it to permissions.allow."
+            # stderr names only the permission CLASS ("mcp"), not which tool.
+            # agy's own log records the per-tool decision, so surface it —
+            # otherwise every unlisted tool costs a full 5-minute CI cycle to
+            # identify by guesswork.
+            echo "--- agy permission decisions ---"
+            grep -hiE 'grant|permission|denied|auto-deny|tool_name|mcp\(' \
+              "${HOME}"/.gemini/antigravity-cli/log/*.log 2>/dev/null \
+              | sed 's/^ERROR: logging before google.Init: //' | tail -30 || true
+            echo "--------------------------------"
+            echo "::error::agy auto-denied a tool and produced no output — this review posted nothing. See the permission decisions above and add the tool to permissions.allow."
             exit 1
           fi
 
