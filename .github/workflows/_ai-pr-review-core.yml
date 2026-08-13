@@ -309,11 +309,34 @@ jobs:
         run: |-
           set -euo pipefail
 
+          # Track success explicitly. `set -e` cannot catch a failure here:
+          # the assignment is the left operand of `&&`, so a failing
+          # `gh pr diff` is a handled condition, not an error. Exhausting all
+          # three attempts would leave PR_DIFF empty and the step would carry
+          # on, handing the reviewer a prompt with no diff in it — which the
+          # model answers by finding nothing, posting nothing, and exiting 0.
+          PR_DIFF=''
+          FETCHED='false'
           for attempt in 1 2 3; do
-            PR_DIFF="$(gh pr diff "${PR_NUMBER}" --patch)" && break
+            if PR_DIFF="$(gh pr diff "${PR_NUMBER}" --patch)"; then
+              FETCHED='true'
+              break
+            fi
             echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
             sleep 5
           done
+
+          if [[ "${FETCHED}" != 'true' ]]; then
+            echo "::error::gh pr diff failed for PR #${PR_NUMBER} after 3 attempts; refusing to review without a diff."
+            exit 1
+          fi
+
+          # The new-file-only guard has already run, so a reviewable PR always
+          # has a non-empty diff. Empty here means something went wrong.
+          if [[ -z "${PR_DIFF}" ]]; then
+            echo "::error::gh pr diff returned an empty diff for PR #${PR_NUMBER}; refusing to review."
+            exit 1
+          fi
 
           # Cap the payload so a huge PR cannot blow past the model's context
           # or the 1MB limit on a single $GITHUB_OUTPUT value.
