@@ -477,6 +477,7 @@ jobs:
                 "command(wc)",
                 "read_file(*)",
                 "write_file(*)",
+                "mcp(github/pull_request_read)",
                 "mcp(github/pull_request_review_write)",
                 "mcp(github/add_comment_to_pending_review)"
               ]
@@ -552,6 +553,16 @@ jobs:
           STATUS="$(jq -r '.status // "MISSING"' agy_result.json 2>/dev/null || echo 'MISSING')"
           AGY_ERROR="$(jq -r '.error // ""' agy_result.json 2>/dev/null || echo '')"
           RESPONSE="$(jq -r '.response // ""' agy_result.json 2>/dev/null || echo '')"
+
+          # THE failure mode of this migration: in headless mode agy cannot
+          # prompt for an unlisted tool, so it auto-denies, ends the turn and
+          # still exits 0 with status=SUCCESS. The review posts nothing and
+          # the check goes green — "no issues found" when the truth is "never
+          # got to look". Never let that pass silently again.
+          if grep -q 'no output produced' agy_stderr.log 2>/dev/null; then
+            echo "::error::agy auto-denied a tool and produced no output — this review posted nothing. The stderr above names the permission class; add it to permissions.allow."
+            exit 1
+          fi
 
           if [[ "${STATUS}" == 'SUCCESS' && "${AGY_EXIT}" -eq 0 ]]; then
             exit 0
