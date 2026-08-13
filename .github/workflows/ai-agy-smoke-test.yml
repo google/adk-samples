@@ -101,13 +101,29 @@ jobs:
         run: |-
           set -euo pipefail
 
-          RESULT="$(agy -p "${PROMPT}" \
+          # Write straight to disk rather than into a `$(...)` capture: agy
+          # reports failures on stdout, and under `set -e` a capture is
+          # discarded before it can ever be printed. stderr is teed in too,
+          # so a non-JSON crash is still visible in the log.
+          set +e
+          agy -p "${PROMPT}" \
             --model gemini-3.5-flash \
             --output-format json \
-            --print-timeout 3m)"
+            --print-timeout 3m > agy_result.json 2> agy_stderr.log
+          AGY_EXIT=$?
+          set -e
 
-          echo "${RESULT}" > agy_result.json
-          cat agy_result.json
+          echo "=== agy exit code: ${AGY_EXIT} ==="
+          echo "=== stdout ==="
+          cat agy_result.json || true
+          echo "=== stderr ==="
+          cat agy_stderr.log || true
+          echo "=============="
+
+          if [[ "${AGY_EXIT}" -ne 0 ]]; then
+            echo "::error::agy exited ${AGY_EXIT} — see stdout/stderr above"
+            exit 1
+          fi
 
           STATUS="$(jq -r '.status' agy_result.json)"
           echo "status=${STATUS}" >> "${GITHUB_OUTPUT}"
