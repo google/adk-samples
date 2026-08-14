@@ -2,7 +2,7 @@ name: 'AI PR Review — Core (reusable)'
 
 # Reusable core invoked via `workflow_call` by the three AI PR review
 # workflows (correctness, security, maintainability). Handles PR context
-# extraction, workspace hardening, and Gemini CLI execution.
+# extraction, workspace hardening, and Antigravity CLI (agy) execution.
 
 on:
   workflow_call:
@@ -12,7 +12,7 @@ on:
         required: true
         type: 'string'
       prompt:
-        description: 'The full prompt to send to the Gemini CLI'
+        description: 'The full prompt to send to the Antigravity CLI'
         required: true
         type: 'string'
       event_name:
@@ -108,29 +108,34 @@ jobs:
           fetch-depth: 1
           ref: 'refs/pull/${{ inputs.pr_number_review }}/head'
 
-      # SECURITY: strip any PR-author-supplied .gemini/ directory from the
-      # workspace before we trust it. The Run AI PR Review step below sets
-      # GEMINI_CLI_TRUST_WORKSPACE=true (required for the CLI to execute any
-      # tool calls at all in 0.51.0+), and a trusted workspace would otherwise
-      # let a fork's .gemini/settings.json broaden the tool allowlist or
-      # register additional MCP servers. Removing it here means the caller-
-      # supplied `settings:` block is the only configuration source.
-      - name: 'Sanitize workspace of Gemini config'
-        run: |
+      # SECURITY: strip the workspace config agy reads, so the only
+      # configuration it sees is the global config written to $HOME below —
+      # outside the workspace, and so not PR-author-writable. `.agents/` holds
+      # `mcp_config.json` (extra MCP servers) and `skills/`; the root context
+      # files are injected into the agent's instructions. Removing this repo's
+      # own copies is intentional — the reviewer reads the diff via `gh`.
+      - name: 'Sanitize workspace of agent configuration'
+        run: |-
           set -euo pipefail
-          if [ -e .gemini ]; then
-            echo "::warning::Removing PR-author-supplied .gemini/ from the checked-out workspace"
-            rm -rf .gemini
-          fi
+
+          rm -rf .agents
+          rm -f AGENTS.md GEMINI.md
 
       - name: 'Generate GitHub App Token'
         id: 'generate_token'
         if: |-
           ${{ inputs.app_id != '' }}
         uses: 'actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42' # ratchet:actions/create-github-app-token@v2
+        # Scoped explicitly: an app token otherwise carries every permission
+        # the installation was granted, well beyond what a reviewer needs
+        # (zizmor `github-app`). These three are exactly what this workflow
+        # uses — read the PR, post review comments.
         with:
           app-id: '${{ inputs.app_id }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
+          permission-contents: 'read'
+          permission-issues: 'write'
+          permission-pull-requests: 'write'
 
       - name: 'Get PR details (pull_request & workflow_dispatch)'
         id: 'get_pr'
@@ -293,85 +298,327 @@ jobs:
             echo "skip=false" >> "${GITHUB_OUTPUT}"
           fi
 
+      # Fetch the diff HERE rather than letting the reviewer shell out for it.
+      # agy runs the agent in an empty scratch directory, not in the checked-out
+      # workspace, so the prompt's `gh pr diff "${PR_NUMBER}"` failed ("not a
+      # git clone"); the model then burned its single turn improvising `-R`
+      # flags, per-file diffs and shell redirects until it hit a command that
+      # was not on the allowlist, at which point the turn was auto-denied and
+      # the review posted nothing while still exiting 0. Handing the diff over
+      # in an env var removes the whole class of failure — and lets `gh` come
+      # off the reviewer's allowlist entirely.
+      - name: 'Fetch the PR diff for the reviewer'
+        id: 'get_diff'
+        if: steps.new_files_only_guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+        run: |-
+          set -euo pipefail
+
+          # Track success explicitly. `set -e` cannot catch a failure here:
+          # the assignment is the left operand of `&&`, so a failing
+          # `gh pr diff` is a handled condition, not an error. Exhausting all
+          # three attempts would leave PR_DIFF empty and the step would carry
+          # on, handing the reviewer a prompt with no diff in it — which the
+          # model answers by finding nothing, posting nothing, and exiting 0.
+          PR_DIFF=''
+          FETCHED='false'
+          for attempt in 1 2 3; do
+            if PR_DIFF="$(gh pr diff "${PR_NUMBER}" --patch)"; then
+              FETCHED='true'
+              break
+            fi
+            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
+
+          if [[ "${FETCHED}" != 'true' ]]; then
+            echo "::error::gh pr diff failed for PR #${PR_NUMBER} after 3 attempts; refusing to review without a diff."
+            exit 1
+          fi
+
+          # The new-file-only guard has already run, so a reviewable PR always
+          # has a non-empty diff. Empty here means something went wrong.
+          if [[ -z "${PR_DIFF}" ]]; then
+            echo "::error::gh pr diff returned an empty diff for PR #${PR_NUMBER}; refusing to review."
+            exit 1
+          fi
+
+          # Cap the payload. The binding constraint is NOT the model context
+          # or the $GITHUB_OUTPUT limit — it is Linux's MAX_ARG_STRLEN, which
+          # caps a SINGLE argv string at 131072 bytes. The whole prompt is
+          # passed to agy as one `-p "<...>"` argument, so a bigger diff killed
+          # the step with "Argument list too long" before agy even started.
+          # 60KB rather than the ~125KB the argv limit would allow: three
+          # reviewers run concurrently on every PR, and a 100KB prompt drove
+          # ~296k input tokens each, which exhausted the model quota and
+          # returned 429s. A truncated diff still reviews the changed lines;
+          # a 429 reviews nothing.
+          #
+          # Truncate with bash parameter expansion, NOT `printf ... | head -c`:
+          # head closes the pipe once it has its bytes, printf takes SIGPIPE,
+          # and `set -o pipefail` turns that into a failed step. That path only
+          # runs on a diff large enough to truncate, so it stayed hidden until
+          # a big PR hit it.
+          #
+          # LC_ALL=C makes ${#var} and ${var:0:n} count bytes rather than
+          # characters, which is what the argv limit actually constrains.
+          MAX_BYTES=60000
+          LC_ALL=C
+          if (( ${#PR_DIFF} > MAX_BYTES )); then
+            echo "::warning::diff exceeds ${MAX_BYTES} bytes; truncating for review"
+            PR_DIFF="${PR_DIFF:0:${MAX_BYTES}}
+          [... diff truncated — review only what is shown above ...]"
+          fi
+
+          DELIM="EOF_$(uuidgen)"
+          { echo "pr_diff<<${DELIM}"; echo "${PR_DIFF}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
+
       - name: 'Pre-pull GitHub MCP server image'
         if: steps.new_files_only_guard.outputs.skip != 'true'
         run: docker pull ghcr.io/github/github-mcp-server:v1.5.0
 
+      # agy authenticates headlessly via Application Default Credentials, which
+      # this step provides by exporting GOOGLE_APPLICATION_CREDENTIALS.
+      - name: 'Authenticate to Google Cloud (Workload Identity Federation)'
+        id: 'auth'
+        if: steps.new_files_only_guard.outputs.skip != 'true'
+        uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # ratchet:google-github-actions/auth@v2.1.13
+        with:
+          project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
+          service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
+
+      # REQUIRED, not belt-and-braces. agy reads `quota_project_id` out of the
+      # ADC JSON and forwards it to the Code Assist backend that serves its
+      # models. google-github-actions/auth does not write that field, and
+      # without it agy authenticates as the service account with an EMPTY quota
+      # project: every backend call then fails with "You are not logged into
+      # Antigravity", the model catalog never loads, and since --model is
+      # validated against that catalog the run dies with the badly misleading
+      # "model <name> is not recognized as a known model".
+      - name: 'Add the quota project to the ADC credential'
+        if: steps.new_files_only_guard.outputs.skip != 'true'
+        env:
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+        run: |-
+          set -euo pipefail
+
+          jq --arg p "${GOOGLE_CLOUD_PROJECT}" '. + {quota_project_id: $p}' \
+            "${GOOGLE_APPLICATION_CREDENTIALS}" > "${RUNNER_TEMP}/adc.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=${RUNNER_TEMP}/adc.json" >> "${GITHUB_ENV}"
+
+      # The installer always fetches the latest build — it has no version flag,
+      # so the old `gemini_cli_version` pin has no equivalent here.
+      - name: 'Install Antigravity CLI (agy)'
+        if: steps.new_files_only_guard.outputs.skip != 'true'
+        run: |-
+          set -euo pipefail
+          curl -fsSL https://antigravity.google/cli/install.sh | bash
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      # Written under $HOME, outside the workspace, so a PR author cannot widen
+      # the allowlist. `permissions.allow` replaces Gemini CLI's `coreTools`;
+      # it also replaces `includeTools`, which agy's MCP config has no
+      # equivalent of — unlisted MCP tools fall back to "Ask" and are
+      # soft-denied in headless mode, leaving only the one tool listed here.
+      - name: 'Configure agy (global MCP servers + tool permissions)'
+        if: steps.new_files_only_guard.outputs.skip != 'true'
+        run: |-
+          set -euo pipefail
+
+          mkdir -p "${HOME}/.gemini/config" "${HOME}/.gemini/antigravity-cli"
+
+          cat > "${HOME}/.gemini/config/mcp_config.json" <<'MCP_EOF'
+          {
+            "mcpServers": {
+              "github": {
+                "command": "docker",
+                "args": [
+                  "run",
+                  "-i",
+                  "--rm",
+                  "-e",
+                  "GITHUB_PERSONAL_ACCESS_TOKEN",
+                  "ghcr.io/github/github-mcp-server:v1.5.0"
+                ]
+              }
+            }
+          }
+          MCP_EOF
+
+          # Three things differ from the Gemini CLI `coreTools` list this
+          # replaces, and all three silently produced empty reviews:
+          #
+          # 1. `command(...)` matches the BINARY ONLY. `command(gh pr diff)`
+          #    never matched the real argv `gh pr diff 2509 --patch`, so the
+          #    reviewer's very first tool call was auto-denied. Entries here
+          #    are bare binaries for that reason.
+          # 2. The model uses agy's native `read_file` tool, which is a
+          #    separate permission class from `command` and needs its own
+          #    rule. There was no Gemini CLI equivalent to port.
+          # 3. In headless mode an unlisted tool cannot prompt, so it is
+          #    auto-denied and the turn ends with NO output and a zero exit —
+          #    a review that posts nothing still looks like a pass. The list
+          #    below is deliberately a little wider than the prompt strictly
+          #    needs so that routine improvisation (`wc`, `sed`) does not
+          #    silently void an entire review.
+          cat > "${HOME}/.gemini/antigravity-cli/settings.json" <<'SETTINGS_EOF'
+          {
+            "enableTelemetry": false,
+            "permissions": {
+              "allow": [
+                "command(echo)",
+                "command(cat)",
+                "command(head)",
+                "command(tail)",
+                "command(grep)",
+                "command(wc)",
+                "read_file(*)",
+                "write_file(*)",
+                "mcp(github/pull_request_read)",
+                "mcp(github/get_file_contents)",
+                "mcp(github/get_repository_tree)",
+                "mcp(github/pull_request_review_write)",
+                "mcp(github/add_comment_to_pending_review)"
+              ]
+            }
+          }
+          SETTINGS_EOF
+
       - name: 'Run AI PR Review'
         if: steps.new_files_only_guard.outputs.skip != 'true'
-        uses: 'google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489' # ratchet:google-github-actions/run-gemini-cli@v0
-        id: 'gemini_pr_review'
+        id: 'agy_pr_review'
         env:
-          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          AGY_ADC_AUTH: 'true'
           GITHUB_PERSONAL_ACCESS_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
-          # Safe to trust because the "Sanitize workspace of Gemini config" step
-          # above deleted any PR-author-supplied .gemini/ directory from the
-          # checked-out workspace before this step runs. The caller-supplied
-          # `settings:` block below is therefore the authoritative sandbox with
-          # no risk of a fork's .gemini/settings.json widening the tool allowlist.
-          # (Setting this to 'false' is not viable — Gemini CLI 0.51.0+ refuses
-          # to run any tool calls in an untrusted workspace, which blocks the
-          # entire review.)
-          GEMINI_CLI_TRUST_WORKSPACE: 'true'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
           PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'
           CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files || steps.get_pr_review.outputs.changed_files }}'
+          PR_DIFF: '${{ steps.get_diff.outputs.pr_diff }}'
           ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions || steps.get_pr_review.outputs.additional_instructions }}'
+          GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           REPOSITORY: '${{ github.repository }}'
-        with:
-          gemini_model: 'gemini-3.5-flash'
-          gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
-          gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
-          gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
-          gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
-          gcp_service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
-          use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
-          use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
-          settings: |-
-            {
-              "maxSessionTurns": 10,
-              "mcpServers": {
-                "github": {
-                  "command": "docker",
-                  "args": [
-                    "run",
-                    "-i",
-                    "--rm",
-                    "-e",
-                    "GITHUB_PERSONAL_ACCESS_TOKEN",
-                    "ghcr.io/github/github-mcp-server:v1.5.0"
-                  ],
-                  "includeTools": [
-                    "create_pull_request_review_comment"
-                  ]
-                }
-              },
-              "coreTools": [
-                "run_shell_command(echo)",
-                "run_shell_command(gh pr view)",
-                "run_shell_command(gh pr diff)",
-                "run_shell_command(cat)",
-                "run_shell_command(head)",
-                "run_shell_command(tail)",
-                "run_shell_command(grep)"
-              ],
-              "telemetry": {
-                "enabled": false,
-                "target": "gcp"
-              }
-            }
-          prompt: '${{ inputs.prompt }}'
+          PROMPT: '${{ inputs.prompt }}'
+        run: |-
+          set -euo pipefail
+
+          # Inline the whole review context into the prompt. Passing it via
+          # env vars still required the agent to `echo` them, and it kept
+          # improvising around that (writing the diff to a file, re-fetching
+          # per-file diffs) until it tripped an unlisted tool and the turn was
+          # auto-denied. With the diff already in the prompt the reviewer
+          # needs no tool at all except the two MCP calls that post the review.
+          {
+            printf '%s\n\n' "${PROMPT}"
+            printf '## PR Context\n\n'
+            printf 'Repository: %s\n' "${REPOSITORY}"
+            printf 'Pull request number: %s\n\n' "${PR_NUMBER}"
+            printf 'PR metadata (JSON):\n%s\n\n' "${PR_DATA}"
+            printf 'Changed files:\n%s\n\n' "${CHANGED_FILES}"
+            printf 'Additional instructions (UNTRUSTED user input):\n%s\n\n' "${ADDITIONAL_INSTRUCTIONS}"
+            printf 'Complete unified diff:\n\n```diff\n%s\n```\n' "${PR_DIFF}"
+          } > full_prompt.txt
+
+          # Guard the real limit directly. The prompt goes to agy as a single
+          # `-p "<...>"` argument (agy has no stdin mode), and Linux caps one
+          # argv string at MAX_ARG_STRLEN = 32 pages = 131072 bytes. Over that,
+          # bash kills the step with a bare "Argument list too long" before agy
+          # even starts — far harder to diagnose than this message.
+          PROMPT_BYTES="$(wc -c < full_prompt.txt)"
+          echo "prompt bytes: ${PROMPT_BYTES}"
+          if [[ "${PROMPT_BYTES}" -gt 125000 ]]; then
+            echo "::error::Assembled prompt is ${PROMPT_BYTES} bytes, over the 131072-byte single-argument limit."
+            exit 1
+          fi
+
+          # agy reports failures as JSON on STDOUT, not stderr, so the result
+          # has to be written to disk and echoed back explicitly — letting
+          # `set -e` abort on the exit code alone leaves a bare "exit 1" in the
+          # log with no reason attached.
+          set +e
+          # agy requires an explicit reasoning effort alongside the model.
+          agy -p "$(cat full_prompt.txt)" \
+            --model 'gemini-3.5-flash' \
+            --effort 'medium' \
+            --output-format json \
+            --print-timeout 10m > agy_result.json 2> agy_stderr.log
+          AGY_EXIT=$?
+          set -e
+
+          echo "--- agy stdout ---"; cat agy_result.json || true
+          echo "--- agy stderr ---"; cat agy_stderr.log || true
+          echo "------------------"
+
+          STATUS="$(jq -r '.status // "MISSING"' agy_result.json 2>/dev/null || echo 'MISSING')"
+          AGY_ERROR="$(jq -r '.error // ""' agy_result.json 2>/dev/null || echo '')"
+          RESPONSE="$(jq -r '.response // ""' agy_result.json 2>/dev/null || echo '')"
+
+          # THE failure mode of this migration: in headless mode agy cannot
+          # prompt for an unlisted tool, so it auto-denies, ends the turn and
+          # still exits 0 with status=SUCCESS. The review posts nothing and
+          # the check goes green — "no issues found" when the truth is "never
+          # got to look". Never let that pass silently again.
+          if grep -q 'no output produced' agy_stderr.log 2>/dev/null; then
+            # stderr names only the permission CLASS ("mcp"), not which tool.
+            # agy's own log records the per-tool decision, so surface it —
+            # otherwise every unlisted tool costs a full 5-minute CI cycle to
+            # identify by guesswork.
+            echo "--- agy permission decisions ---"
+            grep -hiE 'grant|permission|denied|auto-deny|tool_name|mcp\(' \
+              "${HOME}"/.gemini/antigravity-cli/log/*.log 2>/dev/null \
+              | sed 's/^ERROR: logging before google.Init: //' | tail -30 || true
+            echo "--------------------------------"
+            echo "::error::agy auto-denied a tool and produced no output — this review posted nothing. See the permission decisions above and add the tool to permissions.allow."
+            exit 1
+          fi
+
+          if [[ "${STATUS}" == 'SUCCESS' && "${AGY_EXIT}" -eq 0 ]]; then
+            exit 0
+          fi
+
+          # A quota 429 that arrives AFTER the model has produced a response
+          # means the review ran and its comments were already posted through
+          # MCP — the error is on the tail of the call, not the work. Failing
+          # here would turn a completed review into a red check plus a
+          # "there is a problem" comment on the PR, which is worse than the
+          # truth. Retrying is not an option either: the comments are already
+          # on the PR and a second pass would duplicate them.
+          if [[ -n "${RESPONSE}" ]] \
+            && grep -qiE 'resource exhausted|retryable error|429' <<< "${AGY_ERROR}"; then
+            echo "::warning::agy hit a transient quota error after completing the review; treating as done. Error: ${AGY_ERROR}"
+            exit 0
+          fi
+
+          echo "::error::agy exited ${AGY_EXIT} with status=${STATUS}: ${AGY_ERROR:-unknown}"
+          exit 1
 
       - name: 'Post PR review failure comment'
         if: |-
-          ${{ failure() && (steps.gemini_pr_review.outcome == 'failure' || steps.gemini_pr_review.outcome == 'skipped') }}
+          ${{ failure() && (steps.agy_pr_review.outcome == 'failure' || steps.agy_pr_review.outcome == 'skipped') }}
         uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
+        # Values reach the script through env, never by expanding `${{ }}`
+        # into the JS source — zizmor `template-injection`, a mandatory
+        # check. An expansion here is substituted as raw text before node
+        # sees it, so any quote in the expanded value can break out of the
+        # string literal and become executable code.
+        env:
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          REVIEW_LABEL: '${{ inputs.review_label }}'
         with:
           github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           script: |-
-            github.rest.issues.createComment({
+            const issueNumber = Number(process.env.PR_NUMBER);
+            if (!issueNumber) {
+              core.warning('No PR number available — cannot post failure comment.');
+              return;
+            }
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}',
-              body: 'There is a problem with the Gemini CLI **${{ inputs.review_label }}** PR review. Please check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.'
-            })
+              issue_number: issueNumber,
+              body: `There is a problem with the Antigravity CLI **${process.env.REVIEW_LABEL}** PR review. Please check the [action logs](${runUrl}) for details.`
+            });
