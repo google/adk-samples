@@ -7,17 +7,20 @@ contain a dependency manifest, and for which package ecosystem?
 
 Why this exists as its own module
 ---------------------------------
-`.github/dependabot.yml` no longer configures recipe ecosystems at all, so it
-cannot answer this question and nothing here feeds it.
+`.github/dependabot.yml` cannot answer this question, so nothing here feeds
+it. That file does carry an entry per recipe ecosystem — but each one exists
+purely to suppress updates, and points at `directories: ["/", "**/*"]`. A
+glob, not an enumeration.
 
 close_orphan_dependabot_prs.py still needs the concrete list, to decide
 whether an open Dependabot PR targets a directory that no longer exists. It
 closes what it decides with --delete-branch, so the answer has to be right.
 
 It used to recover the list by regex-scanning the enumerated `directory:`
-keys out of dependabot.yml. There is nothing left there to scan: the old
-parser would find nothing, judge every open Dependabot PR an orphan, and
-close the lot. The tree is now the only source that knows which recipe
+keys out of dependabot.yml. Those enumerations are gone; the suppression
+entries use `directories:` with a glob instead, so the old parser would
+recover zero recipe directories, judge every open Dependabot PR an orphan,
+and close the lot. The tree is the only source that knows which recipe
 directories are live, which is exactly why liveness is derived from it.
 
 STATIC_ENTRIES below covers the other half — entries configured
