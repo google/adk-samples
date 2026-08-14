@@ -18,23 +18,33 @@ on:
       #       test_real_policy_file_declares_the_retired_roots calls
       #       load_frozen_paths() with no argument, which falls back to
       #       POLICY_PATH (tools/check_frozen_paths.py:38).
-      #     .github/scripts/tests/test_dependabot_config.py::
-      #       test_retired_roots_are_not_globbed reads frozen_paths directly.
       #   .github/schemas/manifest-schema.json
       #     test_validate_manifest.py and test_validate_structure.py call
       #     load_schema(), which hardcodes SCHEMA_PATH and takes no override
       #     parameter (tools/validate_manifest.py:40,113).
       #   .github/dependabot.yml
       #     .github/scripts/tests/test_dependabot_config.py loads it from
-      #     CONFIG_PATH to check its globs still cover every recipe manifest.
-      #     That file is hand-edited now that no generator owns it, so a
+      #     CONFIG_PATH to check no recipe ecosystem has been given a
+      #     version-update entry. That file is hand-edited, so a
       #     dependabot.yml-only PR is exactly the case that must run these
       #     tests.
+      #   */**/manifest.yaml
+      #     test_recipe_canary_matrix.py walks the real recipe tree and pins
+      #     the exact set of recipes the canary tests. A PR that ADDS or
+      #     DELETES a recipe is precisely the PR that changes that set — and
+      #     was precisely the PR that did not run these tests, so the pin was
+      #     unenforceable on the only change that could break it. Scoped to
+      #     manifest.yaml rather than all of core/**: the recipe set is a
+      #     function of which manifests exist AND of the `language:` line
+      #     inside them, and nothing else under a recipe can change it.
       # Without these entries such a PR merges green and the failure only
       # surfaces later, on an unrelated PR that happens to touch tools/.
       - ".github/policy.yml"
       - ".github/schemas/**"
       - ".github/dependabot.yml"
+      - "core/**/manifest.yaml"
+      - "contrib/**/manifest.yaml"
+      - "skills/**/manifest.yaml"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/tools-tests.yml"
@@ -51,6 +61,9 @@ on:
       - ".github/policy.yml"
       - ".github/schemas/**"
       - ".github/dependabot.yml"
+      - "core/**/manifest.yaml"
+      - "contrib/**/manifest.yaml"
+      - "skills/**/manifest.yaml"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/tools-tests.yml"
