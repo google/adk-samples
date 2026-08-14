@@ -224,9 +224,31 @@ updates:
   # check the converse — no test knows what manifest types GitHub will learn
   # to parse next — so adding a recipe in a new language means adding an
   # entry here by hand.
+  #
+  # WHY EACH ENTRY IGNORES `dependabot-cooldown`
+  # --------------------------------------------
+  # zizmor's dependabot-cooldown audit wants every update entry to declare a
+  # `cooldown`, and fails CI at Medium severity when one does not. The risk
+  # it guards is real: without a cooldown Dependabot will propose a release
+  # the moment it is published, which is the window in which a compromised
+  # version is most likely to be live.
+  #
+  # That risk cannot exist for these entries. They open no pull request of
+  # either kind, so there is no adoption to delay — they are strictly safer
+  # than any cooldown the audit would have accepted. Adding `cooldown` here
+  # to satisfy the scanner would mean a third inert key on every entry, and
+  # would make them read like live update streams, which is the exact
+  # misreading the header above exists to prevent.
+  #
+  # The directive sits on the `- package-ecosystem:` line because that is
+  # the line zizmor anchors the finding to. dependabot-cooldown is not in
+  # the org's MANDATORY_CHECKS list, so it is ignorable; a mandatory finding
+  # would have to be fixed rather than silenced. If these entries ever stop
+  # being suppression entries, delete the directives with them — the audit
+  # becomes correct again the moment an entry can open a PR.
   # ------------------------------------------------------------------------
 
-  - package-ecosystem: "uv"
+  - package-ecosystem: "uv" # zizmor: ignore[dependabot-cooldown]
     directories:
       - "/"
       - "**/*"
@@ -236,7 +258,7 @@ updates:
     ignore:
       - dependency-name: "*"
 
-  - package-ecosystem: "gomod"
+  - package-ecosystem: "gomod" # zizmor: ignore[dependabot-cooldown]
     directories:
       - "/"
       - "**/*"
@@ -250,7 +272,7 @@ updates:
   # outside recipe_manifests.SCAN_ROOTS but well inside Dependabot's `**/*`.
   # Not placeholders: maven opened #2163 against
   # java/agents/software-bug-assistant before this entry existed.
-  - package-ecosystem: "maven"
+  - package-ecosystem: "maven" # zizmor: ignore[dependabot-cooldown]
     directories:
       - "/"
       - "**/*"
@@ -260,7 +282,7 @@ updates:
     ignore:
       - dependency-name: "*"
 
-  - package-ecosystem: "gradle"
+  - package-ecosystem: "gradle" # zizmor: ignore[dependabot-cooldown]
     directories:
       - "/"
       - "**/*"
@@ -270,7 +292,7 @@ updates:
     ignore:
       - dependency-name: "*"
 
-  - package-ecosystem: "npm"
+  - package-ecosystem: "npm" # zizmor: ignore[dependabot-cooldown]
     directories:
       - "/"
       - "**/*"
@@ -284,7 +306,7 @@ updates:
   # DETECTORS — but both have manifests here: six requirements.txt under
   # python/agents/, and Dockerfiles across core/ and java/. Suppressed for
   # the same reason as the rest, before they get a chance to fire.
-  - package-ecosystem: "pip"
+  - package-ecosystem: "pip" # zizmor: ignore[dependabot-cooldown]
     directories:
       - "/"
       - "**/*"
@@ -294,7 +316,7 @@ updates:
     ignore:
       - dependency-name: "*"
 
-  - package-ecosystem: "docker"
+  - package-ecosystem: "docker" # zizmor: ignore[dependabot-cooldown]
     directories:
       - "/"
       - "**/*"
@@ -314,7 +336,7 @@ updates:
   # GitHub-side list that grows without notice, and the alternative is
   # re-deriving that reasoning every time someone adds a manifest. Uniform
   # suppression costs eight lines and removes the question.
-  - package-ecosystem: "terraform"
+  - package-ecosystem: "terraform" # zizmor: ignore[dependabot-cooldown]
     directories:
       - "/"
       - "**/*"
@@ -324,7 +346,7 @@ updates:
     ignore:
       - dependency-name: "*"
 
-  - package-ecosystem: "pre-commit"
+  - package-ecosystem: "pre-commit" # zizmor: ignore[dependabot-cooldown]
     directories:
       - "/"
       - "**/*"
