@@ -408,6 +408,10 @@ stale_policy:
 
     # Both are stronger signals of ownership than any age threshold: an
     # assignee means a person took it, a milestone means it is planned work.
+    #
+    # Read by stale-sweep.yml and lower-cased on the way through:
+    # actions/stale compares its raw input against the string `true`, so the
+    # Python-shaped `True` this file's reader prints would read as FALSE.
     exempt_assigned: true
     exempt_milestoned: true
 
@@ -451,6 +455,14 @@ stale_policy:
     # 30 days because reopening a closed pull request is common and cheap —
     # a contributor asked to rework something typically comes back inside a
     # month, and the branch is what they come back to.
+    #
+    # This window also covers pull requests the sweep above closes by itself,
+    # and that is why stale-sweep.yml leaves actions/stale's `delete-branch`
+    # off. Deleting the head branch on close would confine this clock to
+    # MANUALLY closed pull requests and skip every auto-closed one — the
+    # population likeliest to be revived — and would falsify that workflow's
+    # "reopen it, your commits are unaffected" message, since GitHub disables
+    # Reopen once the head ref is gone.
     closed_pr_after_days: 30
 
     # UNMERGED, NEVER HAD A PULL REQUEST — pushed and then forgotten.

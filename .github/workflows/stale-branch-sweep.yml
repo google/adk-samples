@@ -19,6 +19,16 @@ name: Stale Branch Sweep
 # requests IT closes. Nothing off-the-shelf handles a branch with no pull
 # request at all, which is most of what accumulates here.
 #
+# stale-sweep.yml deliberately leaves `delete-branch` off, so every branch
+# it orphans lands here rather than disappearing on close: a pull request
+# auto-closed at 05:00 starts the 30-day closed-PR clock below, which is what
+# makes that workflow's "reopen it, your commits are unaffected" advice true.
+#
+# (dependabot-housekeeping.yml also deletes branches, via `gh pr close
+# --delete-branch`, but only for Dependabot PRs whose target directory is
+# gone. Those are already-dead branches for recipes that no longer exist, so
+# the two never contend for the same branch.)
+#
 # Relationship to the "Automatically delete head branches" repo setting
 # ---------------------------------------------------------------------
 # That setting is enabled, and it makes the 7-day merged clock mostly dead
@@ -35,11 +45,12 @@ name: Stale Branch Sweep
 
 on:
   schedule:
-    # Mondays 06:00 UTC, an hour after stale-sweep.yml. Ordering matters:
-    # that workflow closes stale PRs with `delete-branch: true`, so by the
-    # time this runs those branches are already gone and this job sees a
-    # settled view of which pull requests are open. Open PRs are what
-    # protect their head and base branches from this sweep.
+    # Mondays 06:00 UTC, an hour after stale-sweep.yml. Ordering matters
+    # because an OPEN pull request is what protects its head and base
+    # branches from this sweep: running afterwards means a PR that workflow
+    # has just closed is already recorded as closed, so its branch starts
+    # the 30-day closed-PR clock this week instead of looking protected for
+    # another seven days.
     - cron: "0 6 * * 1"
   workflow_dispatch:
     inputs:
@@ -103,7 +114,11 @@ jobs:
       - name: Sweep stale branches
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
+          # No GH_REPO: the script derives the repository from
+          # GITHUB_REPOSITORY (always set by Actions) and passes it
+          # explicitly to every `gh` call, so a second spelling of the same
+          # fact would only be another place to get it wrong.
+          #
           # Both are empty on a scheduled run, hence defaulted below rather
           # than interpolated straight into the command line.
           DRY_RUN: ${{ inputs.dry_run }}

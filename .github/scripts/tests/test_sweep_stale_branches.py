@@ -434,6 +434,46 @@ def test_results_are_sorted_by_branch_name():
 
 
 # ---------------------------------------------------------------------------
+# delete_branch — the only call that destroys anything
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name,expected_ref",
+    [
+        ("feature/x", "feature/x"),  # slashes must survive
+        ("fix#1", "fix%231"),
+        ("100%done", "100%25done"),
+        ("a b", "a%20b"),
+    ],
+)
+def test_delete_branch_percent_encodes_the_ref(monkeypatch, name, expected_ref):
+    """`gh api` does not encode the path it is given.
+
+    `#` is legal in a git ref name and opens a URL fragment, so an unencoded
+    `fix#1` would send DELETE .../heads/fix and destroy a different, live
+    branch. Slashes must NOT be encoded — `feature/x` is one ref, not a
+    branch called `feature%2Fx`.
+    """
+    seen: list[list[str]] = []
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(argv, **_kwargs):
+        seen.append(argv)
+        return Result()
+
+    monkeypatch.setattr(s.subprocess, "run", fake_run)
+    ok, _ = s.delete_branch(s.Branch(name, "deadbeef", NOW))
+
+    assert ok
+    assert seen[0][-1] == f"repos/{s.REPO}/git/refs/heads/{expected_ref}"
+
+
+# ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
 

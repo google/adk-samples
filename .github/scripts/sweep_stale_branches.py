@@ -58,6 +58,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import yaml
 
@@ -540,13 +541,20 @@ def make_ancestor_check(default_branch: str) -> Callable[[Branch], bool]:
 
 
 def delete_branch(branch: Branch) -> tuple[bool, str]:
+    # The name is percent-encoded, and this is the one call in the script
+    # where that matters. Git permits `#` in a ref name, `#` opens a URL
+    # fragment, and `gh api` does not encode the path it is handed — so a
+    # branch called `fix#1` would send DELETE .../heads/fix and destroy a
+    # different, live branch. `safe="/"` keeps the path separators in a
+    # namespaced name like `feature/x` intact.
+    ref = quote(branch.name, safe="/")
     result = subprocess.run(
         [
             "gh",
             "api",
             "-X",
             "DELETE",
-            f"repos/{REPO}/git/refs/heads/{branch.name}",
+            f"repos/{REPO}/git/refs/heads/{ref}",
         ],
         capture_output=True,
         text=True,
@@ -556,13 +564,20 @@ def delete_branch(branch: Branch) -> tuple[bool, str]:
 
 
 def write_summary(
-    deleted: list[Branch], doomed: list[Verdict], dry_run: bool
+    deleted: list[Branch],
+    doomed: list[Verdict],
+    dry_run: bool,
+    refused: bool = False,
 ) -> None:
     """Record what happened where a human will find it.
 
     On a real run this table IS the undo record: a deleted branch is
     restorable from nothing but its name and SHA, both of which are here. On
     a dry run it is the preview of the same table.
+
+    `refused` covers the circuit breaker: nothing was deleted, but the run
+    was not a dry run either, and the candidate list is precisely what has to
+    be reviewed before anyone raises the limit.
     """
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
@@ -571,6 +586,17 @@ def write_summary(
     lines = ["## Stale branch sweep", ""]
     if not doomed:
         lines.append("No branches were eligible for deletion.")
+    elif refused:
+        lines += [
+            f"**Refused** — {len(doomed)} branch(es) are eligible, above the "
+            "`--max-delete` limit, so NOTHING was deleted. Read this list "
+            "before re-running with a raised limit; an unexpectedly large "
+            "batch means a classification bug, not a tidy repository.",
+            "",
+            "| branch | sha | why |",
+            "|---|---|---|",
+        ]
+        lines += [_summary_row(v) for v in doomed]
     elif dry_run:
         lines += [
             f"**Dry run** — nothing was deleted. "
@@ -715,6 +741,11 @@ def main(argv: list[str] | None = None) -> int:
     # would reclassify healthy branches rather than produce no data at all.
     # Any such bug shows up first as an unusually large batch.
     if len(doomed) > args.max_delete:
+        # The candidate list is exactly what has to be reviewed before anyone
+        # raises the limit; leaving it out of the summary would strand it in
+        # the raw log, which is the opposite of how the rest of this script
+        # reports itself.
+        write_summary([], doomed, False, refused=True)
         print(
             f"::error::{len(doomed)} branches are eligible, above the "
             f"--max-delete limit of {args.max_delete}. Refusing to delete "
