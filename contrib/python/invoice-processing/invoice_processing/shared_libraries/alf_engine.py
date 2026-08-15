@@ -170,12 +170,7 @@ except ImportError:
 
 
 def _get_llm_project_id():
-    project = (
-        os.getenv("GOOGLE_CLOUD_PROJECT")
-        or os.getenv("PROJECT_ID")
-        or os.getenv("GOOGLE_CLOUD_PROJECT_ID")
-        or os.getenv("GCP_PROJECT")
-    )
+    project = os.getenv("GOOGLE_CLOUD_PROJECT")
     if not project:
         try:
             import google.auth
@@ -187,9 +182,7 @@ def _get_llm_project_id():
 
 
 def _get_llm_location():
-    return os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv(
-        "LOCATION", "us-central1"
-    )
+    return os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
 
 def _get_llm_model():

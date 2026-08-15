@@ -95,13 +95,11 @@ class _GCPConfig:
     PROJECT_ID: str | None = None
     LOCATION: str = field(
         default_factory=lambda: os.getenv(
-            "GOOGLE_CLOUD_LOCATION", os.getenv("LOCATION", "us-central1")
+            "GOOGLE_CLOUD_LOCATION", "us-central1"
         )
     )
     GEMINI_FLASH_MODEL: str = field(
-        default_factory=lambda: os.getenv(
-            "MODEL_NAME", os.getenv("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
-        )
+        default_factory=lambda: os.getenv("MODEL_NAME", "gemini-3.5-flash")
     )
     GEMINI_PRO_MODEL: str = field(
         default_factory=lambda: os.getenv("GEMINI_PRO_MODEL", "gemini-3.5-pro")
@@ -123,18 +121,9 @@ def _ensure_gcp_initialized():
     Agent Engine sets env vars after module import, so we must defer."""
     if _gcp_config.initialized:
         return
-    _gcp_config.PROJECT_ID = (
-        os.getenv("GOOGLE_CLOUD_PROJECT")
-        or os.getenv("PROJECT_ID")
-        or os.getenv("GOOGLE_CLOUD_PROJECT_ID")
-        or os.getenv("GCP_PROJECT")
-    )
-    _gcp_config.LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv(
-        "LOCATION", "us-central1"
-    )
-    _gcp_config.GEMINI_FLASH_MODEL = os.getenv(
-        "MODEL_NAME", os.getenv("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
-    )
+    _gcp_config.PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+    _gcp_config.LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    _gcp_config.GEMINI_FLASH_MODEL = os.getenv("MODEL_NAME", "gemini-3.5-flash")
     _gcp_config.GEMINI_PRO_MODEL = os.getenv(
         "GEMINI_PRO_MODEL", "gemini-3.5-pro"
     )

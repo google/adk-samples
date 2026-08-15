@@ -127,9 +127,7 @@ INVESTIGATION_OUTPUT_DIR = AGENT_PKG_DIR / "data" / "investigation_output"
 # Stored in a mutable dict so helpers can update without `global` statements.
 _gcp_config: dict[str, Any] = {
     "PROJECT_ID": None,
-    "LOCATION": os.getenv(
-        "GOOGLE_CLOUD_LOCATION", os.getenv("LOCATION", "us-central1")
-    ),
+    "LOCATION": os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
     "GEMINI_PRO_MODEL": os.getenv("GEMINI_PRO_MODEL", "gemini-3.5-pro"),
     "initialized": False,
 }
@@ -146,15 +144,8 @@ def _ensure_gcp_initialized():
     Agent Engine sets env vars after module import, so we must defer."""
     if _gcp_config["initialized"]:
         return
-    _gcp_config["PROJECT_ID"] = (
-        os.getenv("GOOGLE_CLOUD_PROJECT")
-        or os.getenv("PROJECT_ID")
-        or os.getenv("GOOGLE_CLOUD_PROJECT_ID")
-        or os.getenv("GCP_PROJECT")
-    )
-    _gcp_config["LOCATION"] = os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv(
-        "LOCATION", "us-central1"
-    )
+    _gcp_config["PROJECT_ID"] = os.getenv("GOOGLE_CLOUD_PROJECT")
+    _gcp_config["LOCATION"] = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
     _gcp_config["GEMINI_PRO_MODEL"] = os.getenv(
         "GEMINI_PRO_MODEL", "gemini-3.5-pro"
     )

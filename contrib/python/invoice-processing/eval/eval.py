@@ -88,13 +88,9 @@ def _init_llm() -> Optional["GenerativeModel"]:
     else:
         load_dotenv()
 
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID")
-    location = os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv(
-        "LOCATION", "us-central1"
-    )
-    model_name = os.getenv(
-        "MODEL_NAME", os.getenv("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
-    )
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+    location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    model_name = os.getenv("MODEL_NAME", "gemini-3.5-flash")
 
     if not project_id:
         return None

@@ -56,17 +56,12 @@ except ImportError:
 
 
 def get_llm_project_id():
-    """Return PROJECT_ID from env (deferred for Agent Engine compatibility).
+    """Return the GCP project (deferred for Agent Engine compatibility).
 
-    Checks multiple env var names to match the inference path pattern
-    and falls back to google.auth.default() for Agent Engine containers.
+    Reads GOOGLE_CLOUD_PROJECT, falling back to google.auth.default()
+    for Agent Engine containers.
     """
-    project = (
-        os.getenv("GOOGLE_CLOUD_PROJECT")
-        or os.getenv("PROJECT_ID")
-        or os.getenv("GOOGLE_CLOUD_PROJECT_ID")
-        or os.getenv("GCP_PROJECT")
-    )
+    project = os.getenv("GOOGLE_CLOUD_PROJECT")
     if not project:
         try:
             import google.auth
@@ -79,9 +74,7 @@ def get_llm_project_id():
 
 def get_llm_location():
     """Return LOCATION from env (deferred for Agent Engine compatibility)."""
-    return os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv(
-        "LOCATION", "us-central1"
-    )
+    return os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
 
 def get_llm_model():
