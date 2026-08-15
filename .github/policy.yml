@@ -250,15 +250,14 @@ required_files:
       # Every Go recipe is its own module. go.mod is required for three
       # reasons, in increasing order of subtlety:
       #   1. Without it the recipe cannot be built, tested, or versioned.
-      #   2. Dependabot's `gomod` ecosystem keys off go.mod, so a recipe
-      #      without one silently receives no dependency updates. Note that
-      #      go.mod alone is not sufficient today: .github/dependabot.yml
-      #      declares no `gomod` entry yet, so the FIRST Go recipe must add
-      #      one. That is enforced, not left to memory —
-      #      test_dependabot_config.py fails any ecosystem present in the
-      #      tree but missing from the config. The orphan cleanup in
-      #      .github/scripts/recipe_manifests.py detects Go recipes the same
-      #      way (`_is_gomod`).
+      #   2. Dependabot's `gomod` ecosystem keys off go.mod, and the orphan
+      #      cleanup in .github/scripts/recipe_manifests.py detects Go
+      #      recipes the same way (`_is_gomod`), so a recipe without one is
+      #      invisible to both. Note this is about DETECTION, not updates:
+      #      .github/dependabot.yml carries a `gomod` entry whose only job
+      #      is to suppress updates, so no Go recipe receives dependency
+      #      PRs and none is meant to. Freshness is the recipe owner's call
+      #      — see that file's header.
       #   3. .github/workflows/go-format.yml groups changed files by their
       #      owning go.mod and SKIPS any file it cannot attribute to a
       #      module — because gci's `localmodule` import section reads
@@ -323,6 +322,209 @@ required_dirs:
     go: []
     kotlin: []
     typescript: []
+
+# --------------------------------------------------------------------------
+# Staleness policy — enforced by .github/workflows/stale-sweep.yml (pull
+# requests and issues) and .github/workflows/stale-branch-sweep.yml
+# (branches). Both run weekly on Mondays.
+#
+# HOW THE CLOSE CLOCK WORKS, and why `close_after_days` is not passed
+# straight to actions/stale
+# -------------------------------------------------------------------
+# actions/stale measures both stages from the item's `updated_at`. Posting
+# the nudge and applying the `stale` label IS an update, so it resets
+# `updated_at` — which means the second stage is effectively measured from
+# the moment the label landed, not from the original last activity.
+#
+# So the values below are absolute "days since last real activity", and
+# stale-sweep.yml feeds the action the DIFFERENCE:
+#
+#     days-before-*-close  =  close_after_days - nudge_after_days
+#
+# Passing close_after_days directly is the single easiest mistake to make
+# here, and it fails silently: PRs would close on day 150 rather than 90.
+# The workflow asserts the difference is positive.
+#
+# Because the sweeps are weekly, every threshold is a floor with up to six
+# days of slack (60 becomes "60-67"). With a 30-day gap between the two
+# stages and a 7-day tick, nothing can skip a stage.
+# --------------------------------------------------------------------------
+stale_policy:
+  # Applied to both pull requests and issues. Only users with write access
+  # can apply labels, so `keep_open_label` is a maintainer override rather
+  # than an escape hatch a contributor can award themselves.
+  stale_label: stale
+  keep_open_label: keep-open
+
+  pull_requests:
+    nudge_after_days: 60
+    close_after_days: 90
+
+    # Dependabot PRs get the SAME deadlines, applied by a separate step in
+    # stale-sweep.yml over a disjoint set of PRs. Only the wording differs:
+    # asking a bot for a status update accomplishes nothing, so that nudge
+    # @-mentions a human who can act instead.
+    #
+    # Note that dependency PRs rarely reach these thresholds — Dependabot
+    # rebases its own PRs, which counts as activity. The ones that do go
+    # quiet are the ones Dependabot itself has abandoned, which is exactly
+    # the set worth escalating.
+    bot_label: dependencies
+    bot_escalation_mention: happyhuman
+
+  issues:
+    # Deliberately triple the PR window, because the two cases are not
+    # symmetric. A stale PR is abandoned WORK: closing it is cheap, the
+    # commits survive on the contributor's fork, and reopening is one click.
+    # A stale issue is unresolved INFORMATION: closing it does not fix the
+    # bug, it just means the next person files a duplicate that has lost the
+    # original report's reproduction steps.
+    #
+    # Issue staleness is also evidence about MAINTAINER responsiveness, not
+    # about whether the issue is still valid, so a short window would charge
+    # reporters for our backlog.
+    nudge_after_days: 180
+    close_after_days: 210
+
+    exempt_labels:
+      - keep-open
+      # MANDATORY — do not remove without reading canary_issues.py first.
+      #
+      # The recipe canary stores its four-rung escalation ladder in the
+      # issue's LABELS, and finds its own issues by the title of an OPEN
+      # issue. Closing one therefore does not pause the ladder, it ERASES
+      # it: the next monthly canary run cannot see the closed issue, files
+      # a fresh one with zero rungs, and starts over. The ladder could never
+      # reach its final rung, and the two workflows would fight monthly
+      # forever.
+      #
+      # A canary issue is quiet for weeks between rungs BY DESIGN
+      # (MIN_DAYS_BETWEEN_STAGES = 21), so it looks exactly like a dead
+      # issue to an age-based sweep. It is not.
+      - recipe-canary
+      # An unfixed vulnerability report must never time out silently.
+      - security
+
+    # Both are stronger signals of ownership than any age threshold: an
+    # assignee means a person took it, a milestone means it is planned work.
+    #
+    # Read by stale-sweep.yml and lower-cased on the way through:
+    # actions/stale compares its raw input against the string `true`, so the
+    # Python-shaped `True` this file's reader prints would read as FALSE.
+    exempt_assigned: true
+    exempt_milestoned: true
+
+  branches:
+    # Three independent clocks. A branch matches exactly ONE, resolved in the
+    # order documented in sweep_stale_branches.py::classify. That ordering is
+    # load-bearing rather than defensive: this repo is squash-merge only
+    # (`allow_squash_merge` is the sole enabled merge method), so a merged
+    # branch never becomes an ancestor of the default branch. Ancestry-based
+    # merge detection misses every one of them and would misfile provably
+    # merged work as an unmerged orphan.
+    # MERGED — the branch's work is already on the default branch, either
+    # because its pull request was merged or because it is an ancestor.
+    # Measured from the MERGE, not the last commit: a long-running branch can
+    # carry commits from months ago and still have merged this morning.
+    #
+    # The branch is now pure leftover, so this could arguably be 0. It is 7
+    # so that a bad merge can still be reverted and re-pushed from the
+    # original branch during the week that anyone is likely to notice, and so
+    # that anything still referencing the branch by name (a running job, a
+    # local checkout someone is about to push to) is not yanked out from
+    # under it the moment the merge button is pressed.
+    #
+    # Mostly dead code going forward: the repository has "Automatically
+    # delete head branches" enabled, so merged branches usually disappear
+    # without this. It still matters for branches merged BEFORE that setting
+    # was turned on (six of them at the time of writing), and for merges
+    # performed through the API, which can bypass it.
+    merged_after_days: 7
+
+    # CLOSED WITHOUT MERGING — someone opened a pull request and it was
+    # rejected, superseded, or abandoned.
+    #
+    # Measured from the CLOSE DATE, not the last commit, and that distinction
+    # is the whole point of having this clock separate from `orphan`. The
+    # real case it was built for: `fix/rag-agent-model-and-config`, whose
+    # last commit is 156 days old but whose PR #1217 was closed 20 days ago.
+    # Judged on commit age it is long dead; judged on the close it is a
+    # decision somebody made three weeks ago and might still reverse.
+    #
+    # 30 days because reopening a closed pull request is common and cheap —
+    # a contributor asked to rework something typically comes back inside a
+    # month, and the branch is what they come back to.
+    #
+    # This window also covers pull requests the sweep above closes by itself,
+    # and that is why stale-sweep.yml leaves actions/stale's `delete-branch`
+    # off. Deleting the head branch on close would confine this clock to
+    # MANUALLY closed pull requests and skip every auto-closed one — the
+    # population likeliest to be revived — and would falsify that workflow's
+    # "reopen it, your commits are unaffected" message, since GitHub disables
+    # Reopen once the head ref is gone.
+    closed_pr_after_days: 30
+
+    # UNMERGED, NEVER HAD A PULL REQUEST — pushed and then forgotten.
+    #
+    # The only clock that can destroy work existing nowhere else, hence by
+    # far the longest. The other two both describe branches whose content is
+    # either already on main or was deliberately rejected; this one describes
+    # work nobody ever finished submitting.
+    orphan_after_days: 90
+
+    # Unlike the PR and issue sweeps, this one keeps a circuit breaker: a
+    # branch delete cannot be undone from the UI. A batch this large means a
+    # classification bug, not a tidy repository. Mirrors DEFAULT_MAX_CLOSE in
+    # close_orphan_dependabot_prs.py, which exists for the same reason.
+    max_delete_per_run: 20
+
+    # Never deleted, at any age, whatever the clocks above say. Shell globs
+    # are supported (fnmatch, so `release/*` matches `release/1.2` but not
+    # `release`).
+    #
+    # This list is for branches that are not development branches at all —
+    # ones that exist to BE somewhere rather than to be merged. Such a branch
+    # is indistinguishable from an abandoned one by every signal the sweep
+    # has: no pull request, no merge, no recent commits. The list is the only
+    # thing standing between it and the orphan clock.
+    #
+    # Two categories are already handled and do NOT need listing here: the
+    # repository's default branch, and any branch carrying a GitHub
+    # branch-protection rule. Both are skipped automatically.
+    protected:
+      # Redundant with the automatic default-branch skip, and deliberately
+      # kept. It costs nothing, and it means a repository that renames its
+      # default branch, or a copy of this policy used elsewhere, is not
+      # relying on that one code path being correct.
+      - main
+
+      # LIVE CONTENT BRANCH — not a development branch, and the one entry
+      # here whose removal would break something today.
+      #
+      # It holds exactly two files (a README and a demo GIF) and is written
+      # by direct push; it has never had a pull request and is never merged
+      # anywhere. So it looks precisely like an abandoned branch: to the
+      # orphan clock it is dead 90 days after its last image upload.
+      #
+      # What breaks: core/python/long-horizon-harness/README.md embeds
+      # https://raw.githubusercontent.com/google/adk-samples/assets/long-horizon-harness/horizon-demo.gif
+      # where `assets` is the GIT REF. Delete the branch and that image 404s
+      # in the recipe's README. Nothing in CI would catch it — docs-links.yml
+      # checks links, and this failure is silent until someone looks.
+      - assets
+
+      # Pre-emptive: neither exists in this repository today.
+      #
+      # gh-pages is where GitHub Pages serves from, written by a deploy job
+      # rather than by merges — the same shape of trap as `assets`, and a
+      # very easy one to add without remembering this file. `release/*`
+      # covers long-lived maintenance branches, which by nature stop
+      # receiving commits and would age out.
+      #
+      # Listing them now costs nothing and removes a footgun from whoever
+      # creates one later.
+      - gh-pages
+      - "release/*"
 
 # --------------------------------------------------------------------------
 # Case-insensitive required entries.

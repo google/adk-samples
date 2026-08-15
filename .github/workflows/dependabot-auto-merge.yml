@@ -40,12 +40,12 @@ on: # zizmor: ignore[dangerous-triggers]
       - "Validate Recipe Structure"
       - "🐍 Python Format PR Checks"
       - "Python Dependency Policy"
-      # Go. Fires on nothing today: no Go recipe exists, and `gomod` is a
-      # recipe ecosystem, so .github/dependabot.yml declares no entry for it
-      # under the current policy (its header explains why recipes get no
-      # version updates). Listed in advance because re-enabling that entry
-      # and adding the first go.mod are one change, and forgetting this line
-      # would leave those PRs never re-evaluated for auto-merge — a silent
+      # Go. Fires on no Dependabot PR today. There is one go.mod in the tree
+      # (go/agents/financial-advisor), but .github/dependabot.yml gives
+      # `gomod` a suppression entry — no version updates and no security
+      # updates — so Dependabot opens nothing for it to react to. Listed in
+      # advance because lifting that suppression and forgetting this line
+      # would leave those PRs never re-evaluated for auto-merge, a silent
       # failure rather than a loud one.
       - "🐹 Go Format PR Checks"
     types:
