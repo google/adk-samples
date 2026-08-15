@@ -24,10 +24,11 @@ on:
       #     parameter (tools/validate_manifest.py:40,113).
       #   .github/dependabot.yml
       #     .github/scripts/tests/test_dependabot_config.py loads it from
-      #     CONFIG_PATH to check no recipe ecosystem has been given a
-      #     version-update entry. That file is hand-edited, so a
-      #     dependabot.yml-only PR is exactly the case that must run these
-      #     tests.
+      #     CONFIG_PATH to check every recipe ecosystem is still configured
+      #     purely to suppress updates, and that whatever can still open a
+      #     PR stays inside the repo's PR budget. That file is hand-edited,
+      #     so a dependabot.yml-only PR is exactly the case that must run
+      #     these tests.
       #   */**/manifest.yaml
       #     test_recipe_canary_matrix.py walks the real recipe tree and pins
       #     the exact set of recipes the canary tests. A PR that ADDS or
