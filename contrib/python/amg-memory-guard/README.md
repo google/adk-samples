@@ -33,7 +33,7 @@ Ask the agent to remember a short factual observation. For an attack-and-block d
 The test suite does not call a model or external service.
 
 ```bash
-uv run pytest --ignore=tests/integration
+uv run pytest
 ```
 
 ## References
