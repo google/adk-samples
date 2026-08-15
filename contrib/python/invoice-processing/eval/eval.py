@@ -20,7 +20,7 @@ Usage:
 
     # With explicit master data file
     python eval.py --ground-truth "exemplary_data" --agent-output output \
-        --master-data ../invoice_master_data.yaml
+        --master-data ../invoice_processing/shared_libraries/invoice_master_data.yaml
 
     # Deterministic only (no LLM, no cost)
     python eval.py --ground-truth "exemplary_data" --agent-output output --skip-llm
@@ -52,13 +52,16 @@ try:
 except ImportError:
     pass
 
-# Resolve: eval/ -> invoice_processing/ -> agents/ -> project root
+# Resolve: eval/ -> invoice-processing/ (recipe root) -> invoice_processing/
+# (the package, which holds data/ and exemplary_data/). Relative --ground-truth
+# / --agent-output paths and the eval_results output dir all resolve under the
+# package, matching invoice_processing/core/config.py.
 SCRIPT_DIR = Path(__file__).resolve().parent
-AGENT_DIR = SCRIPT_DIR.parent
-PROJECT_ROOT = AGENT_DIR.parent.parent
+RECIPE_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = RECIPE_ROOT / "invoice_processing"
 
 # Master data loader — provides domain-agnostic configuration
-sys.path.insert(0, str(AGENT_DIR / "invoice_processing" / "shared_libraries"))
+sys.path.insert(0, str(PROJECT_ROOT / "shared_libraries"))
 from master_data_loader import MasterData, load_master_data  # noqa: E402
 
 # ============================================================================
@@ -1361,6 +1364,15 @@ def _run_evaluation_loop(
             case_id, gt_file, agent_file, tolerance, llm_model, master
         )
         results.append(result)
+
+        # evaluate_case returns only case_id/status/error when a file fails to
+        # load (bad JSON), so it has no "all_correct" key on that path.
+        if result.get("status") == "ERROR":
+            print(
+                f"  [{idx}/{len(case_ids)}] {case_id}: ERROR "
+                f"({result.get('error', 'unknown error')})"
+            )
+            continue
 
         status_icon = "PASS" if result["all_correct"] else "FAIL"
         llm_tag = ""

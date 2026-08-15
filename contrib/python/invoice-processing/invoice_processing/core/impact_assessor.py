@@ -88,7 +88,7 @@ class ImpactAssessorAgent:
 
         # If no phase rejected, check final decision
         final = context.get("decision", {})
-        return final.get("decision", "ACCEPT"), ""
+        return final.get("final_decision", "ACCEPT"), ""
 
     def run(
         self,

@@ -85,11 +85,6 @@ def _safe_json_loads(text) -> dict:
         return json.loads(cleaned)
     except (json.JSONDecodeError, ValueError):
         pass
-    # Log what we received for debugging
-    print(
-        f"[_safe_json_loads] FAILED to parse (type={type(text).__name__}, "
-        f"len={len(text)}, first 200 chars): {text[:200]!r}"
-    )
     raise ValueError(
         f"Could not parse input as JSON. Received: {text[:100]}..."
     )

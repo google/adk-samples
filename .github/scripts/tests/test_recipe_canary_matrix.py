@@ -181,6 +181,7 @@ def test_matrix_is_one_entry_per_recipe_and_version(tmp_path):
 # list in the same change.
 EXPECTED_RECIPES = {
     "contrib/python/financial-advisor",
+    "contrib/python/invoice-processing",
     "contrib/python/market-research-agent",
     "core/python/ambient-expense-agent",
     "core/python/cross-session-memory",

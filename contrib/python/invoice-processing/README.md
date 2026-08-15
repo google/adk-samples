@@ -291,7 +291,7 @@ invoice-processing/
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/) for dependency management
 - Google Cloud project with Vertex AI API enabled
 - [Google ADK](https://google.github.io/adk-docs/)
@@ -427,28 +427,34 @@ The evaluation framework lives in [`eval/`](eval/) and provides schema-driven as
 ### Running Evaluations
 
 ```bash
+# Paths are resolved relative to the invoice_processing package, so
+# "exemplary_data" and "data/agent_output" resolve inside it.
+
 # Full evaluation (deterministic + LLM)
 uv run eval/eval.py \
-    --ground-truth agents/invoice-processing/invoice_processing/exemplary_data \
-    --agent-output agents/invoice-processing/invoice_processing/data/agent_output
+    --ground-truth exemplary_data \
+    --agent-output data/agent_output
 
 # Deterministic only (no LLM, no cost)
 uv run eval/eval.py \
-    --ground-truth agents/invoice-processing/invoice_processing/exemplary_data \
-    --agent-output agents/invoice-processing/invoice_processing/data/agent_output \
+    --ground-truth exemplary_data \
+    --agent-output data/agent_output \
     --skip-llm
 
 # Single case evaluation
-uv run eval/eval.py --case case_001
+uv run eval/eval.py \
+    --ground-truth exemplary_data \
+    --agent-output data/agent_output \
+    --case case_001
 
 # Custom financial tolerance
 uv run eval/eval.py \
-    --ground-truth agents/invoice-processing/invoice_processing/exemplary_data \
-    --agent-output agents/invoice-processing/invoice_processing/data/agent_output \
+    --ground-truth exemplary_data \
+    --agent-output data/agent_output \
     --tolerance 0.05
 
 # Compare original vs ALF-revised output (before/after diff)
-python agents/invoice-processing/eval/compare_postprocessing.py
+uv run eval/compare_postprocessing.py
 ```
 
 Results are saved to `invoice_processing/data/eval_results/`.
@@ -565,7 +571,7 @@ In production, the following files should be accessible to SMEs and administrato
 
 ## Sample Test Cases
 
-The agent ships with 5 sample invoice cases in `exemplary_data/`:
+The agent ships with 3 sample invoice cases in `exemplary_data/`:
 
 | Case | Vendor | Total | Acting Decision | Phase | Scenario |
 |------|--------|-------|-----------------|-------|----------|

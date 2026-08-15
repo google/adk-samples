@@ -1,7 +1,7 @@
 [project]
 name = "invoice-processing"
 version = "1.0.0"
-description = "Invoice Processing -- Unified inference and learning agent for invoice processing"
+description = "A unified ADK agent for invoice processing that combines an end-to-end inference pipeline (classification, extraction, 4-phase validation, transformation) with an interactive learning system (ALF correction engine) for continuous improvement -- all in a single self-contained agent."
 requires-python = ">=3.11"
 license = "Apache-2.0"
 keywords = ['agent-catalog', 'adk', 'agent']

@@ -6,7 +6,7 @@ A single LlmAgent that supports two modes:
   2. Learning -- SME-driven rule review and creation
 
 Usage:
-    adk web agents/invoice_processing/invoice_processing
+    adk web invoice_processing
 """
 
 import json

@@ -57,8 +57,8 @@ SCRIPT_DIR = Path(__file__).parent  # shared_libraries/
 AGENT_PKG_DIR = SCRIPT_DIR.parent  # invoice_processing/ package root
 ALF_OUT_DIR = AGENT_PKG_DIR / "data" / "alf_output"
 
-# Project root for .env resolution
-PROJECT_ROOT = AGENT_PKG_DIR.parent.parent.parent
+# Recipe root for .env resolution (holds .env / .env.example beside the package)
+PROJECT_ROOT = AGENT_PKG_DIR.parent
 
 # ---------------------------------------------------------------------------
 # Master data loader (optional — provides domain-agnostic configuration)

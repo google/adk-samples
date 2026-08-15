@@ -126,9 +126,9 @@ class TestSchemaValidation:
     def test_valid_schema_passes(self):
         path = _write_rule_base(MINIMAL_RULE_BASE)
         try:
-            ALFEngine(rule_base_path=path)
-            # If we get here, validation passed
-            assert True
+            engine = ALFEngine(rule_base_path=path)
+            # A valid schema loads its rules without raising.
+            assert len(engine.rules) == 1
         finally:
             path.unlink()
 

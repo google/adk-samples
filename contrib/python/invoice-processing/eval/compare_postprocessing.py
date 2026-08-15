@@ -9,11 +9,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-# Define paths: eval/ -> inference_agent/ -> agents/ -> project root
+# eval/ lives beside the invoice_processing package; data/ lives inside it
+# (see invoice_processing/core/config.py, which is the source of truth).
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
-ORIGINAL_BASE = str(PROJECT_ROOT / "data" / "agent_output")
-ALF_BASE = str(PROJECT_ROOT / "data" / "alf_output")
+DATA_DIR = SCRIPT_DIR.parent / "invoice_processing" / "data"
+ORIGINAL_BASE = str(DATA_DIR / "agent_output")
+ALF_BASE = str(DATA_DIR / "alf_output")
 
 
 def discover_case_ids() -> list[str]:

@@ -175,6 +175,7 @@ taxonomies:
     gst: TAX
     Gst: TAX
     VAT: TAX
+    Vat: TAX
     vat: TAX
 
   decision_status_mapping:

@@ -235,7 +235,7 @@ class RuleWriterAgent:
             mode=mode,
             backup_path=str(backup_path),
             total_rules=len(rb["rules"]),
-            message=f"Rule {rule_id} {mode}ed successfully. "
+            message=f"Rule {rule_id} {'added' if mode == 'add' else 'updated'} successfully. "
             f"Total rules: {len(rb['rules'])}. "
             f"Backup: {backup_path.name}",
         )

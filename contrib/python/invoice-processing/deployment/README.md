@@ -8,7 +8,7 @@ Deploy an ADK agent to Agent Runtime and optionally register it on Gemini Enterp
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (`gcloud` CLI)
 - A GCP project with Vertex AI API enabled
 - Python packages: `google-adk[vertexai]`, `python-dotenv`
@@ -36,7 +36,7 @@ Agent Runtime uploads only the agent directory (the folder containing `agent.py`
 **Key requirements:**
 
 1. **`requirements.txt`** must exist **inside the agent package directory** (not the project root). Agent Runtime uses it to install dependencies in the container.
-2. **`.env`** file in the agent directory is auto-detected and deployed. Use it for runtime env vars (`PROJECT_ID`, `LOCATION`, etc.). Alternatively, use `--env_file` to point to a different file.
+2. **`.env`** file in the agent directory is auto-detected and deployed. Use it for runtime env vars (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, etc.). Alternatively, use `--env_file` to point to a different file.
 3. **All imports must be relative** (e.g., `from .tools.tools import ...`). Agent Runtime renames the package directory during deployment, which breaks absolute imports.
 4. **Minimize the `data/` directory** — any files inside the agent package are uploaded. Remove runtime outputs (logs, cache, temp files) before deploying.
 5. **Environment variable access must be lazy** — Agent Runtime sets env vars *after* module import. Any `os.getenv()` calls at module level will return `None`. Use a lazy initialization pattern (call `os.getenv()` inside a function on first use, not at import time).
@@ -47,9 +47,8 @@ Create a `.env` file in the agent package directory:
 
 ```bash
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
-PROJECT_ID=<YOUR_PROJECT_ID>
 GOOGLE_CLOUD_PROJECT=<YOUR_PROJECT_ID>
-LOCATION=<YOUR_REGION>
+GOOGLE_CLOUD_LOCATION=<YOUR_REGION>
 ```
 
 > A `.env.example` is provided in the agent directory. Copy it to `.env` and fill in your values.
@@ -160,7 +159,7 @@ No need to re-register on Gemini Enterprise — the registration points to the A
 | Cause | Fix |
 |-------|-----|
 | Missing `requirements.txt` in agent dir | Add `requirements.txt` inside the agent package directory |
-| Missing env vars | Ensure `.env` exists in the agent dir with `PROJECT_ID` and `GOOGLE_CLOUD_PROJECT` |
+| Missing env vars | Ensure `.env` exists in the agent dir with `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` |
 | Large package size | Remove runtime outputs from `data/` before deploying |
 | Absolute imports | Convert all imports to relative (`.` / `..`) — Agent Runtime renames the package |
 | Module-level `os.getenv()` | Defer env var reads to call time using lazy initialization |

@@ -4,8 +4,8 @@
   "timestamp": "2026-04-07T16:33:09.838768",
   "input_refs": [],
   "case_id": "case_005",
-  "source_folder": "/Users/dixittanya/dev/invoice-processing-atomic-agent-gym/agents/invoice_processing/invoice_processing/exemplary_data/case_005",
-  "output_folder": "/Users/dixittanya/dev/invoice-processing-atomic-agent-gym/agents/invoice_processing/invoice_processing/data/agent_output/case_005",
+  "source_folder": "invoice_processing/exemplary_data/case_005",
+  "output_folder": "invoice_processing/data/agent_output/case_005",
   "processing_summary": {
     "decision": "REJECT",
     "processing_time_seconds": 33.38,

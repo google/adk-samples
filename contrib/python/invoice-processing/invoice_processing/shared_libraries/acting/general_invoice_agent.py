@@ -37,7 +37,7 @@ import sys
 import time
 import traceback
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, ClassVar, Literal
@@ -69,8 +69,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 AGENT_PKG_DIR = SCRIPT_DIR.parent.parent
 OUTPUT_BASE_DIR = AGENT_PKG_DIR / "data" / "agent_output"
 
-# Project root for .env resolution
-PROJECT_ROOT = AGENT_PKG_DIR.parent.parent.parent
+# Recipe root for .env resolution (holds .env / .env.example beside the package)
+PROJECT_ROOT = AGENT_PKG_DIR.parent
 ENV_FILE = PROJECT_ROOT / ".env"
 if ENV_FILE.exists():
     load_dotenv(ENV_FILE)
@@ -84,26 +84,37 @@ _ABN_EXPECTED_LENGTH = 11
 
 @dataclass
 class _GCPConfig:
-    """Mutable container for GCP configuration (lazy-initialized)."""
+    """Mutable container for GCP configuration (lazy-initialized).
+
+    Model names and location default from environment variables so they are
+    never hardcoded in source; the literals are only last-resort fallbacks.
+    `_ensure_gcp_initialized()` re-reads them at first use to pick up env vars
+    that Agent Engine sets after import.
+    """
 
     PROJECT_ID: str | None = None
-    LOCATION: str = "us-central1"
-    GEMINI_FLASH_MODEL: str = "gemini-3.5-flash"
-    GEMINI_PRO_MODEL: str = "gemini-3.5-pro"
-    API_CALL_DELAY_SECONDS: float = 1.0
+    LOCATION: str = field(
+        default_factory=lambda: os.getenv(
+            "GOOGLE_CLOUD_LOCATION", os.getenv("LOCATION", "us-central1")
+        )
+    )
+    GEMINI_FLASH_MODEL: str = field(
+        default_factory=lambda: os.getenv(
+            "MODEL_NAME", os.getenv("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
+        )
+    )
+    GEMINI_PRO_MODEL: str = field(
+        default_factory=lambda: os.getenv("GEMINI_PRO_MODEL", "gemini-3.5-pro")
+    )
+    API_CALL_DELAY_SECONDS: float = field(
+        default_factory=lambda: float(
+            os.getenv("API_CALL_DELAY_SECONDS", "1.0")
+        )
+    )
     initialized: bool = False
 
 
-_gcp_config = _GCPConfig(
-    LOCATION=os.getenv(
-        "GOOGLE_CLOUD_LOCATION", os.getenv("LOCATION", "us-central1")
-    ),
-    GEMINI_FLASH_MODEL=os.getenv(
-        "MODEL_NAME", os.getenv("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
-    ),
-    GEMINI_PRO_MODEL=os.getenv("GEMINI_PRO_MODEL", "gemini-3.5-pro"),
-    API_CALL_DELAY_SECONDS=float(os.getenv("API_CALL_DELAY_SECONDS", "1.0")),
-)
+_gcp_config = _GCPConfig()
 
 
 def _ensure_gcp_initialized():
