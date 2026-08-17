@@ -191,6 +191,7 @@ EXPECTED_RECIPES = {
     "core/python/rag-agent-search",
     "core/python/rag-vector-search",
     "core/python/safety-plugins",
+    "skills/retail/product-search",
 }
 
 
