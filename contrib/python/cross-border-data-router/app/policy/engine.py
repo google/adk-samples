@@ -14,7 +14,7 @@
 
 """Cross-border data-residency routing policy.
 
-Implements a simplified version of the two-stage agent-selection algorithm
+Implements a simplified version of the three-stage agent-selection algorithm
 OpenEAGO's docs describe for Phase 2 (Planning & Negotiation) discovery:
 
   Stage 1 — data-residency hard filter: eliminate any candidate whose
@@ -62,7 +62,7 @@ def _passes_jurisdiction_filter(geo: dict, request: DataRequest) -> bool:
     return geo.get("jurisdiction") not in request.excluded_jurisdictions
 
 
-def _score(geo: dict, request: DataRequest) -> ScoredCandidate:
+def _score(agent_id: str, geo: dict, request: DataRequest) -> ScoredCandidate:
     """Stage 3: weighted jurisdiction-preference + compliance-overlap score."""
     reasons: list[str] = []
     jurisdiction = geo.get("jurisdiction", "")
@@ -95,9 +95,7 @@ def _score(geo: dict, request: DataRequest) -> ScoredCandidate:
         or "reg:" in tag.lower()
         or "residency:" in tag.lower()
     }
-    compliance_score = (
-        min(len(relevant_tags) / 2, 1.0) if compliance_tags else 0.0
-    )
+    compliance_score = min(len(relevant_tags) / 2, 1.0)
     if relevant_tags:
         reasons.append(f"Compliance tags on record: {sorted(relevant_tags)}.")
 
@@ -106,7 +104,7 @@ def _score(geo: dict, request: DataRequest) -> ScoredCandidate:
         + _COMPLIANCE_WEIGHT * compliance_score
     )
     return ScoredCandidate(
-        agent_id="",  # filled in by the caller, which has the card's name
+        agent_id=agent_id,
         jurisdiction=jurisdiction,
         score=round(score, 3),
         reasons=reasons,
@@ -171,17 +169,7 @@ def evaluate_routing_policy(
             eliminated=eliminated,
         )
 
-    scored = []
-    for card, geo in survivors:
-        candidate = _score(geo, request)
-        scored.append(
-            ScoredCandidate(
-                agent_id=card.name,
-                jurisdiction=candidate.jurisdiction,
-                score=candidate.score,
-                reasons=candidate.reasons,
-            )
-        )
+    scored = [_score(card.name, geo, request) for card, geo in survivors]
     scored.sort(key=lambda c: c.score, reverse=True)
     winner = scored[0]
 

@@ -87,7 +87,7 @@ def test_no_compliant_agent_rejects_rather_than_falling_back() -> None:
     assert not decision.score_breakdown
 
 
-def test_us_pii_with_no_constraints_routes_to_us_processor() -> None:
+def test_us_financial_with_no_constraints_routes_to_us_processor() -> None:
     """A plain US-resident request should route to the US processor."""
     request = DataRequest(
         data_classification="financial",

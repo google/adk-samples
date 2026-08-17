@@ -17,6 +17,9 @@ sub-agents' own tools."""
 from app.sub_agents.eu_processor.agent import (
     process_record as eu_process_record,
 )
+from app.sub_agents.uk_processor.agent import (
+    process_record as uk_process_record,
+)
 from app.sub_agents.us_processor.agent import (
     process_record as us_process_record,
 )
@@ -66,3 +69,10 @@ def test_us_process_record_confirms_region() -> None:
     result = us_process_record("customer_456 support ticket")
     assert "US" in result
     assert "customer_456 support ticket" in result
+
+
+def test_uk_process_record_confirms_region() -> None:
+    """The UK processor's own tool should confirm UK handling."""
+    result = uk_process_record("customer_789 support ticket")
+    assert "UK" in result
+    assert "customer_789 support ticket" in result

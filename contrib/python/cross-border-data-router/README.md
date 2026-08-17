@@ -117,4 +117,4 @@ uv run pytest tests/integration
 | ------- | ----------- |
 | `uv run adk run app` | Run the agent in interactive CLI mode |
 | `uv run uvicorn app.fast_api_app:app --reload` | Start the local FastAPI development server |
-| `uv run pytest` | Run all test suites |
+| `uv run pytest` | Run the unit test suite (`tests/integration` is excluded by default) |

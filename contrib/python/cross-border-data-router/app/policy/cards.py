@@ -22,8 +22,8 @@ gap with a "compliance layer on top of A2A", carried as a capability
 *extension* rather than a protocol change. This module follows that pattern:
 every card below declares one `AgentExtension` at `GEOGRAPHIC_EXTENSION_URI`
 whose `params` hold the geographic/regulatory metadata OpenEAGO's own docs
-use — `jurisdiction`, `data_center`, `data_residency_regions`,
-`cross_border_restrictions`, and `compliance`.
+use — `jurisdiction`, `data_center`, `geographic_location`,
+`data_residency_regions`, `cross_border_restrictions`, and `compliance`.
 
 Each card here describes a regional processing agent this recipe also runs
 locally (see `app/sub_agents/`). In a real deployment these cards would
@@ -155,7 +155,7 @@ AGENT_REGISTRY: list[AgentCard] = [
         description=(
             "Processes customer data within the EU/EEA under GDPR controls."
         ),
-        jurisdiction="EU-WEST",
+        jurisdiction="EU",
         data_center="GCP-EUW1-FRANKFURT",
         geographic_location="EU-FRANKFURT",
         data_residency_regions=["EU", "EEA"],

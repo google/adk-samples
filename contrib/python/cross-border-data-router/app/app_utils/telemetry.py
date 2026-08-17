@@ -53,7 +53,7 @@ def setup_telemetry() -> None:
     else:
         logging.info(
             "Prompt-response logging disabled (set LOGS_BUCKET_NAME"
-            "=gs://your-bucket and"
+            "=your-bucket"
             " OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
             "=NO_CONTENT to enable)"
         )

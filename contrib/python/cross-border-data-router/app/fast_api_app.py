@@ -50,7 +50,8 @@ def _otel_to_cloud_enabled() -> bool:
 try:
     _cloud_logging_client = google_cloud_logging.Client()
     _cloud_logger = _cloud_logging_client.logger(__name__)
-except Exception:
+except Exception as e:
+    logging.warning("Cloud Logging client init failed: %s", e)
     _cloud_logger = None
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",")
@@ -58,7 +59,7 @@ allow_origins = (
     else None
 )
 
-# Artifact bucket for ADK (created by Terraform, passed via env var)
+# Artifact bucket for ADK (set via LOGS_BUCKET_NAME env var)
 logs_bucket_name = os.environ.get("LOGS_BUCKET_NAME")
 
 AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
