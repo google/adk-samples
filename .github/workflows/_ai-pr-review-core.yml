@@ -90,7 +90,6 @@ jobs:
         uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
         with:
           fetch-depth: 1
-          ref: 'refs/pull/${{ inputs.pr_number_dispatch }}/head'
 
       - name: 'Checkout PR code (issue_comment)'
         if: |-
@@ -98,7 +97,6 @@ jobs:
         uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
         with:
           fetch-depth: 1
-          ref: 'refs/pull/${{ inputs.pr_number_issue }}/head'
 
       - name: 'Checkout PR code (pull_request_review & pull_request_review_comment)'
         if: |-
@@ -106,7 +104,6 @@ jobs:
         uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
         with:
           fetch-depth: 1
-          ref: 'refs/pull/${{ inputs.pr_number_review }}/head'
 
       # SECURITY: strip the workspace config agy reads, so the only
       # configuration it sees is the global config written to $HOME below —
@@ -263,6 +260,8 @@ jobs:
 
       - name: 'Check if PR is new-file-only (skip review for new recipe drops)'
         id: 'new_files_only_guard'
+        if: |-
+          ${{ inputs.event_name == 'pull_request' }}
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
