@@ -30,6 +30,11 @@ from pathlib import Path
 import post_review_comments as m
 import pytest
 
+# Must come after post_review_comments: importing that is what puts tools/ on
+# sys.path. isort keeps plain imports above from-imports so the order holds,
+# and reordering it would fail loudly at collection rather than silently.
+from ci_message import EXIT_CI_FAULT
+
 SCRIPT = Path(m.__file__)
 
 
@@ -359,14 +364,23 @@ def test_main_writes_nothing_when_every_finding_is_dropped(tmp_path):
     code, out, stdout = _run(tmp_path, response, DIFF)
     assert code == 0
     assert not out.exists()
-    assert "::warning::" in stdout
+    assert "dropped finding" in stdout
+    # A dropped finding is not a contributor-facing annotation.
+    assert "::warning::" not in stdout
 
 
 def test_main_fails_loudly_on_unusable_reviewer_output(tmp_path):
+    """A reviewer that returned nothing usable is a CI fault, not a verdict.
+
+    It must not be reported as a problem with the pull request: exit with
+    the dedicated CI-fault code and annotate this checker, never a file.
+    """
     code, out, stdout = _run(tmp_path, "I found nothing.", DIFF)
-    assert code == 1
+    assert code == EXIT_CI_FAULT
     assert not out.exists()
-    assert "::error::" in stdout
+    assert "[CI FAULT]" in stdout
+    assert "post_review_comments.py" in stdout
+    assert "file=" not in stdout  # never point at contributor code
 
 
 def test_main_fails_when_the_result_file_is_not_json(tmp_path):
@@ -391,8 +405,8 @@ def test_main_fails_when_the_result_file_is_not_json(tmp_path):
         text=True,
         check=False,
     )
-    assert proc.returncode == 1
-    assert "::error::" in proc.stdout
+    assert proc.returncode == EXIT_CI_FAULT
+    assert "[CI FAULT]" in proc.stdout
 
 
 def test_main_fails_when_the_result_is_not_an_object(tmp_path):
@@ -417,7 +431,7 @@ def test_main_fails_when_the_result_is_not_an_object(tmp_path):
         text=True,
         check=False,
     )
-    assert proc.returncode == 1
+    assert proc.returncode == EXIT_CI_FAULT
     assert "not a JSON object" in proc.stdout
 
 

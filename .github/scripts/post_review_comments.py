@@ -26,9 +26,15 @@ Usage:
 --out is written ONLY when there is at least one postable comment, so the
 caller can treat "file absent" as "nothing to post".
 
+Every failure here is a CI fault, never the contributor's: the reviewer agent
+returned something unusable, or a file this workflow wrote is unreadable. None
+of it is caused by, or fixable from, the pull request under review — so they go
+through ci_message.infra_fault, which annotates this checker rather than the
+contributor's code.
+
 Exit codes:
   0  payload written, or nothing worth posting
-  1  the reviewer's output could not be read as findings
+  2  CI fault — the reviewer's output could not be read as findings
 """
 
 import argparse
@@ -36,6 +42,16 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from ci_message import (
+    EXIT_OK,
+    guard,
+    infra_fault,
+    report_infra_fault,
+)
+
+CHECKER = "post_review_comments.py"
 
 # Group 2 is the old-side length, groups 3/4 the new-side start and length.
 # A length is absent for a one-line side ("@@ -1 +1 @@"), which means 1.
@@ -251,19 +267,27 @@ def main() -> int:
     try:
         result = json.loads(args.result.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        print(f"::error::Cannot read reviewer result {args.result}: {exc}")
-        return 1
+        return report_infra_fault(
+            infra_fault(
+                CHECKER, f"cannot read reviewer result {args.result}: {exc}"
+            )
+        )
     if not isinstance(result, dict):
-        print(f"::error::Reviewer result {args.result} is not a JSON object.")
-        return 1
+        return report_infra_fault(
+            infra_fault(
+                CHECKER, f"reviewer result {args.result} is not a JSON object"
+            )
+        )
 
     response = result.get("response") or ""
     try:
         findings = extract_findings(response)
     except ReviewerOutputError as exc:
-        print(f"::error::Reviewer output unusable: {exc}")
+        print("Reviewer response was:")
         print(response[:2000])
-        return 1
+        return report_infra_fault(
+            infra_fault(CHECKER, f"reviewer output unusable: {exc}")
+        )
 
     # errors="replace", because the workflow trims the diff to a byte budget
     # with `head -c` and that cut lands inside a multi-byte character sooner
@@ -275,16 +299,20 @@ def main() -> int:
     try:
         diff = args.diff.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
-        print(f"::error::Cannot read diff {args.diff}: {exc}")
-        return 1
+        return report_infra_fault(
+            infra_fault(CHECKER, f"cannot read diff {args.diff}: {exc}")
+        )
 
     comments, skipped = build_comments(findings, added_line_anchors(diff))
+    # A plain log line, not a ::warning:: annotation. Which findings were
+    # dropped is debugging detail for whoever is looking at this job, and
+    # nothing a contributor reading their PR could act on.
     for reason in skipped:
-        print(f"::warning::Dropped finding — {reason}.")
+        print(f"  dropped finding — {reason}")
     print(f"{len(findings)} finding(s) returned, {len(comments)} postable.")
 
     if not comments:
-        return 0
+        return EXIT_OK
 
     # `body` is required by the REST API whenever `event` is COMMENT.
     payload = {
@@ -293,8 +321,10 @@ def main() -> int:
         "comments": comments,
     }
     args.out.write_text(json.dumps(payload), encoding="utf-8")
-    return 0
+    return EXIT_OK
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # guard(): an unhandled exception must surface as a CI fault naming this
+    # checker, not as a bare traceback under a "problem with your PR" banner.
+    sys.exit(guard(CHECKER, main))
