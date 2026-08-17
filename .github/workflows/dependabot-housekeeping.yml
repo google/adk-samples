@@ -79,7 +79,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
         with:
           # The whole tree at one commit: the script decides what to close by
           # scanning for recipe manifests, so a sparse checkout would
@@ -97,7 +97,7 @@ jobs:
       # script imports only the standard library plus its sibling
       # recipe_manifests, so there is nothing to sync and no lockfile to read.
       - name: Install uv
-        uses: astral-sh/setup-uv@445689ea25e0de0a23313031f5fe577c74ae45a1 # ratchet:astral-sh/setup-uv@v6.3.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # ratchet:astral-sh/setup-uv@v9.0.0
         with:
           # Minimum supported Python version, as in tools-tests.yml.
           python-version: "3.11"
