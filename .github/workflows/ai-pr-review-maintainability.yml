@@ -4,8 +4,22 @@ name: '🧹 AI PR Review — Maintainability'
 # review on every PR — naming, structure, readability, dead code —
 # and posts findings as inline review comments.
 
-on:
-  pull_request:
+# SECURITY: `pull_request_target` runs in the BASE repo context, with the
+# base branch's workflow file, full secrets and a write-scoped token. It is
+# only safe because nothing in this workflow or its callee ever executes the
+# pull request's code: the checkout is the base repo, the diff is fetched
+# through `gh` as data, and the agent runs in an empty scratch directory.
+# Reassess if a step is ever added that runs anything out of the checkout.
+#
+# It is what lets fork PRs be reviewed at all. A fork `pull_request` gets no
+# secrets, a read-only token and no OIDC token, so Workload Identity auth and
+# comment posting cannot work there — and ~90% of contributions are forks.
+#
+# The directive has to sit ON this line, not above it: zizmor only honours an
+# ignore comment that falls inside the span the finding covers, and this
+# finding spans the whole `on:` block.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
     types:
       - 'opened'
       - 'reopened'
@@ -13,12 +27,6 @@ on:
   issue_comment:
     types:
       - 'created'
-  pull_request_review_comment:
-    types:
-      - 'created'
-  pull_request_review:
-    types:
-      - 'submitted'
   workflow_dispatch:
     inputs:
       pr_number:
@@ -38,38 +46,21 @@ permissions:
 
 jobs:
   trigger:
-    # CONTRIBUTOR association is intentionally allowed on the
-    # `pull_request` trigger below so PRs from prior contributors still
-    # receive an automated review on open/reopen/synchronize. It is
-    # deliberately NOT allowed on the comment/review re-invoke paths
-    # (`issue_comment`, `pull_request_review`,
-    # `pull_request_review_comment`) so re-runs require an
-    # OWNER/MEMBER/COLLABORATOR -- bounds the model-call quota against
-    # any past contributor being able to re-trigger reviews at will.
+    # No fork check and no author allowlist on the automatic path: the whole
+    # point is that an outside contributor's PR gets reviewed. A PR opening
+    # is not a privileged act, and the reviewer only ever reads the diff and
+    # writes comments.
+    #
+    # The comment re-invoke path DOES keep an OWNER/MEMBER/COLLABORATOR
+    # check, so an unlimited number of re-runs stays a maintainer's call.
     if: |-
       github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.fork == false &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association)
-      ) ||
+      github.event_name == 'pull_request_target' ||
       (
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request &&
-        contains(github.event.comment.body, '@gemini-cli /review') &&
+        contains(github.event.comment.body, '@ai-review') &&
         contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
-      ) ||
-      (
-        github.event_name == 'pull_request_review_comment' &&
-        github.event.pull_request.head.repo.fork == false &&
-        contains(github.event.comment.body, '@gemini-cli /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
-      ) ||
-      (
-        github.event_name == 'pull_request_review' &&
-        github.event.pull_request.head.repo.fork == false &&
-        contains(github.event.review.body, '@gemini-cli /review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
       )
     uses: './.github/workflows/_ai-pr-review-core.yml'
     with:
@@ -77,11 +68,8 @@ jobs:
       event_name: '${{ github.event_name }}'
       pr_number_pull_request: '${{ github.event.pull_request.number }}'
       pr_number_issue: '${{ github.event.issue.number }}'
-      pr_number_review: '${{ github.event.pull_request.number }}'
       pr_number_dispatch: '${{ github.event.inputs.pr_number }}'
       comment_body: '${{ github.event.comment.body }}'
-      review_body: '${{ github.event.review.body }}'
-      review_comment_body: '${{ github.event.comment.body }}'
       app_id: '${{ vars.APP_ID }}'
       prompt: |-
         ## Role
