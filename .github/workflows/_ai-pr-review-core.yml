@@ -258,13 +258,15 @@ jobs:
           done
           { echo "changed_files<<${DELIM}"; echo "${CHANGED_FILES}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
-      - name: 'Check if PR is new-file-only (skip review for new recipe drops)'
+      # Both reasons a PR can be unreviewable are decided here, because seven
+      # later steps hang off this one step's `skip` output. The id stays
+      # `new_files_only_guard` so none of them have to move.
+      - name: 'Check whether this PR can be reviewed'
         id: 'new_files_only_guard'
-        if: |-
-          ${{ inputs.event_name == 'pull_request' }}
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          EVENT_NAME: '${{ inputs.event_name }}'
         run: |-
           set -euo pipefail
 
@@ -273,10 +275,6 @@ jobs:
             exit 0
           fi
 
-          # Count files whose status is not 'added'. If zero, every file in this
-          # PR is brand-new — treat it as a new recipe drop and skip automated review.
-          # Human admin approval is the real quality gate for new recipe submissions.
-          #
           # IMPORTANT: `gh api --paginate --jq EXPR` applies EXPR to EACH page's
           # response separately and concatenates the results. The `/pulls/N/files`
           # endpoint paginates at 30 files per page, so a previous form
@@ -284,18 +282,50 @@ jobs:
           # emitted one integer per page for any PR with more than 30 changed
           # files, and the multi-line capture broke the `-eq` comparison below
           # under `set -euo pipefail` — the guard would crash on every large PR.
-          # Emit one filename per matching file and count with `wc -l` instead:
-          # per-page jq output is a stream of lines, `wc -l` sums them.
-          NON_ADDED_COUNT="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
-            --paginate --jq '.[] | select(.status != "added") | .filename' | wc -l)"
+          # Emit one line per file and count the lines instead.
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --paginate --jq '.[] | .status' > pr_file_statuses.txt
+          # `tr -d` because `wc -l < file` right-pads the count on BSD wc, and
+          # TOTAL_COUNT is interpolated into the PR comment below. Arithmetic
+          # would tolerate the padding; the reader would not.
+          TOTAL_COUNT="$(wc -l < pr_file_statuses.txt | tr -d '[:space:]')"
+          # awk, not `grep -cv ... || true`. grep exits 1 on no match, which
+          # `set -e` reads as failure and an all-added PR triggers, so it needs
+          # `|| true` — but that also swallows grep's exit >1 on a REAL error,
+          # leaving the count empty, and `[[ "" -eq 0 ]]` is true in bash. The
+          # guard would then skip the review as "only adds new files" for a PR
+          # it never managed to read. awk exits 0 with no matches and non-zero
+          # only on a real error, which pipefail turns into a loud failure.
+          NON_ADDED_COUNT="$(awk '$0 != "added"' pr_file_statuses.txt | wc -l | tr -d '[:space:]')"
 
-          if [[ "${NON_ADDED_COUNT}" -eq 0 ]]; then
+          # A HARD API LIMIT, not a policy, so it applies on every event.
+          # `gh pr diff` reads GET /repos/{owner}/{repo}/pulls/{n} with the diff
+          # media type, which answers HTTP 406 "PullRequest.diff too_large" above
+          # 300 files. 406 is deterministic, so the fetch step's three retries
+          # cannot recover it and its exhausted-loop path is fatal: #2535 (804
+          # files) failed all three reviews that way. Caught here because THIS
+          # endpoint paginates and that one does not, so the count is already in
+          # hand one step before the failure.
+          MAX_DIFF_FILES=300
+          if (( TOTAL_COUNT > MAX_DIFF_FILES )); then
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            gh pr comment "${PR_NUMBER}" \
+              --body "This PR changes ${TOTAL_COUNT} files, above the ${MAX_DIFF_FILES} GitHub's diff API will serve, so automated AI review was skipped. Splitting it up would get each part reviewed."
+            exit 0
+          fi
+
+          # A POLICY skip, so only on the automatic trigger — a maintainer
+          # invoking a review by hand has already decided it is worth one.
+          # Every file 'added' means a new recipe drop, and human admin
+          # approval is the real quality gate for those.
+          if [[ "${EVENT_NAME}" == 'pull_request' && "${NON_ADDED_COUNT}" -eq 0 ]]; then
             echo "skip=true" >> "${GITHUB_OUTPUT}"
             gh pr comment "${PR_NUMBER}" \
               --body "This PR only adds new files — automated AI review was skipped. New recipe submissions are reviewed by a maintainer during the approval process."
-          else
-            echo "skip=false" >> "${GITHUB_OUTPUT}"
+            exit 0
           fi
+
+          echo "skip=false" >> "${GITHUB_OUTPUT}"
 
       # Fetch the diff HERE rather than letting the reviewer shell out for it.
       # agy runs the agent in an empty scratch directory, not in the checked-out
