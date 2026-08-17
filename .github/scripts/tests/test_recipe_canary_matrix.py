@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 import recipe_canary_matrix as m
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -171,46 +172,160 @@ def test_matrix_is_one_entry_per_recipe_and_version(tmp_path):
     ]
 
 
-# Every Python recipe the canary is expected to test, as of this commit.
+def _recipes_via_real_yaml(root: Path) -> set[str]:
+    """Which recipes are Python recipes, according to a real YAML parser.
+
+    A SECOND OPINION, and deliberately a different implementation from the
+    one under test: `recipe_canary_matrix` matches `language:` with a regex
+    so it can run under `uv run --no-project` with no dependencies, and this
+    parses the document properly. Agreement between two implementations is
+    the signal; a helper that re-used the regex would assert nothing.
+
+    A manifest that will not parse counts as NOT a Python recipe. If the
+    regex accepted it, the two disagree and the caller fails — which is the
+    right answer for a malformed manifest, because a recipe the canary picks
+    up from a file nobody can parse is not a recipe anyone is really
+    watching.
+    """
+    found: set[str] = set()
+    for root_name in m.SCAN_ROOTS:
+        root_path = root / root_name
+        if not root_path.is_dir():
+            continue
+        for manifest in root_path.rglob("manifest.yaml"):
+            rel = manifest.parent.relative_to(root).as_posix()
+            if any(part in m.SKIP_DIRS for part in Path(rel).parts):
+                continue
+            try:
+                data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+            except (yaml.YAMLError, OSError, UnicodeDecodeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            language = data.get("language")
+            if isinstance(language, str) and language.strip().lower() == (
+                "python"
+            ):
+                found.add(rel)
+    return found
+
+
+def test_the_canary_sees_every_python_recipe_in_the_tree():
+    """The canary must watch every Python recipe that exists on disk.
+
+    This used to be an EXACT frozen list of the eleven recipes present when
+    the canary was written, which made adding a recipe a change to this
+    file — a file under .github/, which a recipe contributor has no business
+    editing and which routes review to the CODEOWNERS catch-all. Deriving
+    the expected set from the tree costs nothing and removes that entirely.
+
+    It is also a STRICTLY STRONGER guard, because the frozen list could not
+    see the failure that matters most to a contributor. A new recipe whose
+    `language:` line the regex cannot read is never discovered, so the
+    discovered set stays equal to the frozen eleven and the assertion passes
+    — while the recipe is silently never canaried, which is the exact
+    outcome the list was written to prevent. Comparing against the tree
+    catches it, in both directions: a recipe the parser sees and the canary
+    misses, and a recipe the canary picks up that is not a Python recipe at
+    all.
+    """
+    # discover_recipes(), not build_matrix(): build_matrix drops a recipe
+    # whose python_targets() is empty, which is the deliberate decline for
+    # one needing an interpreter newer than the canary provisions
+    # (recipe_canary_matrix.py:236). Comparing the matrix against "is a
+    # Python recipe" fails on such a recipe and blames its `language:` line.
+    covered = set(m.discover_recipes())
+    expected = _recipes_via_real_yaml(REPO_ROOT) - m.SKIP_RECIPES
+
+    # Two empty sets are equal, so without a floor this reads as agreement
+    # when discovery has collapsed entirely — a bad REPO_ROOT, an emptied
+    # SCAN_ROOTS or a broken rglob empties BOTH sides. The frozen list this
+    # replaced could not miss that (11 != 0). Set well under the real count
+    # so that adding or deleting a recipe never touches it.
+    assert len(expected) >= 8, (
+        f"only {len(expected)} Python recipes found under {m.SCAN_ROOTS} in "
+        f"{REPO_ROOT}. That is a broken scan, not a shrunken repo."
+    )
+
+    assert covered == expected, (
+        "the canary's recipe set disagrees with the recipe tree. Not "
+        f"canaried but present on disk: {sorted(expected - covered)}; "
+        f"canaried but not a Python recipe: {sorted(covered - expected)}.\n"
+        "\n"
+        "This is NOT fixed by editing this file. A recipe missing from the "
+        "canary almost always has a `language:` line in its manifest.yaml "
+        "that a real YAML parser reads as Python but the matcher in "
+        "recipe_canary_matrix.py does not — most often because the value is "
+        "on the following line. Put `language: python` on one line in the "
+        "recipe's own manifest.yaml."
+    )
+
+
+# The recipes the canary is allowed not to watch.
 #
-# An EXACT set, not a `>=` count. `assert len(recipes) >= 10` against a real
-# count of 11 was the guard here before, and it could not see a recipe
-# disappear: adding a live recipe to SKIP_RECIPES — removing it from the
-# canary permanently — left the whole file green. Both directions matter, so
-# both are asserted, and adding or removing a recipe is expected to edit this
-# list in the same change.
-EXPECTED_RECIPES = {
-    "contrib/python/financial-advisor",
-    "contrib/python/market-research-agent",
-    "core/python/ambient-expense-agent",
-    "core/python/cross-session-memory",
-    "core/python/deep-search",
-    "core/python/genmedia-for-commerce",
-    "core/python/long-horizon-harness",
-    "core/python/oauth-user-consent-flow",
-    "core/python/rag-agent-search",
-    "core/python/rag-vector-search",
-    "core/python/safety-plugins",
-    "skills/retail/product-search",
+# This is the one thing the tree cannot tell us. A skipped recipe and a
+# recipe that was never there look identical from outside the canary, so
+# `test_the_canary_sees_every_python_recipe_in_the_tree` subtracts
+# SKIP_RECIPES from both sides and is blind to the list growing — as is
+# `test_discovery_agrees_with_python_tests_yml`, which unions it back in.
+# Guarding that residual is the entire remaining job of a frozen literal,
+# and it needs two lines rather than one entry per recipe in the repo.
+#
+# Maintainer-owned. A recipe contributor never touches this; it is deleted
+# along with the legacy duplicates it names.
+ALLOWED_SKIPS = {
+    "core/rag-agent-search",
+    "core/rag-vector-search",
 }
 
 
-def test_real_repo_matrix_covers_every_live_python_recipe():
-    """Guards the regex-based manifest matcher against the real tree: a
-    tightening that stopped recognising `language: "python"` would empty the
-    matrix, and an empty matrix is a canary that passes by testing nothing."""
-    matrix = m.build_matrix()
-    recipes = {entry["recipe"] for entry in matrix}
-    assert recipes == EXPECTED_RECIPES, (
-        "the set of canaried recipes changed. Added: "
-        f"{sorted(recipes - EXPECTED_RECIPES)}; missing: "
-        f"{sorted(EXPECTED_RECIPES - recipes)}. If that is intended, update "
-        "EXPECTED_RECIPES in the same change — a recipe silently dropping "
-        "out of the canary is never tested again."
+def test_the_skip_list_has_not_grown():
+    """Adding a live recipe to SKIP_RECIPES removes it from every canary run,
+    permanently and silently. It must be a deliberate act with a reviewer
+    attached."""
+    assert m.SKIP_RECIPES == ALLOWED_SKIPS, (
+        "SKIP_RECIPES changed. Added: "
+        f"{sorted(m.SKIP_RECIPES - ALLOWED_SKIPS)}; removed: "
+        f"{sorted(ALLOWED_SKIPS - m.SKIP_RECIPES)}. A skipped recipe is "
+        "never canaried again and nothing else in this file can detect it, "
+        "so update ALLOWED_SKIPS in the same change and say why in the PR."
     )
-    # Every recipe gets at least the floor.
-    for recipe in recipes:
-        assert {"recipe": recipe, "python": m.FLOOR} in matrix
+
+
+def test_the_second_opinion_is_genuinely_a_second_opinion(tmp_path):
+    """The differential check is only worth running if its two sides can
+    actually disagree. A helper that re-implemented the regex would agree
+    with the regex unconditionally and assert nothing.
+
+    `language:` with the value on the next line is valid YAML and reads as
+    `{"language": "python"}`, but the matcher in recipe_canary_matrix
+    requires the value on the same line. So the parser sees a Python recipe
+    and the canary does not — the precise shape of "a new recipe silently
+    never canaried" that the old frozen list could not detect.
+    """
+    recipe = tmp_path / "core" / "python" / "folded"
+    recipe.mkdir(parents=True)
+    (recipe / "manifest.yaml").write_text(
+        "language:\n  python\nstatus: active\n", encoding="utf-8"
+    )
+
+    assert _recipes_via_real_yaml(tmp_path) == {"core/python/folded"}
+    assert m.discover_recipes(tmp_path) == []
+
+
+def test_a_skip_swallowing_a_live_recipe_is_caught(tmp_path, monkeypatch):
+    """The failure the skip-list pin exists for, exercised rather than
+    assumed: a live recipe added to SKIP_RECIPES vanishes from the matrix,
+    and the tree-derived check cannot see it because it subtracts
+    SKIP_RECIPES from both sides."""
+    _recipe(tmp_path, "core/python/watched")
+    monkeypatch.setattr(m, "SKIP_RECIPES", {"core/python/watched"})
+
+    # Gone from the matrix, and invisible to the differential check.
+    assert m.discover_recipes(tmp_path) == []
+    assert not _recipes_via_real_yaml(tmp_path) - m.SKIP_RECIPES
+    # Only the pin catches it.
+    assert m.SKIP_RECIPES != ALLOWED_SKIPS
 
 
 def test_empty_scan_is_an_error_not_a_pass(tmp_path, monkeypatch, capsys):
