@@ -38,11 +38,21 @@ on:
       #     manifest.yaml rather than all of core/**: the recipe set is a
       #     function of which manifests exist AND of the `language:` line
       #     inside them, and nothing else under a recipe can change it.
+      #   .github/workflows/_ai-pr-review-core.yml
+      #     test_post_review_comments.py::
+      #     test_workflow_invokes_this_script_with_the_flags_it_defines parses
+      #     that workflow and pins the command line it uses to call
+      #     post_review_comments.py. The script is invoked from a shell block,
+      #     so a renamed flag or a moved file is invisible to ruff and pytest
+      #     alike — and a PR editing only the workflow is exactly the PR that
+      #     breaks the contract, so without this entry the pin cannot fire on
+      #     the change it exists to catch.
       # Without these entries such a PR merges green and the failure only
       # surfaces later, on an unrelated PR that happens to touch tools/.
       - ".github/policy.yml"
       - ".github/schemas/**"
       - ".github/dependabot.yml"
+      - ".github/workflows/_ai-pr-review-core.yml"
       - "core/**/manifest.yaml"
       - "contrib/**/manifest.yaml"
       - "skills/**/manifest.yaml"
@@ -61,6 +71,7 @@ on:
       - ".github/scripts/**"
       - ".github/policy.yml"
       - ".github/schemas/**"
+      - ".github/workflows/_ai-pr-review-core.yml"
       - ".github/dependabot.yml"
       - "core/**/manifest.yaml"
       - "contrib/**/manifest.yaml"
