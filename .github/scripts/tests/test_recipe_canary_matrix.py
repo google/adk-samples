@@ -229,9 +229,23 @@ def test_the_canary_sees_every_python_recipe_in_the_tree():
     misses, and a recipe the canary picks up that is not a Python recipe at
     all.
     """
-    matrix = m.build_matrix()
-    covered = {entry["recipe"] for entry in matrix}
+    # discover_recipes(), not build_matrix(): build_matrix drops a recipe
+    # whose python_targets() is empty, which is the deliberate decline for
+    # one needing an interpreter newer than the canary provisions
+    # (recipe_canary_matrix.py:236). Comparing the matrix against "is a
+    # Python recipe" fails on such a recipe and blames its `language:` line.
+    covered = set(m.discover_recipes())
     expected = _recipes_via_real_yaml(REPO_ROOT) - m.SKIP_RECIPES
+
+    # Two empty sets are equal, so without a floor this reads as agreement
+    # when discovery has collapsed entirely — a bad REPO_ROOT, an emptied
+    # SCAN_ROOTS or a broken rglob empties BOTH sides. The frozen list this
+    # replaced could not miss that (11 != 0). Set well under the real count
+    # so that adding or deleting a recipe never touches it.
+    assert len(expected) >= 8, (
+        f"only {len(expected)} Python recipes found under {m.SCAN_ROOTS} in "
+        f"{REPO_ROOT}. That is a broken scan, not a shrunken repo."
+    )
 
     assert covered == expected, (
         "the canary's recipe set disagrees with the recipe tree. Not "
@@ -245,9 +259,6 @@ def test_the_canary_sees_every_python_recipe_in_the_tree():
         "on the following line. Put `language: python` on one line in the "
         "recipe's own manifest.yaml."
     )
-    # Every recipe gets at least the floor.
-    for recipe in covered:
-        assert {"recipe": recipe, "python": m.FLOOR} in matrix
 
 
 # The recipes the canary is allowed not to watch.
