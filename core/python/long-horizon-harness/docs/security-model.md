@@ -123,7 +123,7 @@ approval** on the root chain), or `None` (no opinion).
   `git push`, `npm install`, `rm file.txt`, `rm -rf build/`, recursive chmod on a
   local path — **no opinion**, they run.)
 
-The permission seed (`permission_rules.py`) ships **shell allow** (`terminal`/
+The permission seed (`permission_rules.py`) ships **shell allow** (`bash`/
 `process`), so `command_safety` is the gate that turns an ordinary shell allow
 into a prompt. A `"ask"` verdict is **demotable by an explicit grant/overlay**:
 the `_shell_decision` demotion is skipped when the matched allow's source is
@@ -175,9 +175,9 @@ UI/backend shortcut.
 Permission rules in `.lha/permissions.jsonl` or granted via the interactive
 approval card may include a `commandPrefix`, `commandRegex`, or `argsPattern` to
 narrow blanket `allow` rules. **Overlay and grant rules** (source = `"overlay"`
-or `"grant"`) that target `terminal` or `process` but carry no such narrowing
+or `"grant"`) that target `bash` or `process` but carry no such narrowing
 field are **rejected** at load time — you cannot grant a blanket "always allow
-terminal" from the overlay or a session approval; only the default seed may
+bash" from the overlay or a session approval; only the default seed may
 carry that. This prevents accidental over-granting.
 
 ### Regex-safety guard (tenant-authored patterns only)
@@ -465,7 +465,7 @@ prod, which the `K_SERVICE` backstop turns into a fail-closed 500).
 | H7 | Credentialed artifact (signed) URL pasted into the model's reply | TB4 | Medium | `redact_artifact_urls_callback` swaps the URL for a placeholder in the model's view; converter strips fabricated artifact links | `context/artifact_url_redaction.py`, `a2a/executor.py` (`_strip_fake_artifact_links`) |
 | H8 | Over-broad secret injection into the sandbox | TB5 | Medium | `secret_env()` scopes to the request's user; routines filter to manifest-declared names; interactive turns inject the user's full stored surface | `horizon/secrets/inject.py` |
 | H9 | Unattended routine run abuses the full toolset | TB7 | Medium | `/scheduler/*` OIDC-gated; routine runs in an isolated `lhart-` sandbox with scoped secrets; non-shell approvals auto-deny | `permission_guard.py` (`set_headless_mode`), `secrets/inject.py` (`scoped_secret_env`) |
-| H10 | Permission over-grant via overlay (blanket "always allow terminal") | TB2 | Low | Overlay/grant rules targeting `terminal`/`process` with no narrowing field are rejected at load; tenant regexes validated | `permission_rules.py`, `_regex_safety.py` |
+| H10 | Permission over-grant via overlay (blanket "always allow bash") | TB2 | Low | Overlay/grant rules targeting `bash`/`process` with no narrowing field are rejected at load; tenant regexes validated | `permission_rules.py`, `_regex_safety.py` |
 | H11 | Stale/expired sandbox token replayed | TB6 | Low | Bearer JWT + routing token each carry a TTL and are re-minted/rotated; the LB returns `401`/`403` on expiry/missing creds | `sandbox/lifecycle.py` (`mint_sandbox_token`, `fetch_routing_token`), `environment.py` |
 
 ---

@@ -92,11 +92,23 @@ route exposes — and the credentials the `secrets`/`oauth` routes inject — is
 | `LHA_PRE_COMPRESS_FLUSH` | on | `0` disables the pre-compaction memory flush fork. |
 | `LHA_FORK_COOLDOWN` | `120` | Seconds between background forks, per session. |
 
+### Identity (SOUL.md)
+
+`~/.lha/SOUL.md`, if present, replaces `DEFAULT_AGENT_IDENTITY` as the opening line of the
+agent's system prompt (`horizon/conversation/soul_loader.py`). It is read once, at
+App-build time, as part of assembling `Agent.static_instruction`
+(`horizon/conversation/system_prompt.py:build_static_instruction`) — editing it now needs
+a process restart to take effect, not just a new session, since the constant prefix is no
+longer rebuilt per session.
+
 ### Context / compaction
 
 | Var | Default | Notes |
 |---|---|---|
 | `LHA_PRUNE_TOOL_OUTPUTS` | on | `0` disables zeroing of old large tool-result bodies. |
+| `LHA_PRELOAD_MAX_MEMORIES` | `20` | Cap on memories injected into the per-turn `<PAST_CONVERSATIONS>` block. ADK's `search_memory` takes no `top_k`, so without this the block grows with the user's memory count forever. |
+| `LHA_PRELOAD_MAX_CHARS` | `4000` | Character cap on the same block, applied after the count cap. |
+| `ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL` | `1` (set by `agent.py`) | Selects ADK's lean declaration path. The pydantic path ships `title` on every parameter, `default: null`, and `anyOf[X, null]`: 2,812 chars of the tool surface on every turn for no meaning. An explicit value in the environment wins. |
 | `LHA_COMPACTION_WINDOW_FRACTION` | `0.75` | Fraction (0,1) of the model's input window at which compaction fires. |
 
 ### Scheduler / routines

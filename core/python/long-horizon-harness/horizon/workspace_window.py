@@ -131,8 +131,8 @@ def render_window(window: list[str]) -> str | None:
         return None
     joined = ", ".join(f"`{d}/`" for d in window)
     return (
-        f"Workspace focus: {joined}. Relative paths and `repo_overview`/"
-        "`search_files` default to this scope. To reach the whole workspace, "
+        f"Workspace focus: {joined}. Relative paths and `search_files` "
+        "default to this scope. To reach the whole workspace, "
         "prefix a path with `/` (e.g. `/other-project/x.md`) or pass "
         '`scope="workspace"`. The user can clear the focus with `/workspace /`.'
     )

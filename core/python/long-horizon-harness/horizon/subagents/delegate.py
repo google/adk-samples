@@ -451,7 +451,7 @@ async def delegate(
       model: Override the child's Gemini variant. Defaults to
         ``gemini-3.6-flash``; ``gemini-3.1-pro-preview`` trades latency for
         stronger reasoning.
-      tools: Concrete tool names (e.g. ``["read_file", "terminal"]``) to
+      tools: Concrete tool names (e.g. ``["read", "bash"]``) to
         add on top of any ``toolsets``. When ``tools`` is supplied without
         ``toolsets``, the child receives exactly those tools and nothing else.
       instructions: Free-form instruction text appended under a

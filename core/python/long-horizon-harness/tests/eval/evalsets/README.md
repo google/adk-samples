@@ -1,19 +1,31 @@
 # Evaluation Sets
 
-This directory contains evaluation sets for testing agent behavior using `adk eval`.
+This directory contains evaluation sets for testing agent behavior, in ADK's own
+evaluation format. `agents-cli eval run` reads a different `EvalCase` shape
+(`prompt` or `agent_data.turns`, see `google.agents.cli.eval.cmd_generate`), so
+evalsets here are converted to that shape before running.
 
 ## Running Evaluations
 
 ```bash
-# Run default evalset
-agents-cli eval run
+# Convert every evalset in this directory into tests/eval/datasets/*.json
+uv run python scripts/evalset_to_dataset.py
 
-# Run specific evalset
-agents-cli eval run --evalset tests/eval/evalsets/custom.evalset.json
+# Run one converted dataset
+agents-cli eval run --dataset tests/eval/datasets/smoke.json --config ../eval_config.json
 
-# Run all evalsets
-agents-cli eval run --all
+# Convert and run a single evalset
+uv run python scripts/evalset_to_dataset.py tests/eval/evalsets/custom.evalset.json
+agents-cli eval run --dataset tests/eval/datasets/custom.json --config ../eval_config.json
 ```
+
+See `scripts/evalset_to_dataset.py`'s module docstring for the two known
+conversion gaps: multi-turn cases carry no synthesized assistant reply for
+earlier turns (none is recorded in this format), and a handful of cases that
+pre-seed `session_input.state` (guardrail_halt, slash_commands_and_reload,
+workspace_window, safety) lose that seed, since `EvalCase` has no field for
+arbitrary initial session state. The converter prints a warning per affected
+case rather than dropping it silently.
 
 ## Evalset Format
 
@@ -58,17 +70,19 @@ Each `.evalset.json` follows the ADK evaluation format:
 
 ## Evaluation Metrics
 
-ADK eval measures:
-
-- **tool_trajectory_avg_score**: Are the correct tools called in the right order?
-- **response_match_score**: How similar is the response to expected output?
+This repo's `../eval_config.json` declares one metric,
+`rubric_based_final_response_quality_v1` (an LLM judge scored against
+per-metric rubrics, threshold 0.8). There is no trajectory grader --
+`intermediate_data.tool_uses` below is declarative documentation of the
+expected trajectory, not something the grader checks.
 
 ## Creating Custom Evalsets
 
 1. Copy `basic.evalset.json` as a template
 2. Add cases based on your agent's scenarios
-3. Include expected tool calls for capability tests
-4. Run `agents-cli eval run --evalset your_evalset.json`
+3. Include expected tool calls as documentation (see Evaluation Metrics above)
+4. Run `uv run python scripts/evalset_to_dataset.py tests/eval/evalsets/your_evalset.json`
+5. Run `agents-cli eval run --dataset tests/eval/datasets/your_evalset.json --config ../eval_config.json`
 
 ## Tips
 

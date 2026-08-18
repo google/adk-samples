@@ -61,7 +61,7 @@ async def test_large_stdout_spills_and_returns_pointer(env_root: Path) -> None:
     )
     assert result["truncated"] is True
     assert "Full output saved to" in result["stdout"]
-    assert "view_file with offset/limit" in result["stdout"]
+    assert "read with offset/limit" in result["stdout"]
     assert "stdout_overflow_path" in result
     # The spilled file holds the FULL output and is readable via the env interface.
     saved = Path(result["stdout_overflow_path"]).read_text(encoding="utf-8")

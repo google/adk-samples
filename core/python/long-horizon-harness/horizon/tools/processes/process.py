@@ -15,8 +15,15 @@
 """``process`` tool — single-function multi-action dispatcher.
 
 The model drives every backgrounded session through this tool:
-``list``, ``poll``, ``log``, ``wait``, ``wait_for``, ``kill``, ``write``. Lookup is
-scoped to the calling session's ``ProcessRegistry``, held in a
+``spawn``, ``list``, ``poll``, ``log``, ``wait``, ``wait_for``, ``kill``,
+``write``. ``spawn`` is where ``bash``'s former ``background=True`` moved
+(the minimal parameter space dropped it from ``bash``): it is a NEW
+shell
+execution path and must run through the exact same guard-chain extraction
+(``permission_guard._shell_command``, ``policies._command_for``) as every
+other shell entry point, or one argument bypasses the whole
+anti-obfuscation layer; see the guardrail modules for where that is wired.
+Lookup is scoped to the calling session's ``ProcessRegistry``, held in a
 module-level store keyed by ADK session id, falling back to ``temp:``
 state for context-less callers.
 """
@@ -30,6 +37,9 @@ from typing import Any
 
 from horizon.environment.process import ProcessHandle
 from horizon.environment.registry import resolve_registry
+from horizon.environment_context import active_environment
+from horizon.tools._paths import path_under_root
+from horizon.tools.processes._spawn import open_handle
 from horizon.tools.processes.interactive import detect_interactive_prompt
 
 POLL_TAIL_BYTES = 1024
@@ -132,6 +142,30 @@ async def _wait_for(
         await asyncio.sleep(_WAIT_FOR_POLL_S)
 
 
+async def _spawn(
+    command: str, cwd: str | None, tool_context: Any | None
+) -> dict[str, Any]:
+    env = active_environment()
+    root = env.working_dir.resolve()
+
+    if cwd is None:
+        resolved_cwd = root
+    else:
+        resolved, err = path_under_root(cwd, root)
+        if err is not None:
+            return {"error": err.replace("Path outside", "cwd outside")}
+        resolved_cwd = resolved
+
+    handle = await open_handle(command, resolved_cwd)
+    resolve_registry(tool_context).register(handle)
+    return {
+        "session_id": handle.session_id,
+        "pid": handle.pid,
+        "status": "running",
+        "command": command,
+    }
+
+
 async def process(
     action: str,
     session_id: str | None = None,
@@ -141,31 +175,27 @@ async def process(
     data: str | None = None,
     submit: bool = True,
     pattern: str | None = None,
+    command: str | None = None,
+    cwd: str | None = None,
     tool_context: Any | None = None,
 ) -> dict[str, Any]:
-    """Inspect or control a background process spawned by ``terminal``.
+    """Inspect or control a background process; `spawn` starts one.
 
     Args:
-        action: One of ``list``, ``poll``, ``log``, ``wait``, ``wait_for``,
-            ``kill``, ``write``.
-        session_id: The ``proc_…`` id returned by a previous ``terminal``
-            call with ``background=True`` or one that was auto-promoted.
-            Required for every action except ``list``.
-        offset: For ``log``, byte offset to start from. The registry keeps
-            a rolling 200 KB buffer per session, so very large offsets may
-            be clamped to the earliest byte still in memory.
-        limit: For ``log``, max bytes to return.
-        timeout_s: For ``wait``, max seconds to block (``None`` waits
-            indefinitely). For ``wait_for``, max seconds to block before giving
-            up on the pattern (``None`` → 60s).
-        pattern: For ``wait_for``, a regex; the call returns as soon as the
-            process's output matches it (or the process exits, or timeout). Use
-            it to wait for a readiness/failure line — e.g.
-            ``pattern="Listening on|Error"`` after starting a dev server —
-            instead of polling ``log`` in a loop.
-        data: For ``write``, the string to send to stdin.
-        submit: For ``write``, append a newline so the process's ``read``
-            unblocks. Set to ``False`` to send raw bytes only.
+        action: `spawn`, `list`, `poll`, `log`, `wait`, `wait_for`, `kill`,
+            or `write`.
+        command/cwd: For `spawn` — shell command and working dir (cwd
+            defaults to the workspace root).
+        session_id: The `proc_...` id `spawn` returns. Required except for
+            `list`/`spawn`.
+        offset/limit: For `log` — byte offset and max bytes (rolling
+            200 KB buffer; large offsets may clamp).
+        timeout_s: For `wait`, max seconds (None = indefinite); for
+            `wait_for`, max seconds before giving up (None = 60s).
+        pattern: For `wait_for`, a regex — returns on a match, exit, or
+            timeout; use instead of polling `log` in a loop.
+        data/submit: For `write` — stdin string, and whether to append a
+            newline (submit=False sends raw bytes).
     """
     registry = resolve_registry(tool_context)
 
@@ -174,6 +204,11 @@ async def process(
             "running": [_summarize(h) for h in registry.list_running()],
             "finished": [_summarize(h) for h in registry.list_finished()],
         }
+
+    if action == "spawn":
+        if not command:
+            return {"error": "action 'spawn' requires command"}
+        return await _spawn(command, cwd, tool_context)
 
     if action not in {"poll", "log", "wait", "wait_for", "kill", "write"}:
         return {"error": f"unknown action {action!r}"}
