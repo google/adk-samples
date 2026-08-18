@@ -722,6 +722,30 @@ class TestPatch:
         assert result["error"]
         assert target.read_text() == original
 
+    async def test_edit_first_action_seeds_workspace_window(
+        self, tmp_path: Path
+    ) -> None:
+        """First edit into a subdirectory must seed the workspace window."""
+        from types import SimpleNamespace
+
+        from horizon.tools.file_ops import edit
+        from horizon.workspace_window import WORKSPACE_WINDOW_STATE_KEY
+
+        sub = tmp_path.resolve() / "pkg"
+        sub.mkdir()
+        target = sub / "app.py"
+        target.write_text("old = 1\n")
+
+        ctx = SimpleNamespace(state={})
+        result = await edit(
+            str(target),
+            _edits(("old = 1", "new = 2")),
+            tool_context=ctx,
+        )
+
+        assert result["success"] is True
+        assert ctx.state.get(WORKSPACE_WINDOW_STATE_KEY) == ["pkg"]
+
 
 # =============================================================================
 # search_files

@@ -554,3 +554,83 @@ async def test_extensionless_file_stays_text(
     # which decodes the bytes with errors="replace" rather than erroring.
     assert result["success"] is True
     assert "content" in result
+
+
+async def test_two_same_basename_media_files_inject_distinct_payloads(
+    local_env: LocalEnvironment, ctx: _FakeToolContext
+) -> None:
+    """Reading a/logo.png then b/logo.png must inject both distinct versions."""
+    sub1 = local_env.working_dir / "sub1"
+    sub2 = local_env.working_dir / "sub2"
+    sub1.mkdir()
+    sub2.mkdir()
+
+    png_head = b"\x89PNG\r\n\x1a\n"
+    (sub1 / "logo.png").write_bytes(png_head + b"FIRST_IMAGE_PAYLOAD")
+    (sub2 / "logo.png").write_bytes(png_head + b"SECOND_IMAGE_PAYLOAD")
+
+    tool = _tool()
+    res1 = await tool.run_async(
+        args={"path": "sub1/logo.png"}, tool_context=ctx
+    )
+    res2 = await tool.run_async(
+        args={"path": "sub2/logo.png"}, tool_context=ctx
+    )
+    assert res1["success"] is True
+    assert res2["success"] is True
+
+    req = LlmRequest(model="gemini-3.6-flash")
+    await tool.process_llm_request(tool_context=ctx, llm_request=req)
+
+    # Must have injected both distinct parts
+    injected_data = [
+        p.inline_data.data
+        for c in req.contents
+        for p in (c.parts or [])
+        if getattr(p, "inline_data", None)
+    ]
+    assert len(injected_data) == 2
+    assert b"FIRST_IMAGE_PAYLOAD" in injected_data[0]
+    assert b"SECOND_IMAGE_PAYLOAD" in injected_data[1]
+
+    # Labels must reflect workspace-relative paths
+    labels = [
+        p.text
+        for c in req.contents
+        for p in (c.parts or [])
+        if getattr(p, "text", None) and "Contents of" in p.text
+    ]
+    assert len(labels) == 2
+    assert "sub1/logo.png" in labels[0]
+    assert "sub2/logo.png" in labels[1]
+
+
+async def test_legacy_string_pending_entry_still_loads(
+    local_env: LocalEnvironment, ctx: _FakeToolContext
+) -> None:
+    """Plain-string entries in _pending_media_reads must still inject."""
+    from horizon.tools.read import _PENDING_STATE_KEY
+
+    png_data = b"\x89PNG\r\n\x1a\nlegacy"
+    part = genai_types.Part(
+        inline_data=genai_types.Blob(
+            data=png_data,
+            mime_type="image/png",
+            display_name="legacy.png",
+        )
+    )
+    await ctx.save_artifact(filename="legacy.png", artifact=part)
+    ctx.state[_PENDING_STATE_KEY] = ["legacy.png"]
+
+    tool = _tool()
+    req = LlmRequest(model="gemini-3.6-flash")
+    await tool.process_llm_request(tool_context=ctx, llm_request=req)
+
+    injected = [
+        p.inline_data.data
+        for c in req.contents
+        for p in (c.parts or [])
+        if getattr(p, "inline_data", None)
+    ]
+    assert len(injected) == 1
+    assert injected[0] == png_data

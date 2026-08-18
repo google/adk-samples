@@ -269,8 +269,10 @@ async def process(
             payload += b"\n"
         try:
             await handle.write(payload)
-        except RuntimeError as exc:
-            return {"error": str(exc)}
+        except (RuntimeError, OSError) as exc:
+            return {
+                "error": f"write failed ({exc}); the process may have exited"
+            }
         return {
             "session_id": handle.session_id,
             "status": "written",

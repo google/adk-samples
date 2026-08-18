@@ -42,6 +42,8 @@ class _Result:
 class _StubEnv:
     """Minimal BaseEnvironment stand-in capturing the executed command."""
 
+    on_host_fs = True
+
     def __init__(self, result: _Result | Exception) -> None:
         self._result = result
         self.commands: list[str] = []

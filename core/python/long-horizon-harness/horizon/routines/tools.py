@@ -23,13 +23,18 @@ routine's blast-radius bound.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 from horizon.environment_context import active_environment
-from horizon.routines.manifest import DEFAULT_DELIVERY, write_routine_via_env
+from horizon.routines.manifest import (
+    DEFAULT_DELIVERY,
+    ROUTINE_OVERLAY_DIR,
+    write_routine_via_env,
+)
 from horizon.routines.run_once import run_routine_once
 from horizon.scheduler.cron import is_valid_cron, next_cron_fire
 from horizon.scheduler.routine_store import RoutineRow, get_routine_store
@@ -164,7 +169,7 @@ async def _list(tool_context) -> dict[str, Any]:
     }
 
 
-async def _cancel(id: str, tool_context) -> dict[str, Any]:
+async def _cancel(id: str, tool_context: Any) -> dict[str, Any]:
     if not id:
         return {"success": False, "error": "cancel requires id"}
     ident = _identity(tool_context)
@@ -172,11 +177,21 @@ async def _cancel(id: str, tool_context) -> dict[str, Any]:
         return {"success": False, "error": "no active invocation context"}
     user_id, _ = ident
     ok = await get_routine_store().cancel(id, user_id)
-    return (
-        {"success": ok, "id": id}
-        if ok
-        else {"success": False, "error": "no such routine"}
-    )
+    if not ok:
+        return {"success": False, "error": "no such routine"}
+
+    env = active_environment()
+    manifest_path = env.working_dir / ROUTINE_OVERLAY_DIR / f"{id}.yaml"
+    try:
+        await env.delete_file(manifest_path)
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        raise
+    except Exception as exc:
+        logger.debug(
+            "Failed to delete manifest for canceled routine %s: %s", id, exc
+        )
+
+    return {"success": True, "id": id}
 
 
 async def routine(

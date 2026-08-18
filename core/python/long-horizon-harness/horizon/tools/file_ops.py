@@ -469,15 +469,17 @@ async def write(
     if _is_write_denied(str(target)):
         return _error(f"Write denied: {path} is on the protected paths list.")
 
+    env = active_environment()
     try:
-        await active_environment().write_file(target, content)
+        await env.write_file(target, content)
     except OSError as exc:
         return _error(f"Failed to write {path}: {exc}")
 
     maybe_seed_window(
         _state_of(tool_context),
         target,
-        active_environment().working_dir.resolve(),
+        env.working_dir.resolve(),
+        check_host_fs=env.on_host_fs,
     )
 
     result: dict[str, Any] = {"success": True, "path": str(target)}
@@ -648,6 +650,13 @@ async def edit(
         await env.write_file(target, updated)
     except OSError as exc:
         return _error(f"Failed to write {path}: {exc}")
+
+    maybe_seed_window(
+        _state_of(tool_context),
+        target,
+        env.working_dir.resolve(),
+        check_host_fs=env.on_host_fs,
+    )
 
     result: dict[str, Any] = {
         "success": True,
