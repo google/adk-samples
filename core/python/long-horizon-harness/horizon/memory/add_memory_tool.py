@@ -157,9 +157,9 @@ async def _search_past_sessions(
 
 
 async def memory(
-    action: str = "add",
+    action: Literal["add", "search"] = "add",
     content: str | None = None,
-    scope: str = "agent",
+    scope: Literal["user", "agent"] = "agent",
     session_id: str | None = None,
     limit: int | None = None,
     tool_context: ToolContext | None = None,
@@ -167,14 +167,11 @@ async def memory(
     """Save a durable fact, or search your other chat sessions.
 
     Args:
-        action: "add" (default) or "search".
-        content: For `add` — the fact, compact and self-contained.
-        scope: For `add` — "user" (about the user) or "agent" (your own
-            notes). Default "agent".
-        session_id: For `search` — omit to list recent sessions, or pass
-            one from a prior list call to read its turns.
-        limit: For `search` — cap on results (list: default 20, max 50;
-            read: default 100, max 200).
+        content: add: the fact, compact and self-contained.
+        scope: add: "user" about the user, "agent" your own notes.
+        session_id: search: omit to list recent sessions, or pass one from
+            a prior list call to read its turns.
+        limit: search: cap on results (list 20/50, read 100/200).
     """
     if action == "search":
         return await _search_past_sessions(

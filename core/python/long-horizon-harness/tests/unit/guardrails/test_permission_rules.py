@@ -231,7 +231,6 @@ def test_default_rules_open_shell_and_benign_tools():
         "bash",
         "process",
         "memory",
-        "reminder",
     } <= names
     star = [r for r in DEFAULT_RULES if r.tool_names == ("*",)]
     assert star and star[0].decision == "ask_user"

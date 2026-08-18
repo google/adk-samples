@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Lazy builder — constructs a fresh child ``Agent`` per delegate call.
+"""Lazy builder: constructs a fresh child ``Agent`` per delegate call.
 
 goal + context + skills go into the system prompt; toolsets expand into
 the tool list; a blocklist strips anything the child must not call.
 
-No caching — the prompt is goal-specific, so a per-call build is cheap
+No caching: the prompt is goal-specific, so a per-call build is cheap
 and removes a class of cache-staleness bugs (skill body updates, toolset
 changes, blocklist tweaks).
 """
@@ -67,12 +67,12 @@ _BASE_INSTRUCTION = (
     "self-contained task. Do the work and return a concise summary of "
     "what you did, what you found, and any pointers the parent needs "
     "to act on (file paths, URLs, error messages). You have no memory "
-    "of the parent's conversation — everything you need is in this "
+    "of the parent's conversation: everything you need is in this "
     "prompt. For minor ambiguity, make the most reasonable interpretation "
     "and note the assumption in your summary. Only when a genuine blocker "
     "requires a decision the parent alone can make (ambiguous scope, a "
     "missing choice) call `ask_parent(question)` for a one-line answer and "
-    "resume — you get one such escalation. If a tool call is blocked by a "
+    "resume, you get one such escalation. If a tool call is blocked by a "
     "guard, report it in your summary rather than trying to work around it."
 )
 
@@ -100,7 +100,7 @@ def _strip_blocked(tools: list[Any]) -> list[Any]:
 
 def load_session_skill_catalog() -> dict[str, Any]:
     # Read from the host mirror that bind_session_skills_callback already
-    # populated this session — the env's working_dir is the in-container
+    # populated this session; the env's working_dir is the in-container
     # /workspace under the sandbox backend, unreadable by this host process.
     try:
         env = active_environment()
@@ -127,7 +127,7 @@ def _render_inline_skill_block(skill: dict[str, str]) -> str:
 def _render_json_directive() -> str:
     return (
         "## Output format\n\n"
-        "Return ONLY a JSON object as your final response — no prose "
+        "Return ONLY a JSON object as your final response, no prose "
         "before or after, no markdown code fences."
     )
 
@@ -187,7 +187,7 @@ async def build_child_agent(
     """Materialize a child ``Agent`` ready to be handed to a Runner.
 
     ``toolsets`` defaults to ``DEFAULT_TOOLSETS`` (file + shell) only when
-    no ``tools=[...]`` list is also supplied — passing ``tools`` alone
+    no ``tools=[...]`` list is also supplied; passing ``tools`` alone
     means "give the child exactly these and nothing else". Unknown
     toolset or tool names raise ``KeyError``; unknown ``model_name``
     raises ``ValueError``. The dispatch layer catches both and surfaces

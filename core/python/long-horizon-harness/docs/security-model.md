@@ -55,7 +55,7 @@ preset knob. To ship a subset, delete the `attach_*` calls you don't want in
 | feedback | `/feedback` | user feedback sink (your Cloud Logging) |
 | secrets | `/lha/secrets*` | store/manage the per-user API keys injected into commands |
 | oauth | `/lha/gcp/*` | Connect-Google flow → tokens injected into commands |
-| scheduler | `/lha/reminders`, `/lha/routines`, `/scheduler/*` | unattended runs (reminders, routines, dream-review) |
+| scheduler | `/lha/routines`, `/scheduler/*` | unattended runs (routines, dream-review, snapshot) |
 
 > **Credential injection is independent of the routes.** Stored secrets and OAuth
 > tokens are injected into sandbox commands by `secret_env()` **whenever they
@@ -271,7 +271,7 @@ the environment is outside the boundary (see the threat model).
 
 | Route | Endpoints | What it enables |
 |---|---|---|
-| scheduler | `/lha/reminders`, `/lha/routines` (list/delete) + `/scheduler/*` (`tick`, `dream-review`, `snapshot`) | turns that run with **no human present** — reminders firing as real chats, the nightly dream-review, the snapshot job |
+| scheduler | `/lha/routines` (list/delete) + `/scheduler/*` (`routine-tick`, `dream-review`, `snapshot`) | turns that run with **no human present** — routines firing as real chats, the nightly dream-review, the snapshot job |
 
 The `/scheduler/*` endpoints bypass `IdentityMiddleware` and are gated by Cloud
 Scheduler's own OIDC token (`LHA_SCHEDULER_SA` / `LHA_SCHEDULER_AUDIENCE`); they
@@ -312,11 +312,11 @@ Pick `LHA_AUTH_MODE` here.
 ### L3 — scheduler / unattended execution
 The `/scheduler/*` routes always mount; wire Cloud Scheduler OIDC (`LHA_SCHEDULER_SA` /
 `LHA_SCHEDULER_AUDIENCE`) and install `lha[scheduler]` for durable storage. Cloud
-Scheduler calls `/scheduler/tick`, `/scheduler/dream-review`, `/scheduler/snapshot`.
-- **Adds:** reminders that fire as real chats, the nightly dream-review, and the
+Scheduler calls `/scheduler/routine-tick`, `/scheduler/dream-review`, `/scheduler/snapshot`.
+- **Adds:** routines that fire as real chats, the nightly dream-review, and the
   snapshot job — turns that run with **no human watching**.
-- **You accept:** unattended execution. A reminder turn has the agent's full
-  toolset and acts as the reminder's owner. The `/scheduler/*` routes bypass
+- **You accept:** unattended execution. A routine turn has the agent's full
+  toolset and acts as the routine's owner. The `/scheduler/*` routes bypass
   `IdentityMiddleware` and are instead gated by Cloud Scheduler's OIDC token —
   make sure that verification (`LHA_SCHEDULER_SA` / `LHA_SCHEDULER_AUDIENCE`) is
   configured, since these endpoints can trigger agent runs.

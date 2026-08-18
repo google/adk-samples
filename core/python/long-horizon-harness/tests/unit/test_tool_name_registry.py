@@ -144,6 +144,36 @@ async def test_registry_matches_registered_tools():
     }
 
 
+async def test_no_dead_tool_name_in_model_facing_prose():
+    """Deleting a tool while leaving prose that tells the model to call it is
+    this repo's most common defect. Checks the two surfaces a model reads
+    that a repo-wide source scan can miss: the LIVE, fully assembled
+    ``static_instruction`` string (catches a mention that only renders under
+    some condition) and every builtin skill's instructions.
+    """
+    from horizon.agent import root_agent
+
+    sources: dict[str, str] = {
+        "root_agent.static_instruction": root_agent.static_instruction
+    }
+    for path in _HORIZON_ROOT.glob("builtin_skills/**/SKILL.md"):
+        rel = str(path.relative_to(_HORIZON_ROOT.parent))
+        sources[rel] = path.read_text(encoding="utf-8")
+
+    offenders: dict[str, list[str]] = {}
+    for label, text in sources.items():
+        token_snippets = _DEAD_TOOL_PRESENCE_EXCEPTIONS.get(label, {})
+        scrubbed = text
+        for snippet_list in token_snippets.values():
+            for snippet in snippet_list:
+                assert snippet in scrubbed, (label, snippet)  # must exist
+                scrubbed = scrubbed.replace(snippet, "", 1)
+        hits = [tok for tok in _DEAD_TOOL_NAMES if tok in scrubbed]
+        if hits:
+            offenders[label] = hits
+    assert not offenders, offenders
+
+
 # Unambiguous dead names only. "terminal"/"patch"/"write_file"/"reload" stay
 # out: each has a legitimate non-tool meaning (job-type literal,
 # unittest.mock, plain English, web page reload) common enough to swamp the
@@ -168,6 +198,52 @@ _LEGACY_TOKENS = (
     "replace_all",
     "as_media",
 )
+
+# Subset of _LEGACY_TOKENS that named a TOOL (not a since-renamed parameter
+# like old_string/replace_all/as_media) — the universe test_no_dead_tool_
+# name_in_model_facing_prose checks against the LIVE assembled prompt, not
+# source text, so a gated/conditional string that never renders (the
+# SKILLS_GUIDANCE-never-shipped class of bug) can't hide from it.
+#
+# "reminder" is added here, not to _LEGACY_TOKENS above: it has the same
+# "legitimate non-tool meaning common enough to swamp the scan" problem as
+# reload/patch/terminal/write_file (see the comment above _LEGACY_TOKENS) —
+# `<system-reminder>` (the volatile prompt tail, horizon/conversation/
+# reminders.py) uses the word constantly and legitimately across 16+ files.
+# The narrower two-surface scan below, with snippet-level (not file-level)
+# exceptions, can tell the two apart; a repo-wide bare-substring scan cannot.
+_DEAD_TOOL_NAMES = (
+    frozenset(_LEGACY_TOKENS)
+    - frozenset({"old_string", "new_string", "replace_all", "as_media"})
+) | frozenset({"reminder"})
+
+# Per-token exceptions are the EXACT legitimate snippet, not the bare token:
+# stripping only that snippet before scanning means a future, different
+# mention of the same dead name (the actual instance-15 shape) still gets
+# caught, instead of the whole file going blind to the token. Verified by
+# temporarily reintroducing "Use reminder for plain time-based pings." during
+# this test's own development — a bare-token exception let it through; this
+# snippet-scoped one does not.
+_DEAD_TOOL_PRESENCE_EXCEPTIONS: dict[str, dict[str, list[str]]] = {
+    "root_agent.static_instruction": {
+        "reminder": [
+            "<system-reminder>",
+            "there is no reminder tool",
+        ],
+    },
+    "horizon/builtin_skills/routines/SKILL.md": {
+        "reminder": ["no one-off reminder tool"],
+    },
+    # An external MCP server's own same-named tool, unrelated to ours (same
+    # exception as the repo-wide scan below); both example lines it appears
+    # on, so a genuinely new mention elsewhere in the file still gets caught.
+    "horizon/builtin_skills/bootstrap-google-tools/SKILL.md": {
+        "read_file": [
+            'mcp-cli info filesystem read_file")',
+            "mcp-cli call filesystem read_file '",
+        ],
+    },
+}
 
 _LEGACY_SCAN_GLOBS = (
     "horizon/**/*.py",

@@ -45,6 +45,14 @@ web_research_agent = Agent(
         model="gemini-3.6-flash",
         retry_options=ROBUST_RETRY_OPTIONS,
     ),
+    # AgentTool surfaces THIS to the root model, not `instruction` (which
+    # only the sub-agent itself reads) -- left unset this tool description
+    # was empty and the root model chose blind.
+    description=(
+        "Search the live web for current information: news, docs, prices, "
+        "anything outside the workspace or your training data. Returns a "
+        "concise, sourced summary. To fetch one known URL, use bash curl."
+    ),
     instruction=(
         "You perform web searches and return concise, sourced results. "
         "Call google_search exactly once per query. Cite sources inline."

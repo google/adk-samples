@@ -37,7 +37,7 @@ This sample shows how to build a long-horizon harness on ADK with capabilities l
 - **A2A-native** — any agent or script drives Horizon over A2A (agent-to-agent), and it streams structured UI parts back over the same channel. No custom frontend per feature.
 - **Sub-agents** — one `subagent` tool, blocking by default or fire-and-forget with `background=True`, each with its own context window and toolset.
 - **Skills & custom scripts** — drop a `SKILL.md` or a `scripts/<name>.py` in the workspace and `/reload` picks it up mid-session. No fork, no redeploy.
-- **Reminders & scheduled chats** — reminders fire as real, persisted chats in a "Scheduled" folder, viewable and replayable in the web UI.
+- **Scheduled chats** — a recurring routine fires as a real, persisted chat in a "Scheduled" folder, viewable and replayable in the web UI.
 
 *Reliability & safety*
 

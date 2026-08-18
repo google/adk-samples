@@ -244,8 +244,8 @@ STYLE_GUIDANCE = (
 # Split by topic (workspace, execution, cross-tool routing, operations)
 # rather than kept as one block, so any later shrink touches one topic at a
 # time. Every rule a tool description already states (artifact link
-# etiquette, subagent knobs, reminder actions, routine test-before-create,
-# media reading) is deleted here, not duplicated — single-source-of-truth.
+# etiquette, subagent knobs, media reading, routine test-before-create) is
+# deleted here, not duplicated — single-source-of-truth.
 # ---------------------------------------------------------------------------
 
 WORKSPACE_GUIDANCE = (
@@ -288,9 +288,10 @@ TOOL_ROUTING_GUIDANCE = (
     "artifact instead.\n"
     "Don't shell out to pypdf/pdftotext/PIL/ffmpeg to read a PDF or image "
     "— read gives layout and structure that text extraction strips.\n"
-    "Use reminder for plain time-based pings; routine only for unattended "
-    "work — misrouting costs a cron job, an isolated sandbox, and a "
-    "confirmation card."
+    "routine is only for recurring/unattended work (headless, isolated "
+    "sandbox, cannot prompt the user). Don't create one for a one-off "
+    "time-based ping; there is no reminder tool, so tell the user you "
+    "can't do that."
 )
 
 OPERATIONS_GUIDANCE = (

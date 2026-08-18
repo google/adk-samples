@@ -320,10 +320,7 @@ _SANDBOX_WRITE_TOOLS: tuple[str, ...] = (
 # everyday friction. `routine` (unattended runs) deliberately stays on the
 # `*: ask_user` fallback. `load_skill` needs no entry: it's in
 # permission_guard.READ_ONLY_TOOLS and bypasses rule resolution entirely.
-_BENIGN_SIDE_EFFECT_TOOLS: tuple[str, ...] = (
-    names.MEMORY,
-    names.REMINDER,
-)
+_BENIGN_SIDE_EFFECT_TOOLS: tuple[str, ...] = (names.MEMORY,)
 
 _DEFAULT_RULE_DICTS: tuple[dict[str, Any], ...] = (
     {"toolName": "*", "decision": "ask_user"},

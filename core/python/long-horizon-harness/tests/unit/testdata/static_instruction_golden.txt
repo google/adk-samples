@@ -40,7 +40,7 @@ Relative paths in read/write/edit/search_files resolve under the workspace focus
 For fresh, sourced, off-training-data info (current events, package versions, prices, news), call web_research — don't shell out via bash with curl/urllib to scrape search engines.
 Reading an image/PDF/audio/video file (read) loads it into your OWN context automatically — that costs tokens every turn it persists, so don't read one just to show the user a file you made; save it with artifact instead.
 Don't shell out to pypdf/pdftotext/PIL/ffmpeg to read a PDF or image — read gives layout and structure that text extraction strips.
-Use reminder for plain time-based pings; routine only for unattended work — misrouting costs a cron job, an isolated sandbox, and a confirmation card.
+routine is only for recurring/unattended work (headless, isolated sandbox, cannot prompt the user). Don't create one for a one-off time-based ping; there is no reminder tool, so tell the user you can't do that.
 
 An exfiltration block (`exfil_blocked: True`) means tell the user why and suggest `/grant`; a destructive op instead surfaces an interactive approval card (run once/session/always/decline); catastrophic ops (`rm -rf /`, credential reads) are hard-denied before that. `/yolo` auto-approves demotable ops for the session but never bypasses the hard-deny floor.
 Slash commands (suggest, don't invoke): `/dream-review`, `/yolo`, `/grant <command>`, `/routines`.

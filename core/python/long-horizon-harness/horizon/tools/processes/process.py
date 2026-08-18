@@ -33,7 +33,7 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from typing import Any
+from typing import Any, Literal
 
 from horizon.environment.process import ProcessHandle
 from horizon.environment.registry import resolve_registry
@@ -167,7 +167,9 @@ async def _spawn(
 
 
 async def process(
-    action: str,
+    action: Literal[
+        "spawn", "list", "poll", "log", "wait", "wait_for", "kill", "write"
+    ],
     session_id: str | None = None,
     offset: int = 0,
     limit: int = DEFAULT_LOG_LIMIT,
@@ -182,20 +184,18 @@ async def process(
     """Inspect or control a background process; `spawn` starts one.
 
     Args:
-        action: `spawn`, `list`, `poll`, `log`, `wait`, `wait_for`, `kill`,
-            or `write`.
-        command/cwd: For `spawn` — shell command and working dir (cwd
-            defaults to the workspace root).
-        session_id: The `proc_...` id `spawn` returns. Required except for
-            `list`/`spawn`.
-        offset/limit: For `log` — byte offset and max bytes (rolling
-            200 KB buffer; large offsets may clamp).
-        timeout_s: For `wait`, max seconds (None = indefinite); for
-            `wait_for`, max seconds before giving up (None = 60s).
-        pattern: For `wait_for`, a regex — returns on a match, exit, or
-            timeout; use instead of polling `log` in a loop.
-        data/submit: For `write` — stdin string, and whether to append a
-            newline (submit=False sends raw bytes).
+        command: spawn: shell command.
+        cwd: spawn: working dir, defaults to the workspace root.
+        session_id: the `proc_...` id spawn returns; required except for
+            list/spawn.
+        offset: log: byte offset into a rolling 200 KB buffer.
+        limit: log: max bytes.
+        timeout_s: wait: max seconds, None waits indefinitely. wait_for:
+            max seconds before giving up, None means 60.
+        pattern: wait_for: regex; returns on match, exit, or timeout. Use
+            instead of polling log in a loop.
+        data: write: stdin string.
+        submit: write: append a newline; False sends raw bytes.
     """
     registry = resolve_registry(tool_context)
 
