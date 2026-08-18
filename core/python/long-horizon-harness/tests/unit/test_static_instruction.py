@@ -24,7 +24,7 @@ To intentionally update the golden file after a real prose change:
     from horizon.tools import names
     text = build_static_instruction(
         tool_names=sorted(names.ALL),
-        model_name='gemini-3.6-flash',
+        model_name='gemini-3.7-flash',
         has_code_executor=False,
     )
     open('tests/unit/testdata/static_instruction_golden.txt', 'w').write(text)
@@ -49,7 +49,7 @@ GOLDEN_PATH = (
 def test_static_instruction_matches_golden():
     text = build_static_instruction(
         tool_names=sorted(names.ALL),
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         has_code_executor=False,
     )
     expected = GOLDEN_PATH.read_text()
@@ -64,7 +64,7 @@ def test_static_instruction_is_a_pure_function():
     """Same inputs -> same output, called twice, no caching required."""
     kwargs = {
         "tool_names": ["read", "bash", "memory"],
-        "model_name": "gemini-3.6-flash",
+        "model_name": "gemini-3.7-flash",
         "has_code_executor": False,
     }
     assert build_static_instruction(**kwargs) == build_static_instruction(

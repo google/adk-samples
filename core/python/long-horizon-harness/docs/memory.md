@@ -105,7 +105,7 @@ these.
 
 - **Review fork** (`horizon/memory/review_fork.py`, `after_agent_callback`,
   gated by `LHA_REVIEW_FORK`, throttled). After each turn it hands a
-  restricted Gemini agent (`gemini-3.6-flash`) the conversation as a
+  restricted Gemini agent (`gemini-3.7-flash`) the conversation as a
   `<CONVERSATION>…</CONVERSATION>` snapshot plus a review prompt
   (`horizon/memory/review_prompts.py` — memory-only or combined memory+skill,
   picked by whether the session touched skills). Toolset is whitelisted to

@@ -72,7 +72,7 @@ _REVIEW_TOOL_NAMES: frozenset[str] = (
 )
 
 _REVIEW_AGENT_NAME = "review_fork"
-_REVIEW_AGENT_MODEL = "gemini-3.6-flash"
+_REVIEW_AGENT_MODEL = "gemini-3.7-flash"
 _FORK_INSTRUCTION = (
     "You are a self-improvement curator. The parent agent has just "
     "finished a turn with the user; the conversation is provided to "

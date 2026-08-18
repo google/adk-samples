@@ -109,7 +109,7 @@ The registry in `horizon/models/registry.py` maps a name → an ADK `BaseLlm`. A
 entry (e.g. `LiteLlm(...)` for a non-Vertex provider) and pass its key as `model=`.
 Per-session switching uses `/model <name>` (writes `selected_model`, read by
 `select_model_callback`). Pinned: the `web_research` sub-agent + compaction summarizer
-use `gemini-3.6-flash` — don't change without being asked.
+use `gemini-3.7-flash` — don't change without being asked.
 
 > **Minimal install:** backends build lazily and `DispatchingLlm` holds the registry
 > without materializing it (`backends` is `SkipValidation`), so a string `model=` only

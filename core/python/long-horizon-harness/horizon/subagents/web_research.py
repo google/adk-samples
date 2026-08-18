@@ -42,7 +42,7 @@ from horizon.tools.web_search import google_search
 web_research_agent = Agent(
     name="web_research",
     model=Gemini(
-        model="gemini-3.6-flash",
+        model="gemini-3.7-flash",
         retry_options=ROBUST_RETRY_OPTIONS,
     ),
     # AgentTool surfaces THIS to the root model, not `instruction` (which
