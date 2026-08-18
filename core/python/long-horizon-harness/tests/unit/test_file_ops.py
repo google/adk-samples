@@ -864,23 +864,20 @@ class TestSearchFilesRegex:
             result["error"].lower()
         )
 
-    async def test_matches_include_mtime(self, tmp_path: Path) -> None:
+    async def test_matches_do_not_leak_mtime(self, tmp_path: Path) -> None:
         from horizon.tools.file_ops import search_files
 
         (tmp_path / "a.py").write_text("needle\n")
-
         result = await search_files("needle", path=str(tmp_path))
 
         assert result["success"] is True
         assert result["matches"]
-        assert all(
-            isinstance(m["mtime"], (int, float)) for m in result["matches"]
-        )
+        assert all("mtime" not in m for m in result["matches"])
+        assert result["truncated"] is False
 
     async def test_results_sorted_by_mtime_descending(
         self, tmp_path: Path
     ) -> None:
-        """Most-recently-modified file's match must come first."""
         import os
         import time
 
@@ -890,7 +887,6 @@ class TestSearchFilesRegex:
         new = tmp_path / "new.py"
         old.write_text("needle\n")
         new.write_text("needle\n")
-        # Force a clear mtime ordering: old is older than new.
         now = time.time()
         os.utime(old, (now - 1000, now - 1000))
         os.utime(new, (now, now))
@@ -901,6 +897,95 @@ class TestSearchFilesRegex:
         ordered_paths = [m["path"] for m in result["matches"]]
         assert ordered_paths[0].endswith("new.py")
         assert ordered_paths[-1].endswith("old.py")
+
+    async def test_ignore_case_search(self, tmp_path: Path) -> None:
+        from horizon.tools.file_ops import search_files
+
+        (tmp_path / "a.py").write_text("def NeedleCase(): pass\n")
+
+        res_case = await search_files("needlecase", path=str(tmp_path))
+        assert res_case["matches"] == []
+
+        res_ic = await search_files(
+            "needlecase", path=str(tmp_path), ignore_case=True
+        )
+        assert len(res_ic["matches"]) == 1
+        assert res_ic["matches"][0]["line"] == 1
+
+    async def test_excludes_noise_directories_by_default(
+        self, tmp_path: Path
+    ) -> None:
+        from horizon.tools.file_ops import search_files
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "app.py").write_text("target_token\n")
+
+        nm = tmp_path / "node_modules" / "pkg"
+        nm.mkdir(parents=True)
+        (nm / "index.js").write_text("target_token\n")
+
+        pycache = tmp_path / "__pycache__"
+        pycache.mkdir()
+        (pycache / "app.cpython.py").write_text("target_token\n")
+
+        result = await search_files("target_token", path=str(tmp_path))
+        assert result["success"] is True
+        paths = [m["path"] for m in result["matches"]]
+        assert len(paths) == 1
+        assert "src/app.py" in paths[0] or "src" in paths[0]
+
+    async def test_no_ignore_includes_noise_directories(
+        self, tmp_path: Path
+    ) -> None:
+        from horizon.tools.file_ops import search_files
+
+        nm = tmp_path / "node_modules" / "pkg"
+        nm.mkdir(parents=True)
+        (nm / "index.js").write_text("target_token\n")
+
+        result = await search_files(
+            "target_token", path=str(tmp_path), no_ignore=True
+        )
+        assert result["success"] is True
+        assert len(result["matches"]) == 1
+        assert "node_modules" in result["matches"][0]["path"]
+
+    async def test_truncates_long_matched_lines(self, tmp_path: Path) -> None:
+        from horizon.tools.file_ops import search_files
+
+        prefix = "x" * 200
+        suffix = "y" * 200
+        (tmp_path / "bundle.js").write_text(f"{prefix}TARGET{suffix}\n")
+
+        result = await search_files("TARGET", path=str(tmp_path))
+        assert result["success"] is True
+        assert len(result["matches"]) == 1
+        text = result["matches"][0]["text"]
+        assert "TARGET" in text
+        assert len(text) <= 310
+        assert text.startswith("...")
+        assert text.endswith("...")
+
+    async def test_skips_files_exceeding_max_size(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from horizon.tools import file_ops
+        from horizon.tools.file_ops import search_files
+
+        monkeypatch.setattr(file_ops, "_SEARCH_MAX_FILE_SIZE", 100)
+
+        small = tmp_path / "small.txt"
+        small.write_text("needle small\n")
+
+        large = tmp_path / "large.txt"
+        large.write_text("needle " + ("z" * 200) + "\n")
+
+        result = await search_files("needle", path=str(tmp_path))
+        assert result["success"] is True
+        paths = [m["path"] for m in result["matches"]]
+        assert len(paths) == 1
+        assert "small.txt" in paths[0]
 
 
 # =============================================================================
