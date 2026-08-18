@@ -8,24 +8,18 @@ evalsets here are converted to that shape before running.
 ## Running Evaluations
 
 ```bash
-# Convert every evalset in this directory into tests/eval/datasets/*.json
-uv run python scripts/evalset_to_dataset.py
+uv sync --extra eval        # one-time: installs google-adk[eval]
 
-# Run one converted dataset
-agents-cli eval run --dataset tests/eval/datasets/smoke.json --config ../eval_config.json
-
-# Convert and run a single evalset
-uv run python scripts/evalset_to_dataset.py tests/eval/evalsets/custom.evalset.json
-agents-cli eval run --dataset tests/eval/datasets/custom.json --config ../eval_config.json
+uv run adk eval tests/eval/horizon_eval \
+  tests/eval/evalsets/<name>.evalset.json \
+  --config_file_path tests/eval/eval_config.json
 ```
 
-See `scripts/evalset_to_dataset.py`'s module docstring for the two known
-conversion gaps: multi-turn cases carry no synthesized assistant reply for
-earlier turns (none is recorded in this format), and a handful of cases that
-pre-seed `session_input.state` (guardrail_halt, slash_commands_and_reload,
-workspace_window, safety) lose that seed, since `EvalCase` has no field for
-arbitrary initial session state. The converter prints a warning per affected
-case rather than dropping it silently.
+Run these against a real Vertex project; they cost money per case.
+
+**Do not use `agents-cli eval run`.** Its inference step rejects any agent
+event without `content`, and horizon emits actions-only events from callbacks,
+so every case errors before it is graded.
 
 ## Evalset Format
 
@@ -81,8 +75,7 @@ expected trajectory, not something the grader checks.
 1. Copy `basic.evalset.json` as a template
 2. Add cases based on your agent's scenarios
 3. Include expected tool calls as documentation (see Evaluation Metrics above)
-4. Run `uv run python scripts/evalset_to_dataset.py tests/eval/evalsets/your_evalset.json`
-5. Run `agents-cli eval run --dataset tests/eval/datasets/your_evalset.json --config ../eval_config.json`
+4. Run it with the `adk eval` command above
 
 ## Tips
 

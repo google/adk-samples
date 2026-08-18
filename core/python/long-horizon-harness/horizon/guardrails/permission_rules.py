@@ -316,12 +316,10 @@ _SANDBOX_WRITE_TOOLS: tuple[str, ...] = (
     names.EDIT,
     names.ARTIFACT,
 )
-# Benign non-shell tools that mutate only the user's own data — opened to cut
+# Benign non-shell tools that mutate only the user's own data, opened to cut
 # everyday friction. `routine` (unattended runs) deliberately stays on the
-# `*: ask_user` fallback. load_skill (covers both reading a skill and
-# action='reload', the former standalone reload tool) needs no entry here —
-# it's in permission_guard.READ_ONLY_TOOLS and bypasses rule resolution
-# entirely.
+# `*: ask_user` fallback. `load_skill` needs no entry: it's in
+# permission_guard.READ_ONLY_TOOLS and bypasses rule resolution entirely.
 _BENIGN_SIDE_EFFECT_TOOLS: tuple[str, ...] = (
     names.MEMORY,
     names.REMINDER,

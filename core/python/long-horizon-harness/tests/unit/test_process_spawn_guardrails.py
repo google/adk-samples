@@ -12,16 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""``process(action='spawn')`` is a NEW shell execution path (bash's former
-``background=True`` moved here). It must run through the exact same
-guard-chain command extraction as every other shell entry point
-(``permission_guard._shell_command``, ``policies._command_for``), proven
-BEHAVIORALLY here, not by code inspection: a spawn carrying a fork bomb or
-``rm -rf /`` must hard-deny, and one carrying command substitution must
-demote to ``ask_user`` — exactly like ``bash``. If either guard extracted
-the command from ``bash`` only, this file is where that gap would show up:
-every assertion below would still pass for ``bash`` while silently
-skipping the identical check for ``process(action='spawn')``.
+"""``process(action='spawn')`` must run through the same guard-chain command
+extraction as every other shell entry point, proven behaviorally: a fork
+bomb or ``rm -rf /`` must hard-deny, and command substitution must demote
+to ``ask_user``, exactly like ``bash``. If either guard extracted the
+command from ``bash`` only, this file is where that gap shows up.
 """
 
 from __future__ import annotations

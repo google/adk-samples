@@ -102,15 +102,10 @@ TOOL_NAME_ALIASES: dict[str, str] = {
     "routine": ROUTINE,
     "clarify": CLARIFY,
     "preload_memory": PRELOAD_MEMORY,
-    # write_todos, report_to_maintainers, repo_overview, and
-    # set_workspace_window were deleted outright (Task 5): agent-facing
-    # ceremony with no UI consumer and no successor tool. load_skill_resource
-    # and run_skill_script were dropped outright too (Task 9 cut E) —
-    # load_skill(skill_name, resource=...) covers the former, bash covers
-    # what the latter ran. Deliberately absent here (not aliased to
-    # anything) so a persisted rule naming one of them passes through
-    # apply_tool_aliases unchanged and then fails to match any live tool —
-    # inert rather than silently rebound to an unrelated tool.
+    # Deleted tools (write_todos, report_to_maintainers, repo_overview,
+    # set_workspace_window, load_skill_resource, run_skill_script) are
+    # deliberately absent, not aliased, so a persisted rule naming one stays
+    # inert instead of silently rebinding to an unrelated live tool.
 }
 
 

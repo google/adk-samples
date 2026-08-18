@@ -14,37 +14,11 @@
 
 """Tool-name registry safety net.
 
-A ban-list regex scan over horizon/**/*.py was tried first and rejected: it
-flags 131 lines in 42 files, almost none of them actual tool names (the
-`process` write action's `"write"` string, shell interpreter literals,
-scheduler job-type literals, slash-command registrations). Fixing those
-false positives would bind unrelated code to tool names, which is the
-coupling this registry exists to prevent.
-
-Instead, three positive tests verify the real invariant: every fail-closed
-tool-name set is a subset of the live registry (test 1), the registry
-equals the live tool set (test 2), and no dead legacy token survives
-outside a small, explicit exception list of permanent survivors — ADK
-BaseEnvironment methods, deliberately-retained internal helpers, permanent
-TOOL_NAME_ALIASES keys, the unrenamed add_memory_tool.py module filename,
-an external MCP server's own same-named tool, and eval_id/rubric_id labels
-(test 3, flipped to a real assertion once Task 11's rename and Task 12's
-surface cleanup landed).
-
-A later review pass (post tail-cuts items 1-4) tried extending test 3's
-token list to "reload", "patch", "terminal", and "background=True" and hit
-the scan's own bug: `web/**/*.ts(x)` globbed vendored `node_modules` too
-(4,289 of 4,516 matches), which the exclusion below now fixes. Even with
-that fixed, those four tokens still hit 40+ files each, dominated by
-unrelated meanings (web page/HMR/config reload, unittest.mock.patch, the
-web UI's own terminal/patch concepts, e2e test files) — the exact
-false-positive class this module already rejected the regex scan for, so
-they stay out. "background=True" is worse than noisy: `subagent(
-  background=True)` is a real, current, valid parameter with the identical
-literal spelling, so the token cannot distinguish a dead bash reference
-from a live subagent one. "session_search", "old_string", "new_string",
-"replace_all", and "as_media" passed the same measurement cleanly and were
-added.
+Positive tests, not a ban-list regex scan (rejected: too many false
+positives on real code that merely shares a word with a tool name). Three
+invariants: every fail-closed tool-name set is a subset of the live
+registry, the registry equals the live tool set, and no dead legacy token
+survives outside a small, explicit exception list of permanent survivors.
 """
 
 from __future__ import annotations
@@ -170,32 +144,13 @@ async def test_registry_matches_registered_tools():
     }
 
 
-# Unambiguous dead names only. "terminal", "patch", and "write_file" are
-# excluded: they have legitimate non-tool meanings (a job-type literal, the
-# unittest.mock function, a plain English word) that would make this scan
-# noisy without the registry's help. "delegate" is deliberately excluded
-# too, for the same reason, not an oversight: the internal delegate()
-# callable behind the merged `subagent` tool is real and still named that
-# (horizon/subagents/subagent.py's own docstring says so), so every current
-# doc/architecture mention of "delegate" (docs/architecture.md,
-# docs/extending.md, docs/security-model.md, README.md's "dynamic delegate +
-# HITL resurfacing" interface name) describes that internal mechanism
-# correctly, not a stale claim that `delegate` is a directly model-callable
-# tool. Adding it as a scanned token would need nearly as many exceptions as
-# real hits. The one genuinely stale claim found in this class (README.md
-# describing "blocking delegate and fire-and-forget agent" as two separate
-# model-facing tools) was fixed directly instead.
-# "reload", "patch", and "terminal" were measured and left out (final review
-# HIGH item): even with node_modules excluded, each still hits 40+ files
-# dominated by unrelated meanings (web page/HMR/config reload, unittest.mock
-# .patch plus the web PatchView component plus the English word, the
-# terminal_exec.py module plus the web UI's terminal concept plus e2e test
-# files) — exactly the false-positive class the module docstring already
-# describes for "terminal"/"patch", now confirmed for "reload" too. Also left
-# out: "background=True", because it is not just noisy but genuinely
-# ambiguous — `subagent(background=True)` is a real, current, valid
-# parameter with the identical literal spelling, so the token can't tell a
-# dead bash reference from a live subagent one.
+# Unambiguous dead names only. "terminal"/"patch"/"write_file"/"reload" stay
+# out: each has a legitimate non-tool meaning (job-type literal,
+# unittest.mock, plain English, web page reload) common enough to swamp the
+# scan. "delegate" stays out too: the internal delegate() callable behind
+# `subagent` is genuinely still named that. "background=True" stays out
+# because it's ambiguous, not just noisy: `subagent(background=True)` uses
+# the identical spelling for a real, current parameter.
 _LEGACY_TOKENS = (
     "read_file",
     "view_file",
@@ -221,23 +176,19 @@ _LEGACY_SCAN_GLOBS = (
     "web/**/*.ts",
     "web/**/*.tsx",
     "docs/**/*.md",
-    # Root-level docs live outside docs/** and were missed until final
-    # review Fix 8 caught two stale references (README.md's "delegate and
-    # agent" tool pair, AGENTS.md's deleted self-report skill) that this
-    # scan should have flagged but couldn't reach.
+    # Root-level docs live outside docs/**.
     "README.md",
     "AGENTS.md",
 )
 
-# Permanent, legitimate survivors after Task 11/12's cleanup — each is one
-# of: (a) an ADK BaseEnvironment method (Environment.read_file), never
-# renamed; (b) a deliberately-retained internal helper (read_file in
-# file_ops.py, recall_past_sessions_entries), not the registered tool; (c) a
+# Permanent, legitimate survivors — each is one of: (a) an ADK
+# BaseEnvironment method (Environment.read_file), never renamed; (b) a
+# deliberately-retained internal helper, not the registered tool; (c) a
 # permanent TOOL_NAME_ALIASES key in names.py, needed for old persisted
 # permission rules; (d) the unrenamed add_memory_tool.py module filename; (e)
 # an external MCP server's own same-named tool, unrelated to ours; (f) an
-# eval_id/rubric_id label (not graded content — the graded text_property
-# fields are clean); (g) historically-accurate prose about a deleted tool.
+# eval_id/rubric_id label, not graded content; (g) historically-accurate
+# prose about a deleted tool.
 _LEGACY_TOKEN_EXCEPTIONS: dict[str, frozenset[str]] = {
     "horizon/tools/names.py": frozenset(_LEGACY_TOKENS),
     "horizon/tools/file_ops.py": frozenset({"read_file", "replace_all"}),
@@ -251,9 +202,7 @@ _LEGACY_TOKEN_EXCEPTIONS: dict[str, frozenset[str]] = {
     "horizon/environment/sandbox.py": frozenset({"read_file"}),
     "horizon/api/uploads.py": frozenset({"read_file"}),
     "horizon/sandbox/runtime/server.py": frozenset({"read_file"}),
-    # "recall_past_sessions" here is the retained internal helper
-    # recall_past_sessions_entries (memory(action='search',...) calls it),
-    # same category as past_sessions.py's own exception below.
+    # recall_past_sessions_entries, category (b), same as past_sessions.py.
     "horizon/memory/add_memory_tool.py": frozenset(
         {"add_memory", "recall_past_sessions", "session_search"}
     ),
@@ -281,26 +230,16 @@ _LEGACY_TOKEN_EXCEPTIONS: dict[str, frozenset[str]] = {
     "tests/eval/evalsets/workspace_window.evalset.json": frozenset(
         {"set_workspace_window"}
     ),
-    # (d) the unrenamed add_memory_tool.py module filename, referenced by
-    # name in the Project Layout tree; (g) historically-accurate prose
-    # about set_workspace_window's deletion, same pattern as the evalset
-    # exception above. Both surfaced only once README.md/AGENTS.md joined
-    # the scan globs (final review Fix 8).
+    # (d) unrenamed module filename; (g) historically-accurate deletion prose.
     "AGENTS.md": frozenset({"add_memory", "set_workspace_window"}),
     # session_search: historically-accurate prose about the merge into
-    # memory(action='search'). horizon/tools/names.py's existing
-    # frozenset(_LEGACY_TOKENS) entry above already covers its own
-    # permanent TOOL_NAME_ALIASES key, so no second entry is needed there.
+    # memory(action='search'), category (g).
     "horizon/agent.py": frozenset({"session_search"}),
     "horizon/conversation/system_prompt.py": frozenset({"session_search"}),
     "horizon/guardrails/permission_guard.py": frozenset({"session_search"}),
     "horizon/subagents/delegate_builder.py": frozenset({"session_search"}),
-    # old_string/replace_all: find_replacement's own kwargs, kept on purpose
-    # (the model-facing error text now says oldText; the private helper's
-    # signature did not change) — file_ops.py's and read.py's exceptions
-    # above already cover their call sites. as_media: read.py's internal
-    # _default_as_media dispatch helper, never a model-facing parameter
-    # (also covered by read.py's entry above).
+    # find_replacement's own kwargs (category b); the model-facing error
+    # text says oldText, but this private helper's signature didn't change.
     "horizon/tools/_replacers.py": frozenset({"old_string", "replace_all"}),
 }
 
@@ -312,10 +251,8 @@ async def test_no_legacy_tool_tokens_survive_after_the_rename():
         for path in repo_root.glob(glob):
             if not path.is_file():
                 continue
-            # web/**/*.ts(x) also globs vendored node_modules (4,289 of
-            # 4,516 matches today) — never the intent, and the exact reason
-            # "reload"/"patch"/"terminal" are unusable as scan tokens even
-            # after excluding it (final review HIGH item).
+            # web/**/*.ts(x) also globs vendored node_modules, drowning any
+            # real hit even with it excluded.
             if "node_modules" in path.parts:
                 continue
             try:
@@ -334,39 +271,23 @@ async def test_no_legacy_tool_tokens_survive_after_the_rename():
     assert not offenders, offenders
 
 
-# Bare substrings for these four tokens are unusable as a scan (43/56/53/40+
-# files each, dominated by unrelated meanings: web page/HMR/config reload,
-# unittest.mock.patch, the web UI's own terminal/patch concepts, e2e test
-# files). Scoping to the CALL shape — the token immediately followed by "("
-# — collapses that to 4 real files, all legitimate: `terminal_exec.py`'s
-# internal executor (still named `terminal`, distinct from the model-facing
-# `bash` tool), `commands/__init__.py`'s internal `reload()` helper backing
-# `/reload` (the model-facing action folded into `load_skill(action=
-# 'reload')`; the Python function name did not change), and
-# `Environment.write_file` in `environment/sandbox.py` +
-# `sandbox/runtime/server.py` (the ADK BaseEnvironment method + its FastAPI
-# route, never renamed — same exception class as `read_file` above).
-# `delegate` is deliberately NOT in this scan: `subagents/delegate_runner.py`,
-# `_delegate_resurfacing`, and `child_session_id = f"delegate-{fc_id}"` are
-# all live, current code, so a call-shaped `delegate(` scan would need its
-# own wide exception list rather than the 4 above — out of scope here.
+# These four tokens are unusable as bare substrings (too many unrelated
+# meanings); scoping to the CALL shape, the token immediately followed by
+# "(", collapses that to the 4 real internal callables below.
 _CALL_SHAPE_PATTERN = re.compile(
     r"(?<![\w.])(reload|patch|terminal|write_file)\("
 )
 _CALL_SHAPE_EXCEPTIONS: dict[str, frozenset[str]] = {
-    "horizon/tools/terminal_exec.py": frozenset({"terminal"}),
-    "horizon/commands/__init__.py": frozenset({"reload"}),
-    "horizon/environment/sandbox.py": frozenset({"write_file"}),
-    "horizon/sandbox/runtime/server.py": frozenset({"write_file"}),
+    "horizon/commands/__init__.py": frozenset({"reload"}),  # /reload's helper
+    "horizon/environment/sandbox.py": frozenset({"write_file"}),  # ADK method
+    "horizon/sandbox/runtime/server.py": frozenset({"write_file"}),  # its route
 }
 
 
 async def test_no_legacy_tool_calls_survive_after_the_rename():
-    """Would have caught the verification-review blockers a plain token scan
-    missed: dead-tool-name PROSE survives easily (e.g. "the terminal tool"),
-    but a dead-tool-name CALL ("terminal(...)", "patch(...)") is exactly the
-    shape a model would try to invoke, and none should remain outside the
-    four legitimate internal exceptions above.
+    """Dead-tool-name PROSE survives easily ("the terminal tool"); a
+    dead-tool-name CALL ("terminal(...)") is the shape a model would
+    actually try to invoke, and none should remain outside the exceptions.
     """
     repo_root = _HORIZON_ROOT.parent
     offenders: dict[str, list[str]] = {}

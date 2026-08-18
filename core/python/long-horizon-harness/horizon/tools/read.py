@@ -15,25 +15,17 @@
 """``read(path)`` — read a text file (paginated), or load it as a
 multimodal ``Part`` for the agent's own next-turn context.
 
-Merges the former text-reading tool and the former media-viewing tool
-(Task 3). The media tool was a ``BaseTool`` because it implements
-``process_llm_request`` (injects the media Part on the *next* turn from
-pending state) — a plain function tool has no such hook, so this stays a
-``BaseTool`` too.
-
-Text-vs-media routing is always auto-detected by MIME type
-(``_default_as_media`` / ``_MEDIA_MIME_ALLOWLIST``): there is no manual
-override parameter, the signature is ``read(path, offset, limit)`` and
-nothing else. Reliable now that the allowlist excludes
-image/svg+xml and audio/x-mpegurl, the two mime-typed-but-not-really-media
-formats that motivated the allowlist in the first place.
+This is a ``BaseTool``, not a plain function tool, because it implements
+``process_llm_request`` to inject the media Part on the *next* turn from
+pending state. Text-vs-media routing is always auto-detected by MIME type
+(``_default_as_media`` / ``_MEDIA_MIME_ALLOWLIST``); there is no manual
+override parameter.
 
 Guard order matters: the credential deny-list and non-regular-file check
 run on both branches before any read, but the binary-extension check runs
-only on the text branch, and only after the media/text dispatch decision.
-Running it before dispatch would refuse every image (``.png``/``.jpg`` are
-binary extensions; ``.pdf`` is not), which is the exact capability this
-merge exists to preserve.
+only on the text branch, after the media/text dispatch decision. Running it
+before dispatch would refuse every image (``.png``/``.jpg`` are binary
+extensions; ``.pdf`` is not).
 """
 
 from __future__ import annotations
@@ -70,12 +62,11 @@ if TYPE_CHECKING:
 _PENDING_STATE_KEY = "_pending_media_reads"
 
 
-# Positive allowlist of formats Gemini can actually decode as inline media,
-# not a blocklist over image/*|audio/*|video/*: that broader check routed
-# image/svg+xml (readable XML markup, not a raster image) and audio/x-mpegurl
-# playlists (.m3u, no real audio bytes) into the media branch, silently
-# breaking default text reads of those formats. Routing is auto-detect only
-# (no as_media override parameter), so this allowlist is the sole gate.
+# Positive allowlist of formats Gemini can decode as inline media, not a
+# blocklist over image/*|audio/*|video/*: image/svg+xml (XML markup, not a
+# raster image) and audio/x-mpegurl (.m3u playlists, no audio bytes) are
+# mime-typed as media but aren't. This is the sole routing gate; no override
+# parameter exists.
 _MEDIA_MIME_ALLOWLIST: frozenset[str] = frozenset(
     {
         "image/png",

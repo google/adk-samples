@@ -12,19 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""``HorizonSkillToolset`` — a short skills preamble instead of ADK's ~2 KB
-tutorial, without wiping the rest of the prompt.
+"""``HorizonSkillToolset``: a short skills preamble instead of ADK's tutorial,
+without wiping the rest of the prompt.
 
-By the time ``SkillToolset.process_llm_request`` runs in production,
-``system_instruction`` already holds ``Agent.static_instruction`` (~6.9 KB)
-plus the project-context tier — the request processors that append
-``static_instruction`` run before the tools-processing step that reaches
-this toolset. Splitting the WHOLE accumulated string on
-``<available_skills>`` and keeping only the tail would silently delete
-everything appended before this call. A test starting from a fresh
-``LlmRequest()`` cannot see that bug: it would stay green while the real
-agent shipped no system prompt at all. ``test_existing_system_instruction_survives``
-is the one that catches it, by seeding a sentinel BEFORE calling.
+``system_instruction`` already holds static_instruction plus the
+project-context tier by the time this toolset runs, so splitting the WHOLE
+string on ``<available_skills>`` and keeping only the tail would silently
+delete everything appended earlier. A test starting from a fresh
+``LlmRequest()`` can't see that bug;
+``test_existing_system_instruction_survives`` catches it by seeding a
+sentinel first.
 """
 
 from __future__ import annotations

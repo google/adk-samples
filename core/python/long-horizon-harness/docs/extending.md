@@ -238,7 +238,7 @@ slots it depends on. Sources: [`AGENTS.md`](../AGENTS.md) "State keys" + "ADK Ca
 - **ContextVar:** `compaction_context`. **Env:** `LHA_PRUNE_TOOL_OUTPUTS`, `LHA_COMPACTION_WINDOW_FRACTION`.
 
 ### `subagents/` — delegation
-- **Tool:** `subagent` (`horizon/subagents/subagent.py`), a single dispatcher over two still-internal callables: blocking `delegate()` (resumable child that resurfaces approvals) by default, or fire-and-forget `agent()` (`subagent_dispatch`, headless) when `background=True`.
+- **Tool:** `subagent` (`horizon/subagents/subagent.py`), a single dispatcher over two still-internal callables: blocking `delegate()` (resumable child that resurfaces approvals) by default, or fire-and-forget `agent()` (`horizon/subagents/spawn.py`, headless) when `background=True`.
 - **Plugin:** `SIBLING_AGENT_PLUGIN`. **Callback:** `subagent_description_callback` (before_model) rewrites the delegation menu.
 - **permission_guard:** `SUBAGENT_TOOLS` are exempt at spawn; a blocking `subagent` call resurfaces risky-op approvals, a background one stays headless (`ask_is_deny`).
 

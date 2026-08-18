@@ -4,44 +4,47 @@ What one turn costs, what stops it growing, and how to check. Horizon pays a
 fixed prefix on every model call, not every user turn, and one complex turn is
 10 to 20 calls, so a char added here is paid 10 to 20 times.
 
+No current measurements are reproduced below. They go stale, and nothing tests a
+number in a markdown file. Every limit named here lives in code or in a test,
+and the two commands in [Measuring](#measuring) print today's values.
+
 Related: [`architecture.md`](architecture.md) (where the tiers are assembled),
 [`memory.md`](memory.md) (compaction and recall), [`configuration.md`](configuration.md)
 (the env vars named here).
 
 ## The fixed prefix
 
-Measured with `uv run python scripts/measure_prefix.py`, which reads the live
-agent, so it cannot drift from what ships.
+Four components:
 
-| Component | Chars | Ratchet | Built by |
-|---|---|---|---|
-| `static_instruction` | 8,064 | 8,300 (8,900 with a code executor) | `conversation/system_prompt.py` → `build_static_instruction()` |
-| tool schemas (14 decls + dynamic suffix) | 11,619 | 13,600 | each tool's docstring |
-| `<available_skills>` index | 1,395 | 1,400 | `tools/skill_toolset.py` |
-| skills preamble | 115 | 200 | `tools/skill_toolset.py` |
-| **total** | **21,193 (~4,947 real tokens)** | **23,500** | |
+| Component | Built by |
+|---|---|
+| `static_instruction` | `conversation/system_prompt.py` → `build_static_instruction()` |
+| tool schemas | each tool's docstring |
+| `<available_skills>` index | `tools/skill_toolset.py` |
+| skills preamble | `tools/skill_toolset.py` |
 
-Every row is asserted in `tests/unit/test_prompt_budget.py`, so a regression
-fails a test instead of quietly costing tokens on every call. Individual prompt
-blocks are capped too: ACTING 1,200, SAFETY 1,100, STYLE 900, MEMORY 1,400.
+`tests/unit/test_prompt_budget.py` guards two numbers and no more:
+`MAX_TOTAL_PREFIX_CHARS` on the sum, and `MAX_TOOL_DESC_CHARS` on any single
+tool description. Both sit about a third above what ships, so they fire when a
+whole block or tool set comes back, not when someone edits a sentence.
+
+There is deliberately no per-component ratchet. A cap set just above today's
+value tests whether the number changed, which is churn. The prefix reached
+70,774 chars with a fully green suite because nobody watched the aggregate, and
+the aggregate is what every model call pays for.
 
 ## The prefix cache
 
-The prefix is constant, so Vertex should serve it from cache after the first
-call. Verify with `uv run python scripts/probe_context_cache.py`, which reports
-the `cached_content_token_count` the model returns:
+The prefix is constant, so Vertex serves it from cache after the first call.
+`scripts/probe_context_cache.py` runs three turns and prints
+`cached_content_token_count` per turn: turn 0 populates the cache and reports
+zero, and every later turn should report most of the prompt as cached, reusing
+one `cache_name` with `invocations_used` incrementing. If a later turn reports
+zero, the cache is broken.
 
-```
-turn 0 ('hi')            prompt=  4947  cached=     0  (  0.0%)
-turn 1 ('what is 2+2?')  prompt=  5101  cached=  4888  ( 95.8%)
-turn 2 ('and 3+3?')      prompt=  5142  cached=  4888  ( 95.1%)
-```
-
-Turn 0 populates; every later turn reuses one `cache_name` with
-`invocations_used` incrementing. Config is `ContextCacheConfig(min_tokens=4096,
-ttl_seconds=1800, cache_intervals=10)` in `agent.py`. `min_tokens` is 4096
-because `GeminiContextCacheManager`'s own per-model floor is hardcoded to 4096
-for `gemini-3*`; a smaller value here is dead config.
+Config is `ContextCacheConfig` in `agent.py`. `min_tokens` there matches
+`GeminiContextCacheManager`'s own per-model floor, which is hardcoded for
+`gemini-3*`; setting anything below that floor is dead config.
 
 Never put per-turn content in `system_instruction`.
 `_generate_cache_fingerprint` hashes the entire string, so one varying line
@@ -58,9 +61,9 @@ Four mechanisms, each covering a case the others miss.
 
 | Mechanism | Where | Bounds |
 |---|---|---|
-| Source caps | `tools/_output_overflow.py` (the shared limit), `tools/file_ops.py` (`_MAX_READ_CHARS`) | One call: `read` and shell output share `TERMINAL_OUTPUT_LIMIT` (51,200 chars), spilling the remainder to `lha/tool-output/` and returning a pointer. |
-| Retroactive pruning | `context/tool_output_pruning.py` | Stale bulk: zeroes old large tool-result bodies before the model reads them. Floor is 500 tokens per part. Never prunes `subagent`, `clarify`, `skill`, or any `*_overflow_path`, so expensive or recoverable results survive. Off with `LHA_PRUNE_TOOL_OUTPUTS=0`. |
-| Compaction | `context/summarizer.py` → `HorizonSummarizer` | Total history: ADK's `EventsCompactionConfig` triggers it; Horizon adds a REFERENCE-ONLY banner, caps each inlined tool result and call args at 2,000 chars, and tracks files cumulatively so they survive repeated summarization. |
+| Source caps | `tools/_output_overflow.py` (`TERMINAL_OUTPUT_LIMIT`, `TERMINAL_OUTPUT_MAX_LINES`), `tools/file_ops.py` (`_MAX_READ_CHARS`, an alias of the former) | One call: `read` and shell output truncate at whichever cap is hit first, spill the remainder to `lha/tool-output/`, and return a pointer. |
+| Retroactive pruning | `context/tool_output_pruning.py` | Stale bulk: zeroes old large tool-result bodies before the model reads them, above `DEFAULT_MIN_PART_TOKENS`. Never prunes `PROTECTED_TOOL_SUBSTRINGS` (`subagent`, `clarify`, skills) or any `*_overflow_path`, so expensive or recoverable results survive. Off with `LHA_PRUNE_TOOL_OUTPUTS=0`. |
+| Compaction | `context/summarizer.py` → `HorizonSummarizer`; threshold in `context/compaction_threshold.py`; knobs in `agent.py`'s `EventsCompactionConfig` | Total history: fires at a fraction of the active model's input window (`LHA_COMPACTION_WINDOW_FRACTION`), recomputed per turn so `/model` changes it. Horizon adds a REFERENCE-ONLY banner, caps each inlined tool result and call args at `_MAX_HISTORY_ITEM_CHARS`, and tracks files cumulatively so they survive repeated summarization. |
 | Preload caps | `memory/preload.py` | Recall: `LHA_PRELOAD_MAX_MEMORIES` and `LHA_PRELOAD_MAX_CHARS`, because ADK's `search_memory` has no `top_k`. |
 
 Source caps and the pruner cover different failures. A cap bounds the worst
@@ -69,23 +72,35 @@ individually fine. Dropping either one leaves a real session unbounded.
 
 ## Keeping the schema surface small
 
-Tool declarations are the largest single component, so two settings matter:
+Tool declarations are usually the largest component, so two settings matter:
 
 - `ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL=1` (set in `agent.py`). ADK's pydantic
   path emits `title` on every parameter, `default: null`, and `anyOf[X, null]`.
-  The legacy path expresses the same parameters without them, worth 2,812 chars.
+  The legacy path expresses the same parameters without them.
 - `context/schema_normalization.py` runs `inspect.cleandoc` over tool
   descriptions, since the legacy path otherwise ships raw indented docstrings.
 
-Docstring budgets are enforced per tool (400 chars simple, 900 dispatch) by
-`test_prompt_budget.py`. A new tool costs roughly 500 to 900 chars of prefix on
-every call, for as long as it exists.
+A new tool costs its whole description on every call, for as long as it exists,
+which is why the per-tool budgets are enforced rather than advisory.
+
+## Measuring
+
+```bash
+uv run python scripts/measure_prefix.py         # per-component chars, live agent
+uv run python scripts/probe_context_cache.py    # cached tokens per turn (hits Vertex)
+uv run pytest tests/unit/test_prompt_budget.py  # the two guards
+```
+
+`measure_prefix.py` reads the live agent and measures after normalization, so it
+reports what actually ships. Its token figure is a `chars // 4` estimate and
+runs high; the probe's `cached_content_token_count` is the measured one.
 
 ## Checklist for a change that touches the prompt or a tool
 
-1. `uv run pytest tests/unit/test_prompt_budget.py` for the ratchets.
-2. `uv run python scripts/measure_prefix.py` to see the new composition.
-3. If you touched `system_instruction` assembly, re-run
-   `scripts/probe_context_cache.py` and confirm turn 1 is still around 95%.
+1. Run the budget test.
+2. Run `measure_prefix.py` to see where the chars went.
+3. If you touched `system_instruction` assembly, run
+   `probe_context_cache.py` and confirm turns after the first still report a
+   cache hit.
 4. Adding a tool means adding it to `tools/names.py`; the registry tests fail
    otherwise.
