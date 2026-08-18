@@ -21,6 +21,7 @@ parsing, file-locking, and in-memory checkpoint snapshots are out of scope.
 
 from __future__ import annotations
 
+import itertools
 import mimetypes
 import os
 import shlex
@@ -243,10 +244,31 @@ def _is_write_denied(path: str) -> bool:
 
 _SEARCH_DELIMITER = "###__LHA_SEARCH_RESULT__###"
 _SEARCH_ERROR_KEY = "__lha_search_error__"
+_SEARCH_MAX_FILE_SIZE = 10 * 1024 * 1024
+_SEARCH_SNIPPET_MAX_CHARS = 300
+_SEARCH_IGNORED_DIRS = frozenset(
+    {
+        "node_modules",
+        "__pycache__",
+        "build",
+        "dist",
+        "coverage",
+        "target",
+        ".next",
+        ".terraform",
+        "vendor",
+        "site-packages",
+    }
+)
 
 
 def _build_search_script(
-    root: str, pattern: str, file_glob: str | None, limit: int
+    root: str,
+    pattern: str,
+    file_glob: str | None,
+    limit: int,
+    ignore_case: bool = False,
+    no_ignore: bool = False,
 ) -> str:
     return (
         "import fnmatch, json, os, re, sys\n"
@@ -254,12 +276,16 @@ def _build_search_script(
         f"_pattern = {pattern!r}\n"
         f"_file_glob = {file_glob!r}\n"
         f"_limit = {limit!r}\n"
+        f"_ignore_case = {ignore_case!r}\n"
+        f"_no_ignore = {no_ignore!r}\n"
         f"_error_key = {_SEARCH_ERROR_KEY!r}\n"
         f"_delim = {_SEARCH_DELIMITER!r}\n"
-        f"_binary = {list(_BINARY_EXTENSIONS)!r}\n"
-        "_binary = frozenset(_binary)\n"
+        f"_binary = {set(_BINARY_EXTENSIONS)!r}\n"
+        f"_ignored = {set(_SEARCH_IGNORED_DIRS)!r}\n"
+        f"_max_size = {_SEARCH_MAX_FILE_SIZE!r}\n"
+        f"_snip_max = {_SEARCH_SNIPPET_MAX_CHARS!r}\n"
         "try:\n"
-        "    _re = re.compile(_pattern)\n"
+        "    _re = re.compile(_pattern, re.IGNORECASE if _ignore_case else 0)\n"
         "except re.error as _exc:\n"
         "    print(_delim + json.dumps({_error_key: str(_exc)}) + _delim)\n"
         "    sys.exit(0)\n"
@@ -268,7 +294,7 @@ def _build_search_script(
         "    sys.exit(2)\n"
         "_matches = []\n"
         "for _dp, _dns, _fns in os.walk(_root):\n"
-        "    _dns[:] = [d for d in _dns if not d.startswith('.')]\n"
+        "    _dns[:] = [d for d in _dns if not d.startswith('.') and (_no_ignore or d not in _ignored)]\n"
         "    for _fn in _fns:\n"
         "        if _fn.startswith('.'):\n"
         "            continue\n"
@@ -279,15 +305,25 @@ def _build_search_script(
         "            continue\n"
         "        _full = os.path.join(_dp, _fn)\n"
         "        try:\n"
-        "            _mtime = os.stat(_full).st_mtime\n"
+        "            _st = os.stat(_full)\n"
+        "            if _st.st_size > _max_size:\n"
+        "                continue\n"
+        "            _mtime = _st.st_mtime\n"
         "        except OSError:\n"
         "            continue\n"
         "        try:\n"
         "            with open(_full, 'r', encoding='utf-8', errors='replace') as _fh:\n"
         "                for _ln, _line in enumerate(_fh, start=1):\n"
         "                    _line = _line.rstrip('\\n')\n"
-        "                    if _re.search(_line):\n"
-        "                        _matches.append({'path': _full, 'line': _ln, 'text': _line, 'mtime': _mtime})\n"
+        "                    _m = _re.search(_line)\n"
+        "                    if _m:\n"
+        "                        _left = max(0, _m.start() - 100)\n"
+        "                        _snip = _line[_left:_left + _snip_max]\n"
+        "                        if _left > 0:\n"
+        "                            _snip = '...' + _snip\n"
+        "                        if _left + _snip_max < len(_line):\n"
+        "                            _snip = _snip + '...'\n"
+        "                        _matches.append({'path': _full, 'line': _ln, 'text': _snip, 'mtime': _mtime})\n"
         "                        if len(_matches) >= _limit:\n"
         "                            break\n"
         "        except OSError:\n"
@@ -547,11 +583,11 @@ def _resolve_edits(
         )
 
     resolved.sort(key=lambda r: r.start)
-    for a, b in zip(resolved, resolved[1:]):
+    for a, b in itertools.pairwise(resolved):
         if b.start < a.end:
             return None, (
                 f"edits[{a.index}] and edits[{b.index}] target overlapping or "
-                "adjacent regions — merge them into one edit"
+                "adjacent regions: merge them into one edit"
             )
     return resolved, None
 
@@ -632,15 +668,18 @@ async def search_files(
     file_glob: str | None = None,
     limit: int = 50,
     scope: str = "window",
+    ignore_case: bool = False,
+    no_ignore: bool = False,
     tool_context: Any | None = None,
 ) -> dict[str, Any]:
     """Search text files for `pattern` (regex); scope="workspace" searches
     everywhere. Paths: see routing.
 
     Returns the first `limit` matches in directory-walk order, sorted by
-    mtime (most recent first) — on a large tree this is a prefix of the
+    mtime (most recent first): on a large tree this is a prefix of the
     walk, not a global top-N.
     """
+    import asyncio
     import json
 
     env_root = active_environment().working_dir.resolve()
@@ -652,9 +691,26 @@ async def search_files(
         return _error(err)
     assert root is not None
 
-    script = _build_search_script(str(root), pattern, file_glob, limit)
+    script = _build_search_script(
+        str(root),
+        pattern,
+        file_glob,
+        limit,
+        ignore_case=ignore_case,
+        no_ignore=no_ignore,
+    )
     command = f"python3 -c {shlex.quote(script)}"
-    result = await active_environment().execute(command)
+    try:
+        result = await active_environment().execute(command, timeout=30.0)
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        raise
+    except TimeoutError:
+        return _error(
+            f"Search timed out after 30s for {path}. Narrow the path or pattern."
+        )
+    except Exception as exc:
+        return _error(f"Search failed for {path}: {exc}")
+
     if result.exit_code != 0:
         msg = result.stderr.strip() or "search failed"
         if "not a directory" in msg.lower() or "No such file" in msg:
@@ -674,5 +730,16 @@ async def search_files(
     if isinstance(parsed, dict) and _SEARCH_ERROR_KEY in parsed:
         return _error(f"Invalid regex pattern: {parsed[_SEARCH_ERROR_KEY]}")
 
-    matches = sorted(parsed, key=lambda m: m.get("mtime", 0), reverse=True)
-    return {"success": True, "matches": matches}
+    is_truncated = len(parsed) >= limit
+    sorted_matches = sorted(
+        parsed, key=lambda m: m.get("mtime", 0), reverse=True
+    )
+    matches = [
+        {"path": m["path"], "line": m["line"], "text": m["text"]}
+        for m in sorted_matches
+    ]
+    return {
+        "success": True,
+        "matches": matches,
+        "truncated": is_truncated,
+    }
