@@ -19,4 +19,4 @@ with setup and run instructions.
 
 For the requirements and shipping checklist, see the
 [recipe checklist](../docs/recipe-checklist.md). For deeper
-detail, see the [Recipe Handbook](../docs/recipe-handbook/README.md).
+detail, see the [recipe handbook](../docs/recipe-handbook/README.md).

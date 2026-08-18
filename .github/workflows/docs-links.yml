@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   validate-docs-links:
-    name: Check every documentation link resolves
+    name: Check every link in docs/ resolves
     runs-on: ubuntu-latest
     # lychee's default retry/backoff plus the whole external-link universe
     # can drag a scan out; 10 minutes is a safe ceiling for the current
