@@ -28,6 +28,7 @@ from google.adk.tools.tool_context import ToolContext
 from horizon.subagents.delegate import delegate
 from horizon.subagents.spawn import agent
 from horizon.subagents.toolsets import available_toolset_names
+from horizon.subagents.transcript import parent_transcript
 
 # Lifecycle actions carried over from `agent(action=...)`. `spawn` is not one
 # of them: `background=True` on a fresh call replaces it.
@@ -45,11 +46,30 @@ _UNKNOWN_ACTION_ERROR = (
 )
 
 
+def _parent_events(tool_context: Any) -> Any:
+    ic = getattr(tool_context, "_invocation_context", None)
+    return getattr(getattr(ic, "session", None), "events", None)
+
+
+def _with_parent_transcript(
+    context: str, include: bool, tool_context: Any
+) -> str:
+    """Opt-in only: the contract is that a child sees just what it is handed."""
+    if not include:
+        return context
+    transcript = parent_transcript(_parent_events(tool_context))
+    if not transcript:
+        return context
+    block = f"## Parent conversation so far\n\n{transcript}"
+    return f"{block}\n\n{context.strip()}" if context.strip() else block
+
+
 async def subagent(
     goal: str | None = None,
     context: str = "",
     *,
     background: bool = False,
+    include_transcript: bool = False,
     action: Literal["status", "result", "wait", "cancel", "list"] | None = None,
     toolsets: list[str] | None = None,
     skills: list[str] | None = None,
@@ -85,6 +105,8 @@ async def subagent(
         `status="halted"`, raw in `summary_raw`.
       profile: Deny-by-default archetype (e.g. "explore" = read-only);
         see `## Child profiles` below.
+      include_transcript: give the child this chat's text (capped) when
+        briefing would be lossy; default off, brief it instead.
 
     Brief like a colleague who just arrived: goal, what's ruled out,
     success criteria. Hand off facts, not decisions. Verify a child's
@@ -112,6 +134,8 @@ async def subagent(
             "success": False,
             "error": "goal is required to start a new subagent task.",
         }
+
+    context = _with_parent_transcript(context, include_transcript, tool_context)
 
     if background:
         return await agent(
