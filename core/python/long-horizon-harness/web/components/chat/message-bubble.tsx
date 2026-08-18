@@ -1135,7 +1135,7 @@ function ToolRow({
     ? (skillName ?? "skill")
     : (richPreview ?? formatArgsPreview(args));
   const Icon = isLoadSkill ? BookOpen : (TOOL_ICONS[name] ?? Wrench);
-  const displayName = isLoadSkill ? "load_skill" : name;
+
   return (
     <div className="flex w-full max-w-full flex-col gap-1">
       <button
@@ -1145,7 +1145,7 @@ function ToolRow({
         aria-expanded={open}
       >
         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-        <span className="font-medium text-foreground/75">{displayName}</span>
+        <span className="font-medium text-foreground/75">{name}</span>
         {preview && (
           <span className="truncate font-mono text-muted-foreground/70">
             {preview}

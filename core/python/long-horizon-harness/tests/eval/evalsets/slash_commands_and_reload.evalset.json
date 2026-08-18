@@ -197,7 +197,7 @@
             {
               "rubric_id": "auto_reload_does_not_invoke_reload_tool_visibly",
               "rubric_content": {
-                "text_property": "The response contains NO `reload` tool call — the auto-reload consumer runs inside the callback machinery, not through the model's tool surface, so in this scenario the model has no reason to invoke `reload` itself. (`reload` IS registered as a model-facing tool after the simplification, but the consumer firing it before the model turn means the model sees fresh state without needing to call it.) Any FunctionCall for `reload` here fails this rubric — that would be evidence that the consumer didn't run and the model is compensating, when it should just answer 'pong'."
+                "text_property": "The response contains NO `load_skill(action='reload')` tool call — the auto-reload consumer runs inside the callback machinery, not through the model's tool surface, so in this scenario the model has no reason to invoke it. (`load_skill(action='reload')` is available to the model, but the consumer fires before the model turn, so it already sees fresh state.) Any FunctionCall for `reload` here fails this rubric — that would be evidence that the consumer didn't run and the model is compensating, when it should just answer 'pong'."
               }
             }
           ]

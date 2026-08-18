@@ -127,7 +127,7 @@
             {
               "rubric_id": "skill_not_created_for_trivial_oneoff",
               "rubric_content": {
-                "text_property": "The response does NOT invoke `write` against any `.agents/skills/<name>/SKILL.md` path, and does NOT invoke `reload`. 'Print the current working directory' is a one-shot trivial query — there is no procedure to capture, just one shell command. Promoting `pwd` into a saved skill would be over-curation: it would pollute the skill registry with one-liners that the model already knows. A response that writes a SKILL.md for this fails. A response that calls `bash` with `pwd` and reports the output passes."
+                "text_property": "The response does NOT invoke `write` against any `.agents/skills/<name>/SKILL.md` path, and does NOT invoke `load_skill(action='reload')`. 'Print the current working directory' is a one-shot trivial query — there is no procedure to capture, just one shell command. Promoting `pwd` into a saved skill would be over-curation: it would pollute the skill registry with one-liners that the model already knows. A response that writes a SKILL.md for this fails. A response that calls `bash` with `pwd` and reports the output passes."
               }
             },
             {
