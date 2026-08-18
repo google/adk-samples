@@ -428,7 +428,7 @@
             {
               "rubric_id": "delegate_passes_caller_instructions",
               "rubric_content": {
-                "text_property": "The `subagent` or `agent(action='spawn')` call passes the formatting requirements via `instructions` (or `inline_skills`). Omitting them fails."
+                "text_property": "The `subagent` call passes the formatting requirements via `instructions` (or `inline_skills`). Omitting them fails."
               }
             },
             {
