@@ -87,7 +87,7 @@ async def subagent(
         see `## Child profiles` below.
 
     Brief like a colleague who just arrived: goal, what's ruled out,
-    success criteria — hand off facts, not decisions. Verify a child's
+    success criteria. Hand off facts, not decisions. Verify a child's
     diff before reporting code done. Batch independent calls.
     """
     if action is not None:

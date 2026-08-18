@@ -37,7 +37,6 @@ MEMORY = "memory"
 LOAD_SKILL = "load_skill"
 WEB_RESEARCH = "web_research"
 ARTIFACT = "artifact"
-REMINDER = "reminder"
 ROUTINE = "routine"
 CLARIFY = "clarify"
 PRELOAD_MEMORY = "preload_memory"
@@ -57,7 +56,6 @@ ALL: frozenset[str] = frozenset(
         LOAD_SKILL,
         WEB_RESEARCH,
         ARTIFACT,
-        REMINDER,
         ROUTINE,
         CLARIFY,
         PRELOAD_MEMORY,
@@ -98,14 +96,15 @@ TOOL_NAME_ALIASES: dict[str, str] = {
     "reload": LOAD_SKILL,
     "web_research": WEB_RESEARCH,
     "artifact": ARTIFACT,
-    "reminder": REMINDER,
     "routine": ROUTINE,
     "clarify": CLARIFY,
     "preload_memory": PRELOAD_MEMORY,
     # Deleted tools (write_todos, report_to_maintainers, repo_overview,
-    # set_workspace_window, load_skill_resource, run_skill_script) are
-    # deliberately absent, not aliased, so a persisted rule naming one stays
-    # inert instead of silently rebinding to an unrelated live tool.
+    # set_workspace_window, load_skill_resource, run_skill_script, reminder)
+    # are deliberately absent, not aliased, so a persisted rule naming one
+    # stays inert instead of silently rebinding to an unrelated live tool.
+    # reminder has no successor: routine is a different capability (headless,
+    # unattended, cannot prompt the user), not a rebind target.
 }
 
 
@@ -129,7 +128,6 @@ __all__ = [
     "PRELOAD_MEMORY",
     "PROCESS",
     "READ",
-    "REMINDER",
     "ROUTINE",
     "SEARCH_FILES",
     "SUBAGENT",

@@ -145,7 +145,7 @@ defaults do before any overlay or grant:
 |---|---|---|
 | Sandbox-FS writes | `write`, `edit`, `artifact` | **allow** |
 | Shell | `bash` / `process` | **allow** — scary ops gated in `_shell_decision` (below) |
-| Opened benign tools | `memory`, `reminder` | **allow** |
+| Opened benign tools | `memory` | **allow** |
 | Read-only / self-confirming / subagent | `read`, `search_files`, `web_research`, `clarify`, `subagent` | pass (no prompt) |
 | Everything else | incl. `routine` (schedules unattended runs) | **ask** (via the `*` catch-all) |
 
@@ -298,7 +298,7 @@ unconditionally (exfil, egress, destructive-`policies_guard`, explicit `deny`
 rules), so this only collapses the interactive prompt. See
 [`docs/routines.md`](routines.md).
 
-Other unattended paths (scheduler-fired reminders, the dream-review pass, A2A
+Other unattended paths (scheduler-fired routines, the dream-review pass, A2A
 turns initiated by another agent) do **not** set headless mode and still share the
 uniform ask posture. A broader per-mode auto path (default `ask`) is planned but
 not yet wired.

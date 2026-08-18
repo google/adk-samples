@@ -7,7 +7,7 @@ first.
 
 Horizon is a long-horizon, self-improving agent on Google's Agent Development Kit (ADK 2.x)
 and Vertex AI. It acts in the user's Google Cloud and Workspace, runs code in a per-user
-sandbox, fires reminders and scheduled chats, uses the user's own secrets without exposing
+sandbox, fires scheduled chats, uses the user's own secrets without exposing
 them to the model, and improves itself between turns by writing facts to memory and
 techniques to a skill library — built on managed primitives rather than reinventing the
 agent loop, memory store, or session persistence.
@@ -152,7 +152,7 @@ because the package `__init__` doesn't import `agent` — only reading `horizon.
 2. **Tools** — one explicit list: memory (`memory`, covering add and search — the
    former standalone `session_search` — plus `PreloadMemoryTool`), file ops (including
    the merged `read`), `artifact`, `bash`/`process`, `subagent`, the session-bound skill
-   toolset (`load_skill`, covering load and reload), `reminder`/`routine`, `clarify`,
+   toolset (`load_skill`, covering load and reload), `routine`, `clarify`,
    and `web_research` as an `AgentTool`.
 3. **Ordered callback chains** — six chains on the `Agent` (`before_agent`, `before_model`,
    `after_model`, `before_tool`, `after_tool`, `after_agent`). **Order is the contract**:
@@ -211,7 +211,7 @@ session persistence (resumable)"]
     AgentRuntime["Sandboxes
 per-user sandbox (BYOC image)"]
     CloudSQL["Cloud SQL
-scheduler store: cron + reminders"]
+scheduler store: cron + routines"]
 
     User --> IAP --> Web
     Web -->|"ID token + IAP JWT (X-LHA-IAP-Assertion)"| Backend
@@ -222,13 +222,13 @@ scheduler store: cron + reminders"]
 ```
 
 The FastAPI surface (`horizon/fast_api_app.py`) exposes the A2A JSON-RPC endpoint, OAuth callbacks, and
-the `/lha/*` routers (state, sessions, tasks, memories, secrets, reminders, feedback,
+the `/lha/*` routers (state, sessions, tasks, memories, secrets, feedback,
 uploads, sandbox). A2A invokes the ADK `Runner` described above. Cross-session memory is
 Memory Bank ([`docs/memory.md`](memory.md)) — prefetched each turn via ADK's
 `PreloadMemoryTool`, written back by a background judge fork; a nightly dream-review
 consolidates a structured profile and general memories. Sessions persist in Agent
-Runtime and are resumable. Cloud Scheduler drives reminders (which fire as real persisted
-chats), the nightly dream-review, and routines through the same A2A handler the web uses. A
+Runtime and are resumable. Cloud Scheduler drives routines (which fire as real persisted
+chats through the same A2A handler the web uses) and the nightly dream-review. A
 routine fire-path turn (`POST /scheduler/routine-tick`) is wrapped in three routine
 ContextVars — `set_routine_run` (a fresh isolated `lhart-<id>` sandbox, never the user's),
 `set_routine_secret_scope` (only the routine's declared secrets), and `set_headless_mode`
@@ -256,12 +256,12 @@ you care about, open its **start-here** file first, then fan out to the supporti
 | **Tools** (file/bash/web) | `horizon/tools/file_ops.py` | `tools/read.py` (merged text+media read), `tools/processes/` (bash+process), `tools/web_search.py` | — |
 | **Sub-agents / delegation** | `horizon/subagents/subagent.py` | `subagents/delegate.py` (blocking, still-internal), `subagents/spawn.py` (fire-and-forget, still-internal), `subagents/profiles.py`, `subagents/descriptions.py` | — |
 | **Context compaction** | `horizon/context/summarizer.py` | `context/tool_output_pruning.py`, `context/compaction_context.py` | [`docs/memory.md`](memory.md) |
-| **Scheduler / reminders** | `horizon/scheduler/store.py` | `scheduler/tools.py` (reminder tool), `scheduler/tick_endpoint.py`, `dream_review_endpoint.py`, `snapshot_endpoint.py` | — |
+| **Scheduler (dream-review / snapshot)** | `horizon/scheduler/dream_review_endpoint.py` | `scheduler/snapshot_endpoint.py`, `scheduler/auth.py` | — |
 | **Routines** (unattended cron tasks in an isolated sandbox) | `horizon/routines/tools.py` | `routines/manifest.py`, `routines/run_context.py`, `scheduler/routine_store.py`, `scheduler/routine_postgres_store.py`, `scheduler/cron.py`, `scheduler/routine_tick_endpoint.py` | [`docs/routines.md`](routines.md) |
 | **Secrets** | `horizon/secrets/store.py` | `secrets/inject.py`, `secrets/dotenv.py`, `horizon/auth/oauth.py` (Connect Google) | — |
 | **Slash commands** | `horizon/commands/__init__.py` | `commands/dispatcher.py` | — |
 | **Models / LLM routing** | `horizon/models/dispatcher.py` | `models/registry.py`, `models/selector.py`, `models/media.py` | — |
-| **HTTP routers** (`/lha/*`, `/feedback`) | `horizon/api/` | one file per route (`sessions`, `state`, `tasks`, `memories`, `sandbox`, `secrets`, `reminders`, `uploads`, `feedback`); attached in `horizon/fast_api_app.py` (every router mounts; ship a subset by deleting `attach_*` calls) | [`docs/security-model.md`](security-model.md) |
+| **HTTP routers** (`/lha/*`, `/feedback`) | `horizon/api/` | one file per route (`sessions`, `state`, `tasks`, `memories`, `sandbox`, `secrets`, `uploads`, `feedback`); attached in `horizon/fast_api_app.py` (every router mounts; ship a subset by deleting `attach_*` calls) | [`docs/security-model.md`](security-model.md) |
 | **Feedback pipeline** | `horizon/feedback/sink.py` | `feedback/context.py`, `feedback/models.py`, `horizon/api/feedback.py` (route) | — |
 | **Telemetry / observability** | `horizon/telemetry/otel.py` | `telemetry/ui.py` (live web-panel tool log) | — |
 | **DB resilience / infra** | `horizon/infrastructure/db_resilience.py` | `infrastructure/resilient_session_service.py`, `infrastructure/memory_config.py`, `infrastructure/constants.py` | — |
@@ -350,13 +350,14 @@ docs and in the [tree map](#backend-tree-map--where-to-start) rather than the in
 
 - **Routines** (unattended cron) — composes the env interface (a fresh, disjoint `lhart-`
   sandbox), guardrails (headless: non-shell approvals auto-deny), and secrets (scoped to the
-  routine's declared names — the blast-radius boundary). Fire path
+  routine's declared names — the blast-radius boundary). A fire turn drives the *same*
+  shared A2A handler against a pre-tagged session so it records a real Task + history
+  (driving the Runner directly would leave the UI blank). Fire path
   `scheduler/routine_tick_endpoint.py`; isolation `routines/run_context.py`.
   [`docs/routines.md`](routines.md)
-- **Scheduler** (reminders / dream-review / snapshot) — a scheduled turn drives the *same*
-  shared A2A handler against a pre-tagged session so it records a real Task + history
-  (driving the Runner directly would leave the UI blank); dream-review is the
-  self-improvement interface on a cron. (`horizon/scheduler/`)
+- **Scheduler** (dream-review / snapshot) — two cron-driven maintenance passes, neither an
+  agent turn: dream-review is the self-improvement interface on a cron (no A2A handler, no
+  Task); snapshot is per-user sandbox snapshot+prune for TTL survival. (`horizon/scheduler/`)
 
 ### Where the subsystems live
 

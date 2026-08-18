@@ -66,7 +66,7 @@ def test_opened_benign_tools_allowed():
     # load_skill (covers load and action='reload') is not in this list —
     # it's in permission_guard.READ_ONLY_TOOLS and bypasses resolve_decision
     # entirely, never reaching the default-rule layer this test exercises.
-    for tool in ("memory", "reminder"):
+    for tool in ("memory",):
         assert _decide(tool, args={}) == "allow"
 
 

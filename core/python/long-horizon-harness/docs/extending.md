@@ -184,7 +184,7 @@ set_sandbox_provider(GkeSandboxProvider())
 All routers mount by default (A2A + `/lha/*` + `/feedback` + OAuth + `/scheduler/*`).
 To ship a subset, delete the `attach_*` calls you don't want in
 `horizon/fast_api_app.py`. Removing a route that injects credentials (`secrets`,
-`oauth`) or runs unattended (reminders/routines) also removes that surface; the runtime
+`oauth`) or runs unattended (routines) also removes that surface; the runtime
 guards (exfil, permission, per-user isolation) are unaffected. See
 [`security-model.md`](security-model.md).
 

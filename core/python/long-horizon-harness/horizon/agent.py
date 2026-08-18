@@ -72,7 +72,6 @@ from horizon.models import (
 )
 from horizon.models.selector import resolve_model_name
 from horizon.routines.tools import routine
-from horizon.scheduler.tools import reminder
 from horizon.subagents.descriptions import subagent_description_callback
 from horizon.subagents.subagent import subagent
 from horizon.subagents.web_research import web_research_agent
@@ -213,7 +212,6 @@ def _build_app_object() -> App:
         # load_skill covers load/reload (reload_tool folded into it); the
         # /reload slash command still calls horizon.commands.reload directly.
         _SKILL_TOOLSET,
-        reminder,
         routine,
         clarify,
         AgentTool(agent=web_research_agent),

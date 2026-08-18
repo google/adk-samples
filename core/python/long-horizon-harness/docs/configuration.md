@@ -19,7 +19,7 @@ the per-layer security model in [`security-model.md`](security-model.md).
 ## Routes
 
 The served app (`horizon.fast_api_app:app`) mounts every router: A2A + `/lha/*`
-(sessions, state, tasks, memories, uploads, sandbox, processes, secrets, reminders, routines),
+(sessions, state, tasks, memories, uploads, sandbox, processes, secrets, routines),
 `/feedback`, the OAuth callbacks, and the `/scheduler/*` endpoints. To ship a subset,
 delete the `attach_*` calls you don't want in `horizon/fast_api_app.py`. What each
 route exposes — and the credentials the `secrets`/`oauth` routes inject — is in
@@ -116,7 +116,7 @@ longer rebuilt per session.
 | Var | Default | Notes |
 |---|---|---|
 | `LHA_ROUTINE_STORE` | `memory` | `memory` (not durable) or `postgres` (needs `LHA_REMINDER_DB_URL`; `lha[scheduler]`). |
-| `LHA_REMINDER_DB_URL` | — | Postgres URL shared by reminders + routines + resilient sessions. |
+| `LHA_REMINDER_DB_URL` | — | Postgres URL for routines + resilient sessions. Name is historical (predates the reminder capability's removal), kept as-is. |
 | `LHA_SCHEDULER_SA` | — | Service account whose OIDC token `/scheduler/*` accepts. Unset ⇒ endpoints reject. |
 | `LHA_SCHEDULER_AUDIENCE` | — | Expected `aud` on that token. Unset ⇒ endpoints reject. |
 | `LHA_SCHEDULER_AUTH_DISABLED` | _(off)_ | Skips scheduler token verification. Local testing only. |
@@ -161,7 +161,7 @@ deps are optional extras in `pyproject.toml`; the dev/test env pulls them all ba
 
 | Extra | Pulls | Needed for |
 |---|---|---|
-| `lha[postgres]` | `asyncpg`, `yoyo-migrations`, `bcrypt` | durable postgres stores (reminders, routines, resilient sessions) |
+| `lha[postgres]` | `asyncpg`, `yoyo-migrations`, `bcrypt` | durable postgres stores (routines, resilient sessions) |
 | `lha[scheduler]` | `lha[postgres]` | scheduler durability (`LHA_ROUTINE_STORE=postgres`) |
 | `lha[data]` | `pandas`, `matplotlib`, `seaborn` | in-sandbox data analysis (not imported by the harness) |
 | `lha[full]` / `lha[all]` | `postgres,scheduler,data` | the full deployed surface |
