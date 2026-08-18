@@ -36,12 +36,9 @@ from horizon.memory._content_safety import (
 from horizon.memory._writer import entry_exists, write_memory_event
 from horizon.telemetry.ui import record_memory_write
 
-# recall_past_sessions_entries is imported lazily inside _search_past_sessions,
-# not at module level: horizon.tools is a package whose __init__ imports
-# file_ops -> models -> context -> summarizer -> flush_fork ->
-# add_memory_tool.memory, so a top-level import here of anything under
-# horizon.tools creates a circular import while this module is still
-# initializing (memory() is defined after where this import would run).
+# recall_past_sessions_entries is imported lazily inside _search_past_sessions:
+# horizon.tools's __init__ import chain reaches add_memory_tool.memory, so a
+# top-level import of anything under horizon.tools here would be circular.
 
 Scope = Literal["agent", "user"]
 _VALID_SCOPES: tuple[str, ...] = ("agent", "user")

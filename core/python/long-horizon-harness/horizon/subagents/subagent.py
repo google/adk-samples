@@ -12,15 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Single ``subagent`` tool, merging the former ``delegate`` (blocking) and
-``agent`` (fire-and-forget spawn/status/result/wait/cancel/list) tools.
-
-A thin dispatcher over the two original, still-internal callables:
-``delegate()`` (``horizon/subagents/delegate.py``) and ``agent()``
-(``horizon/subagents/spawn.py``) keep their full bodies unchanged, including
-the child driver, the resurfacing bubble budget, and the background task
-registry. Nothing about how a child actually runs moves here — this module
-only decides which of the two existing entry points a call reaches.
+"""Single ``subagent`` tool: a thin dispatcher over two still-internal
+callables, blocking ``delegate()`` (``horizon/subagents/delegate.py``) and
+fire-and-forget ``agent()`` (``horizon/subagents/spawn.py``). Neither's body,
+including the child driver and the background task registry, moves here;
+this module only decides which entry point a call reaches.
 """
 
 from __future__ import annotations

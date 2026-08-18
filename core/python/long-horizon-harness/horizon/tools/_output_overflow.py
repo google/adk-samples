@@ -176,3 +176,14 @@ async def overflow_to_file(
     return OverflowResult(
         preview=preview, pointer=pointer, path=str(path), truncated=truncated
     )
+
+
+async def emit_stream(
+    text: str, *, stream: str
+) -> tuple[str, bool, str | None]:
+    """Return ``(payload, truncated, overflow_path)`` for one output stream."""
+    _, truncated = make_preview(text)
+    if not truncated:
+        return text, False, None
+    result = await overflow_to_file(text, stream=stream)
+    return f"{result.preview}\n\n{result.pointer}", True, result.path

@@ -12,19 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Skills-surface cuts C and E (cut A lives in test_subagent_descriptions.py,
-cut B in test_skill_preamble.py, cut F already verified by test_static_instruction.py
-having no duplicate identity sentence in the golden file).
+"""Skills-surface cuts C and E (cut A: test_subagent_descriptions.py; cut B:
+test_skill_preamble.py; cut F: test_static_instruction.py's golden file).
 
 Cut C: every builtin skill's frontmatter description is capped at 200 chars.
 
 Cut E: ``load_skill`` merges ADK's ``LoadSkillTool`` and
-``LoadSkillResourceTool``. ``skill_name`` (ADK's own parameter name, already
-used by horizon.memory.review_prompts before this task) is kept; ``resource``
-is added. ``run_skill_script`` has no successor tool. Each behavior this
-merge must reproduce gets its own test, per the plan: the two behaviors
-below would silently vanish behind an "only the happy path" implementation
-with every OTHER test in this file still green.
+``LoadSkillResourceTool`` (``skill_name`` kept, ``resource`` added;
+``run_skill_script`` has no successor). Each reproduced behavior gets its
+own test, so one could vanish behind an "only the happy path"
+implementation with every other test in this file still green.
 """
 
 from __future__ import annotations

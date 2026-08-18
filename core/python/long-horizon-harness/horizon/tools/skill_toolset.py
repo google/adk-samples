@@ -251,13 +251,12 @@ class HorizonSkillToolset(SkillToolset):
     async def process_llm_request(
         self, *, tool_context: Any, llm_request: Any
     ) -> None:
-        # system_instruction is a shared accumulator: by the time this runs
-        # in production, it already holds Agent.static_instruction (~6.9 KB)
-        # plus the project-context tier. Operate only on what THIS call
-        # appends (the delta), never on the accumulated whole — splitting
-        # the full string on "<available_skills>" and replacing the head
-        # would wipe everything appended before this call, with a unit test
-        # starting from a fresh LlmRequest() staying green throughout.
+        # system_instruction is a shared accumulator already holding
+        # static_instruction plus the project-context tier by the time this
+        # runs; operate only on the delta THIS call appends, never the
+        # accumulated whole, or a naive split-and-replace wipes everything
+        # appended earlier (invisible to a test starting from a fresh
+        # LlmRequest()).
         before = llm_request.config.system_instruction or ""
         await super().process_llm_request(
             tool_context=tool_context, llm_request=llm_request

@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Regression tests for the two dead-gate bugs Task 6 fixed, plus the
-has_code_executor threading bug the v1 draft of this plan had.
+"""Regression tests for two dead-gate bugs plus a has_code_executor
+threading bug, each caught by review.
 
-Broader per-block presence/absence coverage (memory, skills, session
-search, acting/safety/style, code execution) lives in
-``test_system_prompt.py`` — this file only pins the specific defects a
-reviewer found, so a regression on any of them fails with an unambiguous
-name instead of a generic "guidance absent" assertion.
+Broader per-block presence/absence coverage lives in
+``test_system_prompt.py``; this file only pins the specific defects, so a
+regression fails with an unambiguous name instead of a generic
+"guidance absent" assertion.
 """
 
 from __future__ import annotations

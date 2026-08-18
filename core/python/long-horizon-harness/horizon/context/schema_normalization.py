@@ -14,20 +14,16 @@
 
 """Strip source indentation from tool descriptions before they ship.
 
-ADK's non-pydantic declaration path (the one horizon selects with
-ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL, because it emits ~2.8k fewer chars
-of schema artifacts) passes ``func.__doc__`` through verbatim, including
-the four-space source indentation on every continuation line. That is
-~470 chars of leading whitespace shipped on every turn across 16 tools.
-
-Tool-agnostic on purpose: it normalizes whatever declarations are in the
-request, including tools ADK itself contributes.
+ADK's non-pydantic declaration path (selected via
+ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL for a smaller schema) passes
+``func.__doc__`` through verbatim, four-space source indentation included.
+Tool-agnostic on purpose, so it also normalizes declarations ADK itself
+contributes.
 """
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable
 
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.models import LlmRequest, LlmResponse
@@ -48,24 +44,15 @@ def normalize_tool_descriptions(llm_request: LlmRequest) -> int:
     return saved
 
 
-def make_schema_normalization_callback() -> Callable[
-    [CallbackContext, LlmRequest], Awaitable[LlmResponse | None]
-]:
-    async def _callback(
-        callback_context: CallbackContext,
-        llm_request: LlmRequest,
-    ) -> LlmResponse | None:
-        normalize_tool_descriptions(llm_request)
-        return None
-
-    return _callback
-
-
-normalize_tool_schemas_callback = make_schema_normalization_callback()
+async def normalize_tool_schemas_callback(
+    callback_context: CallbackContext,
+    llm_request: LlmRequest,
+) -> LlmResponse | None:
+    normalize_tool_descriptions(llm_request)
+    return None
 
 
 __all__ = [
-    "make_schema_normalization_callback",
     "normalize_tool_descriptions",
     "normalize_tool_schemas_callback",
 ]

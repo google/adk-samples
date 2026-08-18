@@ -29,12 +29,7 @@ from horizon.environment_context import active_environment
 
 
 async def open_handle(command: str, cwd: Path) -> Any:
-    """Spawn a background-process handle on the active environment.
-
-    Returns a ``LocalProcessHandle`` on the local backend, a
-    ``SandboxProcessHandle`` on the sandbox backend. Both satisfy the
-    ``ProcessHandle`` surface used by ``process.py`` and the registry.
-    """
+    """Spawn a background-process handle on the active environment."""
     from horizon.secrets import secret_env
 
     env = active_environment()

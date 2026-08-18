@@ -167,23 +167,11 @@ def _resolve_root_model(model: str | BaseLlm | None) -> BaseLlm:
 
 
 def _static_instruction_for(tools: list, has_code_executor: bool) -> str:
-    # Built once here, at App-build time, since the tool list and the code
-    # executor are both fixed by then — see build_static_instruction's
-    # docstring for the three inputs this freezes. model_name uses the same
-    # env/default precedence select_model_callback falls back to
-    # (resolve_model_name(state=None) skips the per-session `/model`
-    # override, which cannot exist yet at import time), so the enforcement
-    # gate matches the model a fresh session actually runs on.
-    #
-    # A BaseToolset (e.g. _SKILL_TOOLSET) has no .name/__name__ of its own —
-    # it only expands into named tools async, via canonical_tools(), which
-    # can't run yet at this synchronous App-build step. Reading its already-
-    # built ._tools (the same private attribute skill_loader.py/
-    # skill_reload.py already reach into) is what lets a gate keyed on a
-    # skill tool's name (e.g. SKILLS_GUIDANCE on names.LOAD_SKILL) actually
-    # fire in the real deployed prompt instead of only in tests that pass
-    # the name explicitly. Without this, the toolset contributed "" to
-    # tool_names and every such gate was silently dead in production.
+    # Built once here, at App-build time: the tool list and code executor are
+    # both fixed by then (see build_static_instruction's docstring). A
+    # BaseToolset (e.g. _SKILL_TOOLSET) has no .name of its own, so its
+    # already-built ._tools (same private attribute skill_loader.py reaches
+    # into) must be read for a name-keyed gate like SKILLS_GUIDANCE to fire.
     tool_names: list[str] = []
     for tool in tools:
         name = getattr(tool, "name", None) or getattr(tool, "__name__", "")
@@ -196,6 +184,9 @@ def _static_instruction_for(tools: list, has_code_executor: bool) -> str:
                 tool_names.append(inner_name)
     return build_static_instruction(
         tool_names=tool_names,
+        # state=None: no session exists yet at import time, so this can't
+        # honor a per-session /model override; matches select_model_callback's
+        # own fallback, so the gate matches what a fresh session runs on.
         model_name=resolve_model_name(None),
         has_code_executor=has_code_executor,
     )

@@ -43,7 +43,7 @@ This sample shows how to build a long-horizon harness on ADK with capabilities l
 
 - **Resumability + compaction** — sessions resume cleanly; `HorizonSummarizer` compresses old turns so context stays focused on what's current.
 - **Guardrails** — iteration-budget, no-progress, and repeated-failure halts share one `halt_reason` and reset together at the turn boundary.
-- **Self-reporting** — the agent files structured reports to maintainers (HITL-gated), and users can send feedback.
+- **Feedback capture** — users send structured feedback from the UI, persisted through `POST /feedback`.
 
 ## The stack
 

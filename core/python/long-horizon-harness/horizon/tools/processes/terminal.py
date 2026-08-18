@@ -21,10 +21,7 @@ the same and nothing is lost.
 A command still running past ``timeout_s`` auto-promotes to a background
 session (partial output preserved) rather than being killed — this is now
 fixed internal behavior, not a model-facing choice; ``on_timeout='kill'``
-had no other caller and is gone. Internal Python code that wants pure
-kill-on-timeout semantics still has it via ``horizon.tools.terminal_exec.terminal``,
-the retained foreground executor — the same retained-helper pattern the
-merged read tool's text branch uses internally.
+had no other caller and is gone.
 
 Per-operation permission gating is handled centrally by ``permission_guard``
 in the ``before_tool_callback`` chain, so this tool just runs the command.
@@ -36,9 +33,8 @@ from typing import Any
 
 from horizon.environment.registry import resolve_registry
 from horizon.environment_context import active_environment
-from horizon.tools._output_overflow import make_preview
+from horizon.tools._output_overflow import emit_stream, make_preview
 from horizon.tools.processes._spawn import open_handle
-from horizon.tools.terminal_exec import _emit_stream
 
 
 async def bash(
@@ -63,7 +59,7 @@ async def bash(
         # No promotion needed; drop the handle without registering. Spill
         # oversized output to lha/tool-output/ (same recovery path as the
         # foreground tool) so the full text isn't lost behind the preview.
-        output, truncated, overflow_path = await _emit_stream(
+        output, truncated, overflow_path = await emit_stream(
             data.decode("utf-8", errors="replace"), stream="stdout"
         )
         result: dict[str, Any] = {

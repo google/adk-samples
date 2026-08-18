@@ -277,25 +277,6 @@ async def test_credential_paths_are_denied(
     assert ctx.actions.artifact_delta == {}
 
 
-# `test_non_regular_file_is_rejected_media_path` was removed rather than
-# repointed at an in-workspace target: it used to pass /dev/urandom, an
-# absolute path outside the workspace, so path_under_root's trust-boundary
-# check rejected it long before the non-regular-file guard ("Path.read_bytes
-# on a FIFO or /dev/urandom never returns") it claimed to test ever ran.
-# Verified by mutation-testing the actual guard (`if os.path.lexists(target)
-# and not os.path.isfile(target):` in read.py): an in-workspace DIRECTORY
-# still gets rejected with the guard deleted (`active_environment().read_file`
-# raises IsADirectoryError, an OSError, already caught generically), so a
-# directory-based replacement would have been a second false witness under a
-# new disguise — not what the guard exists for. A character device can't be
-# created without root (os.mknod raises PermissionError as a non-root user on
-# both Linux and macOS). The FIFO case IS the guard's real purpose, and
-# test_fifo_is_rejected_on_media_path below is proven meaningful by the same
-# mutation test: with the guard removed, that test hangs (FIFO reads block
-# forever with no writer) instead of failing fast — so it carries this
-# guard's coverage alone, correctly.
-
-
 @pytest.mark.skipif(
     sys.platform == "win32", reason="POSIX FIFO not available on Windows"
 )

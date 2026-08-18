@@ -15,28 +15,18 @@
 """Core tools for the Horizon agent.
 
 Docstring policy for every tool registered on the root agent (enforced by
-tests/unit/test_prompt_budget.py): simple tool description <= 400 chars;
-action-dispatch tool (process, subagent, artifact, routine) <= 900. Line 1
-states what the tool does; document an arg only when its name and type
-don't already carry the meaning. No "Use when" essays, no worked examples,
-no comparisons to other tools — a cross-tool choice (this tool vs that one)
-belongs in the system prompt's TOOL_ROUTING_GUIDANCE
+tests/unit/test_prompt_budget.py): line 1 states what the tool does; document
+an arg only when its name and type don't already carry the meaning. No
+"Use when" essays, no worked examples, no comparisons to other tools — a
+cross-tool choice belongs in TOOL_ROUTING_GUIDANCE
 (horizon/conversation/system_prompt.py), not in either tool's description.
 """
 
 from horizon.tools.file_ops import edit, search_files, write
 
-# `bash` / `process` (the registered tools) live in `horizon.tools.processes`;
-# the foreground executor they wrap is `horizon.tools.terminal_exec` (kept
-# under its pre-rename name there — it's an internal helper, not a
-# registered tool, and dozens of tests import it directly by that name).
-# Neither `bash` nor `process` is re-exported here — import from those
-# modules directly.
-#
-# `read_file` is no longer a registered tool (merged into `ReadTool`,
-# horizon/tools/read.py) but stays a module-level helper in `file_ops.py` for
-# ReadTool's text branch and the existing file_ops test suite — import it from
-# `horizon.tools.file_ops` directly, not from this package.
+# bash/process live in horizon.tools.processes; import from there directly.
+# read_file is a module-level helper for ReadTool's text branch, not a
+# registered tool; import it from horizon.tools.file_ops.
 
 __all__ = [
     "edit",

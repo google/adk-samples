@@ -14,23 +14,15 @@
 
 """Memory preload that does not defeat the context cache.
 
-ADK's stock ``PreloadMemoryTool`` appends its ``<PAST_CONVERSATIONS>`` block
-to ``system_instruction``. That block is rebuilt every turn from a similarity
-search keyed on the current user text, so it is almost never byte-identical
-twice, and ``GeminiContextCacheManager._generate_cache_fingerprint`` hashes
-the whole ``system_instruction``. The result is that the cache never validates
-for any user who has memories, and the entire static prefix is re-billed at
-full price every turn.
+ADK's stock ``PreloadMemoryTool`` appends ``<PAST_CONVERSATIONS>`` to
+``system_instruction``, rebuilt every turn from a similarity search, so it's
+rarely byte-identical twice; since the cache fingerprint hashes the whole
+``system_instruction``, the cache never validates for any user with memories.
+This subclass writes the same text into the trailing ``role="user"``
+contents instead, the region ADK's own cache-window calculation excludes.
 
-This subclass writes the same text into the trailing ``role="user"`` contents
-instead, which is exactly the region
-``GeminiContextCacheManager._find_count_of_contents_to_cache`` excludes from
-the cached prefix. Same information to the model, same position relative to
-the user's turn, without invalidating the cache.
-
-It also caps the block. ``BaseMemoryService.search_memory`` takes no ``top_k``
-and ``VertexAiMemoryBankService`` iterates the full pager, so the block
-otherwise grows without bound as a user accumulates memories.
+It also caps the block: ``BaseMemoryService.search_memory`` takes no
+``top_k``, so it otherwise grows without bound as memories accumulate.
 """
 
 from __future__ import annotations
@@ -132,8 +124,4 @@ class HorizonPreloadMemoryTool(PreloadMemoryTool):
         )
 
 
-__all__ = [
-    "DEFAULT_MAX_CHARS",
-    "DEFAULT_MAX_MEMORIES",
-    "HorizonPreloadMemoryTool",
-]
+__all__ = ["HorizonPreloadMemoryTool"]

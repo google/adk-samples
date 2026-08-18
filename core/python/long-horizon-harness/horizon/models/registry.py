@@ -51,13 +51,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Transient Vertex 429 RESOURCE_EXHAUSTED (and 408/5xx) are retried by the
-# google-genai client when retry_options is set; http_status_codes left unset
-# inherits the SDK's default transient set (408, 429, 500, 502, 503, 504).
-# attempts=6 (5 retries, ~30s of exponential backoff) rides out a transient
-# per-minute quota spike — far more robust than the SDK default of 5 with the
-# ADK docs' attempts=2 example. Sustained exhaustion still needs a quota bump.
-# Reused by the Gemini subagents so robust retry is uniform across every call.
+# http_status_codes left unset inherits the SDK's default transient set
+# (408, 429, 500, 502, 503, 504). attempts=6 (~30s of exponential backoff)
+# rides out a transient per-minute quota spike; sustained exhaustion still
+# needs a quota bump. Reused by the Gemini subagents so retry is uniform.
 ROBUST_RETRY_OPTIONS = types.HttpRetryOptions(
     attempts=6,
     initial_delay=1.0,

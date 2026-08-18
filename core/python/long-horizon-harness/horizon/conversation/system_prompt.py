@@ -170,12 +170,9 @@ SKILLS_GUIDANCE = (
 
 # ---------------------------------------------------------------------------
 # Behavioral guidance, gated on _should_inject_tool_use_enforcement (model
-# family + LHA_TOOL_USE_ENFORCEMENT). Three blocks replace the nine that
-# used to duplicate rationale, worked examples, and "what does not count"
-# hedges the model does not need repeated to it; SUBAGENT_USAGE_GUIDANCE's
-# briefing rules moved into horizon/subagents/subagent.py's docstring
-# instead of becoming a fourth block, since they only matter at the moment
-# of using that one tool.
+# family + LHA_TOOL_USE_ENFORCEMENT). subagent-specific briefing rules live
+# in horizon/subagents/subagent.py's own docstring instead of here, since
+# they only matter at the moment of using that tool.
 # ---------------------------------------------------------------------------
 
 ACTING_GUIDANCE = (

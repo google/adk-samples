@@ -145,7 +145,7 @@ defaults do before any overlay or grant:
 |---|---|---|
 | Sandbox-FS writes | `write`, `edit`, `artifact` | **allow** |
 | Shell | `bash` / `process` | **allow** — scary ops gated in `_shell_decision` (below) |
-| Opened benign tools | `memory`, `reminder`, `reload` | **allow** |
+| Opened benign tools | `memory`, `reminder` | **allow** |
 | Read-only / self-confirming / subagent | `read`, `search_files`, `web_research`, `clarify`, `subagent` | pass (no prompt) |
 | Everything else | incl. `routine` (schedules unattended runs) | **ask** (via the `*` catch-all) |
 

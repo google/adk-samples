@@ -218,14 +218,11 @@ async def _grant(args: str, callback_context: Any) -> str:
             lines.append(f"  [{i}] {g.get('tool_name', '?')} {sig}")
         return "\n".join(lines)
 
-    # A shell command can reach the guard chain as bash(command=...),
-    # process(action='spawn', command=...) (bash's former background=True),
-    # or process(action='write', data=...). All three carry the same
-    # command text under a different tool_name/key, and grant_matches
-    # requires an exact (tool_name, signature) match — so one grant against
-    # names.BASH alone leaves the other two shapes still blocked even
-    # though the guard chain re-checks all three against the same policy
-    # rules. Record one grant per shape.
+    # A shell command reaches the guard chain as bash(command=...),
+    # process(action='spawn', command=...), or process(action='write',
+    # data=...). grant_matches requires an exact (tool_name, signature)
+    # match, so a grant against names.BASH alone leaves the other two
+    # shapes blocked; record one grant per shape.
     result = policy_grant(
         action="grant",
         tool_name=names.BASH,

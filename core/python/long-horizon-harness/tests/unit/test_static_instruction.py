@@ -14,11 +14,8 @@
 
 """Golden snapshot of the assembled ``Agent.static_instruction``.
 
-Every later prose edit shows up here as a reviewable diff instead of a
-keyword-coverage test that would pass on almost any English paragraph (the
-defect the plan's v1 gating tests had: they asserted against
-``build_stable_tier`` alone, which never contained the content they were
-checking for, so they could not fail).
+Every later prose edit shows up here as a reviewable diff, unlike a
+keyword-coverage test that would pass on almost any English paragraph.
 
 To intentionally update the golden file after a real prose change:
 
@@ -34,7 +31,7 @@ To intentionally update the golden file after a real prose change:
     "
 
 then read the diff line by line before committing it — that diff IS the
-quality review of the rewrite (Task 7, Step 6).
+quality review of the rewrite.
 """
 
 from __future__ import annotations
@@ -65,11 +62,11 @@ def test_static_instruction_matches_golden():
 
 def test_static_instruction_is_a_pure_function():
     """Same inputs -> same output, called twice, no caching required."""
-    kwargs = dict(
-        tool_names=["read", "bash", "memory"],
-        model_name="gemini-3.6-flash",
-        has_code_executor=False,
-    )
+    kwargs = {
+        "tool_names": ["read", "bash", "memory"],
+        "model_name": "gemini-3.6-flash",
+        "has_code_executor": False,
+    }
     assert build_static_instruction(**kwargs) == build_static_instruction(
         **kwargs
     )

@@ -110,7 +110,7 @@ these.
   (`horizon/memory/review_prompts.py` — memory-only or combined memory+skill,
   picked by whether the session touched skills). Toolset is whitelisted to
   `memory` + skill read/write (`write`/`edit` restricted to
-  `.agents/skills/<name>/…`) + `reload`. Recursion guard is structural: the fork's
+  `.agents/skills/<name>/…`) + `load_skill`. Recursion guard is structural: the fork's
   agent has no `after_agent_callback` chain.
 
 - **Flush fork** (`horizon/memory/flush_fork.py`, gated by
