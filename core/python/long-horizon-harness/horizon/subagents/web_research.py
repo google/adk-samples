@@ -19,7 +19,7 @@ non-search function tools::
 
     "Multiple tools are supported only when they are all search tools."
 
-The root agent ships ~10 function tools (file_ops, terminal,
+The root agent ships ~10 function tools (file_ops, bash,
 memory, ...), so ``google_search`` cannot live alongside them. The
 documented escape hatch is the sub-agent split: a dedicated agent whose
 ``tools=[]`` is JUST the search tool, surfaced to the root agent through
@@ -27,7 +27,7 @@ documented escape hatch is the sub-agent split: a dedicated agent whose
 the sub-agent makes a search-only API call internally.
 
 The surfaced tool name is ``web_research`` — naming it ``search_agent``
-made the model reach for ``terminal``-based scraping instead, because
+made the model reach for ``bash``-based scraping instead, because
 "search" reads as filesystem/memory search.
 """
 

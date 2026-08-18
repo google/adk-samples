@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""add_memory tool: write durable facts into ADK Memory Bank.
+"""memory tool: write durable facts into ADK Memory Bank, or search past
+sessions (action='search', folded in from the former standalone
+session_search tool).
 
-Supports an "agent" vs "user" scope split; ADK Memory Bank owns persistence
-(there is no on-disk store).
+Supports an "agent" vs "user" scope split for writes; ADK Memory Bank owns
+persistence (there is no on-disk store).
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from typing import Any, Literal
 from google.adk.memory import BaseMemoryService
 from google.adk.tools.tool_context import ToolContext
 
+from horizon.infrastructure.constants import APP_NAME
 from horizon.memory._content_safety import (
     MEMORY_CHAR_LIMIT,
     USER_CHAR_LIMIT,
@@ -32,6 +35,13 @@ from horizon.memory._content_safety import (
 )
 from horizon.memory._writer import entry_exists, write_memory_event
 from horizon.telemetry.ui import record_memory_write
+
+# recall_past_sessions_entries is imported lazily inside _search_past_sessions,
+# not at module level: horizon.tools is a package whose __init__ imports
+# file_ops -> models -> context -> summarizer -> flush_fork ->
+# add_memory_tool.memory, so a top-level import here of anything under
+# horizon.tools creates a circular import while this module is still
+# initializing (memory() is defined after where this import would run).
 
 Scope = Literal["agent", "user"]
 _VALID_SCOPES: tuple[str, ...] = ("agent", "user")
@@ -61,7 +71,7 @@ async def add_memory_entry(
 
     Pure helper: takes the service + identifiers directly so it can be unit-
     tested without a Runner / InvocationContext. The LLM-callable surface is
-    `add_memory` below, which pulls the same identifiers off ToolContext.
+    `memory` below, which pulls the same identifiers off ToolContext.
     """
     if scope not in _VALID_SCOPES:
         return {
@@ -117,29 +127,77 @@ async def add_memory_entry(
     return {"success": True, "scope": scope, "message": "Entry added."}
 
 
-async def add_memory(
-    content: str,
-    scope: str = "agent",
-    tool_context: ToolContext | None = None,
+async def _search_past_sessions(
+    *,
+    session_id: str | None,
+    limit: int | None,
+    tool_context: ToolContext | None,
 ) -> dict[str, Any]:
-    """Save a durable fact across sessions.
+    from horizon.tools.past_sessions import recall_past_sessions_entries
 
-    Use proactively when you learn something that will still matter next
-    session: user preferences, stable environment facts, project conventions,
-    or corrections the user explicitly asks you to remember. Skip task
-    progress, completion logs, or anything trivially re-derivable.
-
-    Args:
-        content: The fact to remember. Keep it compact and self-contained.
-        scope: "user" for facts about who the user is (name, role,
-            preferences, communication style); "agent" for your own notes
-            (environment, conventions, tool quirks, lessons). Defaults to
-            "agent".
-    """
     if tool_context is None:
         return {
             "success": False,
-            "error": "add_memory must be called via the agent runtime.",
+            "error": "memory must be called via the agent runtime.",
+        }
+
+    invocation_context = tool_context._invocation_context
+    session_service = invocation_context.session_service
+    if session_service is None:
+        return {
+            "success": False,
+            "error": "Session service is not configured for this runtime.",
+        }
+
+    return await recall_past_sessions_entries(
+        session_service=session_service,
+        app_name=invocation_context.app_name or APP_NAME,
+        user_id=invocation_context.user_id,
+        current_session_id=invocation_context.session.id,
+        session_id=session_id,
+        limit=limit,
+    )
+
+
+async def memory(
+    action: str = "add",
+    content: str | None = None,
+    scope: str = "agent",
+    session_id: str | None = None,
+    limit: int | None = None,
+    tool_context: ToolContext | None = None,
+) -> dict[str, Any]:
+    """Save a durable fact, or search your other chat sessions.
+
+    Args:
+        action: "add" (default) or "search".
+        content: For `add` — the fact, compact and self-contained.
+        scope: For `add` — "user" (about the user) or "agent" (your own
+            notes). Default "agent".
+        session_id: For `search` — omit to list recent sessions, or pass
+            one from a prior list call to read its turns.
+        limit: For `search` — cap on results (list: default 20, max 50;
+            read: default 100, max 200).
+    """
+    if action == "search":
+        return await _search_past_sessions(
+            session_id=session_id, limit=limit, tool_context=tool_context
+        )
+    if action != "add":
+        return {
+            "success": False,
+            "error": f"Unknown action {action!r}; use 'add' or 'search'.",
+        }
+
+    if tool_context is None:
+        return {
+            "success": False,
+            "error": "memory must be called via the agent runtime.",
+        }
+    if not content:
+        return {
+            "success": False,
+            "error": "content is required for action='add'.",
         }
 
     invocation_context = tool_context._invocation_context

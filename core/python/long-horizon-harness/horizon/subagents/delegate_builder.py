@@ -42,25 +42,26 @@ from horizon.subagents.toolsets import (
     resolve_tools_by_name,
     resolve_toolsets,
 )
+from horizon.tools import names
 from horizon.tools.skill_loader import builtin_skills_root, walk_skill_dirs
 from horizon.tools.skill_reload import host_mirror_dir
 
 # Names of callables that must NEVER appear on a child agent.
-# - delegate: no recursion (by construction).
+# - subagent: no recursion (by construction).
 # - clarify:  no user-facing prompts from a child (no UI channel).
-# - add_memory: no writes to the parent's curated memory bank.
-# - reload + Load*: children may not mutate the parent's skill or
-#   extension registries. Requested skill bodies are inlined into the
+# - memory: no writes to the parent's curated memory bank (also covers the
+#   former session_search's read action — conservative, since it was never
+#   reachable via a toolset bundle anyway).
+# - load_skill: children may not mutate the parent's skill or extension
+#   registries (covers both reading a skill and action='reload', the former
+#   standalone reload tool). Requested skill bodies are inlined into the
 #   child's prompt below, so the child never needs the catalog tools.
 _BLOCKED_TOOL_NAMES = frozenset(
     {
-        "delegate",
-        "clarify",
-        "add_memory",
-        "load_skill",
-        "load_skill_resource",
-        "run_skill_script",
-        "reload",
+        names.SUBAGENT,
+        names.CLARIFY,
+        names.MEMORY,
+        names.LOAD_SKILL,
     }
 )
 

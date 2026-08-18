@@ -76,7 +76,7 @@ async def terminal(
     status, ls, grep, running tests, etc. Output over ~50 KB or ~800 lines
     per stream is spilled to a file under lha/tool-output/ in your workspace
     and the result carries a preview plus a pointer telling you how to read
-    the rest (view_file with offset/limit, grep, or a subagent). The command
+    the rest (read with offset/limit, grep, or a subagent). The command
     runs with a 30-second default timeout; raise timeout_s for legitimately
     slow commands.
 

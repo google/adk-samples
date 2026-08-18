@@ -22,7 +22,7 @@ Adding a model is one entry in ``_MODELS``. Backends build lazily on first
 access, so ``import horizon`` needs no GCP credentials and the ADC project probe
 only runs when a backend that needs it is built. A model with unusual media
 limits or content quirks sets its own ``ModelCapabilities`` — the dispatcher and
-``view_file`` stay backend-agnostic.
+the ``read`` tool's media path stay backend-agnostic.
 """
 
 from __future__ import annotations
@@ -129,9 +129,9 @@ class ModelDescriptor:
 
 # Single source of truth per model. Add a backend = add one entry; capabilities
 # carry the media limits + optional sanitize hook, so neither the dispatcher nor
-# view_file names a concrete backend class. Input-token limits are conservative
-# published context windows (under-estimating only fires compaction slightly
-# earlier, which is safe).
+# the read tool's media path names a concrete backend class. Input-token limits
+# are conservative published context windows (under-estimating only fires
+# compaction slightly earlier, which is safe).
 _MODELS: dict[str, ModelDescriptor] = {
     "gemini-3.6-flash": ModelDescriptor(
         build=lambda: _build_gemini("gemini-3.6-flash"),

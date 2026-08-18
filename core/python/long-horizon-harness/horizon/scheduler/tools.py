@@ -194,18 +194,14 @@ async def reminder(
     id: str | None = None,
     tool_context: Any,
 ) -> dict[str, Any]:
-    """Schedule, list, or cancel out-of-band reminders. ``action`` picks
-    the operation:
+    """Schedule, list, or cancel out-of-band reminders.
 
-    - ``schedule``: schedule a reminder for the caller. Requires ``when``
-      (ISO 8601 like ``2026-12-25T09:00:00Z`` or natural language such as
-      ``tomorrow 9pm`` / ``in 1 hour``, resolved to UTC) and ``message``
-      (text delivered at fire time). Optional ``recurrence`` is one of
-      ``daily``, ``weekly``, ``hourly``; omit for one-shot.
-    - ``list``: return the caller's pending reminders. No other args.
-    - ``cancel``: cancel one of the caller's reminders. Requires ``id``
-      (from ``schedule`` or ``list``). A reminder owned by another user
-      cannot be cancelled.
+    - `schedule`: requires `when` (ISO 8601 or natural language,
+      resolved to UTC) and `message`. Optional `recurrence`: `daily`,
+      `weekly`, `hourly` (omit for one-shot).
+    - `list`: the caller's pending reminders.
+    - `cancel`: requires `id` (from `schedule` or `list`); only the
+      owner can cancel.
     """
     if action == "schedule":
         if when is None:

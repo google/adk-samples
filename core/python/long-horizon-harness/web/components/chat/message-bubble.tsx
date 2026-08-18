@@ -1124,8 +1124,12 @@ function ToolRow({
 }) {
   const [open, setOpen] = useState(false);
   const isLoadSkill = name === "load_skill";
+  // The tool's real arg is skill_name, not name (final-review Fix 9) — see
+  // horizon/tools/skill_toolset.py's declared schema.
   const skillName =
-    isLoadSkill && typeof args?.name === "string" ? args.name : null;
+    isLoadSkill && typeof args?.skill_name === "string"
+      ? args.skill_name
+      : null;
   const richPreview = pickRichPreview(name, args);
   const preview = isLoadSkill
     ? (skillName ?? "skill")
@@ -1176,13 +1180,13 @@ function pickRichPreview(
   args: Record<string, unknown> | null,
 ): string | null {
   switch (name) {
-    case "patch":
+    case "edit":
       return patchPreview(args);
-    case "write_file":
+    case "write":
       return writeFilePreview(args);
-    case "read_file":
+    case "read":
       return readFilePreview(args);
-    case "terminal":
+    case "bash":
       return terminalPreview(args);
     default:
       return null;
@@ -1200,14 +1204,14 @@ function RichToolBody({
   result: unknown;
   hasResult: boolean;
 }) {
-  if (name === "patch") return <PatchView args={args} result={result} />;
-  if (name === "write_file") {
+  if (name === "edit") return <PatchView args={args} result={result} />;
+  if (name === "write") {
     return <WriteFileView args={args} result={result} />;
   }
-  if (name === "read_file") {
+  if (name === "read") {
     return <ReadFileView args={args} result={result} hasResult={hasResult} />;
   }
-  if (name === "terminal") {
+  if (name === "bash") {
     return <TerminalView args={args} result={result} hasResult={hasResult} />;
   }
   return (

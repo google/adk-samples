@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""File operations: read, write, patch, search.
+"""File operations: read, write, edit, search.
 
 active ``BaseEnvironment`` (``LocalEnvironment`` on the host,
 ``SandboxEnvironment`` for Agent Runtime sandboxes). Multi-hunk patch
@@ -24,11 +24,18 @@ from __future__ import annotations
 import mimetypes
 import os
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from horizon.environment_context import active_environment
 from horizon.models.media import sniff_image_or_pdf_mime
+from horizon.tools._output_overflow import (
+    TERMINAL_OUTPUT_LIMIT,
+    TERMINAL_OUTPUT_MAX_LINES,
+    make_preview,
+    overflow_to_file,
+)
 from horizon.tools._paths import path_under_root
 from horizon.tools._replacers import find_replacement
 from horizon.workspace_window import (
@@ -37,7 +44,9 @@ from horizon.workspace_window import (
     window_dirs,
 )
 
-_MAX_READ_CHARS = 200_000
+# Aliased to bash's cap, not an independent value: one uniform "no tool
+# result exceeds 50KB, the rest is spilled" contract across read and bash.
+_MAX_READ_CHARS = TERMINAL_OUTPUT_LIMIT
 MAX_LINE_LENGTH = 2000
 _LINE_TRUNC_SUFFIX = "... (line truncated)"
 _MAX_DIAGNOSTICS = 20
@@ -385,22 +394,36 @@ async def read_file(
     window = lines[start:end]
 
     body = _format_numbered_lines(window, start + 1, total_lines)
-    if len(body) > _MAX_READ_CHARS:
-        return {
-            "success": True,
-            "content": body[:_MAX_READ_CHARS],
-            "truncated": True,
-        }
-    return {"success": True, "content": body}
+    _, would_overflow = make_preview(
+        body, max_bytes=_MAX_READ_CHARS, max_lines=TERMINAL_OUTPUT_MAX_LINES
+    )
+    if not would_overflow:
+        return {"success": True, "content": body}
+
+    # Same contract as bash: spill the text, return a preview plus a
+    # pointer, instead of a bare slice that silently drops the tail. Only
+    # the requested page is spilled here (offset/limit already scope the
+    # file), so the pointer says "this page", not "full output".
+    overflow = await overflow_to_file(
+        body,
+        stream="read",
+        max_bytes=_MAX_READ_CHARS,
+        max_lines=TERMINAL_OUTPUT_MAX_LINES,
+        label="This page of output",
+    )
+    return {
+        "success": True,
+        "content": f"{overflow.preview}\n\n{overflow.pointer}",
+        "truncated": True,
+        "overflow_path": overflow.path,
+    }
 
 
-async def write_file(
+async def write(
     path: str, content: str, *, tool_context: Any | None = None
 ) -> dict[str, Any]:
     """Write content to path, creating parent directories as needed.
-
-    Relative paths resolve under your current workspace focus (see
-    `/workspace`); prefix with `/` to reach the whole workspace.
+    Paths: see routing.
     """
     target, err = _resolve_in_session_window(path, tool_context)
     if err is not None:
@@ -480,71 +503,80 @@ async def _post_edit_diagnostics(path: str) -> str | None:
     return "ruff diagnostics (informational — the edit was applied):\n" + body
 
 
-def _replace_range(
-    original: str,
-    start: int | None,
-    end: int | None,
-    expected: str,
-    new_string: str,
-) -> tuple[str, int, str | None]:
-    """Splice ``new_string`` over ``original[start:end]``.
+@dataclass(frozen=True)
+class _ResolvedEdit:
+    """One edits[] item, resolved to its exact span in the ORIGINAL content
+    (matches are computed against the file as read, never against a
+    progressively-updated copy — that is what makes "non-overlapping"
+    checkable before anything is applied)."""
 
-    Position identifies the span, so repeated content is not ambiguous the way
-    a search anchor is. ``expected`` is a guard, not a search key: the caller
-    computed these offsets against some version of the file, and if that
-    version is gone the offsets point somewhere arbitrary. Refusing beats
-    silently editing the wrong text.
+    start: int
+    end: int
+    new_text: str
+    index: int
 
-    Returns ``(updated, replacements, error)``; ``error`` non-None means the
-    file must be left untouched.
-    """
-    if start is None or end is None:
-        return original, 0, "start and end must be given together"
-    if start < 0 or end < start:
-        return original, 0, f"invalid range: start={start}, end={end}"
-    if end > len(original):
-        return (
-            original,
-            0,
-            f"range end={end} is past the end of the file ({len(original)} "
-            "characters) — re-read the file and retry",
+
+def _resolve_edits(
+    original: str, edits: list[Any]
+) -> tuple[list[_ResolvedEdit] | None, str | None]:
+    resolved: list[_ResolvedEdit] = []
+    for i, item in enumerate(edits):
+        if not isinstance(item, dict):
+            return (
+                None,
+                f"edits[{i}] must be an object with oldText and newText",
+            )
+        old_text = item.get("oldText")
+        new_text = item.get("newText")
+        if not isinstance(old_text, str) or not isinstance(new_text, str):
+            return None, f"edits[{i}] must have string oldText and newText"
+
+        resolution = find_replacement(original, old_text)
+        if resolution.error is not None:
+            return None, f"edits[{i}]: {resolution.error}"
+        assert resolution.search is not None
+
+        match_start = original.find(resolution.search)
+        resolved.append(
+            _ResolvedEdit(
+                start=match_start,
+                end=match_start + len(resolution.search),
+                new_text=new_text,
+                index=i,
+            )
         )
-    found = original[start:end]
-    if found != expected:
-        return (
-            original,
-            0,
-            "the text at that range has changed since those offsets were "
-            f"taken (expected {expected!r}, found {found!r}) — re-read the "
-            "file and retry",
-        )
-    return original[:start] + new_string + original[end:], 1, None
+
+    resolved.sort(key=lambda r: r.start)
+    for a, b in zip(resolved, resolved[1:]):
+        if b.start < a.end:
+            return None, (
+                f"edits[{a.index}] and edits[{b.index}] target overlapping or "
+                "adjacent regions — merge them into one edit"
+            )
+    return resolved, None
 
 
-async def patch(
+def _apply_resolved_edits(original: str, resolved: list[_ResolvedEdit]) -> str:
+    pieces: list[str] = []
+    cursor = 0
+    for r in resolved:
+        pieces.append(original[cursor : r.start])
+        pieces.append(r.new_text)
+        cursor = r.end
+    pieces.append(original[cursor:])
+    return "".join(pieces)
+
+
+async def edit(
     path: str,
-    old_string: str,
-    new_string: str,
+    edits: list[dict[str, str]],
     *,
-    replace_all: bool = False,
-    start: int | None = None,
-    end: int | None = None,
     tool_context: Any | None = None,
 ) -> dict[str, Any]:
-    """Replace old_string with new_string in path.
-
-    By default old_string must occur exactly once; pass replace_all=True to
-    swap every occurrence. The file is left untouched on any error. Relative
-    paths resolve under your current workspace focus (see `/workspace`);
-    prefix with `/` to reach the whole workspace.
-
-    Pass ``start`` and ``end`` (character offsets into the file) to target one
-    exact span instead of searching for it. Use this when you were given
-    offsets — e.g. text the user highlighted in the UI — since a span picked
-    by position stays unambiguous even when the same text occurs elsewhere in
-    the file. ``old_string`` is then the content you expect to find there: the
-    edit is refused if it doesn't match, so a file that shifted underneath
-    fails loudly instead of corrupting the wrong span.
+    """Apply one or more {oldText, newText} edits to path atomically —
+    untouched if any oldText isn't a unique match or two edits overlap.
+    Merge nearby changes into one edit rather than two overlapping ones.
+    Paths: see routing.
     """
     target, err = _resolve_in_session_window(path, tool_context)
     if err is not None:
@@ -553,6 +585,9 @@ async def patch(
 
     if _is_write_denied(str(target)):
         return _error(f"Write denied: {path} is on the protected paths list.")
+
+    if not edits:
+        return _error("edits must be a non-empty list of {oldText, newText}.")
 
     env = active_environment()
     try:
@@ -566,33 +601,12 @@ async def patch(
 
     original = raw.decode("utf-8", errors="replace")
 
-    if (start is not None or end is not None) and replace_all:
-        return _error(
-            "replace_all cannot be combined with start/end: a range names one "
-            "span, so there is nothing to repeat."
-        )
+    resolved, resolve_err = _resolve_edits(original, edits)
+    if resolve_err is not None:
+        return _error(f"{resolve_err} (file: {path})")
+    assert resolved is not None
 
-    if start is not None or end is not None:
-        updated, count, range_err = _replace_range(
-            original, start, end, old_string, new_string
-        )
-        if range_err is not None:
-            return _error(f"{range_err} (file: {path})")
-    else:
-        resolution = find_replacement(
-            original, old_string, replace_all=replace_all
-        )
-        if resolution.error is not None:
-            return _error(f"{resolution.error} (file: {path})")
-        assert resolution.search is not None
-
-        search = resolution.search
-        updated = (
-            original.replace(search, new_string)
-            if replace_all
-            else original.replace(search, new_string, 1)
-        )
-        count = resolution.count
+    updated = _apply_resolved_edits(original, resolved)
 
     try:
         await env.write_file(target, updated)
@@ -602,7 +616,7 @@ async def patch(
     result: dict[str, Any] = {
         "success": True,
         "path": str(target),
-        "replacements": count,
+        "replacements": len(resolved),
     }
     if str(target).endswith(".py"):
         diagnostics = await _post_edit_diagnostics(str(target))
@@ -620,16 +634,13 @@ async def search_files(
     scope: str = "window",
     tool_context: Any | None = None,
 ) -> dict[str, Any]:
-    """Search text files under your current workspace focus for `pattern`
-    (Python regex). Pass `scope="workspace"` (or `path="/"`) to search the
-    entire workspace across all projects.
+    """Search text files for `pattern` (regex); scope="workspace" searches
+    everywhere. Paths: see routing.
 
-    The first ``limit`` matches found (directory-walk order) are returned,
-    ordered by source-file mtime (most recent first) — on a large tree the
-    set is whichever matches the walk reached first, not a global top-N by
-    mtime. Implemented as a single ``env.execute`` call that runs an embedded
-    Python walker — same code path against ``LocalEnvironment`` and
-    ``SandboxEnvironment``."""
+    Returns the first `limit` matches in directory-walk order, sorted by
+    mtime (most recent first) — on a large tree this is a prefix of the
+    walk, not a global top-N.
+    """
     import json
 
     env_root = active_environment().working_dir.resolve()
