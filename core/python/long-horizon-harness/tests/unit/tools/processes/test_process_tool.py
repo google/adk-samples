@@ -248,6 +248,34 @@ class TestWriteAction:
         )
         assert "error" in result
 
+    async def test_write_oserror_returns_error_envelope(
+        self, context_factory
+    ) -> None:
+        from horizon.environment.registry import ProcessRegistry
+        from horizon.tools.processes.process import process
+
+        class _DeadPtyHandle:
+            session_id = "proc_dead_pty"
+            is_running = True
+
+            async def write(self, data: bytes) -> None:
+                raise OSError(5, "Input/output error")
+
+        ctx = context_factory()
+        ProcessRegistry.for_state(ctx.state).register(_DeadPtyHandle())
+
+        result = await process(
+            action="write",
+            session_id="proc_dead_pty",
+            data="payload",
+            tool_context=ctx,
+        )
+        assert "error" in result
+        assert (
+            "write failed" in result["error"].lower()
+            or "input/output" in result["error"].lower()
+        )
+
 
 @pytest.mark.asyncio
 class TestActionEnum:

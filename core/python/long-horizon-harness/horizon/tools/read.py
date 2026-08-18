@@ -285,8 +285,16 @@ class ReadTool(BaseTool):
             )
             return result
 
+        env_root = active_environment().working_dir.resolve()
+        try:
+            label = str(target.resolve().relative_to(env_root))
+        except ValueError:
+            label = target.name
+
         pending = list(tool_context.state.get(_PENDING_STATE_KEY, []))
-        pending.append(filename)
+        pending.append(
+            {"filename": filename, "version": version, "label": label}
+        )
         tool_context.state[_PENDING_STATE_KEY] = pending
         return result
 
@@ -301,20 +309,30 @@ class ReadTool(BaseTool):
         pending = tool_context.state.get(_PENDING_STATE_KEY)
         if not pending:
             return
-        # Clear regardless of load outcome — never re-inject the same file.
+        # Clear regardless of load outcome: never re-inject the same file.
         tool_context.state[_PENDING_STATE_KEY] = []
 
-        for filename in pending:
-            part = await tool_context.load_artifact(filename=filename)
+        for entry in pending:
+            if isinstance(entry, dict):
+                fn = entry.get("filename")
+                ver = entry.get("version")
+                lbl = entry.get("label") or fn
+            elif isinstance(entry, str):
+                fn = entry
+                ver = None
+                lbl = entry
+            else:
+                continue
+            if not fn:
+                continue
+            part = await tool_context.load_artifact(filename=fn, version=ver)
             if part is None:
                 continue
             llm_request.contents.append(
                 genai_types.Content(
                     role="user",
                     parts=[
-                        genai_types.Part.from_text(
-                            text=f"Contents of {filename}:"
-                        ),
+                        genai_types.Part.from_text(text=f"Contents of {lbl}:"),
                         part,
                     ],
                 )
