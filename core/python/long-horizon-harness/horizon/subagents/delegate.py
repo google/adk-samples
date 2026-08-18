@@ -458,7 +458,7 @@ async def delegate(
         into the child's prompt.
       timeout_s: Hard cap on child runtime in seconds. Default 120.
       model: Override the child's Gemini variant. Defaults to
-        ``gemini-3.6-flash``; ``gemini-3.1-pro-preview`` trades latency for
+        ``gemini-3.7-flash``; ``gemini-3.1-pro-preview`` trades latency for
         stronger reasoning.
       tools: Concrete tool names (e.g. ``["read", "bash"]``) to
         add on top of any ``toolsets``. When ``tools`` is supplied without

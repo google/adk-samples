@@ -37,10 +37,10 @@ def test_skills_guidance_gate_is_a_real_tool_name():
     assert names.LOAD_SKILL != "skill"
 
     instruction_with_tool = build_static_instruction(
-        tool_names=[names.LOAD_SKILL], model_name="gemini-3.6-flash"
+        tool_names=[names.LOAD_SKILL], model_name="gemini-3.7-flash"
     )
     instruction_without_tool = build_static_instruction(
-        tool_names=["skill"], model_name="gemini-3.6-flash"
+        tool_names=["skill"], model_name="gemini-3.7-flash"
     )
 
     assert SKILLS_GUIDANCE in instruction_with_tool
@@ -70,10 +70,10 @@ def test_cross_session_recall_guidance_is_gated_on_memory_not_a_placeholder():
 
     dead_gate = build_static_instruction(
         tool_names=["definitely_not_a_registered_tool"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
     )
     real_gate = build_static_instruction(
-        tool_names=[names.MEMORY], model_name="gemini-3.6-flash"
+        tool_names=[names.MEMORY], model_name="gemini-3.7-flash"
     )
 
     assert MEMORY_GUIDANCE not in dead_gate
@@ -99,10 +99,10 @@ def test_code_execution_guidance_follows_the_flag_not_a_hardcoded_default():
     from horizon.conversation.system_prompt import CODE_EXECUTION_GUIDANCE
 
     without = build_static_instruction(
-        tool_names=[], model_name="gemini-3.6-flash", has_code_executor=False
+        tool_names=[], model_name="gemini-3.7-flash", has_code_executor=False
     )
     with_ = build_static_instruction(
-        tool_names=[], model_name="gemini-3.6-flash", has_code_executor=True
+        tool_names=[], model_name="gemini-3.7-flash", has_code_executor=True
     )
 
     assert CODE_EXECUTION_GUIDANCE not in without

@@ -124,7 +124,7 @@ async def test_tool_is_advertised_to_the_model(
     (base_tool.py:155-169). Skip the super() call and the model loses the
     tool entirely while every other test stays green."""
     tool = _tool()
-    req = LlmRequest(model="gemini-3.6-flash")
+    req = LlmRequest(model="gemini-3.7-flash")
 
     await tool.process_llm_request(tool_context=ctx, llm_request=req)
 
@@ -342,7 +342,7 @@ async def test_png_returns_a_media_part_by_default(
     assert "binary" not in str(result.get("error", "")).lower()
     assert result["success"] is True
 
-    req = LlmRequest(model="gemini-3.6-flash")
+    req = LlmRequest(model="gemini-3.7-flash")
     await _tool().process_llm_request(tool_context=ctx, llm_request=req)
     assert any(
         getattr(p, "inline_data", None)
@@ -411,7 +411,7 @@ async def test_media_part_is_injected_into_next_turn(
     tool = _tool()
     await tool.run_async(args={"path": "doc.pdf"}, tool_context=ctx)
 
-    req = LlmRequest(model="gemini-3.6-flash")
+    req = LlmRequest(model="gemini-3.7-flash")
     await tool.process_llm_request(tool_context=ctx, llm_request=req)
 
     parts = [p for c in req.contents for p in (c.parts or [])]
@@ -440,8 +440,8 @@ async def test_pending_list_is_cleared_after_injection(
     await tool.run_async(args={"path": "doc.pdf"}, tool_context=ctx)
 
     req1, req2 = (
-        LlmRequest(model="gemini-3.6-flash"),
-        LlmRequest(model="gemini-3.6-flash"),
+        LlmRequest(model="gemini-3.7-flash"),
+        LlmRequest(model="gemini-3.7-flash"),
     )
     await tool.process_llm_request(tool_context=ctx, llm_request=req1)
     before = len(req2.contents)
@@ -452,7 +452,7 @@ async def test_pending_list_is_cleared_after_injection(
 async def test_process_llm_request_noop_when_nothing_pending(
     ctx: _FakeToolContext,
 ) -> None:
-    req = LlmRequest(model="gemini-3.6-flash")
+    req = LlmRequest(model="gemini-3.7-flash")
     before = len(req.contents)
 
     await _tool().process_llm_request(tool_context=ctx, llm_request=req)
@@ -464,7 +464,7 @@ async def test_process_llm_request_skips_evicted_artifacts(
     ctx: _FakeToolContext,
 ) -> None:
     ctx.state["_pending_media_reads"] = ["gone.pdf"]
-    req = LlmRequest(model="gemini-3.6-flash")
+    req = LlmRequest(model="gemini-3.7-flash")
     before = len(req.contents)
 
     await _tool().process_llm_request(tool_context=ctx, llm_request=req)
@@ -579,7 +579,7 @@ async def test_two_same_basename_media_files_inject_distinct_payloads(
     assert res1["success"] is True
     assert res2["success"] is True
 
-    req = LlmRequest(model="gemini-3.6-flash")
+    req = LlmRequest(model="gemini-3.7-flash")
     await tool.process_llm_request(tool_context=ctx, llm_request=req)
 
     # Must have injected both distinct parts
@@ -623,7 +623,7 @@ async def test_legacy_string_pending_entry_still_loads(
     ctx.state[_PENDING_STATE_KEY] = ["legacy.png"]
 
     tool = _tool()
-    req = LlmRequest(model="gemini-3.6-flash")
+    req = LlmRequest(model="gemini-3.7-flash")
     await tool.process_llm_request(tool_context=ctx, llm_request=req)
 
     injected = [

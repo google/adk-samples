@@ -87,7 +87,7 @@ async def _measure() -> dict[str, int]:
     static_instruction_with_executor = len(
         build_static_instruction(
             tool_names=tool_names,
-            model_name="gemini-3.6-flash",
+            model_name="gemini-3.7-flash",
             has_code_executor=True,
         )
     )

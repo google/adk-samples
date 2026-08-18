@@ -334,7 +334,7 @@ def _build_app_object() -> App:
             # get rolling summaries.
             compaction_interval=8,
             overlap_size=2,
-            summarizer=HorizonSummarizer(llm=Gemini(model="gemini-3.6-flash")),
+            summarizer=HorizonSummarizer(llm=Gemini(model="gemini-3.7-flash")),
         ),
     )
 

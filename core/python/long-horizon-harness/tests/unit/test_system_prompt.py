@@ -83,7 +83,7 @@ def _seed_request(system_instruction: str = "STATIC PREFIX") -> LlmRequest:
     onto config.system_instruction (flows/llm_flows/instructions.py, which
     runs before any before_model_callback).
     """
-    request = LlmRequest(model="gemini-3.6-flash")
+    request = LlmRequest(model="gemini-3.7-flash")
     request.config.system_instruction = system_instruction
     return request
 
@@ -215,7 +215,7 @@ async def test_load_soul_identity_falls_back_when_empty(tmp_path: Path):
 async def test_identity_appears_once_in_static_instruction(tmp_path: Path):
     instruction = build_static_instruction(
         tool_names=[],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         has_code_executor=False,
         soul_path=tmp_path / "no-soul.md",
     )
@@ -237,7 +237,7 @@ async def test_memory_guidance_present_when_memory_tool_loaded(tmp_path: Path):
 
     instruction = build_static_instruction(
         tool_names=[names.MEMORY, names.PRELOAD_MEMORY],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -249,7 +249,7 @@ async def test_memory_guidance_absent_when_memory_tool_not_loaded(
 ):
     instruction = build_static_instruction(
         tool_names=["read", "bash"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -264,7 +264,7 @@ async def test_skills_guidance_present_when_load_skill_tool_loaded(
 
     instruction = build_static_instruction(
         tool_names=[names.LOAD_SKILL],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -283,7 +283,7 @@ async def test_skills_guidance_absent_when_load_skill_tool_not_loaded(
 ):
     instruction = build_static_instruction(
         tool_names=["read", "bash"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -300,7 +300,7 @@ async def test_cross_session_recall_guidance_present_when_memory_tool_loaded(
 
     instruction = build_static_instruction(
         tool_names=[names.MEMORY],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -313,7 +313,7 @@ async def test_cross_session_recall_guidance_absent_when_memory_tool_not_loaded(
 ):
     instruction = build_static_instruction(
         tool_names=["read", "bash"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -341,7 +341,7 @@ async def test_acting_safety_style_present_for_enforcement_model(
 ):
     instruction = build_static_instruction(
         tool_names=["read_file"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -369,7 +369,7 @@ async def test_acting_safety_style_absent_when_no_tools_loaded(tmp_path: Path):
     agent answering 'hi'."""
     instruction = build_static_instruction(
         tool_names=[],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -383,7 +383,7 @@ async def test_enforcement_env_force_off(monkeypatch, tmp_path: Path):
 
     instruction = build_static_instruction(
         tool_names=["read_file"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -435,7 +435,7 @@ async def test_memory_guidance_keeps_recall_new_redundant_distinction():
 async def test_code_execution_guidance_absent_without_executor(tmp_path: Path):
     instruction = build_static_instruction(
         tool_names=["read_file"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         has_code_executor=False,
         soul_path=tmp_path / "no-soul.md",
     )
@@ -446,7 +446,7 @@ async def test_code_execution_guidance_absent_without_executor(tmp_path: Path):
 async def test_code_execution_guidance_present_with_executor(tmp_path: Path):
     instruction = build_static_instruction(
         tool_names=["read_file"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         has_code_executor=True,
         soul_path=tmp_path / "no-soul.md",
     )
@@ -503,7 +503,7 @@ async def test_static_instruction_excludes_environment_hint(tmp_path: Path):
 
     instruction = build_static_instruction(
         tool_names=[],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
 
@@ -520,12 +520,12 @@ async def test_static_instruction_byte_stable_across_calls(tmp_path: Path):
     owns placement."""
     first = build_static_instruction(
         tool_names=["read", "bash"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
     second = build_static_instruction(
         tool_names=["read", "bash"],
-        model_name="gemini-3.6-flash",
+        model_name="gemini-3.7-flash",
         soul_path=tmp_path / "no-soul.md",
     )
     assert first == second

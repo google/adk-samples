@@ -51,7 +51,7 @@ FLUSH_FORK_ENABLED_ENV = "LHA_PRE_COMPRESS_FLUSH"
 _FLUSH_TOOL_NAMES: frozenset[str] = frozenset({names.MEMORY})
 
 _FLUSH_AGENT_NAME = "flush_fork"
-_FLUSH_AGENT_MODEL = "gemini-3.6-flash"
+_FLUSH_AGENT_MODEL = "gemini-3.7-flash"
 _FLUSH_INSTRUCTION = (
     "You are a memory flush curator. The conversation provided in the "
     "<CONVERSATION>...</CONVERSATION> block is about to be discarded by "

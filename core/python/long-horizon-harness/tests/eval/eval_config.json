@@ -4,7 +4,7 @@
       "threshold": 0.8,
       "includeIntermediateResponsesInFinal": true,
       "judgeModelOptions": {
-        "judgeModel": "gemini-3.6-flash",
+        "judgeModel": "gemini-3.7-flash",
         "numSamples": 1
       },
       "rubrics": [

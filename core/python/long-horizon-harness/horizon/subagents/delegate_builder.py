@@ -174,7 +174,7 @@ async def build_child_agent(
     context: str = "",
     toolsets: list[str] | None = None,
     skills: list[str] | None = None,
-    model_name: str = "gemini-3.6-flash",
+    model_name: str = "gemini-3.7-flash",
     tools: list[str] | None = None,
     instructions: str | None = None,
     inline_skills: list[dict[str, str]] | None = None,
