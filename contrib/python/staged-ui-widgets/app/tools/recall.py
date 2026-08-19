@@ -125,12 +125,13 @@ def show_again(
         "status": "ok",
         "widget": name,
         "available": _available(tool_context),
-        # No item list, no figures: this is the payload the shopper has
-        # already seen, and the model has already described it once.
-        "summary": (
-            f"Re-showing the {_LABELS[name]} from earlier, unchanged. "
-            "Acknowledge it briefly; do not describe it again."
-        ),
+        # States the fact and stops. No item list and no figures, because the
+        # shopper has already seen this payload -- and no instruction about
+        # how to phrase the reply either: reviving sets the revived flag, the
+        # contract resolver turns that into the ACKNOWLEDGE contract, and the
+        # instruction lands at the tail of the system prompt where it carries
+        # far more weight than a sentence buried in a tool result.
+        "summary": f"Re-showing the {_LABELS[name]} from earlier, unchanged.",
     }
 
 

@@ -27,7 +27,8 @@ Two scopes carry the whole mechanism:
 readable, which is what makes ``revive_widget`` free -- no recomputation, no
 second trip through the ranking.
 
-*Dirty and suppress flags are ``temp:``-scoped.* ADK applies temp deltas only
+*Dirty, suppress, and revived flags are ``temp:``-scoped.* ADK applies temp
+deltas only
 to the transient per-invocation session copy and trims them from the
 persisted event, so they cannot survive into the next turn. That is verified
 behaviour, not an assumption -- but the emitted flag, not temp expiry, is
@@ -59,6 +60,11 @@ def stage_widget(state: State, name: str, payload: Mapping[str, Any]) -> None:
     state[spec.dirty_key] = True
     # New data supersedes whatever was shown before.
     state[spec.emitted_key] = False
+    # Fresh data, so this is not a reprise even if an earlier tool in the same
+    # turn revived the widget first. Cleared rather than left alone: the
+    # revived flag decides how the model is told to talk about the widget, and
+    # new data deserves a full description.
+    state[spec.revived_key] = False
 
 
 def revive_widget(state: State, name: str) -> bool:
@@ -77,6 +83,10 @@ def revive_widget(state: State, name: str) -> bool:
         return False
     state[spec.dirty_key] = True
     state[spec.emitted_key] = False
+    # Otherwise a revival and a fresh staging leave identical state, and the
+    # model would describe the widget from scratch a second time. Read by the
+    # contract resolver, not by the flush -- both paths emit the same way.
+    state[spec.revived_key] = True
     return True
 
 
@@ -101,6 +111,7 @@ def clear_staged(state: State, name: str) -> None:
     state[spec.register_key] = {}
     state[spec.dirty_key] = False
     state[spec.emitted_key] = False
+    state[spec.revived_key] = False
 
 
 def register_payload(
@@ -132,6 +143,11 @@ def is_dirty(state: Mapping[str, Any], spec: StagedWidgetSpec) -> bool:
 def is_suppressed(state: Mapping[str, Any], spec: StagedWidgetSpec) -> bool:
     """Whether this widget is vetoed for this turn."""
     return bool(state.get(spec.suppress_key))
+
+
+def was_revived(state: Mapping[str, Any], spec: StagedWidgetSpec) -> bool:
+    """Whether this turn re-showed stored data rather than staging new data."""
+    return bool(state.get(spec.revived_key))
 
 
 def was_emitted(state: Mapping[str, Any], spec: StagedWidgetSpec) -> bool:

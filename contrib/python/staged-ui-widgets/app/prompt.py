@@ -23,6 +23,12 @@ The instruction's real job is one rule: when a tool has staged a widget, the
 shopper is already looking at the detail, so the reply should not repeat it.
 Get that wrong and every answer is a card carousel followed by a paragraph
 listing the same three products, which is worse than either alone.
+
+*How much* to say instead is not decided here. It cannot be: the right answer
+next to a comparison table differs from the right answer next to a delivery
+timeline, and this text is written once for every turn. So the rule above
+stays here and the depth bound arrives per turn from ``app/presentation.py``,
+appended after this instruction once the turn's widgets are known.
 """
 
 from __future__ import annotations
@@ -47,9 +53,8 @@ timelines, spending charts -- which the shopper sees rendered next to your
 reply. When a tool result contains a non-null "widget" field, that visual is
 on screen.
 
-So when a widget is on screen: two sentences at most, no bulleted or numbered
-list of the items, and no repeating their prices. Point at what the shopper
-can see and add the one thing it cannot say -- which to pick, or why.
+So when a widget is on screen, never transcribe it: no bulleted or numbered
+list of the items, and no repeating their prices.
 
 Bad:  "Here are three options:
        * Cirrus Trail 3 -- $148, lightweight, in your size
@@ -58,8 +63,13 @@ Bad:  "Here are three options:
 Good: "Three that fit your usual trail setup. The Cirrus is the safe pick;
       the Fell Runner saves an ounce if you want it lighter."
 
-If a tool returns "widget": null, nothing was shown, and you must carry the
-answer in words -- lists are fine then.
+How much to say instead depends on what is being shown, so it is not fixed
+here. When a widget is about to ship, a <presentation_contract> block is
+appended at the very end of this prompt describing the reply this particular
+turn needs. Follow it over any general instinct about length.
+
+If a tool returns "widget": null, nothing was shown and no contract block
+appears -- carry the whole answer in words, where lists are fine.
 
 ## Stay inside the tool results
 

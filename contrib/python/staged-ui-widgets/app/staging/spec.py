@@ -25,12 +25,20 @@ the same sequence -- regardless of the order the model happened to call the
 tools in.
 
 *One place to look.* When a widget does not appear, the answer is a gate in
-``lifecycle.py`` applied to a key named here.
+``gates.py`` applied to a key named here.
+
+A spec also carries what the *reply* should look like when the widget is on
+screen -- its ``presentation_role`` and a one-line fallback. Adding a widget
+is then a single declaration that answers both halves of the question, and a
+new widget cannot be added without deciding how the model should talk about
+it.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from ..presentation import PresentationRole
 
 # Prefix for every key this recipe writes, so ``user:``-scoped profile data
 # and framework keys are never confused with staging bookkeeping.
@@ -60,7 +68,24 @@ class StagedWidgetSpec:
     """
 
     name: str
+
+    # Which converter turns the payload into A2UI components. Every value
+    # here must have an entry in ``render.registry.CONVERTERS``, which that
+    # module checks at import time -- otherwise a typo degrades silently to a
+    # generic card instead of failing.
     semantic_type: str
+
+    # What this widget is doing for the shopper, which decides the shape of
+    # the reply beside it. Required, with no default: a new widget's author
+    # has to make the call, and "whatever the last widget did" is not a
+    # decision. See ``app/presentation.py``.
+    presentation_role: PresentationRole
+
+    # The floor under the reply. If this widget ships and the model wrote no
+    # text at all, the shopper would get a bare visual with no voice; this
+    # sentence goes out instead. It is per-widget rather than per-contract
+    # because it has to name the thing on screen.
+    default_companion: str
 
     @property
     def widget_id(self) -> str:
@@ -97,13 +122,45 @@ class StagedWidgetSpec:
         """``temp:`` veto for this turn, set by a tool or a callback."""
         return f"temp:{_NS}:suppress:{self.name}"
 
+    @property
+    def revived_key(self) -> str:
+        """``temp:`` flag meaning "this turn re-showed old data".
+
+        Staging and reviving otherwise leave identical state, so without this
+        flag a revival is indistinguishable from fresh data and the reply
+        would describe the widget a second time.
+        """
+        return f"temp:{_NS}:revived:{self.name}"
+
 
 # Declaration order is emission order.
 WIDGET_SPECS: tuple[StagedWidgetSpec, ...] = (
-    StagedWidgetSpec(name="picks", semantic_type="product_picks"),
-    StagedWidgetSpec(name="comparison", semantic_type="product_comparison"),
-    StagedWidgetSpec(name="order", semantic_type="order_timeline"),
-    StagedWidgetSpec(name="spend", semantic_type="spend_trend"),
+    StagedWidgetSpec(
+        name="picks",
+        semantic_type="product_picks",
+        presentation_role=PresentationRole.DATA_PRIMARY,
+        default_companion="Here are the picks that match your profile.",
+    ),
+    StagedWidgetSpec(
+        name="comparison",
+        semantic_type="product_comparison",
+        presentation_role=PresentationRole.DATA_PRIMARY,
+        default_companion="Here they are side by side.",
+    ),
+    # Supporting rather than data-primary: "where is my order" is a question
+    # that wants an answer in words, with the timeline as the detail panel.
+    StagedWidgetSpec(
+        name="order",
+        semantic_type="order_timeline",
+        presentation_role=PresentationRole.SUPPORTING,
+        default_companion="Here is where your order stands.",
+    ),
+    StagedWidgetSpec(
+        name="spend",
+        semantic_type="spend_trend",
+        presentation_role=PresentationRole.DATA_PRIMARY,
+        default_companion="Here is your spend over recent months.",
+    ),
 )
 
 _BY_NAME: dict[str, StagedWidgetSpec] = {s.name: s for s in WIDGET_SPECS}

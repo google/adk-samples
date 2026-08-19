@@ -14,10 +14,12 @@
 """Staged widget lifecycle: tools stage, one flush emits.
 
 Tools use ``stage_widget`` / ``revive_widget`` / ``suppress_widget``. The
-agent's ``after_agent_callback`` uses ``emit_staged_widgets``. Nothing else
-needs importing.
+agent's ``after_agent_callback`` uses ``emit_staged_widgets``, and its
+``before_model_callback`` uses ``resolve_contract`` to shape the reply that
+goes out beside the widgets. Nothing else needs importing.
 """
 
+from .contract import live_specs, resolve_contract, role_for
 from .lifecycle import (
     EmissionOutcome,
     blocked_emissions,
@@ -40,8 +42,11 @@ __all__ = [
     "blocked_emissions",
     "clear_staged",
     "emit_staged_widgets",
+    "live_specs",
     "log_flush",
+    "resolve_contract",
     "revive_widget",
+    "role_for",
     "spec_for",
     "stage_widget",
     "suppress_widget",

@@ -52,17 +52,41 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from ..catalog import catalog_id
-from ..render.registry import Converter, build_widget
-from .spec import StagedWidgetSpec, all_specs
-from .state import (
-    is_dirty,
-    is_suppressed,
-    mark_emitted,
-    register_payload,
-    was_emitted,
+from ..render.registry import CONVERTERS, Converter, build_widget
+from .gates import (
+    ALREADY_EMITTED,
+    EMITTED,
+    EMPTY_REGISTER,
+    NOT_STAGED,
+    NOTHING_RENDERED,
+    RENDER_FAILED,
+    SUPPRESSED,
+    blocking_reason,
 )
+from .spec import all_specs
+from .state import mark_emitted, register_payload
 
 logger = logging.getLogger(__name__)
+
+# The gates and their reason strings live in ``gates.py`` because the contract
+# resolver needs the same predicate before the model speaks. Re-exported here
+# so the flush's vocabulary can still be imported from the module that uses
+# it.
+__all__ = [
+    "ALREADY_EMITTED",
+    "EMITTED",
+    "EMPTY_REGISTER",
+    "NOTHING_RENDERED",
+    "NOT_STAGED",
+    "RENDER_FAILED",
+    "SUPPRESSED",
+    "WIDGET_PROVIDER",
+    "EmissionOutcome",
+    "WidgetContext",
+    "blocked_emissions",
+    "emit_staged_widgets",
+    "log_flush",
+]
 
 # The ``UiWidget.provider`` value. ADK treats provider as an opaque routing
 # key -- it ships a renderer for 'mcp' and nothing for A2UI -- so this string
@@ -71,15 +95,23 @@ logger = logging.getLogger(__name__)
 # which is the part a host actually depends on.
 WIDGET_PROVIDER = "a2ui"
 
-# Why a widget did not ship. Stable strings: tests assert on them and logs
-# are read by humans debugging a missing widget.
-NOT_STAGED = "not staged this turn"
-ALREADY_EMITTED = "already emitted"
-SUPPRESSED = "suppressed for this turn"
-EMPTY_REGISTER = "register empty"
-NOTHING_RENDERED = "converter produced no components"
-RENDER_FAILED = "host rejected the widget"
-EMITTED = "emitted"
+# A spec names its converter with a bare string, and ``resolve_converter``
+# deliberately falls back to a generic card for an unknown type -- which is
+# right for a type invented at runtime, and wrong for a typo in
+# ``WIDGET_SPECS``. Without this check, misspelling ``spend_trend`` costs the
+# shopper the chart and logs one INFO line. Checked here because this module
+# is the one that would degrade, and because it already imports both sides.
+_UNCOVERED = sorted(
+    spec.semantic_type
+    for spec in all_specs()
+    if spec.semantic_type not in CONVERTERS
+)
+if _UNCOVERED:
+    raise ValueError(
+        "declared widgets have no converter: "
+        + ", ".join(_UNCOVERED)
+        + "; add one to render.registry.CONVERTERS or fix the semantic_type"
+    )
 
 
 @dataclass(frozen=True)
@@ -127,7 +159,7 @@ def emit_staged_widgets(
     outcomes: list[EmissionOutcome] = []
 
     for spec in all_specs():
-        reason = _blocking_reason(state, spec)
+        reason = blocking_reason(state, spec)
         if reason is not None:
             outcomes.append(EmissionOutcome(spec.name, False, reason))
             continue
@@ -170,25 +202,6 @@ def emit_staged_widgets(
         outcomes.append(EmissionOutcome(spec.name, True, EMITTED))
 
     return outcomes
-
-
-def _blocking_reason(
-    state: Mapping[str, Any], spec: StagedWidgetSpec
-) -> str | None:
-    """The first gate this widget fails, or ``None`` if it clears them all.
-
-    Order matters for the log message, not the outcome: a suppressed widget
-    that was never staged reads better as "not staged".
-    """
-    if not is_dirty(state, spec):
-        return NOT_STAGED
-    if was_emitted(state, spec):
-        return ALREADY_EMITTED
-    if is_suppressed(state, spec):
-        return SUPPRESSED
-    if not register_payload(state, spec):
-        return EMPTY_REGISTER
-    return None
 
 
 def blocked_emissions(

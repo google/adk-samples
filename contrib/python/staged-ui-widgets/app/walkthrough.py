@@ -21,9 +21,12 @@ A2UI messages themselves. Everything below the model is exercised -- ranking,
 converters, the gates, the surface assembly -- because the only thing this
 script stands in for is the model's choice of tool.
 
-Useful for three things: reading real A2UI without setting up a host, seeing
-which gate held a widget back, and watching turn 4 re-stage a carousel that
-no tool built this turn.
+Useful for four things: reading real A2UI without setting up a host, seeing
+which gate held a widget back, watching turn 4 re-stage a carousel that no
+tool built this turn, and reading the presentation contract each turn resolves
+to -- turn 3 asks for an ``answer`` because a delivery timeline is a detail
+panel, and turn 6 drops to ``acknowledge`` because the shopper has seen that
+carousel already.
 """
 
 from __future__ import annotations
@@ -36,7 +39,12 @@ from typing import Any
 from google.adk.sessions.state import State
 
 from .profile import load_profile
-from .staging import blocked_emissions, emit_staged_widgets
+from .staging import (
+    blocked_emissions,
+    emit_staged_widgets,
+    live_specs,
+    resolve_contract,
+)
 from .tools import (
     compare_picks,
     get_order_status,
@@ -152,6 +160,16 @@ def walk(*, show_a2ui: bool) -> Iterator[str]:
 
         result = call(ctx)
         yield f"    tool returned: {result['summary']}"
+
+        # Resolved before the flush, which is where ``before_model_callback``
+        # resolves it too. It has to be: emitting sets the emitted flag, and a
+        # widget that has already gone out is no longer live.
+        contract = resolve_contract(ctx.state)
+        if contract is None:
+            yield "    contract:      none -- an ordinary text reply"
+        else:
+            live = ", ".join(spec.name for spec in live_specs(ctx.state))
+            yield f"    contract:      {contract.value} (for: {live})"
 
         outcomes = emit_staged_widgets(ctx)
         for held in blocked_emissions(outcomes):

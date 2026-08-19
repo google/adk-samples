@@ -22,6 +22,12 @@ widget degrades into a plain card instead of vanishing. Silent loss is the
 worst failure mode -- the agent believes it showed something the user never
 saw.
 
+That fallback is for a type this table has never heard of. It is *not* cover
+for a misspelled ``semantic_type`` in ``WIDGET_SPECS``, which would quietly
+downgrade a real chart to a generic card; ``staging.lifecycle`` checks every
+declared widget against this table at import and refuses to load if one is
+missing.
+
 *Never crash the turn.* A converter that raises is logged and yields no
 widget. A broken card is a cosmetic bug; an exception escaping an
 ``after_agent_callback`` costs the user their whole response.

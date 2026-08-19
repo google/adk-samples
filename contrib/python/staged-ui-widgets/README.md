@@ -100,8 +100,80 @@ prices, and the reason chips printed on each card. An early version withheld
 the chips, on the theory that a thinner result would stop the model reciting
 the card. A live run answered "why did you recommend that one?" by inventing a
 rationale from a different tool's output instead. Not duplicating the widget is
-the instruction's job ([app/prompt.py](app/prompt.py)); starving the model of
-facts only buys a fluent guess.
+the *instruction's* job — see the next section; starving the model of facts only
+buys a fluent guess.
+
+## What the reply says instead
+
+Staging decides what the shopper sees. Something still has to decide what the
+model *says* next to it, and that turns out to be the harder half.
+
+The obvious approach is one rule in the system instruction: "when a widget is on
+screen, don't repeat it." It works until the second widget type. A comparison
+table wants a verdict; a delivery timeline wants the question answered in words
+with the dates left on screen; a carousel the shopper asked to see again wants
+one sentence, because the model already described it two turns ago. One rule
+cannot say all of that, and a per-widget snippet is worse: N widgets means N
+strings to keep consistent, and when two stage in the same turn the model gets
+two sets of instructions and picks one.
+
+So [app/presentation.py](app/presentation.py) puts two levels between the widget
+and the prompt. Each widget declares a **role**; live roles collapse by fixed
+precedence to exactly one **contract**; each contract owns one instruction.
+
+| Role | Contract | The reply | Widgets |
+| ---- | -------- | --------- | ------- |
+| `DATA_PRIMARY` | `SYNTHESIS` | Add at most three things the visual cannot say | picks, comparison, spend |
+| `SUPPORTING` | `ANSWER` | Answer directly in a sentence or two; the widget holds the detail | order |
+| `REPRISE` | `ACKNOWLEDGE` | One sentence confirming it is back | any revived widget |
+
+Three properties come out of that shape:
+
+**Text-primary is the absence of a contract, not a member of the enum.** A turn
+with nothing live resolves to `None` and appends nothing, so an ordinary
+conversational turn behaves exactly as it would without this layer.
+
+**It scales by role, not by widget.** Adding a fourth data-primary widget adds a
+declaration and no prompt text. Thirty widgets would still be three instruction
+strings — and the `presentation_role` field is required, with no default, so a
+new widget cannot be added without someone deciding how the model should talk
+about it.
+
+**The contract cannot promise a widget that isn't shipping.** This is the one
+worth dwelling on. The resolver and the flush both call
+[app/staging/gates.py](app/staging/gates.py) — the same predicate, not two
+copies — so a suppressed widget produces no contract. Walkthrough turn 5 is that
+case: the re-rank comes out identical, the carousel is held back, and the
+contract line prints `none`. With the gates duplicated, drift would not raise
+anything; it would ship a reply saying "the cards above are updated" beside
+cards that never moved.
+
+The instruction is appended at the *tail* of the system instruction from
+`before_model_callback`, which is where a model weights output-shaping
+directives most heavily — and per model call, so the first call of a turn (before
+any tool has run) gets nothing and the call that writes the visible reply gets
+the contract for what the tools actually staged.
+
+Two supporting details:
+
+- **Reviving is made visible.** `stage_widget` and `revive_widget` otherwise
+  leave identical state, so a `temp:ui:revived:*` flag marks the difference and
+  the resolver turns it into `REPRISE`. Re-staging in the same turn clears it:
+  fresh rankings deserve a fresh description. With the flag, the "re-showing
+  this, don't describe it again" instruction also comes out of the tool result
+  and into the contract, where it carries more weight.
+- **A floor under the shaping.** Every contract tells the model to say *less*,
+  and a model having an off moment can take that to nothing at all — leaving a
+  carousel with no words beside it, which reads as a bug even when every widget
+  is correct. `after_model_callback` catches an empty reply next to a live widget
+  and substitutes the widget's `default_companion`. Notably this recipe never
+  uses `skip_summarization`: suppressing the reply outright would *guarantee* the
+  bare-widget outcome rather than guard against it.
+
+One thing deliberately left out: the role is refined centrally rather than by a
+per-spec `resolve_role` callable. With four widgets the refinement is uniform —
+revived means reprise, whatever the widget — and a hook every spec would set
+identically is ceremony that rots unused.
 
 ## See it without credentials
 
@@ -113,15 +185,19 @@ uv run python -m app.walkthrough --a2ui   # plus the A2UI messages
 ```
 
 Eight turns of a shopping conversation with the model's tool choices scripted.
-Turn 5 is the suppressed no-op refresh, turn 6 revives a carousel built four
-turns earlier, and turn 8 stages nothing — printing `state delta: False`, which
-is the trap above made visible.
+Each turn prints the widgets, the gate that held anything back, and the contract
+the reply resolved to. Turn 3 asks for `answer` rather than `synthesis` because a
+delivery timeline is a detail panel; turn 5 is the suppressed no-op refresh,
+where the contract correctly prints `none`; turn 6 revives a carousel built four
+turns earlier and drops to `acknowledge`; and turn 8 stages nothing — printing
+`state delta: False`, which is the trap above made visible.
 
 ## Layout
 
 | Path | What lives there |
 | ---- | ---------------- |
-| [app/staging/](app/staging/) | `spec` declares the widgets, `state` is the API tools call, `lifecycle` is the flush and its gates |
+| [app/staging/](app/staging/) | `spec` declares the widgets, `state` is the API tools call, `gates` decides what is live, `lifecycle` is the flush, `contract` resolves the turn's reply shape |
+| [app/presentation.py](app/presentation.py) | Roles, contracts, and the one instruction each contract owns |
 | [app/render/](app/render/) | Payload → A2UI. `components` builds nodes, `converters` maps each semantic type, `registry` dispatches |
 | [app/tools/](app/tools/) | The six tools. All stage; none render |
 | [app/store.py](app/store.py) | Catalog, orders, spend history, loaded from `app/data/*.json` |
@@ -132,8 +208,9 @@ is the trap above made visible.
 Three state scopes carry the whole mechanism, and the difference matters:
 `user:shopper_profile` survives across sessions; `ui:register:*` and
 `ui:emitted:*` are session-scoped, which is what makes revival possible;
-`temp:ui:dirty:*` and `temp:ui:suppress:*` are per-invocation, so a stale flag
-cannot emit a widget nobody asked for next turn.
+`temp:ui:dirty:*`, `temp:ui:suppress:*`, and `temp:ui:revived:*` are
+per-invocation, so a stale flag cannot emit a widget nobody asked for next turn
+— or make next turn's reply an acknowledgement of this turn's carousel.
 
 ## Requirements
 
