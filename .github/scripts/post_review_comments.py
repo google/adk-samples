@@ -57,10 +57,12 @@ CHECKER = "post_review_comments.py"
 # A length is absent for a one-line side ("@@ -1 +1 @@"), which means 1.
 HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
-# Non-greedy, but the trailing fence forces the match to run to the LAST
-# "]" that closes a block, so a "]" inside a comment body does not truncate
-# the array.
-FENCED_ARRAY = re.compile(r"```(?:json)?\s*(\[.*?\])\s*```", re.DOTALL)
+# The fenced block, captured whole from its opening "[" to the closing
+# fence. Regex cannot find where the array ends: a "]" inside a comment body
+# is indistinguishable from the one that closes it, and anchoring on the LAST
+# "]" in the block swallowed anything the model appended after the array.
+# json's own parser draws that boundary in extract_findings instead.
+FENCED_BLOCK = re.compile(r"```(?:json)?\s*(\[.*?)```", re.DOTALL)
 
 
 class ReviewerOutputError(Exception):
@@ -160,23 +162,51 @@ def extract_findings(response: str) -> list:
     The prompt asks for a bare fenced block and nothing else, but a stray
     sentence either side is the likeliest way for the model to drift, and
     re-prompting costs another full model call.
+
+    The inside of the block drifts too: a reviewer answered PR #2547 with
+    "[]\\n[]" — two arrays in one fence — which is not a JSON document, so
+    parsing the block as one value failed the run as a CI fault over a review
+    that had simply found nothing. Each top-level array is decoded in turn and
+    their findings concatenated, and a decode failure after the first array
+    has parsed ends the scan rather than the review, because trailing prose is
+    drift and not a reason to throw away findings already in hand. Only the
+    first array failing to parse is fatal — at that point there is nothing to
+    post and nothing to infer.
     """
-    match = FENCED_ARRAY.search(response)
-    raw = match.group(1) if match else None
-    if raw is None and response.strip().startswith("["):
-        raw = response.strip()
-    if raw is None:
+    match = FENCED_BLOCK.search(response)
+    # Both branches guarantee a block starting at "[", so the scan below
+    # always decodes at least once.
+    block = match.group(1) if match else None
+    if block is None and response.strip().startswith("["):
+        block = response.strip()
+    if block is None:
         raise ReviewerOutputError("response contained no JSON findings array")
 
-    try:
-        findings = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ReviewerOutputError(
-            f"findings block is not valid JSON: {exc}"
-        ) from exc
+    decoder = json.JSONDecoder()
+    findings: list = []
+    seen: set[str] = set()
+    parsed_any = False
+    index = 0
 
-    if not isinstance(findings, list):
-        raise ReviewerOutputError("findings must be a JSON array")
+    while (start := block.find("[", index)) != -1:
+        try:
+            array, index = decoder.raw_decode(block, start)
+        except json.JSONDecodeError as exc:
+            if parsed_any:
+                break
+            raise ReviewerOutputError(
+                f"findings block is not valid JSON: {exc}"
+            ) from exc
+
+        parsed_any = True
+        # A repeated block repeats its findings, and posting the same note
+        # twice on the same line is worse than posting it once.
+        for finding in array:
+            key = json.dumps(finding, sort_keys=True)
+            if key not in seen:
+                seen.add(key)
+                findings.append(finding)
+
     return findings
 
 

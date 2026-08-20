@@ -212,6 +212,26 @@ def test_extract_findings_accepts_an_empty_array():
     assert m.extract_findings("```json\n[]\n```") == []
 
 
+def test_extract_findings_accepts_a_repeated_empty_array():
+    # What PR #2547's reviewer actually returned.
+    assert m.extract_findings("```json\n[]\n[]\n```") == []
+
+
+def test_extract_findings_merges_several_arrays_in_one_block():
+    response = '```json\n[{"path": "x.py"}]\n[{"path": "y.py"}]\n```'
+    assert m.extract_findings(response) == [{"path": "x.py"}, {"path": "y.py"}]
+
+
+def test_extract_findings_drops_a_repeated_finding():
+    response = '```json\n[{"path": "x.py"}]\n[{"path": "x.py"}]\n```'
+    assert m.extract_findings(response) == [{"path": "x.py"}]
+
+
+def test_extract_findings_keeps_findings_despite_trailing_junk():
+    response = '```json\n[{"path": "x.py"}]\nand also [oops\n```'
+    assert m.extract_findings(response) == [{"path": "x.py"}]
+
+
 @pytest.mark.parametrize(
     "response",
     [
