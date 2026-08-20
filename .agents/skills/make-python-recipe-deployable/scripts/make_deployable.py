@@ -515,6 +515,43 @@ def check_adk_locked_version(lock_path: Path, min_adk: str) -> Check:
     )
 
 
+def check_already_deployable(recipe_dir: Path, package_dir: Path) -> Check:
+    """Warn when the recipe already serves, by its own arrangement.
+
+    `long-horizon-harness` is the case this exists for: it ships a Dockerfile,
+    `deployable: true`, and a bespoke ~400-line `fast_api_app.py` that wires
+    its own A2A routes from a `horizon/a2a/` package. Nothing here is
+    "missing", but because it has no `app_utils/`, a naive run would happily
+    add three modules that the recipe's own entrypoint never imports — dead
+    code that looks load-bearing.
+
+    Advisory, not a gate: a recipe may legitimately want to migrate onto the
+    standard layout. But the owner should choose that, not discover it.
+    """
+    has_dockerfile = (recipe_dir / "Dockerfile").is_file()
+    has_entrypoint = (package_dir / "fast_api_app.py").is_file()
+    if not (has_dockerfile and has_entrypoint):
+        return Check(
+            id="already-deployable",
+            status=CLEAN,
+            message="Recipe does not already ship a container entrypoint.",
+        )
+    return Check(
+        id="already-deployable",
+        status=REPORT_ONLY,
+        message=(
+            "This recipe ALREADY has a Dockerfile and a "
+            f"{package_dir.name}/fast_api_app.py, so it serves by its own "
+            "arrangement. Neither will be replaced without --overwrite, but "
+            "any app_utils/ modules generated alongside a bespoke entrypoint "
+            "will be dead code unless someone wires them in. Confirm the "
+            "owner actually wants to migrate onto the standard layout before "
+            "applying."
+        ),
+        details={"dockerfile": has_dockerfile, "entrypoint": has_entrypoint},
+    )
+
+
 def check_legacy_app_utils(package_dir: Path, legacy_files: list[str]) -> Check:
     """Stop if the recipe carries the old ASP-era app_utils generation."""
     app_utils = package_dir / "app_utils"
@@ -1345,6 +1382,9 @@ def run(
             "Stopped before generating anything. Nothing on disk was changed."
         )
         return report
+
+    # --- advisory: recipe already serves by its own arrangement ------------
+    report.add(check_already_deployable(recipe_dir, package_dir))
 
     # --- GATE (advisory): backing infra ------------------------------------
     infra_check = check_backing_infra(recipe_dir, package_dir)

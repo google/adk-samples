@@ -127,6 +127,10 @@ If any check is `needs_input`, **stop**. The three that gate:
   Generating over the top orphans them or double-wires telemetry. A human
   decides how to migrate.
 
+Also check `already-deployable`. If it is `report_only`, the recipe already
+serves and you must confirm the owner wants to migrate onto the standard
+layout before applying — see the advisory at the bottom of this file.
+
 ### Step 2 — Interview
 
 Ask only what applies. Keep it to one round.
@@ -327,12 +331,23 @@ real dependencies (then reverted). Recorded here so the next person knows what
 
 Measured, and useful for setting expectations before a run:
 
-| Recipe | Expected outcome |
-|---|---|
-| `skills/retail/product-search` | `deployable` |
-| `contrib/python/financial-advisor` | `deployable` (loose pin, but locked at 2.6.2) |
-| `core/python/rag-agent-search`, `rag-vector-search` | `containerized` — need a datastore / vector index |
-| `contrib/python/market-research-agent`, `core/python/deep-search`, `core/python/safety-plugins` | `blocked` — locked on ADK 1.28.0 |
-| `core/python/cross-session-memory`, `genmedia-for-commerce`, `oauth-user-consent-flow` | `blocked` — ADK ceiling excludes the floor |
-| `contrib/python/cross-border-data-router` | `blocked` — legacy `app_utils` |
-| `core/python/long-horizon-harness`, `ambient-expense-agent` | already deployable |
+Measured by running the dry-run against every recipe in the repo — not
+predicted. Useful for setting expectations before a run.
+
+| Recipe | Outcome | Why |
+|---|---|---|
+| `skills/retail/product-search` | `deployable` | — |
+| `contrib/python/financial-advisor` | `deployable` | loose pin, but locked at 2.6.2 |
+| `core/python/rag-agent-search`, `rag-vector-search` | `containerized` | need a datastore / vector index |
+| `core/python/long-horizon-harness`, `ambient-expense-agent` | `containerized` + **already-deployable** flag | they already serve; see the advisory below |
+| `contrib/python/market-research-agent`, `core/python/deep-search`, `core/python/safety-plugins` | `blocked` | locked on ADK 1.28.0 |
+| `core/python/cross-session-memory`, `genmedia-for-commerce`, `oauth-user-consent-flow` | `blocked` | ADK ceiling excludes the floor |
+| `contrib/python/cross-border-data-router` | `blocked` | legacy `app_utils` |
+
+**The `already-deployable` advisory.** When a recipe already has a `Dockerfile`
+*and* a `<pkg>/fast_api_app.py`, it serves by its own arrangement.
+`long-horizon-harness` is the case: a bespoke ~400-line entrypoint wiring A2A
+from its own `horizon/a2a/` package. Neither file is replaced without
+`--overwrite`, but `app_utils/` modules generated alongside a bespoke
+entrypoint are **dead code** unless someone wires them in. Confirm the owner
+wants to migrate onto the standard layout before applying.

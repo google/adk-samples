@@ -594,3 +594,36 @@ def test_guidance_filename_follows_what_the_recipe_ships(tmp_path: Path):
     assert md.detect_guidance_filename(tmp_path) == "GEMINI.md"
     write(tmp_path / "AGENTS.md", "x")
     assert md.detect_guidance_filename(tmp_path) == "AGENTS.md"
+
+
+# ---------------------------------------------------------------------------
+# already-deployable advisory
+#
+# long-horizon-harness ships a Dockerfile and a bespoke ~400-line
+# fast_api_app.py with its own A2A wiring. Generating app_utils/ alongside it
+# produces dead code, so the owner gets warned first.
+# ---------------------------------------------------------------------------
+
+
+def test_recipe_that_already_serves_is_flagged(tmp_path: Path):
+    write(tmp_path / "Dockerfile", "FROM python:3.11-slim\n")
+    write(tmp_path / "horizon" / "fast_api_app.py", "app = 1\n")
+    check = md.check_already_deployable(tmp_path, tmp_path / "horizon")
+    assert check.status == md.REPORT_ONLY
+
+
+def test_dockerfile_without_entrypoint_is_not_flagged(tmp_path: Path):
+    write(tmp_path / "Dockerfile", "FROM python:3.11-slim\n")
+    (tmp_path / "app").mkdir()
+    assert (
+        md.check_already_deployable(tmp_path, tmp_path / "app").status
+        == md.CLEAN
+    )
+
+
+def test_fresh_recipe_is_not_flagged(tmp_path: Path):
+    (tmp_path / "app").mkdir()
+    assert (
+        md.check_already_deployable(tmp_path, tmp_path / "app").status
+        == md.CLEAN
+    )
