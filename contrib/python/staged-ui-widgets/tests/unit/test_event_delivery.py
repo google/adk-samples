@@ -241,9 +241,10 @@ def test_duplicate_widget_ids_survive_a_parallel_tool_call_merge() -> None:
     ``render_ui_widget`` rejects a duplicate id, but each function call gets
     its own ``ToolContext`` (``flows/llm_flows/functions.py:1228``), so the
     check only ever sees one call's widgets.
-    ``merge_parallel_function_response_events`` (``functions.py:1543``) then
-    concatenates the lists untouched. Two tools rendering the same id in
-    parallel ship two identical widgets to the client.
+    ``merge_parallel_function_response_events`` (``functions.py:1526``) then
+    concatenates the two lists into one without re-checking ids
+    (``:1545-1562``). Two tools rendering the same id in parallel ship two
+    identical widgets to the client.
 
     Flushing once, from one context, is where that check finally bites --
     which ``test_second_flush_in_the_same_turn_is_a_no_op`` covers.

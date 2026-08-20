@@ -26,6 +26,7 @@ tests. In production they look like a widget that quietly did not appear.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from typing import Any
 
 import pytest
@@ -426,17 +427,23 @@ def test_surface_with_no_components_yields_no_messages() -> None:
 
 
 def test_chart_svg_is_byte_stable() -> None:
-    """Same series, same bytes.
+    """Same series, same bytes -- pinned to a literal, not to a second call.
 
     Coordinates are rounded to two decimals precisely so a chart does not
-    churn between runs -- which would make every diff of a recorded widget
-    unreadable.
+    churn between runs, which would make every diff of a recorded widget
+    unreadable. Two calls in one process agree whatever the rounding does;
+    the polyline below is what a scale or precision change breaks.
     """
-    first = spend_trend_svg(SPEND_PAYLOAD["points"])
-    second = spend_trend_svg(list(SPEND_PAYLOAD["points"]))
-    assert first == second
-    assert first.startswith("<svg")
-    assert svg_data_uri(first).startswith("data:image/svg+xml;base64,")
+    points = deepcopy(SPEND_PAYLOAD["points"])
+    svg = spend_trend_svg(points)
+    assert svg.startswith("<svg")
+    assert (
+        '<polyline points="10,82.64 102,120.84 194,39.22 286,101.49'
+        ' 378,61.35 470,90.38"'
+    ) in svg
+    assert svg_data_uri(svg).startswith("data:image/svg+xml;base64,")
+    # Rendering must not consume the series it was handed.
+    assert points == SPEND_PAYLOAD["points"]
 
 
 def test_chart_svg_of_an_empty_series_is_empty() -> None:
@@ -448,10 +455,12 @@ def test_placeholder_tiles_are_stable_and_distinct() -> None:
     """Tile colour is content-addressed, so it survives a restart.
 
     ``hash()`` would have been the obvious choice and is salted per process:
-    the same product would change colour on every boot.
+    the same product would change colour on every boot. Pinning the two
+    colours to literals is what catches that -- two calls inside one process
+    agree either way.
     """
-    assert tile_color("SKU-1") == tile_color("SKU-1")
-    assert tile_color("SKU-1") != tile_color("SKU-2")
+    assert tile_color("SKU-1") == "#6B7F52"
+    assert tile_color("SKU-2") == "#4E5A6B"
     assert product_tile_uri("SKU-1", "Cirrus Trail 3").startswith(
         "data:image/svg+xml;base64,"
     )

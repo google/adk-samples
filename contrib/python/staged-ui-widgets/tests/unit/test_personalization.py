@@ -147,22 +147,26 @@ def test_apparel_ranges_cover_the_sizes_they_span() -> None:
 
 
 def test_ranking_is_deterministic_including_ties() -> None:
-    """Same input, same order -- ties broken on id, not dict order."""
-    tied = [
-        product(id="P-3"),
-        product(id="P-1"),
-        product(id="P-2"),
-    ]
-    ranked = rank_products(tied, PROFILE, limit=3)
+    """Same input, same order -- ties broken on id, not dict order.
+
+    The second list holds the same three products in a different order, so a
+    ranking that leaned on input order would disagree with the first.
+    """
+    ranked = rank_products(
+        [product(id="P-3"), product(id="P-1"), product(id="P-2")], PROFILE
+    )
+    reordered = rank_products(
+        [product(id="P-2"), product(id="P-3"), product(id="P-1")], PROFILE
+    )
     assert [s.product["id"] for s in ranked] == ["P-1", "P-2", "P-3"]
-    assert [s.product["id"] for s in rank_products(tied, PROFILE)] == [
-        s.product["id"] for s in ranked
-    ]
+    assert [s.product["id"] for s in reordered] == ["P-1", "P-2", "P-3"]
 
 
 def test_the_limit_is_honoured() -> None:
+    """A limit other than the default, so an ignored argument would show."""
     many = [product(id=f"P-{i}") for i in range(10)]
-    assert len(rank_products(many, PROFILE, limit=3)) == 3
+    assert len(rank_products(many, PROFILE, limit=5)) == 5
+    assert len(rank_products(many, PROFILE)) == 3
 
 
 def test_preferences_change_the_order() -> None:

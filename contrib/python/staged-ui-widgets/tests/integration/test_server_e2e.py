@@ -94,32 +94,43 @@ def wait_for_server(timeout: int = 90, interval: int = 1) -> bool:
 
 
 @pytest.fixture(scope="session")
-def server_fixture(request: Any) -> Iterator[subprocess.Popen[str]]:
-    """Pytest fixture to start and stop the server for testing."""
+def server_fixture() -> Iterator[subprocess.Popen[str]]:
+    """Pytest fixture to start and stop the server for testing.
+
+    Teardown is a ``finally`` rather than a finalizer registered further
+    down: ``pytest.fail`` raises, so anything registered after the readiness
+    check never runs and the uvicorn child would hold port 8000 for the rest
+    of the session.
+    """
     logger.info("Starting server process")
     server_process = start_server()
-    if not wait_for_server():
-        pytest.fail("Server failed to start")
-    logger.info("Server process started")
-
-    def stop_server() -> None:
+    try:
+        if not wait_for_server():
+            pytest.fail("Server failed to start")
+        logger.info("Server process started")
+        yield server_process
+    finally:
         logger.info("Stopping server process")
         server_process.terminate()
         server_process.wait()
         logger.info("Server process stopped")
 
-    request.addfinalizer(stop_server)
-    yield server_process
-
 
 def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
-    """Test the chat stream functionality."""
+    """The server streams a reply.
+
+    A greeting on purpose: it stages nothing, so this exercises the
+    text-primary path where no contract is appended and no widget is emitted.
+    Widget delivery is covered by ``test_agent.py`` and, without a model, by
+    ``tests/unit/test_event_delivery.py``.
+    """
     logger.info("Starting chat stream test")
-    # Create session first
+    # An empty session on purpose. Seeding a shopper profile here would be
+    # setup this test never reads -- a greeting calls no tool, so nothing
+    # loads it. What a seeded ``user:``-scoped profile changes is asserted in
+    # tests/unit/test_personalization.py, without a server or a model.
     user_id = "test_user_123"
-    session_data = {
-        "state": {"preferred_language": "English", "visit_count": 1}
-    }
+    session_data: dict[str, Any] = {"state": {}}
 
     session_url = f"{BASE_URL}/apps/app/users/{user_id}/sessions"
     session_response = requests.post(

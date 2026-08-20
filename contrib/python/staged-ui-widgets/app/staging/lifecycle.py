@@ -23,9 +23,9 @@ gets its own ``ToolContext`` (``flows/llm_flows/functions.py:1228``), so the
 check only ever sees one call's widgets. When the model calls two tools in
 parallel and both render the same id,
 ``merge_parallel_function_response_events``
-(``flows/llm_flows/functions.py:1543``) concatenates the lists untouched and
-the duplicate ships. Flushing once, from one context, is where that check
-actually bites.
+(``flows/llm_flows/functions.py:1526``) concatenates the two lists into one
+without re-checking ids (``:1545-1562``) and the duplicate ships. Flushing
+once, from one context, is where that check actually bites.
 
 **Emission order follows the model, not the design.** Inline rendering emits
 in whatever order the model happened to call the tools. Walking
@@ -141,7 +141,7 @@ def emit_staged_widgets(
     *,
     overrides: Mapping[str, Converter] | None = None,
 ) -> list[EmissionOutcome]:
-    """Renders every widget that clears all five gates.
+    """Renders every widget that clears all six gates.
 
     Call this from ``after_agent_callback``, after the model has finished
     speaking, so the widgets accompany the reply they belong to.

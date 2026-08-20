@@ -36,9 +36,12 @@ if TYPE_CHECKING:
     from a2ui.schema.catalog import A2uiCatalog
     from a2ui.schema.validator import A2uiValidator
 
-# A2UI protocol version. The SDK is pre-1.0 and ships both 0.8 and 0.9;
-# this recipe targets 0.9 only, and the component vocabulary differs
-# between them, so treat this as a deliberate pin rather than a default.
+# The version the SDK selects schemas by -- unprefixed, and *not* the ``"v0.9"``
+# the wire ``version`` field carries (see ``render/components.py``'s
+# ``A2UI_MESSAGE_VERSION``). The SDK is pre-1.0 and ships three specs -- 0.8,
+# 0.9, and 0.9.1 (``a2ui/schema/constants.py``'s ``SPEC_VERSION_MAP``). This
+# recipe targets 0.9 only, and the component vocabulary differs between them, so
+# treat this as a deliberate pin rather than a default.
 A2UI_VERSION = "0.9"
 
 

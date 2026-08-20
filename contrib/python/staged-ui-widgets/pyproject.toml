@@ -3,14 +3,15 @@ name = "staged-ui-widgets"
 version = "0.1.0"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    # 2.6 is where Context.render_ui_widget and the unified Context that makes
-    # it reachable from tool code arrived. Developed and verified against
-    # 2.7.1, including the base_agent event-emission behaviour the staging
-    # layer depends on -- see app/agent.py.
+    # Floor at 2.6 for Context.render_ui_widget and the unified Context that
+    # makes it reachable from tool code. Developed and verified against 2.7.1
+    # -- that is the version every source citation in this recipe was read
+    # from, including the base_agent event-emission behaviour the staging layer
+    # depends on (see app/agent.py).
     "google-adk[gcp]>=2.6.0,<3.0.0",
     # A2UI component catalog and schema validator; verified against 0.2.4.
-    # Pre-1.0: the component vocabulary still moves between 0.8 and 0.9, so
-    # keep the floor tight.
+    # Pre-1.0: the SDK ships 0.8, 0.9, and 0.9.1 specs and the component
+    # vocabulary differs between them, so keep the floor tight.
     "a2ui-agent-sdk>=0.2.1,<0.3.0",
     "python-dotenv>=1.0.0",
 ]

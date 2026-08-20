@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -40,9 +42,22 @@ def _load(filename: str) -> dict[str, Any]:
         return json.load(handle)
 
 
+def _copies(records: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Independent copies of cached records.
+
+    Every accessor that returns records goes through this or ``deepcopy``
+    directly. ``_load`` caches for the process, so handing out the loaded dicts
+    would let one caller's in-place edit follow a product through every later
+    read -- a fixture layer that behaves like a database until it does not.
+    Deep rather than ``dict(record)``: the nested values (``sizes``,
+    ``stages``) are the ones a caller is most likely to sort or append to.
+    """
+    return [deepcopy(dict(record)) for record in records]
+
+
 def products() -> list[dict[str, Any]]:
     """Every product in the fictional catalog."""
-    return list(_load("products.json")["products"])
+    return _copies(_load("products.json")["products"])
 
 
 @lru_cache(maxsize=1)
@@ -53,7 +68,7 @@ def _products_by_id() -> dict[str, dict[str, Any]]:
 def product(product_id: str) -> dict[str, Any] | None:
     """One product, or ``None`` when the id is unknown."""
     found = _products_by_id().get(product_id)
-    return dict(found) if found else None
+    return deepcopy(found) if found else None
 
 
 def find_products(query: str) -> list[dict[str, Any]]:
@@ -94,10 +109,12 @@ def _tokens(text: str) -> list[str]:
 
 def orders() -> list[dict[str, Any]]:
     """Order history, newest first."""
-    return sorted(
-        _load("orders.json")["orders"],
-        key=lambda o: o["placed_on"],
-        reverse=True,
+    return _copies(
+        sorted(
+            _load("orders.json")["orders"],
+            key=lambda o: o["placed_on"],
+            reverse=True,
+        )
     )
 
 
@@ -106,7 +123,8 @@ def order(order_id: str) -> dict[str, Any] | None:
     wanted = order_id.strip().upper()
     for candidate in orders():
         if candidate["id"].upper() == wanted:
-            return dict(candidate)
+            # Already an independent copy; ``orders()`` handed it over.
+            return candidate
     return None
 
 
@@ -119,7 +137,7 @@ def latest_open_order() -> dict[str, Any] | None:
     for candidate in orders():
         stages = candidate.get("stages", [])
         if any(not stage.get("reached") for stage in stages):
-            return dict(candidate)
+            return candidate
     return None
 
 
@@ -148,7 +166,7 @@ def today() -> str:
 
 def spend_months() -> list[dict[str, Any]]:
     """Monthly spend, oldest first."""
-    return list(_load("spend.json")["months"])
+    return _copies(_load("spend.json")["months"])
 
 
 def currency() -> str:

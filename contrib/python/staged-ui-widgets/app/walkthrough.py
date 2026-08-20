@@ -64,6 +64,12 @@ class DemoContext:
     Real ``State``, so the delta that forces the event out is visible here
     too: a turn that stages nothing leaves ``has_delta()`` false, and that is
     exactly why the flush must not write state unconditionally.
+
+    The sink reproduces ADK's duplicate-id guard
+    (``agents/context.py:1010``), so a demo run is as strict about a repeated
+    widget id as a real host is. No turn below trips it, and none should: the
+    point is that a change to the flush which shipped one widget twice would
+    fail here rather than print happily and fail in front of a client.
     """
 
     def __init__(self, state: dict[str, Any] | None = None) -> None:
@@ -71,6 +77,8 @@ class DemoContext:
         self.widgets: list[Any] = []
 
     def render_ui_widget(self, ui_widget: Any) -> None:
+        if any(widget.id == ui_widget.id for widget in self.widgets):
+            raise ValueError(f"widget id {ui_widget.id} already rendered")
         self.widgets.append(ui_widget)
 
     def next_turn(self) -> DemoContext:

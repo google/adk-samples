@@ -51,9 +51,11 @@ def setup_telemetry() -> None:
             f"gs://{bucket}/{path}",
         )
     else:
+        # The bucket name only, with no scheme: this module and
+        # app/fast_api_app.py both prepend gs:// themselves.
         logging.info(
             "Prompt-response logging disabled (set LOGS_BUCKET_NAME"
-            "=gs://your-bucket and"
+            "=your-gcs-bucket-name and"
             " OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
             "=NO_CONTENT to enable)"
         )

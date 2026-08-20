@@ -135,6 +135,28 @@ def test_an_unmatchable_query_still_recommends(ctx: StubContext) -> None:
     result = get_personalized_picks("zzzz no such product", ctx)
     assert result["status"] == "ok"
     assert result["items"]
+    # The carousel must not head profile picks as matches for a query that
+    # matched nothing -- that is the widget making the false claim.
+    assert "Matches for" not in staged(ctx, "picks")["headline"]
+
+
+def test_the_fallback_does_not_report_profile_picks_as_matches(
+    ctx: StubContext,
+) -> None:
+    """A summary that invents a match is a lie the model cannot detect.
+
+    The instruction tells the model to stay inside the tool results, so a tool
+    result claiming products matched a query they never matched is spoken to
+    the shopper as fact. Sizes nothing is stocked in, to reach the branch that
+    describes the candidate set.
+    """
+    update_preference(ctx.state, "shoe_size", "15")
+    update_preference(ctx.state, "apparel_size", "XXXL")
+    result = get_personalized_picks("zzzz no such product", ctx)
+
+    assert result["status"] == "empty"
+    assert "matched" not in result["summary"]
+    assert "preferred categories" in result["summary"]
 
 
 # --- comparison -------------------------------------------------------------
@@ -253,15 +275,113 @@ def test_a_pinned_problem_state_wins_over_position(
 
 
 def test_a_cancelled_order_renders_as_cancelled(ctx: StubContext) -> None:
-    get_order_status("ORD-4351", ctx)
+    """The result the model reads has to agree with the timeline beside it."""
+    result = get_order_status("ORD-4351", ctx)
     assert "cancelled" in [s["state"] for s in staged(ctx, "order")["steps"]]
     rendered(ctx, "order")
 
+    # Reported as cancelled rather than as finished. This order is cancelled
+    # at its *last* stage, so the assertion cannot separate the pinned-state
+    # lookup from the last-stage fallback -- the next test does that.
+    assert result["current_step"] == "Cancelled"
+    assert "delivered" not in result["summary"].lower()
+
+
+def test_a_cancellation_mid_timeline_is_not_reported_as_delivered(
+    ctx: StubContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reported bug, in the one shape the fixtures cannot express.
+
+    Every cancelled order in the fixtures is cancelled at its last stage, so
+    the last-stage fallback returns "Cancelled" there whether or not the
+    lookup honours the pinned state. An order halted with stages still ahead
+    of it is what tells the two apart: keyed off "current" alone it reports
+    the final stage, which is the delivery that never happened.
+    """
+    halted = {
+        "id": "ORD-4210",
+        "item_ids": [],
+        "stages": [
+            {"label": "Ordered", "on": "2026-05-01", "reached": True},
+            {
+                "label": "Cancelled",
+                "on": "2026-05-02",
+                "reached": True,
+                "state": "cancelled",
+            },
+            {"label": "Out for delivery", "reached": False},
+            {"label": "Delivered", "reached": False},
+        ],
+    }
+    monkeypatch.setattr(store, "order", lambda _order_id: halted)
+
+    result = get_order_status("ORD-4210", ctx)
+    assert result["current_step"] == "Cancelled"
+    assert "Cancelled" in result["summary"]
+    # Settled, so there is nothing for the shopper to do about it.
+    assert result["needs_attention"] is False
+
+
+def test_a_finished_order_stands_at_its_last_stage(ctx: StubContext) -> None:
+    """A completed order is where it ended, and needs nothing."""
+    result = get_order_status("ORD-4388", ctx)
+    assert result["current_step"] == "Delivered"
+    assert result["needs_attention"] is False
+
+
+def test_the_last_stage_is_read_from_the_data_not_named(
+    ctx: StubContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fallback reads the timeline; it does not assume a delivery.
+
+    Every finished order in the fixtures ends on "Delivered", so the test
+    above passes just as well against the hardcoded literal this replaced.
+    An order collected in store is the case that tells the two apart.
+    """
+    collected = {
+        "id": "ORD-4200",
+        "item_ids": [],
+        "stages": [
+            {"label": "Ordered", "on": "2026-04-01", "reached": True},
+            {"label": "Ready for pickup", "on": "2026-04-02", "reached": True},
+            {
+                "label": "Collected in store",
+                "on": "2026-04-03",
+                "reached": True,
+            },
+        ],
+    }
+    monkeypatch.setattr(store, "order", lambda _order_id: collected)
+
+    result = get_order_status("ORD-4200", ctx)
+    assert result["current_step"] == "Collected in store"
+    # The summary carries it to the model, so it has to agree.
+    assert "Collected in store" in result["summary"]
+
+
+def test_an_order_with_no_stages_says_so(
+    ctx: StubContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No timeline, no answer -- and no invented one."""
+    monkeypatch.setattr(
+        store, "order", lambda _order_id: {"id": "ORD-4100", "stages": []}
+    )
+    assert get_order_status("ORD-4100", ctx)["current_step"] == "Unknown"
+
 
 def test_an_empty_order_id_finds_the_open_one(ctx: StubContext) -> None:
+    """The literal, not ``latest_open_order()``, which is the code under test.
+
+    Two orders in the fixtures are still moving, so "the open one" is a choice
+    between them. Asserting against the accessor would agree with itself if
+    that choice ever reversed.
+    """
     result = get_order_status("", ctx)
     assert result["status"] == "ok"
-    assert result["order_id"] == store.latest_open_order()["id"]
+    assert result["order_id"] == "ORD-4417"
 
 
 def test_order_ids_are_matched_case_insensitively(ctx: StubContext) -> None:
@@ -558,16 +678,28 @@ def test_no_tool_renders() -> None:
 
     The rule the layout exists to enforce, checked at the source level because
     the alternative is noticing the day two tools race to render the same id.
-    Matched as a call rather than a mention, so the docstrings explaining the
-    rule are not themselves violations of it.
+
+    Scoped to all of ``app/`` rather than this package, because that is the
+    claim the README and ``app/tools/__init__.py`` both make: a render call
+    added under ``app/render/`` or ``app/staging/`` clears a tools-only glob
+    while falsifying the sentence. Asserted as an equality, so deleting the
+    one legitimate call fails too -- a flush that renders nothing emits no
+    widgets at all, and every staging test would still pass.
+
+    Matched on the attribute form, which is what separates a call from the two
+    places that only *define* the method: the Protocol in ``lifecycle.py`` and
+    the walkthrough's ``DemoContext``. Prose mentions carry no parenthesis, so
+    the docstrings explaining the rule are not themselves violations of it.
     """
-    package = Path(tools_package.__file__).parent
-    offenders = [
-        path.name
-        for path in sorted(package.glob("*.py"))
-        if re.search(r"render_ui_widget\s*\(", path.read_text(encoding="utf-8"))
-    ]
-    assert offenders == []
+    app_root = Path(tools_package.__file__).parent.parent
+    call_sites = sorted(
+        str(path.relative_to(app_root))
+        for path in app_root.rglob("*.py")
+        if re.search(
+            r"\.render_ui_widget\s*\(", path.read_text(encoding="utf-8")
+        )
+    )
+    assert call_sites == ["staging/lifecycle.py"]
 
 
 @pytest.mark.parametrize("tool", ALL_TOOLS, ids=lambda t: t.__name__)

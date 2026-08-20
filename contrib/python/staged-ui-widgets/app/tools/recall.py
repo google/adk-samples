@@ -14,7 +14,8 @@
 """ "Bring those back up" -- re-showing a widget without rebuilding it.
 
 The tool with no inline equivalent whatsoever. Every other tool here computes
-something and stages the result; this one computes nothing. It flips two flags
+something and stages the result; this one computes nothing. It flips three
+flags -- dirty and emitted for the flush, revived for the contract resolver --
 and the flush re-emits a payload that has been sitting in session state for
 however many turns.
 
@@ -32,7 +33,7 @@ from typing import Any
 
 from google.adk.tools import ToolContext
 
-from ..staging import revive_widget, spec_for
+from ..staging import revive_widget
 from ..staging.spec import all_specs
 from ..staging.state import register_payload
 
@@ -155,5 +156,5 @@ def _available(tool_context: ToolContext) -> list[str]:
     return [
         spec.name
         for spec in all_specs()
-        if register_payload(tool_context.state, spec_for(spec.name))
+        if register_payload(tool_context.state, spec)
     ]

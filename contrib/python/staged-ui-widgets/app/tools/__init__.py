@@ -13,9 +13,12 @@
 # limitations under the License.
 """The agent's tools.
 
-Every one of them stages and returns; none of them renders. Grep the package
-for ``render_ui_widget`` and the only hit is ``staging/lifecycle.py`` -- that
-is the invariant this layout exists to make visible.
+Every one of them stages and returns; none of them renders -- that is the
+invariant this layout exists to make visible. Across ``app/``,
+``render_ui_widget`` is called in exactly one place, ``staging/lifecycle.py``;
+where this package names it, that is prose about the rule, not a use of it.
+``test_no_tool_renders`` matches the call form across all of ``app/``, so the
+check stays honest as those docstrings grow.
 """
 
 from .orders import get_order_status

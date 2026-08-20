@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""The staging lifecycle: five gates, a fixed order, and cross-turn revival.
+"""The staging lifecycle: six gates, a fixed order, and cross-turn revival.
 
 Every test here answers the question this framework gets asked most -- "why
 didn't my widget appear?" -- which is why the flush reports an outcome per
@@ -40,9 +40,11 @@ from app.staging.lifecycle import (
     EMPTY_REGISTER,
     NOT_STAGED,
     NOTHING_RENDERED,
+    RENDER_FAILED,
     SUPPRESSED,
     WIDGET_PROVIDER,
 )
+from app.staging.state import was_emitted
 from conftest import StubContext
 
 PICKS: dict[str, Any] = {
@@ -58,7 +60,7 @@ def outcomes_by_name(ctx: StubContext) -> dict[str, tuple[bool, str]]:
     return {o.name: (o.emitted, o.reason) for o in emit_staged_widgets(ctx)}
 
 
-# --- the five gates ---------------------------------------------------------
+# --- the six gates ----------------------------------------------------------
 
 
 def test_nothing_staged_emits_nothing_and_writes_nothing(
@@ -126,6 +128,49 @@ def test_payload_that_renders_empty_is_reported(ctx: StubContext) -> None:
     assert outcomes_by_name(ctx)["picks"] == (False, NOTHING_RENDERED)
 
 
+class RefusingContext(StubContext):
+    """A host that rejects one widget id, whatever it is handed.
+
+    ``spec.py`` rejects duplicate ids at import, so the flush's own
+    ``ValueError`` path is unreachable through the specs. Refusing from the
+    sink is how a test reaches gate 6 -- and a real host is entitled to
+    refuse for reasons this recipe cannot see.
+    """
+
+    def __init__(self, refuse: str) -> None:
+        super().__init__()
+        self._refuse = refuse
+
+    def render_ui_widget(self, ui_widget: Any) -> None:
+        if ui_widget.id == self._refuse:
+            raise ValueError(f"widget id {ui_widget.id} already rendered")
+        super().render_ui_widget(ui_widget)
+
+
+def test_a_refused_widget_is_reported_and_stays_unemitted() -> None:
+    """Gate 6. The reply survives the refusal, and so does the register.
+
+    Two things matter here. The other widget still ships -- one rejection must
+    not cost the shopper everything else on screen. And the refused widget is
+    never marked emitted, so a later turn can revive it rather than treating a
+    widget the shopper never saw as already delivered.
+    """
+    ctx = RefusingContext("ui-picks")
+    stage_widget(ctx.state, "picks", PICKS)
+    stage_widget(ctx.state, "spend", SPEND)
+
+    outcomes = {o.name: (o.emitted, o.reason) for o in emit_staged_widgets(ctx)}
+    assert outcomes["picks"] == (False, RENDER_FAILED)
+    assert outcomes["spend"] == (True, EMITTED)
+    assert ctx.widget_ids == ["ui-spend"]
+
+    # The register survived the refusal, so a host that accepts it still ships
+    # it. A widget the shopper never saw must not read as delivered.
+    assert was_emitted(ctx.state, spec_for("picks")) is False
+    retry = StubContext(ctx.state.to_dict())
+    assert outcomes_by_name(retry)["picks"] == (True, EMITTED)
+
+
 def test_a_failing_widget_does_not_block_the_others(
     ctx: StubContext,
 ) -> None:
@@ -173,9 +218,16 @@ def test_blocked_emissions_hides_the_widgets_nobody_asked_for(
 
 
 def test_staging_an_unknown_widget_fails_loudly(ctx: StubContext) -> None:
-    """A typo in a widget name is a bug, not a silently skipped widget."""
-    with pytest.raises(KeyError, match="picks"):
+    """A typo in a widget name is a bug, not a silently skipped widget.
+
+    The match pins the typo. ``"picks"`` also appears in the list of declared
+    names the message ends with, so it would pass even if the bad name were
+    never echoed back -- which is the only part a developer needs.
+    """
+    with pytest.raises(KeyError, match="pickz") as caught:
         stage_widget(ctx.state, "pickz", PICKS)
+    # The message also names the real widgets, so a caller can fix the typo.
+    assert "picks" in str(caught.value)
 
 
 def test_widget_ids_and_keys_are_derived_from_one_name() -> None:

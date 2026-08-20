@@ -65,10 +65,10 @@ class StubContext:
         """A fresh context carrying only what ADK would carry forward.
 
         ``temp:`` keys are per-invocation: ``_apply_temp_state`` writes them
-        onto the transient session copy only, so they reach neither the next
-        turn nor storage (verified against
-        ``sessions/in_memory_session_service.py``). Dropping them here is what
-        makes the cross-turn revival test honest.
+        onto the in-memory session only, and ``_trim_temp_delta_state`` strips
+        them from the event before it is stored, so they reach neither the next
+        turn nor storage (``sessions/base_session_service.py:169,182-210``).
+        Dropping them here is what makes the cross-turn revival test honest.
         """
         return StubContext(
             {

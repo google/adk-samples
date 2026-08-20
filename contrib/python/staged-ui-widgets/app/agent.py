@@ -147,7 +147,8 @@ def ensure_widget_companion(
 
     Returns ``None`` in every ordinary case, including the common one where
     the model wrote something. A returned response replaces the original
-    wholesale (``flows/llm_flows/base_llm_flow.py:278``), so it is built with
+    wholesale -- ``base_llm_flow`` rebinds to whatever the callback hands back
+    (``flows/llm_flows/base_llm_flow.py:1558-1565``) -- so it is built with
     ``model_copy`` to keep usage metadata and finish reason intact.
 
     No state write is needed here, unlike the flush: this is the model

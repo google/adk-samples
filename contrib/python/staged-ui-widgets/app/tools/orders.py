@@ -96,9 +96,17 @@ def get_order_status(
         {"headline": f"Order {found['id']}", "steps": steps},
     )
 
+    # Pinned states are "where the order stands" too. A cancelled order has no
+    # step in the ``current`` position, and falling through to the finished-
+    # order default below would tell the model the parcel arrived -- the
+    # opposite of what the timeline beside it shows.
     current = next(
-        (s for s in steps if s["state"] in ("current", "problem")), None
+        (s for s in steps if s["state"] in ("current", *_PINNED_STATES)),
+        None,
     )
+    # Nothing in progress means the order ran to its end, so the last stage is
+    # where it stands. Read from the data rather than assuming "Delivered".
+    standing = current["label"] if current else _last_label(steps)
     item_names = [
         product["name"]
         for product in (store.product(i) for i in found.get("item_ids", []))
@@ -109,15 +117,26 @@ def get_order_status(
         "status": "ok",
         "widget": "order",
         "order_id": found["id"],
-        "current_step": current["label"] if current else "Delivered",
+        "current_step": standing,
+        # "problem" only: a cancelled order is settled, so there is nothing for
+        # the shopper to do about it. ``current_step`` is what says so.
         "needs_attention": bool(current and current["state"] == "problem"),
         "eta": found.get("eta"),
         "items": item_names,
         "summary": (
-            f"Staged the timeline for {found['id']}. Currently: "
-            f"{current['label'] if current else 'delivered'}."
+            f"Staged the timeline for {found['id']}. Currently: {standing}."
         ),
     }
+
+
+def _last_label(steps: list[dict[str, Any]]) -> str:
+    """The final stage's label, for an order with nothing left in progress.
+
+    An order with no stages at all has no answer in the data, so say that
+    rather than naming a stage it was never recorded as reaching -- naming one
+    is the assumption this function exists to remove.
+    """
+    return steps[-1]["label"] if steps else "Unknown"
 
 
 def _steps(order: Mapping[str, Any]) -> list[dict[str, Any]]:

@@ -1,5 +1,5 @@
 {
-  "_comment": "Fictional spend history, twelve months ending Aug 2026. Monthly totals and a category split; the tool slices a window and computes the average, so the headline can never contradict the chart.",
+  "_comment": "Fictional spend history, twelve months ending Aug 2026. Monthly totals and a category split that sums to the total -- get_spend_summary reports both, so a split that does not add up makes the tool contradict itself; tests/unit/test_store.py holds that. The tool slices a window and computes the average, so the headline can never contradict the chart.",
   "currency": "USD",
   "months": [
     {
@@ -45,7 +45,7 @@
     {
       "month": "2026-05",
       "amount": 341.0,
-      "by_category": { "pack": 189.0, "base-layer": 142.0 }
+      "by_category": { "pack": 189.0, "base-layer": 152.0 }
     },
     {
       "month": "2026-06",

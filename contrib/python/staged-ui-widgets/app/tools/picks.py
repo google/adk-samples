@@ -73,25 +73,37 @@ def get_personalized_picks(
       do not offer a different rationale.
     """
     profile = load_profile(tool_context.state)
-    candidates = _candidates(query, profile)
+    candidates, from_query = _candidates(query, profile)
 
     if not candidates:
+        # Only reachable on the fallback path -- a query that matched would
+        # have produced candidates -- so it is the profile that came up empty,
+        # and blaming the query would misdescribe it.
         return {
             "status": "empty",
             "widget": None,
-            "summary": f"Nothing in the catalog matches {query!r}.",
+            "summary": (
+                "Nothing in the shopper's preferred categories to recommend."
+            ),
             "items": [],
         }
 
     picks = rank_products(candidates, profile, limit=_MAX_PICKS)
     if not picks:
+        # Name the set that was actually scored. On the fallback path nothing
+        # matched the query, and a summary that says otherwise hands the model
+        # a fact it has no way to check and every reason to repeat.
+        basis = (
+            f"matched {query!r}"
+            if from_query
+            else "came from the shopper's preferred categories"
+        )
         return {
             "status": "empty",
             "widget": None,
             "summary": (
-                f"{len(candidates)} products matched {query!r}, but none are "
-                "available in the shopper's size or clear their material "
-                "exclusions."
+                f"{len(candidates)} products {basis}, but none are available "
+                "in the shopper's size or clear their material exclusions."
             ),
             "items": [],
         }
@@ -114,7 +126,7 @@ def get_personalized_picks(
         tool_context.state,
         "picks",
         {
-            "headline": _picks_headline(query, profile),
+            "headline": _picks_headline(query, profile, from_query),
             "items": items,
             # Kept so a later preference change can re-rank the same request
             # without asking the shopper to repeat it. The converter ignores
@@ -298,23 +310,30 @@ def restage_picks(tool_context: ToolContext) -> PicksRefresh:
     return PicksRefresh(cards=count, changed=True)
 
 
-def _candidates(query: str, profile: dict[str, Any]) -> list[dict[str, Any]]:
-    """Products worth scoring for this request.
+def _candidates(
+    query: str, profile: dict[str, Any]
+) -> tuple[list[dict[str, Any]], bool]:
+    """Products worth scoring, and whether the query is what found them.
 
     An empty query means "surprise me", which resolves to the shopper's
     preferred categories rather than the whole catalog -- ranking the full
     catalog against a broad profile mostly surfaces accessories.
+
+    The flag is not bookkeeping. The caller's summary is the model's only
+    account of where these products came from, and a summary saying they
+    matched a query they never matched is how the agent ends up telling the
+    shopper the same thing.
     """
     cleaned = query.strip()
     if cleaned:
         matches = store.find_products(cleaned)
         if matches:
-            return matches
+            return matches, True
         # A miss on the literal query is not a dead end: the profile is still
         # a valid basis for a recommendation, and saying "nothing matched" to
         # someone who typed "something for the rain" is unhelpful.
-        return _preferred(profile)
-    return _preferred(profile)
+        return _preferred(profile), False
+    return _preferred(profile), False
 
 
 def _preferred(profile: dict[str, Any]) -> list[dict[str, Any]]:
@@ -324,11 +343,17 @@ def _preferred(profile: dict[str, Any]) -> list[dict[str, Any]]:
     return [p for p in store.products() if p["category"] in wanted]
 
 
-def _picks_headline(query: str, profile: dict[str, Any]) -> str:
-    """A headline stating the actual basis for the picks."""
-    cleaned = query.strip()
-    if cleaned:
-        return f"Matches for “{cleaned}”"
+def _picks_headline(
+    query: str, profile: dict[str, Any], from_query: bool
+) -> str:
+    """A headline stating the actual basis for the picks.
+
+    ``from_query`` rather than "the query is non-empty": a query that missed
+    fell back to the profile, and a carousel headed "Matches for X" over
+    profile picks is the widget itself making the claim the summary must not.
+    """
+    if from_query:
+        return f"Matches for “{query.strip()}”"
     categories = profile.get("preferred_categories", [])
     if categories:
         readable = " and ".join(c.replace("-", " ") for c in categories[:2])

@@ -14,16 +14,19 @@ does not raise an exception, and the fix is the same each time — separate
 
 So no tool here renders. Every tool writes a payload into session state and
 returns a short summary; one `after_agent_callback` at the end of the turn
-converts what was staged and emits it. Grep the tools package for
-`render_ui_widget` and you get nothing — the only call site is
-[app/staging/lifecycle.py](app/staging/lifecycle.py).
+converts what was staged and emits it. Across `app/`, `render_ui_widget` is
+called in exactly one place — [app/staging/lifecycle.py](app/staging/lifecycle.py).
+The tools package only ever names it in prose, and `test_no_tool_renders` in
+[tests/unit/test_tools.py](tests/unit/test_tools.py) matches the call form
+across `app/`, so a second render call — in a tool or anywhere else — fails the
+suite.
 
 ## What that split buys
 
 **A widget lifecycle independent of tool calls.** This is the one with no
 inline equivalent at all. Because the payload outlives the turn that built it:
 
-- `show_again` re-emits a carousel with no recomputation — it flips two flags
+- `show_again` re-emits a carousel with no recomputation — it flips three flags
   and the flush does the rest. Without it, "show me those shoes again" is
   answered by re-running the search, which returns *different* shoes once the
   shopper has edited their profile.
@@ -44,14 +47,15 @@ model that called the spend tool first still got `['ui-picks', 'ui-spend']`.
 **Duplicate-id safety under parallel tool calls.** `render_ui_widget` rejects a
 duplicate widget id, but each function call gets its own `ToolContext`
 (`flows/llm_flows/functions.py:1228`), so the check only ever sees one call's
-widgets — and `merge_parallel_function_response_events` concatenates the lists
-untouched. Flushing once, from one context, is where that check actually bites.
+widgets — and `merge_parallel_function_response_events` concatenates the two
+lists into one without re-checking ids. Flushing once, from one context, is
+where that check actually bites.
 
 **An answer to "why is my widget missing".** The flush returns one outcome per
 declared widget, emitted or not, with the gate that stopped it: `not staged
 this turn`, `already emitted`, `suppressed for this turn`, `register empty`,
-`converter produced no components`. A silent skip is a bad answer to the
-question this design gets asked most.
+`converter produced no components`, `host rejected the widget`. A silent skip
+is a bad answer to the question this design gets asked most.
 
 ## The trap worth reading twice
 
@@ -188,8 +192,8 @@ Eight turns of a shopping conversation with the model's tool choices scripted.
 Each turn prints the widgets, the gate that held anything back, and the contract
 the reply resolved to. Turn 3 asks for `answer` rather than `synthesis` because a
 delivery timeline is a detail panel; turn 5 is the suppressed no-op refresh,
-where the contract correctly prints `none`; turn 6 revives a carousel built four
-turns earlier and drops to `acknowledge`; and turn 8 stages nothing — printing
+where the contract correctly prints `none`; turn 6 revives the carousel turn 4
+staged and drops to `acknowledge`; and turn 8 stages nothing — printing
 `state delta: False`, which is the trap above made visible.
 
 ## Layout

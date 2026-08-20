@@ -121,12 +121,64 @@ def test_an_unknown_id_is_none_not_an_error() -> None:
     assert store.product("no-such-sku") is None
 
 
-def test_products_are_returned_as_copies() -> None:
-    """The cache is shared, so a caller mutating a product would poison it."""
+def test_records_are_returned_as_copies() -> None:
+    """The cache is shared, so a caller mutating a record would poison it.
+
+    Every accessor that hands back records, not just the singular one:
+    ``list(...)`` copies the outer list and hands out the cached dicts, which
+    is the easy version of this bug to write. Every block also mutates a
+    *nested* value, because that is the version a top-level assertion cannot
+    see: ``dict(record)`` returns a fresh outer dict and still shares
+    ``sizes``, ``tags``, ``stages`` and ``by_category``. Checked block by
+    block -- reintroducing a shallow copy in any one accessor fails this test.
+    (``purchased_product_ids`` is absent on purpose: it builds a fresh set of
+    strings, so there is nothing shared to mutate.)
+    """
     first = store.product("cirrus-trail-3")
     assert first is not None
     first["price"] = 1.0
+    first["sizes"].append("99")
     assert store.product("cirrus-trail-3")["price"] != 1.0
+    assert "99" not in store.product("cirrus-trail-3")["sizes"]
+
+    listed = store.products()
+    listed[0]["price"] = 2.0
+    listed[0]["sizes"].append("98")
+    assert store.products()[0]["price"] != 2.0
+    assert "98" not in store.products()[0]["sizes"]
+    assert store.product(listed[0]["id"])["price"] != 2.0
+
+    found = store.find_products("trail shoes")
+    assert found
+    found[0]["name"] = "clobbered"
+    found[0]["tags"].append("clobbered")
+    assert store.find_products("trail shoes")[0]["name"] != "clobbered"
+    assert "clobbered" not in store.find_products("trail shoes")[0]["tags"]
+
+    every_order = store.orders()
+    every_order[0]["stages"].clear()
+    assert store.orders()[0]["stages"]
+
+    one_order = store.order("ORD-4417")
+    assert one_order is not None
+    one_order["stages"].clear()
+    assert store.order("ORD-4417")["stages"]
+
+    open_order = store.latest_open_order()
+    assert open_order is not None
+    open_order["stages"].clear()
+    # The identity, not just the shape. Cleared stages read as finished, so a
+    # leak here does not return nothing -- it returns the *next* open order,
+    # which has stages of its own and is not the one the shopper asked about.
+    # There are two open orders in the fixtures, so that substitution is real.
+    assert store.latest_open_order()["id"] == open_order["id"]
+    assert store.latest_open_order()["stages"]
+
+    months = store.spend_months()
+    months[0]["amount"] = -1.0
+    months[0]["by_category"]["bogus"] = 1.0
+    assert store.spend_months()[0]["amount"] != -1.0
+    assert "bogus" not in store.spend_months()[0]["by_category"]
 
 
 # --- orders and the fixture clock -------------------------------------------
@@ -169,7 +221,10 @@ def test_today_comes_from_the_fixture_not_the_clock() -> None:
     Pinning "today" in the data is also what keeps the timeline tests from
     failing on a Tuesday.
     """
-    assert store.today() == store._load("orders.json")["today"]
+    # The literal from ``app/data/orders.json``, not
+    # ``_load("orders.json")["today"]``: comparing the function against its own
+    # body would hold whatever it returned, a clock reading included.
+    assert store.today() == "2026-08-18"
     assert store.today() >= max(o["placed_on"] for o in store.orders())
 
 
@@ -188,3 +243,17 @@ def test_spend_history_is_oldest_first_and_a_full_year() -> None:
 
 def test_the_currency_is_stated_in_the_data() -> None:
     assert store.currency() == "USD"
+
+
+def test_every_month_s_split_adds_up_to_its_total() -> None:
+    """``get_spend_summary`` reports the total *and* the biggest category.
+
+    Over a window it sums the two independently: the total from ``amount``,
+    the leader from the ``by_category`` maps. A month whose split does not add
+    up to its own amount therefore hands the model two window figures that
+    cannot both be true, and nothing downstream can tell which one is wrong.
+    Checked per month, because that is where the discrepancy enters.
+    """
+    for month in store.spend_months():
+        split = sum(month["by_category"].values())
+        assert round(split, 2) == month["amount"], month["month"]

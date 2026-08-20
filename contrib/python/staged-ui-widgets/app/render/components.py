@@ -32,7 +32,11 @@ from typing import Any
 # The spec requires the entry-point component to use exactly this id.
 ROOT_ID = "root"
 
-A2UI_VERSION = "v0.9"
+# The wire ``version`` field every message carries. Deliberately not the same
+# string as ``catalog.py``'s ``A2UI_VERSION``, and named apart from it so the
+# difference is not read as a typo: the SDK selects schemas by ``"0.9"``, while
+# its validator rejects any message whose ``version`` is not exactly ``"v0.9"``.
+A2UI_MESSAGE_VERSION = "v0.9"
 
 # Fields that hold a single component id.
 _SINGLE_REF_FIELDS = ("child",)
@@ -239,14 +243,14 @@ class Surface:
             return []
         return [
             {
-                "version": A2UI_VERSION,
+                "version": A2UI_MESSAGE_VERSION,
                 "createSurface": {
                     "surfaceId": self.surface_id,
                     "catalogId": self.catalog_id,
                 },
             },
             {
-                "version": A2UI_VERSION,
+                "version": A2UI_MESSAGE_VERSION,
                 "updateComponents": {
                     "surfaceId": self.surface_id,
                     "components": components,
