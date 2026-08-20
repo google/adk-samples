@@ -1,0 +1,338 @@
+---
+name: make-python-recipe-deployable
+description: >
+  Makes an existing Python recipe deployable: generates the serving files a
+  container needs (Dockerfile, .dockerignore, fast_api_app.py,
+  app_utils/a2a.py, app_utils/services.py,
+  app_utils/reasoning_engine_adapter.py) and configures the recipe to match
+  (required serving dependencies, the App object in agent.py, the hatch wheel
+  package, manifest.deployable). Interactive by design — it asks the recipe
+  owner about runtime data directories and stops for a human decision when a
+  recipe needs an ADK migration or carries a legacy app_utils generation.
+  Does NOT build images, deploy, or write terraform. Use when the user wants
+  to "make this recipe deployable", "add a Dockerfile to a recipe", "add the
+  serving files", "containerize a recipe", or prepare a recipe for Cloud
+  Build / Artifact Registry.
+metadata:
+  author: Google
+  license: Apache-2.0
+  version: 1.0.0
+---
+
+# Make a Python Recipe Deployable
+
+A **deployable** recipe is one that can be packaged into a container and run as
+a service. This skill writes the files that requires and configures the recipe
+to match.
+
+It does **not** build an image, deploy anything, or provision infrastructure.
+Image builds happen later via Cloud Build → Artifact Registry; this skill's job
+ends when the files are correct.
+
+The standard it implements lives in `.github/policy.yml` under `deployability:`
+— the minimum `google-adk` version, the required dependency list, the required
+file list, and the legacy `app_utils` file list. **Change the standard there,
+not in the script.**
+
+---
+
+## What "deployable" means here, and the one distinction that matters
+
+`deployable` in `.github/schemas/manifest-schema.json` means "can be deployed
+with one click". So a run ends in one of three outcomes:
+
+| Outcome | Meaning | `manifest.deployable` |
+|---|---|---|
+| `deployable` | Serving files present and correct; no bespoke infrastructure needed. | set to `true` |
+| `containerized` | Same files, but the recipe needs backing infra a human must provision. | **left unset** |
+| `blocked` | A gate stopped the run. Nothing was written. | untouched |
+
+Never describe a `containerized` result as "deployable" to the user. Setting
+that flag on a recipe that still needs hand-written terraform puts a false
+claim in the manifest, which is worse than leaving it unset.
+
+---
+
+## What generating `a2a.py` does and does not prove
+
+Nothing, on its own. These templates were designed assuming the project was
+scaffolded by agents-cli, and **a file named `a2a.py` does not make an agent
+behave correctly over A2A**. The skill copies and configures; it does not
+certify. Say so in your summary — do not tell the owner their recipe "supports
+A2A" because the file exists.
+
+---
+
+## Rules for the agent
+
+1. **Confirm before applying.** Always run a dry-run first, show the plan, and
+   get a "yes" before `--apply`. The skill writes six files and edits three.
+2. **Ask the questions in the Interview below** before applying — but only the
+   ones the dry-run shows are relevant. Do not interrogate the owner about
+   data directories for a recipe that has none.
+3. **Never override a gate on your own.** `adk-locked-version`,
+   `adk-version-floor` and `legacy-app-utils` return `needs_input` and stop the
+   run. Each means a human has to change code. Report the message verbatim and
+   stop; do not go hunting for a way around it.
+4. **Never widen an existing version bound** to satisfy the standard. The
+   script leaves version specifiers exactly as the recipe wrote them and
+   reports them for confirmation. It *does* merge in missing **extras**
+   (`google-adk` → `google-adk[gcp,otel-gcp]`, same version bound), because
+   the generated code imports what those extras install and the recipe would
+   not start otherwise. Those are different risks: an extra only adds a
+   package's own optional dependencies, while a version rewrite can move the
+   recipe onto code it was never tested against.
+5. **Do not overwrite an existing `fast_api_app.py`** without explicit
+   confirmation. An existing one is usually bespoke — `long-horizon-harness`'s
+   is ~400 lines of custom routing. `--overwrite` exists but is a deliberate
+   choice, not a default.
+6. **Run the follow-ups yourself** after a successful apply (see Step 5); the
+   script does not, so a failure is attributable to the right step.
+7. **Stay inside the recipe.** If a run reveals problems in a different
+   recipe, mention them and move on.
+
+---
+
+## Pipeline
+
+### Step 0 — Dry run
+
+```bash
+uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
+  python3 .agents/skills/make-python-recipe-deployable/scripts/make_deployable.py \
+  --recipe-dir <RECIPE_DIR>
+```
+
+Prints a JSON report: `outcome`, `agent_package`, `checks`, `todos`, `notes`.
+Nothing is written. Exit code `0` = fine, `1` = a gate needs human input,
+`2` = error.
+
+Summarise it for the owner. Do not dump the raw JSON.
+
+### Step 1 — Handle gates
+
+If any check is `needs_input`, **stop**. The three that gate:
+
+- **`adk-locked-version`** — `uv.lock` resolves `google-adk` to an older major
+  than the standard requires. The declared specifier may well permit the newer
+  version, which is exactly the trap: re-locking would cross a major silently,
+  and the agent code has only ever run against the old one. The owner must port
+  the agent first. This script rewrites metadata; it cannot migrate code.
+- **`adk-version-floor`** — the specifier itself excludes the required version
+  (a `<2.0.0` ceiling, an `==1.31.0` pin). Same conclusion.
+- **`legacy-app-utils`** — the package carries the old ASP-era generation
+  (`telemetry.py`, `typing.py`, `deploy.py`, `memory_config.py`). Filenames do
+  not collide with the new set, but the two wire telemetry and services
+  differently and the existing `fast_api_app.py` imports the old ones.
+  Generating over the top orphans them or double-wires telemetry. A human
+  decides how to migrate.
+
+### Step 2 — Interview
+
+Ask only what applies. Keep it to one round.
+
+1. **Runtime data directories.** Does the agent read anything at runtime that
+   is not in the agent package — `assets/`, `sample_data/`, a config file?
+   Those need `COPY` lines or the container fails *at request time*, not at
+   build time, which is why a human confirms rather than the skill guessing.
+   Pass them as `--data-dirs assets,sample_data`.
+2. **An existing serving file was found.** The dry-run reports each as
+   `report_only`. Ask whether to keep it (default) or replace it
+   (`--overwrite`). Show what the existing file does first.
+3. **Version bounds that sit below the standard.** The report lists any
+   existing requirement it left alone (e.g. `google-adk>=2.2.0` against a
+   `>=2.6.0` standard). Resolution usually lands on a satisfying version
+   anyway — `a2a-sdk>=1.0` forces `google-adk>=2.5` on its own — but confirm
+   the owner is happy rather than rewriting their pin.
+4. **Deployment region.** Nothing in a recipe declares one, and it goes into
+   `agents-cli-manifest.yaml`, so it is a real decision. Default `us-east1`
+   (agents-cli's own). Pass `--region us-central1` etc.
+5. **Backing infrastructure.** If the outcome is `containerized`, confirm the
+   owner understands `manifest.deployable` stays unset and why.
+
+### Step 3 — Apply
+
+```bash
+uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
+  python3 .agents/skills/make-python-recipe-deployable/scripts/make_deployable.py \
+  --recipe-dir <RECIPE_DIR> --apply [--data-dirs a,b] [--overwrite] \
+  [--region us-central1]
+```
+
+### Step 4 — Report what changed
+
+List `files_written` and the checks that moved to `fixed`.
+
+### Step 5 — Follow-ups (you run these)
+
+The script changes dependencies, so the lockfile is stale and the new files
+are unformatted. In order:
+
+```bash
+cd <RECIPE_DIR> && uv lock --python 3.11
+```
+
+`--python 3.11` because CI pins it — locking with a newer local interpreter
+produces a lockfile CI rejects with a misleading "out of date" error.
+
+```bash
+# from the REPO ROOT, so the root ruff config wins
+uv run ruff format <RECIPE_DIR>/ && uv run ruff check --fix <RECIPE_DIR>/
+```
+
+Then the repo validators:
+
+```bash
+uv run validate manifest <RECIPE_DIR>
+uv run validate structure <RECIPE_DIR>
+cd <RECIPE_DIR> && uv run pytest tests/ -q
+```
+
+### Step 6 — Boot check (the real proof)
+
+Static checks cannot tell you the recipe actually serves. This can, it needs no
+container runtime, and it is the closest thing to a correctness oracle the
+skill has. Run it from inside the recipe after `uv sync`:
+
+```bash
+cd <RECIPE_DIR> && uv sync --python 3.11 && uv run --python 3.11 --with httpx python -c "
+import warnings; warnings.filterwarnings('ignore')
+from fastapi.testclient import TestClient
+from <PKG>.fast_api_app import app
+with TestClient(app) as c:          # entering runs the lifespan
+    print('/list-apps ->', c.get('/list-apps').status_code, c.get('/list-apps').json())
+    card = [r.path for r in app.routes if 'well-known' in r.path]
+    print('agent card ->', c.get(card[0]).status_code if card else 'NO A2A ROUTES')
+"
+```
+
+Expected: `/list-apps` returns `200` listing the agent package, and the agent
+card returns `200`. Entering the `TestClient` context is what triggers the
+lifespan — without it the A2A routes never attach and the check is worthless.
+
+If the agent card 404s or no A2A routes exist, the A2A wiring did not take
+effect. Report that plainly; **do not** describe the recipe as A2A-capable.
+
+Warnings about experimental `InMemoryCredentialService` are expected and
+harmless.
+
+### Step 7 — Close out
+
+Walk the report's `todos` with the owner — `.env.example` entries for any new
+variables (the `extract-python-environment-variables` skill does this), and
+terraform if the outcome was `containerized`.
+
+If you created a `.venv` in the recipe to run Step 6 and it was not there
+before, remove it.
+
+---
+
+## Deliberately not in scope
+
+| Not done | Why, and what does it instead |
+|---|---|
+| Building or running a container | Out of scope by decision. Cloud Build handles it. |
+| Migrating agent code across an ADK major | A code migration, not a metadata rewrite. Same stance as `align-recipe-pyproject`. |
+| Merging a legacy `app_utils` generation | Needs human judgement about telemetry and feedback wiring. |
+| Writing terraform | Two deployable recipes in this repo share *zero* infrastructure resources; nothing is templatable. |
+| Removing `[tool.ruff*]`, fixing `requires-python` | `align-recipe-pyproject` |
+| Completing `.env.example` | `extract-python-environment-variables` |
+| Running `uv lock`, ruff, or the boot check | You do, in Steps 5-6, so failures are attributable to the right step. |
+
+---
+
+## `agents-cli-manifest.yaml`
+
+Written when `deployability.emit_agents_cli_manifest` is true (it is).
+
+This file is **functional, not decorative**. `agents-cli` uses it as the
+project-root marker — `find_project_root()` walks up looking for it — and
+`agents-cli deploy` reads `create_params.deployment_target` to choose how to
+deploy. Without it, deploy reports "No agents-cli-manifest.yaml found".
+
+The provenance problem — these recipes were never scaffolded by agents-cli —
+is handled by **omitting the fields that would be fiction**, not by skipping
+the file:
+
+| Omitted | Why omission beats a value |
+|---|---|
+| `acli_version` | No scaffold ran. `check_cli_version` returns early on an absent version; a *fabricated* one makes the CLI tell the owner to run `agents-cli scaffold upgrade` on a project that cannot be upgraded. |
+| `generated_at` | Never read by `ProjectConfig.from_dict`, and asserts an event that did not happen. |
+| `base_template` | Only used by upgrade/enhance. Already defaults to `adk`, so writing it changes nothing. |
+
+Everything written is derived from the recipe or from what the skill just
+generated. Verified against agents-cli 1.4.0's own parser: the project root
+resolves, every field reads back correctly, and
+`require_agent_directory` / `require_deployment_target` / `require_a2a_project`
+all pass.
+
+An existing `agents-cli-manifest.yaml` is never overwritten.
+
+---
+
+## Templates
+
+`resources/templates/` holds the serving files, vendored from
+`agents-cli` 1.4.0's `scaffold/base_templates/python` and
+`scaffold/deployment_targets/{cloud_run,agent_runtime}/python`, rendered for
+the **cloud_run** target with **in-memory** sessions, then formatted to this
+repo's ruff config so generated files pass CI unmodified.
+
+Two placeholders are substituted at copy time:
+
+| Placeholder | Becomes |
+|---|---|
+| `__AGENT_PACKAGE__` | the recipe's agent package (`app`, `horizon`, ...) |
+| `__PROJECT_NAME__` | `[project].name` from `pyproject.toml` |
+
+Both are valid Python identifiers on purpose, so the templates parse and stay
+lint-checked in place rather than only after substitution.
+`__AGENT_PACKAGE__` is registered in the root `pyproject.toml`'s
+`known-first-party` so isort orders template imports exactly as the rendered
+output needs them.
+
+**Known divergences from agents-cli, both deliberate:**
+
+- The Dockerfile's `FROM python:X-slim` is rewritten from the recipe's own
+  `requires-python` floor. The template hardcodes 3.12; recipes here target
+  3.11, 3.12 and 3.13.
+- `reasoning_engine_adapter.py` is included even for cloud_run because the
+  Recipe Deployability doc lists it unconditionally, while agents-cli ships it
+  only under `agent_runtime`. Flagged in every report — worth confirming.
+
+Since these are vendored, they drift as agents-cli moves. Re-render from a
+newer agents-cli when the standard changes; do not hand-edit them to fix a
+single recipe.
+
+---
+
+## Verified end to end
+
+`skills/retail/product-search` was taken through the whole pipeline against
+real dependencies (then reverted). Recorded here so the next person knows what
+"working" looks like:
+
+- `uv lock` resolved to `google-adk 2.6.2` + `a2a-sdk 1.1.2` — even though the
+  recipe's own bound is `>=2.2.0`, because `a2a-sdk>=1.0` forces `google-adk`
+  to 2.5+ on its own. That coupling is the reason for the policy floor.
+- All three `app_utils` modules import.
+- `fast_api_app:app` builds — 71 routes, no credentials needed.
+- Booted through the lifespan: `/list-apps` → `200 ['scripts']`, and
+  `/a2a/scripts/.well-known/agent-card.json` → `200`.
+- Running the skill a second time wrote nothing and changed no file on disk.
+
+---
+
+## Current recipe landscape
+
+Measured, and useful for setting expectations before a run:
+
+| Recipe | Expected outcome |
+|---|---|
+| `skills/retail/product-search` | `deployable` |
+| `contrib/python/financial-advisor` | `deployable` (loose pin, but locked at 2.6.2) |
+| `core/python/rag-agent-search`, `rag-vector-search` | `containerized` — need a datastore / vector index |
+| `contrib/python/market-research-agent`, `core/python/deep-search`, `core/python/safety-plugins` | `blocked` — locked on ADK 1.28.0 |
+| `core/python/cross-session-memory`, `genmedia-for-commerce`, `oauth-user-consent-flow` | `blocked` — ADK ceiling excludes the floor |
+| `contrib/python/cross-border-data-router` | `blocked` — legacy `app_utils` |
+| `core/python/long-horizon-harness`, `ambient-expense-agent` | already deployable |

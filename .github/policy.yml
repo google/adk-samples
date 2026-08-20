@@ -546,3 +546,93 @@ stale_policy:
 # --------------------------------------------------------------------------
 case_insensitive_files:
   - EVAL.yaml
+
+# --------------------------------------------------------------------------
+# Recipe deployability — read by the `make-python-recipe-deployable` repo
+# skill (.agents/skills/make-python-recipe-deployable).
+#
+# A deployable recipe is one that can be packaged into a container and run
+# as a service. These constants define what that requires, so the standard
+# can move without editing the skill's code.
+#
+# NOT enforced by CI today. The skill is the only consumer; a future
+# validation workflow can read the same keys rather than re-deriving them.
+# --------------------------------------------------------------------------
+deployability:
+  # Minimum google-adk version a recipe must ACCEPT to be deployable.
+  #
+  # Why this floor is not arbitrary: the serving stack needs
+  # `a2a-sdk[http-server]>=1.0`, and google-adk's `a2a` extra caps a2a-sdk
+  # at <0.4 through 2.4.0. Only 2.5.0 widened it to <2:
+  #
+  #     google-adk 2.0.0 - 2.4.0   a2a-sdk<0.4,>=0.3.4
+  #     google-adk 2.5.0+          a2a-sdk<2,>=0.3.4
+  #
+  # So 2.5.0 is the true minimum. 2.6.0 is what the Recipe Deployability
+  # doc specifies, and matching the published standard beats saving one
+  # minor version. Lower it to 2.5.0 only if that doc changes.
+  min_google_adk: "2.6.0"
+
+  # Crossing an ADK major is a code migration, never a metadata rewrite.
+  # The skill REFUSES rather than widening a `<2.0.0` ceiling and
+  # re-locking, which would yield a recipe importing a major it was never
+  # ported to — a failure invisible to the skill, to the lockfile, and to
+  # CI, surfacing only when someone runs the recipe.
+  #
+  # Mirrors the identical reasoning in
+  # .agents/skills/align-recipe-pyproject/scripts/align_pyproject.py
+  # ("DELIBERATELY NOT IMPLEMENTED HERE — adk-major-current"). Keep the two
+  # in agreement: if one ever learns to migrate, so should the other.
+  adk_major_migration_is_manual: true
+
+  # Dependencies every deployable recipe must declare, from the Recipe
+  # Deployability doc. Added verbatim to [project].dependencies when
+  # absent; an existing requirement for the same package is left alone and
+  # reported, since a recipe may carry a deliberate tighter pin.
+  required_dependencies:
+    - "a2a-sdk[http-server]>=1.0,<2"
+    - "aiohttp>=3.13.4"
+    - "gcsfs>=2024.11.0"
+    - "google-adk[gcp,otel-gcp]>=2.6.0,<3.0.0"
+    - "opentelemetry-resourcedetector-gcp<=1.12.0a0"
+
+  # Files a deployable recipe must have. `<pkg>` is the recipe's agent
+  # package directory (e.g. `app`, `horizon`, `expense_agent`).
+  #
+  # CAVEAT, from Elia: the presence of a file named a2a.py does NOT prove
+  # the recipe supports A2A, and these files were designed assuming the
+  # project was scaffolded by agents-cli. The skill copies and configures
+  # them; it does not certify behaviour, and its report must say so.
+  required_files:
+    - Dockerfile
+    - "<pkg>/fast_api_app.py"
+    - "<pkg>/app_utils/a2a.py"
+    - "<pkg>/app_utils/services.py"
+    - "<pkg>/app_utils/reasoning_engine_adapter.py"
+
+  # Write `agents-cli-manifest.yaml`. Kept out of required_files above because
+  # it is metadata rather than a serving file, but emitted because it is
+  # FUNCTIONAL, not decorative: agents-cli uses it as the project-root marker
+  # (`find_project_root` walks up looking for it) and `agents-cli deploy` reads
+  # `create_params.deployment_target` to choose how to deploy. Without it,
+  # deploy reports "No agents-cli-manifest.yaml found".
+  #
+  # The honesty problem — these recipes were never scaffolded by agents-cli —
+  # is solved by OMITTING the three fields that would be fiction
+  # (`acli_version`, `generated_at`, `base_template`), not by skipping the
+  # file. agents-cli defaults every field, and an absent `acli_version` is
+  # handled explicitly (check_cli_version returns early), whereas a fabricated
+  # one makes the CLI nag the owner to run `agents-cli scaffold upgrade` on a
+  # project that cannot be upgraded. See the header the skill writes into the
+  # generated file.
+  emit_agents_cli_manifest: true
+
+  # The old ASP-era app_utils generation. Filenames do not collide with the
+  # new set, but the two wire telemetry and services differently, so a
+  # recipe carrying these needs a human migration decision rather than a
+  # mechanical merge. The skill stops when it finds any of them.
+  legacy_app_utils_files:
+    - telemetry.py
+    - typing.py
+    - deploy.py
+    - memory_config.py
