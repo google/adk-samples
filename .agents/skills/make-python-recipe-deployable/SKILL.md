@@ -9,10 +9,13 @@ description: >
   package, manifest.deployable). Interactive by design — it asks the recipe
   owner about runtime data directories and stops for a human decision when a
   recipe needs an ADK migration or carries a legacy app_utils generation.
-  Does NOT build images, deploy, or write terraform. Use when the user wants
-  to "make this recipe deployable", "add a Dockerfile to a recipe", "add the
-  serving files", "containerize a recipe", or prepare a recipe for Cloud
-  Build / Artifact Registry.
+  When docker is available it offers to PROVE the claim: it builds the
+  generated Dockerfile, runs it, probes it, and refuses to flag a recipe
+  deployable if the container does not come up. Does NOT deploy or write
+  terraform. Use when the user wants to "make this recipe deployable", "add a
+  Dockerfile to a recipe", "add the serving files", "containerize a recipe",
+  "verify the container builds", or prepare a recipe for Cloud Build /
+  Artifact Registry.
 metadata:
   author: Google
   license: Apache-2.0
@@ -39,17 +42,35 @@ not in the script.**
 ## What "deployable" means here, and the one distinction that matters
 
 `deployable` in `.github/schemas/manifest-schema.json` means "can be deployed
-with one click". So a run ends in one of three outcomes:
+with one click". Two independent questions decide the outcome:
+
+1. **Does it need infrastructure a human must provision?** If yes it is
+   containerized, not one-click deployable.
+2. **Did we PROVE the container works, or only assume it?**
 
 | Outcome | Meaning | `manifest.deployable` |
 |---|---|---|
-| `deployable` | Serving files present and correct; no bespoke infrastructure needed. | set to `true` |
-| `containerized` | Same files, but the recipe needs backing infra a human must provision. | **left unset** |
+| `deployable-verified` | No bespoke infra, and the image built and served. | set to `true`, **on evidence** |
+| `deployable-unverified` | No bespoke infra, but nothing built it. | set to `true`, on static checks |
+| `containerized-verified` | Built and served, but needs backing infra. | **left unset** |
+| `containerized-unverified` | Needs backing infra, and unproven. | **left unset** |
+| `verification-failed` | Docker was usable and the recipe failed. | **left unset** |
 | `blocked` | A gate stopped the run. Nothing was written. | untouched |
 
 Never describe a `containerized` result as "deployable" to the user. Setting
 that flag on a recipe that still needs hand-written terraform puts a false
 claim in the manifest, which is worse than leaving it unset.
+
+Equally, never describe an `-unverified` result as proven. It means the files
+are right by inspection and nobody built the image — which is the *normal*
+result on a machine without docker, not a defect.
+
+**Why `-unverified` still sets the flag.** Absence of evidence is not evidence
+of absence. Withholding it whenever docker is missing would judge the recipe
+by the checker's laptop rather than by its own quality, and this skill's
+primary user has no container runtime at all. Only a verification that
+actually *failed* withholds the flag — a recipe proven broken is not
+deployable, whatever the static checks said.
 
 ---
 
@@ -220,6 +241,71 @@ effect. Report that plainly; **do not** describe the recipe as A2A-capable.
 Warnings about experimental `InMemoryCredentialService` are expected and
 harmless.
 
+### Step 6.5 — Container verification (ask first)
+
+Step 6 proves the app boots *on this machine*. This proves the **image** the
+recipe will actually be deployed as. It is the only step that turns "we
+generated a Dockerfile" into evidence, and it is what lets the word
+"deployable" mean anything.
+
+**Look at the `docker` check in the report.** It is present in every run,
+including the dry-run, and its `details.docker_state` is one of:
+
+| State | Meaning | What you do |
+|---|---|---|
+| `absent` | No `docker` on PATH. | Skip. Say nothing alarming — this is the common case, not a problem. |
+| `unreachable` | Binary present, daemon not answering. | Skip, same as above. Mention the daemon is down in case they want to start it. |
+| `usable` | Daemon responding. | **Ask the owner** (below). |
+
+When and only when the state is `usable`, ask:
+
+> Docker is available. Shall I build the generated Dockerfile and check the
+> container actually serves? It takes a few minutes, and it means
+> `manifest.deployable` is set on evidence rather than on inspection. If the
+> container does not come up, I will not set the flag.
+
+If they decline, carry on — the outcome ends `-unverified` and that is a
+legitimate result. **Do not decide for them, and do not skip the question
+because verification seems slow.**
+
+On a "yes", re-invoke with `--verify-container` (it implies `--apply`):
+
+```bash
+uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \
+  python3 .agents/skills/make-python-recipe-deployable/scripts/make_deployable.py \
+  --recipe-dir <RECIPE_DIR> --apply --verify-container [--data-dirs a,b]
+```
+
+**Run it after Step 5's `uv lock`, not before.** The Dockerfile runs
+`uv sync --frozen`, which cannot succeed until the lockfile matches. If the
+lockfile is stale the script does not build — it defers `manifest.deployable`,
+returns `needs_input`, and tells you to lock first. That is by design: a build
+attempted against a stale lockfile fails with an error that looks exactly like
+a broken template and is not.
+
+What it does: builds for `linux/amd64` (Cloud Run's platform), runs the
+container with the recipe's own `.env.example` values plus the policy's
+`container_env`, polls `/list-apps` until it answers, then probes the A2A
+agent card. It removes the container and the image afterwards.
+
+Reading the result:
+
+- **`container-build` ERROR** — the Dockerfile does not build. The check
+  carries a `details.hint` naming the likely structural cause. Report it and
+  stop; the recipe is not deployable.
+- **`container-serves` ERROR** — the image builds but the app does not come
+  up. The log tail is in the message. `manifest.deployable` was not set.
+- **`container-a2a` REPORT_ONLY** — it serves, but the agent card did not
+  return 200. The A2A wiring did not take effect. Say so plainly and **do
+  not** call the recipe A2A-capable.
+
+⚠️ **Running a container is allowlisted, not automatic.** Recipes not on
+`deployability.verification.run_allowlist` are **built only**, because some
+create real cloud resources at import — `core/python/cross-session-memory`
+calls `client.agent_engines.create()` at module scope. A build-only result is
+reported as unproven, never as a pass. Add a recipe to the allowlist only
+after reading its package for import-time side effects.
+
 ### Step 7 — Close out
 
 Walk the report's `todos` with the owner — `.env.example` entries for any new
@@ -235,7 +321,8 @@ before, remove it.
 
 | Not done | Why, and what does it instead |
 |---|---|
-| Building or running a container | Out of scope by decision. Cloud Build handles it. |
+| Deploying, or pushing an image anywhere | Out of scope by decision. Cloud Build builds and Artifact Registry stores the real image. Step 6.5 builds one only to verify its own output, then deletes it — docker is an instrument here, never a deployment mechanism. |
+| Running a container that is not allowlisted | Some recipes create real cloud resources at import. Unlisted recipes are built only. |
 | Migrating agent code across an ADK major | A code migration, not a metadata rewrite. Same stance as `align-recipe-pyproject`. |
 | Merging a legacy `app_utils` generation | Needs human judgement about telemetry and feedback wiring. |
 | Writing terraform | Two deployable recipes in this repo share *zero* infrastructure resources; nothing is templatable. |
@@ -302,7 +389,14 @@ output needs them.
   3.11, 3.12 and 3.13.
 - `reasoning_engine_adapter.py` is included even for cloud_run because the
   Recipe Deployability doc lists it unconditionally, while agents-cli ships it
-  only under `agent_runtime`. Flagged in every report — worth confirming.
+  only under `agent_runtime`. **Settled by verification: in a cloud_run recipe
+  it is dead code.** Nothing imports it — `fast_api_app.py` pulls in only
+  `app_utils.services` and `app_utils.a2a` — and its own
+  `from agentplatform... import AdkApp` would raise `ModuleNotFoundError` if
+  anything did, because `agentplatform` is not a required dependency and does
+  not appear in a resolved `uv.lock`. Verified containers build and serve
+  without it. Whether the published doc should stop listing it is a standards
+  decision, not a code one.
 
 Since these are vendored, they drift as agents-cli moves. Re-render from a
 newer agents-cli when the standard changes; do not hand-edit them to fix a
@@ -312,9 +406,52 @@ single recipe.
 
 ## Verified end to end
 
-`skills/retail/product-search` was taken through the whole pipeline against
-real dependencies (then reverted). Recorded here so the next person knows what
-"working" looks like:
+### Against real containers
+
+Both taken through the full pipeline including Step 6.5, then reverted.
+Deployable recipes live under `core/` or `contrib/`; `skills/` is out of scope.
+
+| Recipe | Outcome | What it proves |
+|---|---|---|
+| `contrib/python/financial-advisor` | `deployable-verified` | Image builds, `/list-apps` → 200, agent card → 200, flag set on evidence. |
+| `core/python/rag-agent-search` | `containerized-verified` | Builds and serves, **and** the flag still correctly stays unset because it needs a datastore. The two axes compose. |
+
+Three failures were found by building that no static check saw. All three are
+the reason this step exists:
+
+1. **`financial-advisor` crashed on import with no `GOOGLE_CLOUD_PROJECT`.**
+   Its `__init__.py` does
+   `os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)` where
+   `google.auth.default()` yields `None` without credentials, and `setdefault`
+   only assigns when the key is absent. Not a recipe defect — Cloud Run always
+   supplies a project — so `container_env` now models the platform.
+2. **`rag-agent-search` crashed on `Gemini(model=None)`.** It reads
+   `MODEL_NAME`, and `.dockerignore` correctly keeps `.env` out of the image.
+   Fixed by `load_env_example`, which seeds the container from the recipe's
+   own declared environment. Unconfigured is not the same as broken.
+3. **`rag-agent-search` then failed with `ImportError: cannot import name
+   'TextPart' from 'a2a.types'`** — a genuine incompatibility. It had resolved
+   to `google-adk 2.3.0` against `a2a-sdk 1.1.2`, and adk ≤2.4.0 expects
+   `a2a-sdk<0.4`. See the warning below; this one is a live trap.
+
+> ⚠️ **`uv lock` does not raise an already-locked version.** The
+> `adk-locked-version` check says re-locking "will raise it to at least the
+> floor". That is **wrong**: uv is sticky and preserves any locked version
+> that still satisfies the constraints, so a recipe declaring
+> `google-adk>=2.0.0` stays on whatever it was pinned at. `rag-agent-search`
+> stayed on 2.3.0 through a plain `uv lock` and only moved to 2.7.1 under
+> `uv lock --upgrade-package google-adk`. The coupling the policy relies on
+> (`a2a-sdk>=1.0` forcing adk to 2.5+) travels with google-adk's **`a2a`
+> extra**, which the required dependency list does not use — so it never
+> constrains resolution. Until that check is fixed, if a report shows
+> `adk-locked-version` as `report_only`, re-lock with `--upgrade-package
+> google-adk` and confirm the resolved pair before trusting it.
+
+### Against a live interpreter
+
+`skills/retail/product-search` was taken through the pipeline before `skills/`
+was ruled out of scope for deployability. Kept as the record of what the Step 6
+boot check looks like when it works:
 
 - `uv lock` resolved to `google-adk 2.6.2` + `a2a-sdk 1.1.2` — even though the
   recipe's own bound is `>=2.2.0`, because `a2a-sdk>=1.0` forces `google-adk`

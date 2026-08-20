@@ -141,7 +141,7 @@ Opt-in, and deliberately not part of `prepare-python-recipe`: most
 recipes do not need to be deployable.
 
 - **Input:** recipe path. Optional `--data-dirs`, `--region`,
-  `--overwrite`.
+  `--overwrite`, `--verify-container`.
 - **Writes:** the serving files, plus `pyproject.toml` (serving
   deps, hatch wheel package), `agent.py` (the `App` object), and
   `manifest.yaml` (`deployable: true`).
@@ -149,10 +149,22 @@ recipes do not need to be deployable.
 - **Stops rather than guessing** when the recipe needs an ADK major
   migration, or carries the old `app_utils` generation
   (`telemetry.py` / `typing.py` / `deploy.py`).
-- **Two outcomes:** `deployable`, or `containerized` when the recipe
-  needs backing infrastructure a human must provision — in which
-  case `manifest.deployable` is left unset on purpose.
-- **Does not** build images, deploy, or write terraform.
+- **Verifies its own output** when docker is available: builds the
+  generated Dockerfile, runs it, and probes `/list-apps` and the A2A
+  agent card. A container that will not come up **blocks**
+  `manifest.deployable`. The skill asks before doing this, and skips
+  cleanly when there is no container runtime — the common case, and
+  not a failure.
+- **Six outcomes,** crossing whether the recipe needs provisioned
+  infrastructure with whether a container actually proved it:
+  `deployable-verified`, `deployable-unverified`,
+  `containerized-verified`, `containerized-unverified`,
+  `verification-failed`, `blocked`. Both `containerized-*` and
+  `verification-failed` leave `manifest.deployable` unset on purpose,
+  so a reader can always tell a proven result from an assumed one.
+- **Does not** deploy or write terraform. It builds an image only to
+  check its own work and then deletes it; publishing belongs to Cloud
+  Build and Artifact Registry.
 - **Standard lives in** [`.github/policy.yml`](../../.github/policy.yml)
   under `deployability:`, not in the skill's code.
 - **Trigger:** "make contrib/python/my-recipe deployable".

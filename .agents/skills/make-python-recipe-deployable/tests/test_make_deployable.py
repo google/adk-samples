@@ -19,6 +19,10 @@ overwrites a bespoke entrypoint, and neither shows up until someone runs the
 recipe.
 """
 
+import json
+import os
+import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -26,6 +30,11 @@ import make_deployable as md
 import pytest
 
 MIN_ADK = "2.6.0"
+
+# Captured before the autouse `no_docker` fixture can replace it, so the
+# detection tests exercise the real implementation rather than the stub that
+# keeps every other test hermetic.
+REAL_DETECT_DOCKER = md.detect_docker
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +84,21 @@ def recipe(tmp_path: Path) -> Path:
     write(tmp_path / "manifest.yaml", "type: standalone\nlanguage: python\n")
     write(tmp_path / "README.md", "# demo\n")
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def no_docker(monkeypatch):
+    """Make every test hermetic by pretending docker is absent by default.
+
+    `run()` probes docker on every invocation so the calling skill knows
+    whether verification is offerable. Left unstubbed, the whole suite would
+    shell out to the host's daemon and give different results on a laptop, in
+    CI, and on a machine where someone happened to start Docker Desktop.
+    Tests that care about docker override this explicitly.
+    """
+    monkeypatch.setattr(
+        md, "detect_docker", lambda: (md.DOCKER_ABSENT, "stubbed for tests")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -451,7 +475,9 @@ def test_dry_run_writes_nothing(recipe: Path, monkeypatch):
         data_dirs=[],
         region="us-east1",
     )
-    assert report.outcome == md.OUTCOME_DEPLOYABLE
+    # `-unverified` because no docker evidence was gathered — the static
+    # assessment is unchanged, only its confidence is now stated.
+    assert report.outcome == md.OUTCOME_DEPLOYABLE_UNVERIFIED
     assert report.files_written == []
     assert not (recipe / "Dockerfile").exists()
 
@@ -627,3 +653,527 @@ def test_fresh_recipe_is_not_flagged(tmp_path: Path):
         md.check_already_deployable(tmp_path, tmp_path / "app").status
         == md.CLEAN
     )
+
+
+# ---------------------------------------------------------------------------
+# Docker detection
+#
+# Three states, not two. The middle one — a binary that exists but a daemon
+# that will not answer — is the common developer case (Docker Desktop not
+# started, or a socket the user has no permission for). Reporting it as an
+# error would make the normal case look broken, so all three are asserted
+# separately, including that none of them is ERROR.
+# ---------------------------------------------------------------------------
+
+
+def _fake_docker(returncode: int, stdout: str = "", stderr: str = ""):
+    """Build a _docker() replacement returning a fixed CompletedProcess."""
+
+    def fake(args, timeout=60):
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+    return fake
+
+
+def test_docker_absent_when_no_binary(monkeypatch):
+    monkeypatch.setattr(md.shutil, "which", lambda _: None)
+    state, detail = REAL_DETECT_DOCKER()
+    assert state == md.DOCKER_ABSENT
+    assert "PATH" in detail
+
+
+def test_docker_unreachable_when_daemon_down(monkeypatch):
+    monkeypatch.setattr(md.shutil, "which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(
+        md,
+        "_docker",
+        _fake_docker(1, stderr="Cannot connect to the Docker daemon"),
+    )
+    state, detail = REAL_DETECT_DOCKER()
+    assert state == md.DOCKER_UNREACHABLE
+    assert "Cannot connect" in detail
+
+
+def test_docker_usable_when_daemon_answers(monkeypatch):
+    monkeypatch.setattr(md.shutil, "which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(md, "_docker", _fake_docker(0, stdout="29.6.1\n"))
+    state, detail = REAL_DETECT_DOCKER()
+    assert state == md.DOCKER_USABLE
+    assert "29.6.1" in detail
+
+
+@pytest.mark.parametrize(
+    "state", [md.DOCKER_ABSENT, md.DOCKER_UNREACHABLE, md.DOCKER_USABLE]
+)
+def test_no_docker_state_is_ever_an_error(state):
+    """A stopped daemon is an absence of evidence, never a failure."""
+    check = md.check_docker(state, "detail")
+    assert check.status == md.REPORT_ONLY
+    assert check.details["docker_state"] == state
+
+
+def test_unavailable_states_say_they_are_not_a_failure():
+    for state in (md.DOCKER_ABSENT, md.DOCKER_UNREACHABLE):
+        message = md.check_docker(state, "detail").message
+        assert "not a failure" in message
+        assert "unverified" in message
+
+
+def test_docker_timeout_is_reported_as_unreachable(monkeypatch):
+    """A hanging daemon must not propagate an exception out of detection."""
+    monkeypatch.setattr(md.shutil, "which", lambda _: "/usr/bin/docker")
+
+    def boom(args, timeout=60, **_):
+        raise subprocess.TimeoutExpired(cmd="docker", timeout=timeout)
+
+    monkeypatch.setattr(md.subprocess, "run", boom)
+    assert REAL_DETECT_DOCKER()[0] == md.DOCKER_UNREACHABLE
+
+
+# ---------------------------------------------------------------------------
+# Outcome vocabulary
+#
+# The whole point of the feature: a reader must never mistake an assumed
+# result for a proven one.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "infra_clean,verified,expected",
+    [
+        (True, True, md.OUTCOME_DEPLOYABLE_VERIFIED),
+        (True, None, md.OUTCOME_DEPLOYABLE_UNVERIFIED),
+        (False, True, md.OUTCOME_CONTAINERIZED_VERIFIED),
+        (False, None, md.OUTCOME_CONTAINERIZED_UNVERIFIED),
+        # A proven failure outranks the infra axis entirely.
+        (True, False, md.OUTCOME_VERIFICATION_FAILED),
+        (False, False, md.OUTCOME_VERIFICATION_FAILED),
+    ],
+)
+def test_outcome_matrix(infra_clean, verified, expected):
+    assert (
+        md.outcome_for(infra_clean=infra_clean, verified=verified) == expected
+    )
+
+
+def test_verified_and_unverified_are_distinguishable():
+    """Guards against a refactor that collapses the evidence axis."""
+    assert md.OUTCOME_DEPLOYABLE_VERIFIED != md.OUTCOME_DEPLOYABLE_UNVERIFIED
+    assert "unverified" in md.OUTCOME_DEPLOYABLE_UNVERIFIED
+    assert "unverified" not in md.OUTCOME_DEPLOYABLE_VERIFIED
+
+
+# ---------------------------------------------------------------------------
+# Verification: build, probe, cleanup
+# ---------------------------------------------------------------------------
+
+
+class FakeDocker:
+    """Records docker invocations and replays scripted results.
+
+    Keyed on the subcommand so a test can make `build` fail while leaving
+    `rm`/`rmi` working — which is what proves cleanup still runs on the
+    failure path.
+    """
+
+    def __init__(self, results=None):
+        self.calls: list[list[str]] = []
+        self.results = results or {}
+
+    def __call__(self, args, timeout=60):
+        self.calls.append(list(args))
+        code, out, err = self.results.get(args[0], (0, "", ""))
+        return subprocess.CompletedProcess(
+            args=["docker", *args], returncode=code, stdout=out, stderr=err
+        )
+
+    def subcommands(self) -> list[str]:
+        return [c[0] for c in self.calls]
+
+
+SETTINGS = {
+    "probe_port": 8080,
+    "build_timeout_seconds": 60,
+    "ready_timeout_seconds": 5,
+    "probe_paths": ["/list-apps", "/a2a/<pkg>/.well-known/agent-card.json"],
+    "container_env": {"INTEGRATION_TEST": "1"},
+}
+
+
+def test_build_failure_returns_false_and_reports_loudly(
+    tmp_path: Path, monkeypatch
+):
+    fake = FakeDocker({"build": (1, "", "failed to solve: no such file")})
+    monkeypatch.setattr(md, "_docker", fake)
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings=SETTINGS,
+        may_run=True,
+        report=report,
+    )
+
+    assert result is False
+    build = next(c for c in report.checks if c.id == "container-build")
+    assert build.status == md.ERROR
+    assert "DOES NOT BUILD" in build.message
+    # Never ran the container after a failed build.
+    assert "run" not in fake.subcommands()
+
+
+def test_build_failure_still_cleans_up(tmp_path: Path, monkeypatch):
+    fake = FakeDocker({"build": (1, "", "boom")})
+    monkeypatch.setattr(md, "_docker", fake)
+    md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings=SETTINGS,
+        may_run=True,
+        report=md.Report(recipe_dir=str(tmp_path), mode="apply"),
+    )
+    # The image tag is removed even though the build failed: a partial build
+    # can still leave a tagged layer behind.
+    assert "rmi" in fake.subcommands()
+
+
+def test_successful_verification_probes_and_cleans_up(
+    tmp_path: Path, monkeypatch
+):
+    fake = FakeDocker({"port": (0, "127.0.0.1:54321\n", "")})
+    monkeypatch.setattr(md, "_docker", fake)
+    monkeypatch.setattr(md, "_probe", lambda url, timeout=10: (200, "['app']"))
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings=SETTINGS,
+        may_run=True,
+        report=report,
+    )
+
+    assert result is True
+    serves = next(c for c in report.checks if c.id == "container-serves")
+    assert serves.status == md.CLEAN
+    # Container AND image removed — nothing left running on the machine.
+    assert "rm" in fake.subcommands()
+    assert "rmi" in fake.subcommands()
+
+
+def test_agent_card_404_does_not_claim_a2a_support(tmp_path: Path, monkeypatch):
+    """Serving is not the same as being A2A-capable, and must not round up."""
+    fake = FakeDocker({"port": (0, "127.0.0.1:54321\n", "")})
+    monkeypatch.setattr(md, "_docker", fake)
+    monkeypatch.setattr(
+        md,
+        "_probe",
+        lambda url, timeout=10: (
+            (200, "ok") if "list-apps" in url else (404, "")
+        ),
+    )
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings=SETTINGS,
+        may_run=True,
+        report=report,
+    )
+
+    # The image genuinely builds and serves, so this is not a failure...
+    assert result is True
+    a2a = next(c for c in report.checks if c.id == "container-a2a")
+    # ...but the A2A claim is explicitly withheld.
+    assert a2a.status == md.REPORT_ONLY
+    assert "did NOT take effect" in a2a.message
+    assert "not describe this recipe as A2A-capable" in a2a.message
+
+
+def test_container_that_exits_early_fails_fast(tmp_path: Path, monkeypatch):
+    """A crash on import must not hold the run hostage for the full timeout."""
+    fake = FakeDocker(
+        {"port": (0, "127.0.0.1:54321\n", ""), "inspect": (0, "false\n", "")}
+    )
+    monkeypatch.setattr(md, "_docker", fake)
+    monkeypatch.setattr(md, "_probe", lambda url, timeout=10: (0, "refused"))
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings={**SETTINGS, "ready_timeout_seconds": 600},
+        may_run=True,
+        report=report,
+    )
+
+    assert result is False
+    serves = next(c for c in report.checks if c.id == "container-serves")
+    assert "exited before it began serving" in serves.message
+
+
+def test_off_allowlist_recipe_is_built_but_not_run(tmp_path: Path, monkeypatch):
+    """Trap 4: some recipes create real GCP resources at import."""
+    fake = FakeDocker()
+    monkeypatch.setattr(md, "_docker", fake)
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings=SETTINGS,
+        may_run=False,
+        report=report,
+    )
+
+    # Build success alone is NOT a pass — the app was never proven to serve.
+    assert result is None
+    assert "run" not in fake.subcommands()
+    serves = next(c for c in report.checks if c.id == "container-serves")
+    assert "not on" in serves.message and "run_allowlist" in serves.message
+
+
+def test_build_failure_hint_names_the_lockfile_cause():
+    proc = subprocess.CompletedProcess(
+        args=[], returncode=1, stdout="", stderr="the lockfile is out of date"
+    )
+    assert "uv lock" in md._build_failure_hint(proc)
+
+
+def test_parse_host_port():
+    assert md._parse_host_port("127.0.0.1:54321\n") == "54321"
+    assert md._parse_host_port("") is None
+    assert md._parse_host_port("nonsense") is None
+
+
+# ---------------------------------------------------------------------------
+# Verification wired through run(): the gate on manifest.deployable
+#
+# These assert the FILE ON DISK, not just the reported status. The whole
+# feature is the promise that a recipe proven broken does not get flagged
+# deployable, and only the file proves that.
+# ---------------------------------------------------------------------------
+
+
+def _run_with_docker(recipe: Path, monkeypatch, *, state, lock_ok, verified):
+    """Drive run() with docker, lockfile and verification all stubbed."""
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    monkeypatch.setattr(md, "detect_docker", lambda: (state, "stubbed"))
+    monkeypatch.setattr(
+        md, "lockfile_is_current", lambda *a, **k: (lock_ok, "stubbed")
+    )
+    seen: dict[str, bool] = {"verified": False}
+
+    def fake_verify(**kwargs):
+        seen["verified"] = True
+        return verified
+
+    monkeypatch.setattr(md, "verify_container", fake_verify)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+        verify_container_requested=True,
+    )
+    return report, seen
+
+
+def test_failed_verification_does_not_flag_the_manifest(
+    recipe: Path, monkeypatch
+):
+    report, seen = _run_with_docker(
+        recipe,
+        monkeypatch,
+        state=md.DOCKER_USABLE,
+        lock_ok=True,
+        verified=False,
+    )
+    assert seen["verified"]
+    assert report.outcome == md.OUTCOME_VERIFICATION_FAILED
+    # The claim never reaches disk.
+    manifest = (recipe / "manifest.yaml").read_text()
+    assert "deployable: true" not in manifest
+
+
+def test_passing_verification_flags_the_manifest(recipe: Path, monkeypatch):
+    report, _ = _run_with_docker(
+        recipe,
+        monkeypatch,
+        state=md.DOCKER_USABLE,
+        lock_ok=True,
+        verified=True,
+    )
+    assert report.outcome == md.OUTCOME_DEPLOYABLE_VERIFIED
+    assert "deployable: true" in (recipe / "manifest.yaml").read_text()
+
+
+def test_stale_lockfile_defers_the_flag_and_never_builds(
+    recipe: Path, monkeypatch
+):
+    """The sequencing trap: building here fails for an unrelated reason."""
+    report, seen = _run_with_docker(
+        recipe,
+        monkeypatch,
+        state=md.DOCKER_USABLE,
+        lock_ok=False,
+        verified=True,
+    )
+    assert not seen["verified"], "must not build against a stale lockfile"
+    verify = next(c for c in report.checks if c.id == "container-verify")
+    assert verify.status == md.NEEDS_INPUT
+    assert "uv lock" in verify.message
+    manifest = next(c for c in report.checks if c.id == "manifest-deployable")
+    assert manifest.status == md.NEEDS_INPUT
+    assert "deployable: true" not in (recipe / "manifest.yaml").read_text()
+
+
+@pytest.mark.parametrize("state", [md.DOCKER_ABSENT, md.DOCKER_UNREACHABLE])
+def test_no_docker_skips_cleanly_and_still_flags(
+    recipe: Path, monkeypatch, state
+):
+    """The primary user has no container runtime. That must not regress."""
+    report, seen = _run_with_docker(
+        recipe, monkeypatch, state=state, lock_ok=True, verified=True
+    )
+    assert not seen["verified"]
+    assert report.outcome == md.OUTCOME_DEPLOYABLE_UNVERIFIED
+    # Absence of evidence is not evidence of absence: the flag is still set.
+    assert "deployable: true" in (recipe / "manifest.yaml").read_text()
+    # And nothing anywhere calls it a failure.
+    assert not any(c.status == md.ERROR for c in report.checks)
+
+
+def test_verification_not_requested_never_touches_docker(
+    recipe: Path, monkeypatch
+):
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    monkeypatch.setattr(
+        md, "detect_docker", lambda: (md.DOCKER_USABLE, "stubbed")
+    )
+
+    def explode(**kwargs):
+        raise AssertionError("must not verify unless asked")
+
+    monkeypatch.setattr(md, "verify_container", explode)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    assert report.outcome == md.OUTCOME_DEPLOYABLE_UNVERIFIED
+
+
+def test_dry_run_never_builds_even_when_asked(recipe: Path, monkeypatch):
+    """Verification needs the files on disk, so it cannot run in dry-run."""
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    monkeypatch.setattr(
+        md, "detect_docker", lambda: (md.DOCKER_USABLE, "stubbed")
+    )
+
+    def explode(**kwargs):
+        raise AssertionError("must not verify during a dry run")
+
+    monkeypatch.setattr(md, "verify_container", explode)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=False,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+        verify_container_requested=True,
+    )
+    verify = next(c for c in report.checks if c.id == "container-verify")
+    assert "only runs with --apply" in verify.message
+
+
+# ---------------------------------------------------------------------------
+# The unavailable path, for real
+#
+# Mocks prove the branch; these prove the actual binary-detection code against
+# a real process. The skill's primary user runs exactly this path, so it is
+# worth spending two subprocesses on.
+# ---------------------------------------------------------------------------
+
+SCRIPT = Path(__file__).parent.parent / "scripts" / "make_deployable.py"
+
+MINIMAL_POLICY = """
+deployability:
+  min_google_adk: "2.6.0"
+  adk_major_migration_is_manual: true
+  required_dependencies:
+    - "google-adk[gcp,otel-gcp]>=2.6.0,<3.0.0"
+  required_files:
+    - Dockerfile
+    - "<pkg>/fast_api_app.py"
+  emit_agents_cli_manifest: false
+  legacy_app_utils_files:
+    - telemetry.py
+  verification:
+    probe_port: 8080
+    run_allowlist: []
+"""
+
+
+@pytest.fixture
+def standalone_repo(recipe: Path) -> Path:
+    """The recipe fixture plus the .github/policy.yml the script walks up to."""
+    write(recipe / ".github" / "policy.yml", MINIMAL_POLICY)
+    return recipe
+
+
+def _run_script(recipe: Path, env: dict[str, str], *args) -> dict:
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--recipe-dir", str(recipe), *args],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, **env},
+        check=False,
+    )
+    assert proc.returncode == 0, (
+        f"unavailable docker must exit 0, got {proc.returncode}: "
+        f"{proc.stderr[-500:]}"
+    )
+    return json.loads(proc.stdout)
+
+
+def test_real_run_with_no_docker_on_path(standalone_repo: Path, tmp_path: Path):
+    """No container runtime at all — the common case. Must skip, not fail."""
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    report = _run_script(standalone_repo, {"PATH": str(empty_bin)})
+
+    docker = next(c for c in report["checks"] if c["id"] == "docker")
+    assert docker["details"]["docker_state"] == md.DOCKER_ABSENT
+    assert docker["status"] == md.REPORT_ONLY
+    assert report["outcome"] == md.OUTCOME_DEPLOYABLE_UNVERIFIED
+    assert not any(c["status"] == md.ERROR for c in report["checks"])
+
+
+def test_real_run_with_an_unreachable_daemon(standalone_repo: Path):
+    """A docker binary that cannot reach its daemon: also a skip, not an error."""
+    if md.shutil.which("docker") is None:
+        pytest.skip("no docker binary on this machine to point at a bad socket")
+    report = _run_script(
+        standalone_repo, {"DOCKER_HOST": "unix:///nonexistent/docker.sock"}
+    )
+
+    docker = next(c for c in report["checks"] if c["id"] == "docker")
+    assert docker["details"]["docker_state"] == md.DOCKER_UNREACHABLE
+    assert docker["status"] == md.REPORT_ONLY
+    assert "not a failure" in docker["message"]
+    assert not any(c["status"] == md.ERROR for c in report["checks"])

@@ -636,3 +636,115 @@ deployability:
     - typing.py
     - deploy.py
     - memory_config.py
+
+  # Container verification — the only step that turns "we generated a
+  # Dockerfile" into evidence that the Dockerfile works.
+  #
+  # Docker is out of scope as a DEPLOYMENT MECHANISM: image builds and
+  # pushes to Artifact Registry belong to CI. It was never out of scope as
+  # a VERIFICATION INSTRUMENT. Building the skill's own output is the only
+  # thing that makes the word "deployable" mean anything, so a run that
+  # can reach a daemon proves its claim instead of asserting it.
+  #
+  # Verification is opt-in per run (the skill asks) and never silently
+  # required: the primary user has no container runtime at all, and that
+  # path must stay clean rather than degrade into a failure.
+  verification:
+    # The port the generated Dockerfile EXPOSEs and uvicorn binds. Changing
+    # it here without changing resources/templates/Dockerfile would make
+    # every probe time out against a container that is working fine.
+    probe_port: 8080
+
+    # `uv sync --frozen` resolves the recipe's full dependency tree from a
+    # cold layer cache on first run. 15 minutes is generous on purpose —
+    # a timeout reported as a build failure would withhold
+    # `manifest.deployable` from a recipe that is merely slow, which is
+    # exactly the false negative this feature must not produce.
+    build_timeout_seconds: 900
+
+    # Time for the container to answer after `docker run`. Covers the
+    # FastAPI lifespan, which is what attaches the A2A routes. The poll
+    # aborts early if the container has already exited, so a crash is
+    # reported in seconds rather than waiting this out.
+    ready_timeout_seconds: 120
+
+    # What "it serves" means, concretely. `<pkg>` is substituted with the
+    # recipe's agent package.
+    #
+    # The agent card is listed separately from /list-apps because the two
+    # prove different things: /list-apps proves the app booted, the card
+    # proves the lifespan ran and A2A routes actually attached. A recipe
+    # that answers the first and 404s the second is NOT A2A-capable, and
+    # the report must say so rather than rounding up.
+    probe_paths:
+      - "/list-apps"
+      - "/a2a/<pkg>/.well-known/agent-card.json"
+
+    # Passed into the container with `-e`. Two different jobs here.
+    #
+    # INTEGRATION_TEST / USE_IN_MEMORY_SESSION are the escape hatches recipes
+    # expose to keep import-time code from touching live infrastructure.
+    # Cheap insurance even for an allowlisted recipe.
+    #
+    # GOOGLE_CLOUD_PROJECT models the deployment target rather than relaxing
+    # the test. Cloud Run always runs with a project; a container without one
+    # is a configuration that will never exist in production. Verifying
+    # against a bare environment therefore fails recipes that are perfectly
+    # healthy — contrib/python/financial-advisor is the worked example: its
+    # __init__.py does `os.environ.setdefault("GOOGLE_CLOUD_PROJECT",
+    # project_id)` where google.auth.default() yields None with no
+    # credentials, and setdefault only assigns when the key is ABSENT. Supply
+    # the key and the recipe starts, exactly as it does on Cloud Run.
+    #
+    # The value is deliberately not a real project id: nothing here should
+    # ever authenticate, and a placeholder that cannot resolve makes an
+    # accidental live call fail loudly instead of quietly succeeding against
+    # someone's project.
+    container_env:
+      INTEGRATION_TEST: "1"
+      USE_IN_MEMORY_SESSION: "true"
+      GOOGLE_CLOUD_PROJECT: "adk-verify-placeholder"
+
+    # Seed the container from the recipe's own `.env.example` before applying
+    # `container_env` above (which wins on any key it also defines).
+    #
+    # Same principle as GOOGLE_CLOUD_PROJECT: verify against the environment
+    # the recipe will actually be deployed into, not an empty one. `.env` is
+    # excluded from the image by .dockerignore — correctly, it may hold
+    # secrets — so a container started with nothing has none of the
+    # configuration its operator will supply on Cloud Run.
+    #
+    # Without this, any recipe that reads configuration at import reports as
+    # broken when it is merely unconfigured. core/python/rag-agent-search is
+    # the worked example: app/agent.py builds `Gemini(model=LLM)` from
+    # MODEL_NAME, and with it unset pydantic rejects `model=None` before the
+    # app can start. Its .env.example declares MODEL_NAME=gemini-flash-latest,
+    # which is exactly what a deployment would set.
+    #
+    # `.env.example` is a trustworthy source: keeping it accurate is the job
+    # of the extract-python-environment-variables skill, and its values are
+    # placeholders rather than credentials. A recipe that will not boot even
+    # WITH its own declared environment is genuinely broken — that is a true
+    # failure and should be reported as one.
+    load_env_example: true
+
+    # Recipes whose containers are safe to RUN, not merely build.
+    #
+    # Some recipes create real GCP resources at import — for example
+    # core/python/cross-session-memory calls `client.agent_engines.create()`
+    # at module scope in its fast_api_app.py. Running such an image against
+    # live credentials provisions real infrastructure as a side effect of a
+    # test. So running is allowlisted rather than defaulted: anything not
+    # listed here is BUILT ONLY, and the report says the serve step was
+    # skipped rather than implying it passed.
+    #
+    # Failing this way is deliberate. The worst case for an unlisted recipe
+    # is an unproven claim; the worst case for defaulting to run is billed
+    # cloud resources nobody asked for. Add a recipe here only after
+    # reading its agent package for import-time side effects.
+    #
+    # Deployable recipes live under core/ or contrib/; vertical skills
+    # under skills/ are out of scope for deployability.
+    run_allowlist:
+      - contrib/python/financial-advisor
+      - core/python/rag-agent-search

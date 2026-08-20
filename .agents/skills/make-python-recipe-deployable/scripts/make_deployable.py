@@ -89,23 +89,79 @@ files for a recipe that cannot host them.
         Sets `deployable: true` in manifest.yaml — but ONLY when the
         backing-infra gate found nothing. See below.
 
-TWO OUTCOMES, NEVER CONFLATED
------------------------------
-`deployable` in .github/schemas/manifest-schema.json means "can be deployed
-with one click". So this script reports one of:
+OUTCOMES, NEVER CONFLATED
+-------------------------
+Two independent questions decide the outcome, and collapsing them is how a
+manifest ends up carrying a false claim:
 
-  deployable     Image builds and boots, and no bespoke infrastructure is
-                 needed. `manifest.deployable` is set to true.
-  containerized  Everything above, but the recipe needs backing infra a human
-                 must provision. `manifest.deployable` is NOT touched.
+  1. Does the recipe need infrastructure a human must provision?
+     `deployable` in .github/schemas/manifest-schema.json means "can be
+     deployed with ONE CLICK", so a recipe needing hand-written terraform is
+     containerized but not deployable.
+  2. Did we PROVE the container works, or only assume it?
 
-Setting the flag on a recipe that still needs hand-written terraform puts a
-false claim in the manifest, which is worse than leaving it unset.
+Crossing the two gives the vocabulary:
+
+  deployable-verified      No bespoke infra, and the image built and served.
+                           `manifest.deployable` set to true, on evidence.
+  deployable-unverified    No bespoke infra, but no container evidence exists
+                           (no docker, or the owner declined). Flag still set
+                           — see WHY UNVERIFIED STILL SETS THE FLAG below.
+  containerized-verified   Image built and served, but backing infra is
+                           needed. Flag NOT touched.
+  containerized-unverified Same, without container evidence. Flag NOT touched.
+  verification-failed      Docker was usable and the recipe FAILED — the build
+                           broke, or the container never served. Flag NOT set,
+                           whatever the static checks said.
+  blocked                  A gate stopped the run. Nothing was written.
+
+A recipe proven broken is not deployable, so verification outranks every
+static check that came before it.
+
+WHY UNVERIFIED STILL SETS THE FLAG
+----------------------------------
+Because absence of evidence is not evidence of absence, and because this
+skill's primary user has no container runtime at all. Withholding the flag
+whenever docker is missing would silently regress every such run to "not
+deployable" on the strength of the checker's environment rather than the
+recipe's quality — punishing the recipe for the laptop it was checked on.
+
+So static checks still earn the flag; the OUTCOME carries the distinction,
+and a reader can always tell a proven claim from an assumed one. Only a
+verification that actually FAILED withholds it. Silence and a failure are
+very different signals and must never render alike.
+
+CONTAINER VERIFICATION, AND THE ORDERING IT FORCES
+--------------------------------------------------
+The generated Dockerfile runs `uv sync --frozen`, which fails unless uv.lock
+already matches pyproject.toml — and this script adds serving dependencies
+without re-locking (see below). Two consequences, both handled by making
+--verify-container a TWO-PHASE operation keyed on lockfile currency:
+
+  stale lockfile    Files are written, the manifest flag is DEFERRED, and the
+                    run returns NEEDS_INPUT telling the caller to run
+                    `uv lock` and re-invoke. Building here would fail with a
+                    lockfile-mismatch error that looks exactly like a broken
+                    template and is not.
+  current lockfile  Files are already in place (this script is idempotent, so
+                    the second invocation rewrites nothing), the image is
+                    built, run and probed, and the flag is written only if it
+                    passed.
+
+The deferral is not fussiness. `manifest.deployable` is written during the
+apply pass, but `uv lock` can only run after apply and the build only after
+that — so a flag written eagerly could never be gated by a result that does
+not exist yet. Deferring it is what lets verification actually decide.
 
 WHAT THIS SCRIPT DELIBERATELY DOES NOT DO
 -----------------------------------------
-  - Build or run a container. Out of scope by design; the owner's CI builds
-    the image via Cloud Build and pushes to Artifact Registry.
+  - DEPLOY. It builds an image only to verify its own output, then deletes
+    it. Publishing to Artifact Registry and rolling out belongs to the
+    owner's CI via Cloud Build. Docker here is an instrument, not a target.
+  - Run a container that is not on `deployability.verification.run_allowlist`.
+    Some recipes create real GCP resources at import; an unlisted recipe is
+    built only, and the report says the serve step was skipped rather than
+    implying it passed.
   - Migrate agent code across an ADK major (see adk-version-floor).
   - Merge a legacy app_utils generation (see legacy-app-utils).
   - Write terraform.
@@ -113,7 +169,9 @@ WHAT THIS SCRIPT DELIBERATELY DOES NOT DO
     align-recipe-pyproject's job, and duplicating it guarantees drift.
   - Complete .env.example — that is extract-python-environment-variables.
   - Run `uv lock` or ruff. The calling skill does that after this script, so
-    a failure is attributable to the right step.
+    a failure is attributable to the right step. Verification READS lockfile
+    currency (`uv lock --check`) but never writes the lockfile, for the same
+    reason.
 
 It reports which of those the owner still needs, rather than doing them.
 
@@ -129,7 +187,12 @@ import argparse
 import ast
 import json
 import re
+import shutil
+import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -151,10 +214,48 @@ NEEDS_INPUT = "needs_input"  # cannot proceed without a human decision
 REPORT_ONLY = "report_only"  # informational, no auto-fix
 ERROR = "error"  # unexpected failure
 
-# Outcomes (see module docstring).
-OUTCOME_DEPLOYABLE = "deployable"
-OUTCOME_CONTAINERIZED = "containerized"
+# Outcomes (see module docstring). The infra axis (deployable vs
+# containerized) is crossed with the evidence axis (verified vs unverified),
+# because "needs terraform" and "we never built it" are different facts and a
+# reader must be able to tell a proven result from an assumed one.
+OUTCOME_DEPLOYABLE_VERIFIED = "deployable-verified"
+OUTCOME_DEPLOYABLE_UNVERIFIED = "deployable-unverified"
+OUTCOME_CONTAINERIZED_VERIFIED = "containerized-verified"
+OUTCOME_CONTAINERIZED_UNVERIFIED = "containerized-unverified"
+OUTCOME_VERIFICATION_FAILED = "verification-failed"
 OUTCOME_BLOCKED = "blocked"
+
+
+def outcome_for(*, infra_clean: bool, verified: bool | None) -> str:
+    """Pick the outcome from the infra axis and the evidence axis.
+
+    `verified` is tri-state on purpose: True (proved it works), False (proved
+    it does NOT — outranks everything, since a recipe demonstrated broken is
+    not deployable however clean its metadata), or None (no evidence either
+    way, which is not a failure).
+    """
+    if verified is False:
+        return OUTCOME_VERIFICATION_FAILED
+    if infra_clean:
+        return (
+            OUTCOME_DEPLOYABLE_VERIFIED
+            if verified
+            else OUTCOME_DEPLOYABLE_UNVERIFIED
+        )
+    return (
+        OUTCOME_CONTAINERIZED_VERIFIED
+        if verified
+        else OUTCOME_CONTAINERIZED_UNVERIFIED
+    )
+
+
+# Docker availability, three states rather than a boolean. A stopped daemon is
+# the common case on a developer machine and is NOT an error — it is simply an
+# absence of evidence, and must report identically to having no docker at all
+# while still being distinguishable in the details for anyone debugging.
+DOCKER_ABSENT = "absent"  # no `docker` binary on PATH
+DOCKER_UNREACHABLE = "unreachable"  # binary present, `docker info` fails
+DOCKER_USABLE = "usable"  # binary present and the daemon answers
 
 # Template placeholders. Both are valid Python identifiers on purpose, so the
 # vendored .py templates parse and can be linted in place rather than only
@@ -1269,6 +1370,501 @@ def write_agents_cli_manifest(
 
 
 # ---------------------------------------------------------------------------
+# Container verification
+# ---------------------------------------------------------------------------
+#
+# The one step that turns "we generated a Dockerfile" into evidence. Every
+# subprocess call goes through _docker() so tests can replace exactly one
+# seam instead of patching subprocess globally.
+
+
+def _docker(
+    args: list[str], timeout: int = 60
+) -> subprocess.CompletedProcess[str]:
+    """Run a docker command, capturing output and never raising on failure.
+
+    Failure is data here, not an exception: a non-zero `docker info` is how a
+    stopped daemon announces itself, and that is a normal condition rather
+    than an error. A timeout or a vanished binary is normalised into the same
+    CompletedProcess shape so every caller has one thing to inspect.
+    """
+    try:
+        return subprocess.run(
+            ["docker", *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args=["docker", *args],
+            returncode=124,  # conventional timeout code
+            stdout="",
+            stderr=f"docker {' '.join(args)} timed out after {timeout}s",
+        )
+    except (OSError, ValueError) as e:
+        return subprocess.CompletedProcess(
+            args=["docker", *args], returncode=127, stdout="", stderr=str(e)
+        )
+
+
+def detect_docker() -> tuple[str, str]:
+    """Classify docker into one of three states. Returns (state, detail).
+
+    Three states, not two, because "no binary" and "daemon down" need
+    different words to the user even though both mean "cannot verify":
+
+      absent       nothing named docker on PATH
+      unreachable  the CLI exists but `docker info` fails — a stopped daemon,
+                   a socket the user lacks permission for, a broken context
+      usable       the daemon answered
+
+    `docker info`'s exit code is the honest probe. Checking whether a dockerd
+    PROCESS is alive would be wrong: a running daemon whose socket the caller
+    cannot open is still unusable, and reporting it as available would send
+    the run into a build that cannot start.
+    """
+    if shutil.which("docker") is None:
+        return DOCKER_ABSENT, "No `docker` on PATH."
+    proc = _docker(["info", "--format", "{{.ServerVersion}}"], timeout=30)
+    if proc.returncode != 0:
+        reason = (proc.stderr or proc.stdout or "").strip().splitlines()
+        return DOCKER_UNREACHABLE, (
+            reason[-1] if reason else "`docker info` failed."
+        )
+    return DOCKER_USABLE, f"Docker daemon {proc.stdout.strip()} responding."
+
+
+def check_docker(state: str, detail: str) -> Check:
+    """Report docker availability. Never an error, whatever the state.
+
+    REPORT_ONLY across the board is deliberate. The skill's primary user has
+    no container runtime, and surfacing that as an error would turn the
+    normal case into a red herring on every single run.
+    """
+    if state == DOCKER_USABLE:
+        return Check(
+            id="docker",
+            status=REPORT_ONLY,
+            message=(
+                f"Docker is usable — {detail} Container verification can run; "
+                "ask the owner before starting one."
+            ),
+            details={"docker_state": state},
+        )
+    why = (
+        "no `docker` binary on PATH"
+        if state == DOCKER_ABSENT
+        else f"the daemon is not responding ({detail})"
+    )
+    return Check(
+        id="docker",
+        status=REPORT_ONLY,
+        message=(
+            f"Docker is unavailable — {why}. Skipping container "
+            "verification; this is not a failure. The recipe is assessed on "
+            "static checks alone, and the outcome says `-unverified` so the "
+            "claim is not mistaken for a proven one."
+        ),
+        details={"docker_state": state},
+    )
+
+
+def lockfile_is_current(
+    recipe_dir: Path, timeout: int = 300
+) -> tuple[bool, str]:
+    """Is uv.lock in sync with pyproject.toml? Read-only; never writes.
+
+    `uv lock --check` rather than `uv lock`: this script does not own the
+    lockfile. The calling skill re-locks as its own step so a resolution
+    failure is attributable to resolution, not to a container build that
+    happened to be downstream of it.
+    """
+    if not (recipe_dir / "uv.lock").is_file():
+        return False, "No uv.lock in the recipe."
+    try:
+        proc = subprocess.run(
+            ["uv", "lock", "--check"],
+            cwd=recipe_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return False, f"Could not check lockfile currency: {e}"
+    if proc.returncode == 0:
+        return True, "uv.lock matches pyproject.toml."
+    tail = (proc.stderr or proc.stdout or "").strip().splitlines()
+    return False, (tail[-1] if tail else "uv.lock is out of date.")
+
+
+def _sanitise_tag(name: str) -> str:
+    """Docker tags are lowercase and a restricted alphabet."""
+    return re.sub(r"[^a-z0-9_.-]+", "-", name.lower()).strip("-.") or "recipe"
+
+
+def parse_env_example(path: Path) -> dict[str, str]:
+    """Read a recipe's .env.example into a plain dict.
+
+    Deliberately simple: `KEY=value`, skipping blanks, comments and any
+    trailing inline comment. Not a dotenv implementation — quoting and
+    interpolation are not used by the .env.example files in this repo, and
+    guessing at them would invent values the recipe never declared.
+    """
+    if not path.is_file():
+        return {}
+    env: dict[str, str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key.isidentifier():
+            continue
+        env[key] = value.split(" #")[0].strip().strip("'\"")
+    return env
+
+
+def _probe(url: str, timeout: int = 10) -> tuple[int, str]:
+    """GET a URL. Returns (status, body-or-error). stdlib only, on purpose.
+
+    urllib rather than httpx so verification adds no dependency to the
+    script's documented `uv run --with ...` invocation.
+    """
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.status, resp.read(2048).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.reason or ""
+    except Exception as e:  # connection refused while still booting, etc.
+        return 0, str(e)
+
+
+def verify_container(
+    *,
+    recipe_dir: Path,
+    package: str,
+    settings: dict[str, Any],
+    may_run: bool,
+    report: Report,
+) -> bool | None:
+    """Build the generated Dockerfile, run it, and probe it.
+
+    Returns True (built and served), False (proved broken — the caller must
+    withhold manifest.deployable) or None (no verdict: built but deliberately
+    not run). None is NOT a pass; build success alone does not prove the app
+    serves, and claiming otherwise is the overclaim this whole step exists to
+    prevent.
+
+    Cleans up after itself in a finally: the container and the image it
+    built. The `python:*-slim` base is left in the cache — it is shared, and
+    evicting another user's base layer to tidy up after ourselves is rude.
+    """
+    port = int(settings.get("probe_port", 8080))
+    build_timeout = int(settings.get("build_timeout_seconds", 900))
+    ready_timeout = int(settings.get("ready_timeout_seconds", 120))
+    # The recipe's declared environment first, policy overrides second: a
+    # value the standard names explicitly beats the recipe's placeholder.
+    env_map: dict[str, str] = {}
+    if settings.get("load_env_example"):
+        env_map.update(parse_env_example(recipe_dir / ".env.example"))
+    env_map.update(dict(settings.get("container_env") or {}))
+    paths = [
+        str(p).replace("<pkg>", package)
+        for p in (settings.get("probe_paths") or ["/list-apps"])
+    ]
+
+    tag = f"adk-recipe-verify/{_sanitise_tag(recipe_dir.name)}:verify"
+    name = f"adk-verify-{_sanitise_tag(recipe_dir.name)}"
+
+    # --- build -------------------------------------------------------------
+    # --platform linux/amd64 because Cloud Run runs amd64. A no-op on an x86
+    # host; on arm it is the difference between verifying the image the
+    # target will actually run and verifying a different one.
+    build = _docker(
+        [
+            "build",
+            "--platform",
+            "linux/amd64",
+            "-t",
+            tag,
+            "-f",
+            str(recipe_dir / "Dockerfile"),
+            str(recipe_dir),
+        ],
+        timeout=build_timeout,
+    )
+    if build.returncode != 0:
+        report.add(
+            Check(
+                id="container-build",
+                status=ERROR,
+                message=(
+                    "THE GENERATED DOCKERFILE DOES NOT BUILD. The recipe is "
+                    "not deployable and manifest.deployable was NOT set. "
+                    "Build log tail:\n"
+                    + _tail(build.stderr or build.stdout, 25)
+                ),
+                details={"image": tag, "hint": _build_failure_hint(build)},
+            )
+        )
+        # Still clean up: a build that fails at a late layer leaves the tag
+        # and its completed layers behind just as a successful one does.
+        _cleanup(name, tag)
+        return False
+    report.add(
+        Check(
+            id="container-build",
+            status=CLEAN,
+            message=f"Image built from the generated Dockerfile ({tag}).",
+            details={"image": tag},
+        )
+    )
+
+    if not may_run:
+        report.add(
+            Check(
+                id="container-serves",
+                status=REPORT_ONLY,
+                message=(
+                    "Built but NOT run: this recipe is not on "
+                    "`deployability.verification.run_allowlist`, and some "
+                    "recipes create real cloud resources at import. The image "
+                    "compiles; whether it SERVES is unproven, so the outcome "
+                    "stays `-unverified`. Add the recipe to the allowlist "
+                    "after reading its package for import-time side effects."
+                ),
+            )
+        )
+        _cleanup(name, tag)
+        return None
+
+    # --- run and probe -----------------------------------------------------
+    try:
+        _docker(["rm", "-f", name], timeout=60)  # any stale leftover
+        env_args: list[str] = []
+        for key, value in env_map.items():
+            env_args += ["-e", f"{key}={value}"]
+        # Ephemeral host port: a fixed one collides with whatever the
+        # developer already has on 8080.
+        started = _docker(
+            [
+                "run",
+                "-d",
+                "--name",
+                name,
+                "-p",
+                f"127.0.0.1::{port}",
+                *env_args,
+                tag,
+            ],
+            timeout=120,
+        )
+        if started.returncode != 0:
+            report.add(
+                Check(
+                    id="container-serves",
+                    status=ERROR,
+                    message=(
+                        "Image built but the container would not start. "
+                        "manifest.deployable was NOT set.\n"
+                        + _tail(started.stderr or started.stdout, 20)
+                    ),
+                )
+            )
+            return False
+
+        mapped = _docker(["port", name, str(port)], timeout=30)
+        host_port = _parse_host_port(mapped.stdout)
+        if host_port is None:
+            report.add(
+                Check(
+                    id="container-serves",
+                    status=ERROR,
+                    message=(
+                        f"Container started but port {port} is not published "
+                        f"— cannot probe it. `docker port` said: "
+                        f"{mapped.stdout.strip() or mapped.stderr.strip()}"
+                    ),
+                )
+            )
+            return False
+
+        base = f"http://127.0.0.1:{host_port}"
+        ready, boot_detail = _await_ready(base + paths[0], name, ready_timeout)
+        if not ready:
+            report.add(
+                Check(
+                    id="container-serves",
+                    status=ERROR,
+                    message=(
+                        "Container never served. manifest.deployable was NOT "
+                        f"set. {boot_detail}\nContainer log tail:\n"
+                        + _container_logs(name)
+                    ),
+                )
+            )
+            return False
+
+        # --- the probe contract --------------------------------------------
+        results: dict[str, int] = {}
+        for path in paths:
+            status, _body = _probe(base + path)
+            results[path] = status
+
+        list_apps = paths[0]
+        card_paths = [p for p in paths if "well-known" in p]
+        ok = results.get(list_apps) == 200
+
+        if not ok:
+            report.add(
+                Check(
+                    id="container-serves",
+                    status=ERROR,
+                    message=(
+                        f"{list_apps} returned {results.get(list_apps)}, not "
+                        "200. The container runs but does not serve the "
+                        "recipe. manifest.deployable was NOT set."
+                    ),
+                    details={"probes": results},
+                )
+            )
+            return False
+
+        report.add(
+            Check(
+                id="container-serves",
+                status=CLEAN,
+                message=(
+                    f"Container serves: {list_apps} -> 200. Verified against "
+                    "a real image, not inferred."
+                ),
+                details={"probes": results},
+            )
+        )
+
+        # A2A is reported separately and never rounded up: a 404 here means
+        # the wiring did not take effect, which is a real finding about the
+        # recipe rather than a failure of the image.
+        for card in card_paths:
+            code = results.get(card)
+            if code == 200:
+                report.add(
+                    Check(
+                        id="container-a2a",
+                        status=CLEAN,
+                        message=f"A2A agent card served: {card} -> 200.",
+                    )
+                )
+            else:
+                report.add(
+                    Check(
+                        id="container-a2a",
+                        status=REPORT_ONLY,
+                        message=(
+                            f"A2A agent card {card} returned {code}, not 200. "
+                            "The A2A wiring did NOT take effect. Do not "
+                            "describe this recipe as A2A-capable. The image "
+                            "still builds and serves."
+                        ),
+                        details={"probes": results},
+                    )
+                )
+        return True
+    finally:
+        _cleanup(name, tag)
+
+
+def _await_ready(url: str, name: str, timeout: int) -> tuple[bool, str]:
+    """Poll until the app answers, aborting early if the container died.
+
+    The early abort matters: a container that crashes on import would
+    otherwise hold the run hostage for the whole timeout before reporting
+    something we already knew within a second.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        status, _ = _probe(url, timeout=5)
+        if status == 200:
+            return True, ""
+        alive = _docker(
+            ["inspect", "-f", "{{.State.Running}}", name], timeout=30
+        )
+        if alive.stdout.strip() == "false":
+            return False, "The container exited before it began serving."
+        time.sleep(2)
+    return False, f"No response within {timeout}s."
+
+
+def _cleanup(name: str, tag: str) -> None:
+    """Remove the container and the image this check created.
+
+    Best-effort: a cleanup failure must never turn a passing verification
+    into a reported error.
+    """
+    _docker(["rm", "-f", name], timeout=120)
+    _docker(["rmi", "-f", tag], timeout=120)
+
+
+def _parse_host_port(text: str) -> str | None:
+    """Pull the port out of `docker port`'s `127.0.0.1:54321` output.
+
+    Only the first line: with both IPv4 and IPv6 published, docker prints one
+    mapping per line and either one reaches the same container.
+    """
+    lines = (text or "").strip().splitlines()
+    if not lines:
+        return None
+    match = re.search(r":(\d+)\s*$", lines[0])
+    return match.group(1) if match else None
+
+
+def _container_logs(name: str, lines: int = 30) -> str:
+    """Both streams of a container's log tail, in one call.
+
+    uvicorn writes startup to stderr and access lines to stdout, so a failure
+    diagnosis needs both or it reads as an empty log.
+    """
+    proc = _docker(["logs", "--tail", str(lines), name], timeout=60)
+    return _tail((proc.stdout or "") + (proc.stderr or ""), lines)
+
+
+def _tail(text: str, lines: int) -> str:
+    return "\n".join((text or "").strip().splitlines()[-lines:])
+
+
+def _build_failure_hint(proc: subprocess.CompletedProcess[str]) -> str:
+    """Name the likely structural cause instead of only dumping the log.
+
+    Without this a recipe that was never a container candidate reports as
+    "your recipe is broken", when the truth is usually one specific missing
+    precondition. Cheap triage until a real compatibility preflight exists.
+    """
+    blob = ((proc.stderr or "") + (proc.stdout or "")).lower()
+    if "frozen" in blob or "out of date" in blob or "--locked" in blob:
+        return (
+            "uv.lock does not match pyproject.toml — run `uv lock` and "
+            "re-verify. This is a lockfile problem, not a template problem."
+        )
+    if "readme" in blob:
+        return (
+            "The build backend reads `readme` from pyproject.toml and the "
+            "file is missing from the build context. The Dockerfile's "
+            "`COPY ./README.md` is functional, not decorative."
+        )
+    if "hatch" in blob or "editable" in blob or "build backend" in blob:
+        return (
+            "Build-backend/packaging failure. Check that the agent package "
+            "is declared to the backend the recipe actually uses "
+            "(hatchling's wheel packages, or uv_build's module settings)."
+        )
+    return "No known structural cause matched; read the log tail above."
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -1280,6 +1876,7 @@ def run(
     overwrite: bool,
     data_dirs: list[str],
     region: str,
+    verify_container_requested: bool = False,
 ) -> Report:
     report = Report(
         recipe_dir=str(recipe_dir), mode="apply" if apply else "dry-run"
@@ -1390,9 +1987,18 @@ def run(
     infra_check = check_backing_infra(recipe_dir, package_dir)
     report.add(infra_check)
     infra_clean = infra_check.status == CLEAN
-    report.outcome = (
-        OUTCOME_DEPLOYABLE if infra_clean else OUTCOME_CONTAINERIZED
-    )
+
+    # --- docker availability -----------------------------------------------
+    # Reported in EVERY mode, including dry-run, because the calling skill
+    # needs to know whether verification is even offerable before it asks the
+    # owner. The script never prompts; it states the fact and takes a flag.
+    docker_state, docker_detail = detect_docker()
+    report.add(check_docker(docker_state, docker_detail))
+
+    # No evidence yet. Set provisionally so an early return still carries a
+    # coherent outcome.
+    verified: bool | None = None
+    report.outcome = outcome_for(infra_clean=infra_clean, verified=None)
 
     # --- generate ----------------------------------------------------------
     generate_serving_files(
@@ -1425,11 +2031,111 @@ def run(
         pyproject_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
     report.add(patch_app_object(agent_py, package_dir.name, apply))
-    report.add(
-        patch_manifest_deployable(
-            recipe_dir / "manifest.yaml", infra_clean, apply
+
+    # --- verify -------------------------------------------------------------
+    # Runs before the manifest flag is written, because the flag is what it
+    # gates. See "CONTAINER VERIFICATION, AND THE ORDERING IT FORCES".
+    defer_manifest = False
+    if verify_container_requested:
+        if docker_state != DOCKER_USABLE:
+            report.add(
+                Check(
+                    id="container-verify",
+                    status=REPORT_ONLY,
+                    message=(
+                        "Verification was requested but docker is "
+                        f"{docker_state} — skipped, not failed. The recipe "
+                        "keeps its static assessment and the outcome stays "
+                        "`-unverified`."
+                    ),
+                    details={"docker_state": docker_state},
+                )
+            )
+        elif not apply:
+            report.add(
+                Check(
+                    id="container-verify",
+                    status=REPORT_ONLY,
+                    message=(
+                        "Verification needs the generated files on disk, so "
+                        "it only runs with --apply. Nothing was built."
+                    ),
+                )
+            )
+        else:
+            current, lock_detail = lockfile_is_current(recipe_dir)
+            if not current:
+                # Phase one. The files are now written but the lockfile they
+                # need does not exist yet, so building would fail for a
+                # reason that has nothing to do with the template.
+                defer_manifest = True
+                report.add(
+                    Check(
+                        id="container-verify",
+                        status=NEEDS_INPUT,
+                        message=(
+                            "Deferred manifest.deployable pending "
+                            f"verification: {lock_detail} The Dockerfile runs "
+                            "`uv sync --frozen`, which cannot succeed until "
+                            "the lockfile matches. Run `uv lock --python "
+                            "3.11` in the recipe, then re-invoke this script "
+                            "with the same flags to build and probe. The flag "
+                            "is written only once verification passes."
+                        ),
+                        details={"phase": "awaiting-lock"},
+                    )
+                )
+            else:
+                settings = dict(policy.get("verification") or {})
+                allowlist = [
+                    str(p) for p in (settings.get("run_allowlist") or [])
+                ]
+                may_run = any(
+                    str(recipe_dir)
+                    .replace("\\", "/")
+                    .rstrip("/")
+                    .endswith(entry.rstrip("/"))
+                    for entry in allowlist
+                )
+                verified = verify_container(
+                    recipe_dir=recipe_dir,
+                    package=package_dir.name,
+                    settings=settings,
+                    may_run=may_run,
+                    report=report,
+                )
+
+    report.outcome = outcome_for(infra_clean=infra_clean, verified=verified)
+
+    if defer_manifest:
+        report.add(
+            Check(
+                id="manifest-deployable",
+                status=NEEDS_INPUT,
+                message=(
+                    "Not written yet — held back until container "
+                    "verification has a verdict. Re-invoke after `uv lock`."
+                ),
+            )
         )
-    )
+    elif verified is False:
+        report.add(
+            Check(
+                id="manifest-deployable",
+                status=REPORT_ONLY,
+                message=(
+                    "NOT set: container verification failed. A recipe proven "
+                    "broken is not deployable, whatever the static checks "
+                    "said. Fix the failure above and re-run."
+                ),
+            )
+        )
+    else:
+        report.add(
+            patch_manifest_deployable(
+                recipe_dir / "manifest.yaml", infra_clean, apply
+            )
+        )
 
     if policy.get("emit_agents_cli_manifest"):
         report.add(
@@ -1467,11 +2173,31 @@ def run(
         "support."
     )
     report.note(
-        "reasoning_engine_adapter.py is included because the Recipe "
-        "Deployability doc lists it, but agents-cli ships it only under the "
-        "agent_runtime target. Worth confirming it belongs in a cloud_run "
-        "recipe."
+        "reasoning_engine_adapter.py is generated but is DEAD CODE in a "
+        "cloud_run recipe — settled by verification, not speculation. "
+        "Nothing imports it: fast_api_app.py pulls in only app_utils.services "
+        "and app_utils.a2a, and its own "
+        "`from agentplatform...import AdkApp` would raise ModuleNotFoundError "
+        "if anything did, because `agentplatform` is not among the required "
+        "dependencies and does not appear in a resolved uv.lock. A verified "
+        "container builds and serves without it. It is emitted because the "
+        "Recipe Deployability doc lists it unconditionally while agents-cli "
+        "ships it only under agent_runtime; whether the doc should change is "
+        "a standards decision, not a code one."
     )
+    if verified is True:
+        report.note(
+            "Container verification PASSED: the generated Dockerfile was "
+            "built and the running image served the recipe. This outcome is "
+            "evidence, not inference."
+        )
+    elif verified is None and not defer_manifest:
+        report.note(
+            "No container evidence was gathered, so the outcome ends "
+            "`-unverified`. The files are correct by static inspection; "
+            "nobody has yet built the image. Run with --verify-container on "
+            "a machine with docker to upgrade this to a proven result."
+        )
     return report
 
 
@@ -1519,6 +2245,17 @@ def main() -> int:
             "makes; us-east1 matches agents-cli's own default."
         ),
     )
+    parser.add_argument(
+        "--verify-container",
+        action="store_true",
+        help=(
+            "Build the generated Dockerfile, run it and probe it, then let "
+            "the result gate manifest.deployable. Requires --apply and a "
+            "current uv.lock; without a reachable docker daemon it skips "
+            "cleanly. The skill asks the owner before passing this — the "
+            "script itself never prompts."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.recipe_dir.is_dir():
@@ -1540,6 +2277,7 @@ def main() -> int:
             overwrite=args.overwrite,
             data_dirs=data_dirs,
             region=args.region,
+            verify_container_requested=args.verify_container,
         )
     except Exception as e:  # final safety net for the CLI
         report = Report(
