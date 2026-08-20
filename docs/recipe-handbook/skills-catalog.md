@@ -1,4 +1,4 @@
-<!-- word count: 714 (target 800, cap 1200) -->
+<!-- word count: 848 (target 800, cap 1200) -->
 
 # Repo Skills Catalog
 
@@ -128,6 +128,34 @@ without credentials.
 - **Modes:** dry-run (preview) and apply.
 - **When to use:** adding the required runnability test.
 - **Trigger:** "generate runnability test for contrib/python/my-recipe".
+
+### `make-python-recipe-deployable`
+
+Turns a working recipe into a **deployable** one — packageable into
+a container and runnable as a service. Generates the serving files
+(`Dockerfile`, `.dockerignore`, `fast_api_app.py`,
+`app_utils/{a2a,services,reasoning_engine_adapter}.py`,
+`agents-cli-manifest.yaml`) and configures the recipe to match.
+
+Opt-in, and deliberately not part of `prepare-python-recipe`: most
+recipes do not need to be deployable.
+
+- **Input:** recipe path. Optional `--data-dirs`, `--region`,
+  `--overwrite`.
+- **Writes:** the serving files, plus `pyproject.toml` (serving
+  deps, hatch wheel package), `agent.py` (the `App` object), and
+  `manifest.yaml` (`deployable: true`).
+- **Modes:** dry-run reports; `--apply` writes.
+- **Stops rather than guessing** when the recipe needs an ADK major
+  migration, or carries the old `app_utils` generation
+  (`telemetry.py` / `typing.py` / `deploy.py`).
+- **Two outcomes:** `deployable`, or `containerized` when the recipe
+  needs backing infrastructure a human must provision — in which
+  case `manifest.deployable` is left unset on purpose.
+- **Does not** build images, deploy, or write terraform.
+- **Standard lives in** [`.github/policy.yml`](../../.github/policy.yml)
+  under `deployability:`, not in the skill's code.
+- **Trigger:** "make contrib/python/my-recipe deployable".
 
 ## Java / Go / TypeScript / Kotlin skills
 
