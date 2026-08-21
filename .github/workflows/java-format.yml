@@ -1,0 +1,203 @@
+name: ☕ Java Format PR Checks
+
+# Runs google-java-format on changed Java files and posts diff-style
+# suggestion comments via reviewdog. The Java counterpart to
+# python-format.yml and go-format.yml.
+#
+# Formatter: google-java-format (Google Java Style Guide standard, 2-space
+# indent). Pinned version lives in env.GOOGLE_JAVA_FORMAT_VERSION. Update
+# that variable (not this comment) to bump the formatter version.
+
+on:
+  pull_request:
+    paths:
+      - "core/**/*.java"
+      - "contrib/**/*.java"
+      - "skills/**/*.java"
+      - "core/**/pom.xml"
+      - "core/**/build.gradle"
+      - "core/**/build.gradle.kts"
+      - "contrib/**/pom.xml"
+      - "contrib/**/build.gradle"
+      - "contrib/**/build.gradle.kts"
+      - "skills/**/pom.xml"
+      - "skills/**/build.gradle"
+      - "skills/**/build.gradle.kts"
+      - ".github/workflows/java-format.yml"
+      # NOTE: `java/agents/**` is deliberately absent. Those are retired
+      # recipe roots (.github/policy.yml `frozen_paths`) that PRs may not
+      # modify anyway, so formatting them would only produce unactionable
+      # findings.
+      #
+      # This list alone is NOT sufficient to exclude them: `paths:` decides
+      # whether the workflow RUNS, not which files the diff below returns.
+      # The job therefore also scopes `git diff` to `-- core contrib
+      # skills`. Keep the two in sync.
+
+# Declared per job rather than here. `pull-requests: write` at the workflow
+# level is inherited by EVERY job, including any added later that only need
+# to read — which is what zizmor's `excessive-permissions` audit flagged.
+# Keeping permissions job-local means a future read-only job does not
+# silently acquire write access to pull requests.
+permissions: {}
+
+# Cancel superseded runs on the same PR to save runner minutes and avoid
+# stale suggestion comments from an older commit lingering on the PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Pinned rather than `latest` so a google-java-format release cannot turn every
+  # open PR red without warning. Bump deliberately.
+  GOOGLE_JAVA_FORMAT_VERSION: 1.25.2
+
+jobs:
+  java-format:
+    name: Java Format Suggestions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Checkout
+      pull-requests: write # Post reviewdog suggestion comments
+    # Formatting is syntactic — no compilation, no dependency download — so it
+    # is fast. 10 min is a generous ceiling that still protects against a
+    # stuck reviewdog HTTP call to the GitHub API.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch complete history to locate the merge-base cleanly
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # ratchet:actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install google-java-format
+        env:
+          VERSION: ${{ env.GOOGLE_JAVA_FORMAT_VERSION }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/lib"
+          JAR_PATH="$HOME/.local/lib/google-java-format.jar"
+          curl -sSfL "https://github.com/google/google-java-format/releases/download/v${VERSION}/google-java-format-${VERSION}-all-deps.jar" -o "$JAR_PATH"
+          cat <<'EOF' > "$HOME/.local/bin/google-java-format"
+          #!/usr/bin/env bash
+          exec java \
+            --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+            --add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
+            --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
+            --add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
+            --add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
+            --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED \
+            -jar "$HOME/.local/lib/google-java-format.jar" "$@"
+          EOF
+          chmod +x "$HOME/.local/bin/google-java-format"
+          "$HOME/.local/bin/google-java-format" --version
+
+      - name: Install Reviewdog
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # ratchet:reviewdog/action-setup@v1
+        with:
+          # Pinned rather than `latest` — matches python-format.yml and go-format.yml.
+          reviewdog_version: v0.21.0
+
+      - name: Run google-java-format & Suggest Changes
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pass the PR base ref through env instead of interpolating a
+          # GitHub expression directly into the shell script (security
+          # hardening — see GitHub Actions security hardening guide).
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          export PATH="$HOME/.local/bin:$PATH"
+
+          WORK="$(mktemp -d)"
+          trap 'rm -rf "$WORK"' EXIT
+
+          # 1. Fetch the target branch reference commits
+          git fetch origin "$BASE_REF"
+
+          # 2. Resolve Java files modified in this PR diff under core/, contrib/ or skills/.
+          git diff -z --name-only --diff-filter=d "origin/$BASE_REF...HEAD" \
+            -- core contrib skills > "$WORK/changed"
+
+          ALL_CHANGED=()
+          mapfile -d '' -t ALL_CHANGED < "$WORK/changed"
+
+          CHANGED_FILES=()
+          for f in "${ALL_CHANGED[@]}"; do
+            if [[ "$f" == *.java ]]; then
+              CHANGED_FILES+=("$f")
+            fi
+          done
+
+          if [ ${#CHANGED_FILES[@]} -eq 0 ]; then
+            echo "No Java files were modified under core/, contrib/ or skills/. Skipping formatting."
+            exit 0
+          fi
+
+          echo "Formatting Java files: ${CHANGED_FILES[*]}"
+
+          # 3. Format ONLY the modified Java files in-place
+          google-java-format --replace "${CHANGED_FILES[@]}"
+
+          # 4. Print the findings BEFORE handing them to reviewdog.
+          #
+          #    reviewdog cannot post review comments on a PR from a fork: the
+          #    GITHUB_TOKEN is read-only there, the API answers "403 Resource
+          #    not accessible by integration", and reviewdog degrades to
+          #    annotations. Piping the diff straight into it therefore left
+          #    external contributors with a red X and NOTHING else — the
+          #    findings existed only inside a pipe that produced no output.
+          #    The job log is the one surface that always works, so write to
+          #    it first and treat reviewdog as the enhancement it is.
+          #    --no-color is defensive against colorizing configs.
+          FORMAT_DIFF=$(git diff --no-color -- "${CHANGED_FILES[@]}")
+
+          if [ -z "$FORMAT_DIFF" ]; then
+            echo "[PASS] All modified Java files are already formatted."
+            exit 0
+          fi
+
+          mapfile -t UNFORMATTED < <(git diff --name-only -- "${CHANGED_FILES[@]}")
+
+          echo "::group::Reformatting diff (what google-java-format would change)"
+          echo "$FORMAT_DIFF"
+          echo "::endgroup::"
+          echo ""
+          echo "[FAIL] ${#UNFORMATTED[@]} file(s) are not formatted:"
+          printf '  - %s\n' "${UNFORMATTED[@]}"
+          echo ""
+          echo "Fix locally by running:"
+          echo ""
+          echo "  google-java-format --replace ${UNFORMATTED[*]}"
+          echo ""
+          echo "Then commit the result."
+
+          for f in "${UNFORMATTED[@]}"; do
+            echo "::error file=$f::This file is not formatted. Run 'google-java-format --replace $f' and commit the result."
+          done
+
+          # 5. Hand the diff to reviewdog for inline suggestions.
+          echo "$FORMAT_DIFF" > "$WORK/fmt.diff"
+
+          RD_STATUS=0
+          reviewdog -f=diff \
+                    -name="google-java-format" \
+                    -reporter=github-pr-review \
+                    -filter-mode=added \
+                    -fail-level=any < "$WORK/fmt.diff" || RD_STATUS=1
+
+          if [ "$RD_STATUS" -ne 0 ]; then
+            echo ""
+            echo "::error::reviewdog reported at least one formatting finding on the changed Java files — see the annotations and the diff above."
+            echo "[FAIL] reviewdog exited $RD_STATUS."
+            exit "$RD_STATUS"
+          fi
+
+          exit 1
