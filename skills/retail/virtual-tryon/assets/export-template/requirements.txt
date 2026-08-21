@@ -6,3 +6,4 @@ google-cloud-storage>=2.0.0
 pillow>=9.0.0
 pyyaml>=6.0
 httpx>=0.23.0
+python-dotenv>=1.0.0

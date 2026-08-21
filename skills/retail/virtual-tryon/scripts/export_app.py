@@ -114,7 +114,10 @@ def export_app(config_path: str, skill_dir: str):
 
     # 2. Export and Refactor Python source files
     scripts_src_dir = src_path / "scripts"
+    # config.py is imported by every other module here, so omitting it makes
+    # the exported container fail at startup on `from config import config`.
     py_files = [
+        "config.py",
         "server.py",
         "tryon_processor.py",
         "tryon_agent.py",
