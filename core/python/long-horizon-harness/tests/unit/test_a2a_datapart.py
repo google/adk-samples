@@ -91,8 +91,11 @@ class TestSelectionPayload:
         assert text is not None
         assert "/workspace/cats.md, lines 6-8" in text
         assert "# dogs\nwoof" in text
-        # Offsets, not a search: the same text may occur elsewhere.
-        assert "start=40" in text and "end=51" in text
+        # edit has no start/end targeting: tell the model to search with
+        # enough surrounding context to match only this location.
+        assert "edit" in text
+        assert "oldText" in text and "newText" in text
+        assert "start=40" not in text and "end=51" not in text
         # The instruction is the user's own message, not this block.
         assert "replace" not in text.lower()
         # No JSON leaks through to the model.

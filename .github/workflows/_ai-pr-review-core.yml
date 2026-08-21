@@ -29,11 +29,6 @@ on:
         required: false
         type: 'string'
         default: ''
-      pr_number_review:
-        description: 'PR number from pull_request_review/review_comment event'
-        required: false
-        type: 'string'
-        default: ''
       pr_number_dispatch:
         description: 'PR number from workflow_dispatch event'
         required: false
@@ -41,16 +36,6 @@ on:
         default: ''
       comment_body:
         description: 'Comment body (for issue_comment events)'
-        required: false
-        type: 'string'
-        default: ''
-      review_body:
-        description: 'Review body (for pull_request_review events)'
-        required: false
-        type: 'string'
-        default: ''
-      review_comment_body:
-        description: 'Review comment body (for pull_request_review_comment events)'
         required: false
         type: 'string'
         default: ''
@@ -77,36 +62,20 @@ jobs:
     runs-on: 'ubuntu-latest'
 
     steps:
-      - name: 'Checkout PR code (pull_request)'
-        if: |-
-          ${{ inputs.event_name == 'pull_request' }}
+      # SECURITY: checks out the BASE repo, never `refs/pull/N/head`, and does
+      # so unconditionally. Under `pull_request_target` this job holds full
+      # secrets and a write-scoped token, so checking out the pull request's
+      # code would hand its author both. Nothing here needs that code — the
+      # diff and metadata arrive through `gh`, and the only thing read off
+      # disk is `.github/scripts/post_review_comments.py`.
+      #
+      # Unconditional because the four per-event variants this replaced all
+      # keyed on event names that `pull_request_target` is not one of, so none
+      # would have matched: no checkout, no repo for `gh` to infer, no script.
+      - name: 'Checkout the base repo (never the PR head)'
         uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
         with:
           fetch-depth: 1 # PR diff and metadata come from the gh API; git history is not needed.
-
-      - name: 'Checkout PR code (workflow_dispatch)'
-        if: |-
-          ${{ inputs.event_name == 'workflow_dispatch' }}
-        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
-        with:
-          fetch-depth: 1
-          ref: 'refs/pull/${{ inputs.pr_number_dispatch }}/head'
-
-      - name: 'Checkout PR code (issue_comment)'
-        if: |-
-          ${{ inputs.event_name == 'issue_comment' }}
-        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
-        with:
-          fetch-depth: 1
-          ref: 'refs/pull/${{ inputs.pr_number_issue }}/head'
-
-      - name: 'Checkout PR code (pull_request_review & pull_request_review_comment)'
-        if: |-
-          ${{ inputs.event_name == 'pull_request_review' || inputs.event_name == 'pull_request_review_comment' }}
-        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
-        with:
-          fetch-depth: 1
-          ref: 'refs/pull/${{ inputs.pr_number_review }}/head'
 
       # SECURITY: strip the workspace config agy reads, so the only
       # configuration it sees is the global config written to $HOME below —
@@ -137,10 +106,10 @@ jobs:
           permission-issues: 'write'
           permission-pull-requests: 'write'
 
-      - name: 'Get PR details (pull_request & workflow_dispatch)'
+      - name: 'Get PR details (pull_request_target & workflow_dispatch)'
         id: 'get_pr'
         if: |-
-          ${{ inputs.event_name == 'pull_request' || inputs.event_name == 'workflow_dispatch' }}
+          ${{ inputs.event_name == 'pull_request_target' || inputs.event_name == 'workflow_dispatch' }}
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           EVENT_NAME: '${{ inputs.event_name }}'
@@ -196,7 +165,7 @@ jobs:
           echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
 
           ADDITIONAL_INSTRUCTIONS="$(
-            echo "${COMMENT_BODY}" | sed 's/.*@gemini-cli \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+            echo "${COMMENT_BODY}" | sed 's/.*@ai-review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
           )"
           # Use a UUID-derived delimiter so a multi-line comment body, PR title,
           # or file path containing a bare "EOF" on its own line cannot escape
@@ -218,54 +187,13 @@ jobs:
           done
           { echo "changed_files<<${DELIM}"; echo "${CHANGED_FILES}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
 
-      - name: 'Get PR details (pull_request_review & pull_request_review_comment)'
-        id: 'get_pr_review'
-        if: |-
-          ${{ inputs.event_name == 'pull_request_review' || inputs.event_name == 'pull_request_review_comment' }}
+      # One reason a PR can be unreviewable, and it is a hard API limit rather
+      # than a policy. Seven later steps hang off this step's `skip` output.
+      - name: 'Check whether the PR diff is fetchable'
+        id: 'diff_size_guard'
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
-          EVENT_NAME: '${{ inputs.event_name }}'
-          REVIEW_BODY: '${{ inputs.review_body }}'
-          COMMENT_BODY: '${{ inputs.review_comment_body }}'
-          PR_NUMBER: '${{ inputs.pr_number_review }}'
-        run: |-
-          set -euo pipefail
-
-          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
-
-          if [[ "${EVENT_NAME}" == "pull_request_review" ]]; then
-            TRIGGER_BODY="${REVIEW_BODY}"
-          else
-            TRIGGER_BODY="${COMMENT_BODY}"
-          fi
-
-          ADDITIONAL_INSTRUCTIONS="$(
-            echo "${TRIGGER_BODY}" | sed 's/.*@gemini-cli \/review//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
-          )"
-          # Same UUID-delimited heredoc as the issue_comment path above —
-          # applies to all multi-line outputs, not just additional_instructions.
-          DELIM="EOF_$(uuidgen)"
-          { echo "additional_instructions<<${DELIM}"; echo "${ADDITIONAL_INSTRUCTIONS}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
-
-          for attempt in 1 2 3; do
-            PR_DATA="$(gh pr view "${PR_NUMBER}" --json title,additions,deletions,changedFiles,baseRefName,headRefName)" && break
-            echo "::warning::gh pr view failed (attempt ${attempt}/3); retrying in 5s..."
-            sleep 5
-          done
-          { echo "pr_data<<${DELIM}"; echo "${PR_DATA}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
-
-          for attempt in 1 2 3; do
-            CHANGED_FILES="$(gh pr diff "${PR_NUMBER}" --name-only)" && break
-            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
-            sleep 5
-          done
-          { echo "changed_files<<${DELIM}"; echo "${CHANGED_FILES}"; echo "${DELIM}"; } >> "${GITHUB_OUTPUT}"
-
-      - name: 'Check if PR is new-file-only (skip review for new recipe drops)'
-        id: 'new_files_only_guard'
-        env:
-          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
-          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
         run: |-
           set -euo pipefail
 
@@ -274,29 +202,34 @@ jobs:
             exit 0
           fi
 
-          # Count files whose status is not 'added'. If zero, every file in this
-          # PR is brand-new — treat it as a new recipe drop and skip automated review.
-          # Human admin approval is the real quality gate for new recipe submissions.
-          #
           # IMPORTANT: `gh api --paginate --jq EXPR` applies EXPR to EACH page's
-          # response separately and concatenates the results. The `/pulls/N/files`
-          # endpoint paginates at 30 files per page, so a previous form
-          #     --jq '[.[] | select(.status != "added")] | length'
-          # emitted one integer per page for any PR with more than 30 changed
-          # files, and the multi-line capture broke the `-eq` comparison below
-          # under `set -euo pipefail` — the guard would crash on every large PR.
-          # Emit one filename per matching file and count with `wc -l` instead:
-          # per-page jq output is a stream of lines, `wc -l` sums them.
-          NON_ADDED_COUNT="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
-            --paginate --jq '.[] | select(.status != "added") | .filename' | wc -l)"
+          # response separately and concatenates the results, so an aggregating
+          # filter like `| length` emits one integer PER PAGE and breaks any
+          # numeric comparison on the result. Emit one line per file and count
+          # the lines instead.
+          #
+          # `tr -d` because `wc -l < file` right-pads the count on BSD wc, and
+          # TOTAL_COUNT is interpolated into the PR comment below. Arithmetic
+          # would tolerate the padding; the reader would not.
+          TOTAL_COUNT="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --paginate --jq '.[] | .filename' | wc -l | tr -d '[:space:]')"
 
-          if [[ "${NON_ADDED_COUNT}" -eq 0 ]]; then
+          # `gh pr diff` reads GET /repos/{owner}/{repo}/pulls/{n} with the diff
+          # media type, which answers HTTP 406 "PullRequest.diff too_large" above
+          # 300 files. 406 is deterministic, so the fetch step's three retries
+          # cannot recover it and its exhausted-loop path is fatal: #2535 (804
+          # files) failed all three reviews that way. Caught here because THIS
+          # endpoint paginates and that one does not, so the count is already in
+          # hand one step before the failure.
+          MAX_DIFF_FILES=300
+          if (( TOTAL_COUNT > MAX_DIFF_FILES )); then
             echo "skip=true" >> "${GITHUB_OUTPUT}"
             gh pr comment "${PR_NUMBER}" \
-              --body "This PR only adds new files — automated AI review was skipped. New recipe submissions are reviewed by a maintainer during the approval process."
-          else
-            echo "skip=false" >> "${GITHUB_OUTPUT}"
+              --body "This PR changes ${TOTAL_COUNT} files, above the ${MAX_DIFF_FILES} GitHub's diff API will serve, so automated AI review was skipped. Splitting it up would get each part reviewed."
+            exit 0
           fi
+
+          echo "skip=false" >> "${GITHUB_OUTPUT}"
 
       # Fetch the diff HERE rather than letting the reviewer shell out for it.
       # agy runs the agent in an empty scratch directory, not in the checked-out
@@ -313,10 +246,10 @@ jobs:
       # step output round-trips through the environment, where Linux caps a
       # single variable at the same 131072 bytes that caps an argv string.
       - name: 'Fetch the PR diff for the reviewer'
-        if: steps.new_files_only_guard.outputs.skip != 'true'
+        if: steps.diff_size_guard.outputs.skip != 'true'
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
-          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
         run: |-
           set -euo pipefail
 
@@ -353,7 +286,7 @@ jobs:
       # this step provides by exporting GOOGLE_APPLICATION_CREDENTIALS.
       - name: 'Authenticate to Google Cloud (Workload Identity Federation)'
         id: 'auth'
-        if: steps.new_files_only_guard.outputs.skip != 'true'
+        if: steps.diff_size_guard.outputs.skip != 'true'
         uses: 'google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093' # ratchet:google-github-actions/auth@v3.0.0
         with:
           project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
@@ -369,7 +302,7 @@ jobs:
       # validated against that catalog the run dies with the badly misleading
       # "model <name> is not recognized as a known model".
       - name: 'Add the quota project to the ADC credential'
-        if: steps.new_files_only_guard.outputs.skip != 'true'
+        if: steps.diff_size_guard.outputs.skip != 'true'
         env:
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
         run: |-
@@ -382,7 +315,7 @@ jobs:
       # The installer always fetches the latest build — it has no version flag,
       # so the old `gemini_cli_version` pin has no equivalent here.
       - name: 'Install Antigravity CLI (agy)'
-        if: steps.new_files_only_guard.outputs.skip != 'true'
+        if: steps.diff_size_guard.outputs.skip != 'true'
         run: |-
           set -euo pipefail
           curl -fsSL https://antigravity.google/cli/install.sh | bash
@@ -405,7 +338,7 @@ jobs:
       # a review that produced nothing still looks like a pass. Leaving room
       # for routine improvisation is cheaper than a silently voided review.
       - name: 'Configure agy (tool permissions)'
-        if: steps.new_files_only_guard.outputs.skip != 'true'
+        if: steps.diff_size_guard.outputs.skip != 'true'
         run: |-
           set -euo pipefail
 
@@ -430,14 +363,14 @@ jobs:
           SETTINGS_EOF
 
       - name: 'Run AI PR Review'
-        if: steps.new_files_only_guard.outputs.skip != 'true'
+        if: steps.diff_size_guard.outputs.skip != 'true'
         id: 'agy_pr_review'
         env:
           AGY_ADC_AUTH: 'true'
-          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
-          PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data || steps.get_pr_review.outputs.pr_data }}'
-          CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files || steps.get_pr_review.outputs.changed_files }}'
-          ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions || steps.get_pr_review.outputs.additional_instructions }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
+          PR_DATA: '${{ steps.get_pr.outputs.pr_data || steps.get_pr_comment.outputs.pr_data }}'
+          CHANGED_FILES: '${{ steps.get_pr.outputs.changed_files || steps.get_pr_comment.outputs.changed_files }}'
+          ADDITIONAL_INSTRUCTIONS: '${{ steps.get_pr.outputs.additional_instructions || steps.get_pr_comment.outputs.additional_instructions }}'
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
           GOOGLE_CLOUD_LOCATION: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           REPOSITORY: '${{ github.repository }}'
@@ -600,11 +533,11 @@ jobs:
       # right here, so a bad position can be dropped deterministically instead
       # of taking every other comment down with it.
       - name: 'Post the review'
-        if: steps.new_files_only_guard.outputs.skip != 'true'
+        if: steps.diff_size_guard.outputs.skip != 'true'
         id: 'post_review'
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
-          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
           REVIEW_LABEL: '${{ inputs.review_label }}'
         run: |-
           set -euo pipefail
@@ -663,7 +596,7 @@ jobs:
         # sees it, so any quote in the expanded value can break out of the
         # string literal and become executable code.
         env:
-          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number || steps.get_pr_review.outputs.pr_number }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
           REVIEW_LABEL: '${{ inputs.review_label }}'
         with:
           github-token: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'

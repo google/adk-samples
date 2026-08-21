@@ -30,14 +30,24 @@ on:
       #     so a dependabot.yml-only PR is exactly the case that must run
       #     these tests.
       #   */**/manifest.yaml
-      #     test_recipe_canary_matrix.py walks the real recipe tree and pins
-      #     the exact set of recipes the canary tests. A PR that ADDS or
-      #     DELETES a recipe is precisely the PR that changes that set — and
-      #     was precisely the PR that did not run these tests, so the pin was
-      #     unenforceable on the only change that could break it. Scoped to
-      #     manifest.yaml rather than all of core/**: the recipe set is a
-      #     function of which manifests exist AND of the `language:` line
-      #     inside them, and nothing else under a recipe can change it.
+      #     test_recipe_canary_matrix.py walks the real recipe tree and
+      #     checks the canary's recipe set against a second, independent
+      #     read of every manifest.yaml — a real YAML parser, versus the
+      #     regex the canary itself uses so it can run with no dependencies.
+      #     A PR that ADDS or DELETES a recipe is precisely the PR that can
+      #     make the two disagree, so it has to run these tests.
+      #
+      #     This costs a recipe contributor nothing. Both sides are derived
+      #     from the tree, so a well-formed recipe moves them together and
+      #     the check passes untouched. It fails only where the two readings
+      #     genuinely differ — in practice a `language:` line the parser
+      #     reads as Python and the canary's matcher does not, which is a
+      #     defect in the contributor's own manifest.yaml and is fixed
+      #     there. Adding a recipe never requires an edit under .github/.
+      #
+      #     Scoped to manifest.yaml rather than all of core/**: the recipe
+      #     set is a function of which manifests exist AND of the `language:`
+      #     line inside them, and nothing else under a recipe can change it.
       #   .github/workflows/_ai-pr-review-core.yml
       #     test_post_review_comments.py::
       #     test_workflow_invokes_this_script_with_the_flags_it_defines parses

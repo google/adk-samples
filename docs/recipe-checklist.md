@@ -1,4 +1,4 @@
-<!-- word count: 831 (target 900, cap 1200) -->
+<!-- word count: 889 (target 900, cap 1200) -->
 
 # Recipe Checklist
 
@@ -166,6 +166,17 @@ a PR.
   No manual trigger is needed.
 - Want the full story? →
   [handbook overview](./recipe-handbook/README.md)
+
+## 5. Automated review
+
+Three AI reviewers — correctness, security and maintainability — run when
+you open a PR and on every push, forks included. They comment on added
+lines, only for critical or high severity issues, and are advisory: a
+maintainer still reviews and approves.
+
+A maintainer can re-run them by commenting `@ai-review` on the PR,
+optionally followed by what to focus on. PRs above 300 changed files are
+skipped, because GitHub will not serve a diff that large.
 
 ---
 
