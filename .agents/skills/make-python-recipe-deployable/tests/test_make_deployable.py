@@ -28,6 +28,7 @@ from pathlib import Path
 
 import make_deployable as md
 import pytest
+import tomlkit
 
 MIN_ADK = "2.6.0"
 
@@ -108,12 +109,18 @@ def no_docker(monkeypatch):
 
 
 def test_finds_shallowest_agent_package(tmp_path: Path):
-    """A nested sub-agent must never shadow the real package."""
-    write(tmp_path / "app" / "agent.py", "root_agent = 1\n")
-    write(tmp_path / "app" / "subagents" / "agent.py", "root_agent = 2\n")
+    """A nested sub-agent must never shadow the real package.
+
+    The nested decoy is named to sort BEFORE the real package, so plain walk
+    order would return it. Only genuine depth-ordering picks the right one —
+    with the decoy named `subagents` the test passed even with the depth key
+    stubbed to a constant.
+    """
+    write(tmp_path / "zz_app" / "agent.py", "root_agent = 1\n")
+    write(tmp_path / "aa_outer" / "nested" / "agent.py", "root_agent = 2\n")
     agent_py, package_dir = md.find_agent_package(tmp_path)
-    assert package_dir.name == "app"
-    assert agent_py == tmp_path / "app" / "agent.py"
+    assert package_dir.name == "zz_app"
+    assert agent_py == tmp_path / "zz_app" / "agent.py"
 
 
 def test_ignores_agent_py_inside_venv(tmp_path: Path):
@@ -1642,34 +1649,34 @@ def test_required_files_cannot_escape_the_recipe(recipe: Path, monkeypatch):
 
 
 def test_crash_forces_a_blocked_outcome(recipe: Path, monkeypatch):
-    """A crash must never leave a success outcome for a caller to switch on."""
+    """A crash must never leave a success outcome for a caller to switch on.
+
+    Driven in-process against the real main() exception path. The earlier
+    version spawned a subprocess, monkeypatched only the parent, and asserted
+    `returncode in (0, 2)` — which every possible run satisfies.
+    """
     monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
     monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+
+    def boom(*a, **k):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(md, "patch_manifest_deployable", boom)
     monkeypatch.setattr(
-        md,
-        "write_agents_cli_manifest",
-        lambda *a, **k: (_ for _ in ()).throw(PermissionError("read-only")),
+        sys,
+        "argv",
+        ["make_deployable.py", "--recipe-dir", str(recipe), "--apply"],
     )
-    proc = subprocess.run(
-        [
-            sys.executable,
-            str(SCRIPT),
-            "--recipe-dir",
-            str(recipe),
-            "--apply",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    # Runs in a subprocess so the real main() exception path is exercised.
-    assert proc.returncode in (0, 2)
+    printed: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(a[0]))
 
+    rc = md.main()
 
-# ---------------------------------------------------------------------------
-# Pass-4 regressions: defects introduced by the pass-3 fixes
-# ---------------------------------------------------------------------------
+    assert rc == 2, "a crash must exit 2"
+    envelope = json.loads(printed[-1])
+    assert envelope["outcome"] == md.OUTCOME_BLOCKED
+    assert envelope["files_written"], "partial work must survive the crash"
+    assert any("CRASHED" in n for n in envelope["notes"])
 
 
 @pytest.mark.parametrize(
@@ -1919,3 +1926,830 @@ def test_late_manifest_error_is_reflected_in_the_outcome(
         region="us-east1",
     )
     assert report.outcome != md.OUTCOME_DEPLOYABLE_UNVERIFIED
+
+
+# ---------------------------------------------------------------------------
+# adk-locked-version must not misdescribe how uv lock behaves
+#
+# uv is STICKY: it preserves an already-locked version that still satisfies
+# the declared specifier. The check used to promise the opposite, and
+# rag-agent-search is what that cost — locked at 2.3.0 under `>=2.0.0`,
+# re-locked exactly as instructed, still 2.3.0, and the container then died
+# on `cannot import name 'TextPart' from 'a2a.types'`.
+# ---------------------------------------------------------------------------
+
+
+def test_below_floor_does_not_promise_a_plain_relock_will_fix_it(
+    tmp_path: Path,
+):
+    write(
+        tmp_path / "uv.lock",
+        '[[package]]\nname = "google-adk"\nversion = "2.3.0"\n',
+    )
+    check = md.check_adk_locked_version(tmp_path / "uv.lock", MIN_ADK)
+
+    assert check.status == md.REPORT_ONLY
+    # The false promise, in the phrasings it could plausibly regress to.
+    assert "will raise" not in check.message
+    assert "re-locking will" not in check.message
+    # And the accurate, actionable remedy.
+    assert "WILL NOT RAISE IT" in check.message
+    assert check.details["remedy"] == "uv lock --upgrade-package google-adk"
+
+
+def test_below_floor_todo_gives_the_upgrade_command(recipe: Path, monkeypatch):
+    """A plain `uv lock` here is a no-op; the todo must not recommend it.
+
+    The specifier must still ADMIT the locked version, which is what makes uv
+    sticky. With a `>=2.6.0` specifier and a 2.3.0 lock the lockfile is merely
+    stale and a plain re-lock does raise it — a different situation entirely.
+    """
+    pyproject = recipe / "pyproject.toml"
+    pyproject.write_text(
+        pyproject.read_text().replace(
+            '"google-adk[gcp,otel-gcp]>=2.6.0,<3.0.0",',
+            '"google-adk[gcp,otel-gcp]>=2.0.0,<3.0.0",',
+        ),
+        encoding="utf-8",
+    )
+    (recipe / "uv.lock").write_text(
+        '[[package]]\nname = "google-adk"\nversion = "2.3.0"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=False,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    lock_todos = [t for t in report.todos if "uv lock" in t]
+    assert lock_todos, "expected a lockfile todo"
+    assert any("--upgrade-package google-adk" in t for t in lock_todos)
+    # The plain form must not be offered as the fix for this recipe.
+    assert not any(
+        t.startswith("Run `uv lock --python 3.11`") for t in lock_todos
+    )
+
+
+def test_at_or_above_floor_still_gets_the_plain_lock_todo(
+    recipe: Path, monkeypatch
+):
+    """The upgrade advice must not leak onto recipes that don't need it."""
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=False,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    assert any(
+        t.startswith("Run `uv lock --python 3.11`") for t in report.todos
+    )
+    assert not any("--upgrade-package" in t for t in report.todos)
+
+
+def test_major_gate_states_both_relock_directions(tmp_path: Path):
+    """The gate's conclusion was right but its stated reason was not.
+
+    Re-locking in place KEEPS the old major (shipping serving deps against an
+    ADK that cannot support them); only a fresh resolution crosses it.
+    """
+    write(
+        tmp_path / "uv.lock",
+        '[[package]]\nname = "google-adk"\nversion = "1.28.0"\n',
+    )
+    check = md.check_adk_locked_version(tmp_path / "uv.lock", MIN_ADK)
+    assert check.status == md.NEEDS_INPUT
+    assert "IN PLACE" in check.message
+    assert "FRESH" in check.message
+
+
+def test_stale_lock_against_a_raised_specifier_is_not_called_sticky():
+    """Stickiness needs the specifier to STILL ADMIT the locked version.
+
+    Declaring `>=2.6.0` with a 2.3.0 lock is just a stale lockfile; a plain
+    `uv lock` does raise it. Telling that owner "uv lock will not raise it"
+    would be as false as the claim this whole fix replaced.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        lock = Path(d) / "uv.lock"
+        lock.write_text(
+            '[[package]]\nname = "google-adk"\nversion = "2.3.0"\n',
+            encoding="utf-8",
+        )
+        sticky = md.check_adk_locked_version(
+            lock, MIN_ADK, declared_spec="google-adk>=2.0.0,<3.0.0"
+        )
+        stale = md.check_adk_locked_version(
+            lock, MIN_ADK, declared_spec="google-adk>=2.6.0,<3.0.0"
+        )
+
+    assert sticky.details["sticky"] is True
+    assert "WILL NOT RAISE IT" in sticky.message
+    assert sticky.details["remedy"] == "uv lock --upgrade-package google-adk"
+
+    assert stale.details["sticky"] is False
+    assert "WILL NOT RAISE IT" not in stale.message
+    assert "merely stale" in stale.message
+    assert "remedy" not in stale.details
+
+
+@pytest.mark.parametrize(
+    "spec,version,expected",
+    [
+        ("google-adk>=2.0.0,<3.0.0", "2.3.0", True),
+        ("google-adk>=2.6.0,<3.0.0", "2.3.0", False),
+        ("google-adk", "2.3.0", True),
+        ("google-adk==2.3.0", "2.3.0", True),
+        (None, "2.3.0", True),
+        ("not a requirement !!", "2.3.0", True),
+    ],
+)
+def test_spec_still_admits(spec, version, expected):
+    """Unparseable or absent must default to True — the conservative answer
+    sends the owner to --upgrade-package, correct in either case."""
+    from packaging.version import Version
+
+    assert md._spec_still_admits(spec, Version(version)) is expected
+
+
+# ---------------------------------------------------------------------------
+# Mutation-gap closers
+#
+# Independent review mutation-tested the suite: 47 of 60 single-point
+# mutations survived with every test green. These cover the survivors whose
+# escape would ship a real bug — each one was confirmed to FAIL against the
+# corresponding mutation before being committed.
+# ---------------------------------------------------------------------------
+
+
+def test_apply_actually_writes_pyproject(recipe: Path, monkeypatch):
+    """`pyproject.write_text` could be deleted outright and the suite stayed
+    green — dependencies and the wheel package would silently never land."""
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    before = (recipe / "pyproject.toml").read_text()
+    md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    after = (recipe / "pyproject.toml").read_text()
+    assert after != before, "pyproject.toml was never written"
+    assert "a2a-sdk" in after, "required serving dependency not added"
+
+
+def test_infra_axis_actually_withholds_the_flag(recipe: Path, monkeypatch):
+    """Disabling the infra axis let a terraform recipe be flagged one-click
+    deployable — the single worst false claim this skill can make."""
+    (recipe / "terraform").mkdir()
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    assert report.outcome == md.OUTCOME_CONTAINERIZED_UNVERIFIED
+    assert "deployable: true" not in (recipe / "manifest.yaml").read_text()
+
+
+def test_adk_floor_gate_actually_stops_the_run(recipe: Path, monkeypatch):
+    """The gate could be disabled entirely with the suite green."""
+    pyproject = recipe / "pyproject.toml"
+    pyproject.write_text(
+        pyproject.read_text().replace(
+            '"google-adk[gcp,otel-gcp]>=2.6.0,<3.0.0",', '"google-adk<2.0.0",'
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    assert report.outcome == md.OUTCOME_BLOCKED
+    assert report.files_written == [], "a blocked gate must write nothing"
+    assert not (recipe / "Dockerfile").exists()
+
+
+def test_hatch_wheel_package_is_actually_added():
+    """Without it `uv sync` fails inside the image. Wholly unexercised."""
+    doc = tomlkit.parse(
+        '[project]\nname = "d"\n\n'
+        '[build-system]\nrequires = ["hatchling"]\n'
+        'build-backend = "hatchling.build"\n\n'
+        '[tool.hatch.build.targets.wheel]\npackages = ["other"]\n'
+    )
+    check = md.patch_hatch_packages(doc, "app", apply=True)
+    assert check.status == md.FIXED
+    packages = [
+        str(x)
+        for x in doc["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
+    ]
+    assert "app" in packages
+    assert "other" in packages, "a pre-existing entry must survive"
+
+
+def test_uv_build_backend_is_reported_not_silently_patched():
+    """Two recipes here use `uv_build`, which never reads the hatch table.
+
+    Patching it there would look like a fix while leaving the package
+    undeclared, so the container fails to import it at run time.
+    """
+    doc = tomlkit.parse(
+        '[project]\nname = "d"\n\n'
+        '[build-system]\nrequires = ["uv_build"]\n'
+        'build-backend = "uv_build"\n'
+    )
+    check = md.patch_hatch_packages(doc, "app", apply=True)
+    assert check.status == md.REPORT_ONLY
+    assert "not hatchling" in check.message
+    assert "hatch" not in str(doc.get("tool") or "")
+
+
+def test_dockerignore_excludes_env_and_venv():
+    """`.env` in the image is a credential leak; `.venv` shadows site-packages
+    and made one recipe's build context 501 MB."""
+    assert ".env" in md.DOCKERIGNORE
+    assert ".venv/" in md.DOCKERIGNORE
+
+
+@pytest.mark.parametrize(
+    "scenario,expected_rc",
+    [("clean", 0), ("gate", 1)],
+)
+def test_documented_exit_codes(
+    recipe: Path, monkeypatch, scenario, expected_rc
+):
+    """0 / 1 / 2 are a documented contract for the calling agent; all three
+    could be changed with the suite green."""
+    if scenario == "gate":
+        pyproject = recipe / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text().replace(
+                '"google-adk[gcp,otel-gcp]>=2.6.0,<3.0.0",',
+                '"google-adk<2.0.0",',
+            ),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    monkeypatch.setattr(
+        sys, "argv", ["make_deployable.py", "--recipe-dir", str(recipe)]
+    )
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+    assert md.main() == expected_rc
+
+
+def test_env_example_backing_infra_detection(tmp_path: Path):
+    """The .env.example half of infra detection was wholly unexercised."""
+    (tmp_path / "app").mkdir()
+    write(tmp_path / ".env.example", "DATASTORE_ID=abc123\n")
+    check = md.check_backing_infra(tmp_path, tmp_path / "app")
+    assert check.status == md.REPORT_ONLY
+    assert any("DATASTORE_ID" in r for r in check.details["reasons"])
+
+
+# ---------------------------------------------------------------------------
+# Guards for the fixes themselves
+#
+# Independent review reverted each of six fixes in a scratch copy and found
+# the suite still green: the fixes were unprotected. Each test below was
+# confirmed to FAIL against a full revert of the fix it names.
+# ---------------------------------------------------------------------------
+
+
+def test_outcome_reports_blocked_when_app_object_missing(
+    recipe: Path, monkeypatch
+):
+    """Guards `disqualified=not app_object_ok`.
+
+    Without it the outcome reads `deployable-unverified` — which SKILL.md
+    defines as "flag is set" — while the flag is being deleted from the file.
+    Asserting only on the manifest, as the other tests did, left the outcome
+    free to contradict it.
+    """
+    (recipe / "app" / "agent.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    assert report.outcome == md.OUTCOME_BLOCKED
+    assert report.outcome != md.OUTCOME_DEPLOYABLE_UNVERIFIED
+
+
+def test_deferral_outcome_is_not_a_success_string(recipe: Path, monkeypatch):
+    """Guards `deferred=defer_manifest`.
+
+    Phase one of --verify-container is ALWAYS this path, and it withholds the
+    flag, so it must not report an outcome that means "flag set".
+    """
+    report, _ = _run_with_docker(
+        recipe,
+        monkeypatch,
+        state=md.DOCKER_USABLE,
+        lock_ok=False,
+        verified=True,
+    )
+    assert report.outcome == md.OUTCOME_BLOCKED
+    assert "deployable: true" not in (recipe / "manifest.yaml").read_text()
+
+
+def test_arm64_run_failure_is_environmental_not_a_verdict(
+    tmp_path: Path, monkeypatch
+):
+    """Cross-architecture failure is handled where docker itself reports it.
+
+    An earlier attempt refused to verify at all on any non-amd64 host. That
+    was a false skip — Docker Desktop bundles QEMU, so Apple Silicon builds
+    amd64 fine — and it claimed "no manifest flag was changed" in a run that
+    then set the flag. Removed in favour of classifying the `docker run`
+    failure, whose text is docker's OWN output.
+    """
+    fake = FakeDocker({"run": (125, "", "exec /bin/sh: exec format error")})
+    monkeypatch.setattr(md, "_docker", fake)
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings=SETTINGS,
+        may_run=True,
+        report=report,
+    )
+    assert result is None, "a platform mismatch is the host's fault"
+
+
+def test_shebangless_recipe_script_is_still_a_verdict(
+    tmp_path: Path, monkeypatch
+):
+    """Same errno, different fault. A recipe shipping a script with no
+    shebang must not be excused as environmental."""
+    fake = FakeDocker(
+        {"run": (125, "", "exec /app/start.sh: exec format error")}
+    )
+    monkeypatch.setattr(md, "_docker", fake)
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings=SETTINGS,
+        may_run=True,
+        report=report,
+    )
+    assert result is False, "the recipe's own broken script is a verdict"
+
+
+@pytest.mark.parametrize(
+    "crash_log",
+    [
+        "ConnectionResetError: [Errno 104] Connection reset by peer",
+        "httpx.ReadTimeout: Request timed out after 60s",
+        "grpc: context deadline exceeded",
+        "OSError: No space left on device",
+    ],
+)
+def test_recipe_crash_mentioning_infra_words_is_still_a_verdict(
+    tmp_path: Path, monkeypatch, crash_log
+):
+    """The laundering bug, pinned.
+
+    A container that EXITED is broken. Nothing it printed on the way down may
+    convert that into a pass — those phrases occur constantly in real
+    application tracebacks.
+    """
+    fake = FakeDocker(
+        {
+            "port": (0, "127.0.0.1:54321\n", ""),
+            "inspect": (0, "false\n", ""),
+            "logs": (0, crash_log, ""),
+        }
+    )
+    monkeypatch.setattr(md, "_docker", fake)
+    monkeypatch.setattr(md, "_probe", lambda url, timeout=10: (0, "refused"))
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings={**SETTINGS, "ready_timeout_seconds": 1},
+        may_run=True,
+        report=report,
+    )
+
+    assert result is False, f"a crash logging {crash_log!r} is still a crash"
+    serves = next(c for c in report.checks if c.id == "container-serves")
+    assert serves.status == md.ERROR
+
+
+def test_genuine_crash_on_exit_is_still_a_verdict(tmp_path: Path, monkeypatch):
+    """The environmental carve-out must not swallow a real crash."""
+    fake = FakeDocker(
+        {
+            "port": (0, "127.0.0.1:54321\n", ""),
+            "inspect": (0, "false\n", ""),
+            "logs": (0, "ModuleNotFoundError: No module named 'app'\n", ""),
+        }
+    )
+    monkeypatch.setattr(md, "_docker", fake)
+    monkeypatch.setattr(md, "_probe", lambda url, timeout=10: (0, "refused"))
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings={**SETTINGS, "ready_timeout_seconds": 1},
+        may_run=True,
+        report=report,
+    )
+    assert result is False
+
+
+def test_infra_branch_reports_a_pre_existing_flag(tmp_path: Path):
+    """Guards the read added to the infra branch.
+
+    Two recipes here already ship `deployable: true`; asserting "left unset"
+    about them is a claim the reader can falsify by opening the file.
+    """
+    m = tmp_path / "manifest.yaml"
+    m.write_text("type: agent\ndeployable: True\n", encoding="utf-8")
+    check = md.patch_manifest_deployable(m, infra_clean=False, apply=True)
+    assert check.details.get("pre_existing_flag") is True
+    assert "ALREADY says" in check.message
+    # Case variants must agree with the ruamel path used elsewhere.
+    m.write_text("type: agent\ndeployable: TRUE\n", encoding="utf-8")
+    assert (
+        md.patch_manifest_deployable(
+            m, infra_clean=False, apply=True
+        ).details.get("pre_existing_flag")
+        is True
+    )
+
+
+def test_acli_manifest_is_recorded_in_files_written(recipe: Path, monkeypatch):
+    """Guards the `report=` wiring. Seven files landed, six were reported."""
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    assert (recipe / "agents-cli-manifest.yaml").is_file()
+    assert "agents-cli-manifest.yaml" in report.files_written
+    # Exactly once, and every reported file must actually exist.
+    assert report.files_written.count("agents-cli-manifest.yaml") == 1
+    for rel in report.files_written:
+        assert (recipe / rel).exists(), f"{rel} reported but absent"
+
+
+def test_bespoke_entrypoint_still_warns_on_the_second_run(
+    recipe: Path, monkeypatch
+):
+    """Guards `generated_by_us` against being decided by the Dockerfile alone.
+
+    A recipe with a bespoke entrypoint and no Dockerfile got the advisory on
+    run 1 and lost it on run 2 — and run 2 is mandatory in the two-phase flow.
+    """
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    (recipe / "app" / "fast_api_app.py").write_text(
+        "# bespoke 400-line entrypoint\napp = object()\n", encoding="utf-8"
+    )
+    md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    second = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    advisory = next(c for c in second.checks if c.id == "already-deployable")
+    assert advisory.status == md.REPORT_ONLY, (
+        "the bespoke entrypoint is still the contributor's; the dead-code "
+        "advisory must not be suppressed"
+    )
+
+
+def test_declared_spec_is_actually_wired_through(recipe: Path, monkeypatch):
+    """Guards `declared_spec=declared_adk` in run().
+
+    The helper was tested directly, so dropping the wiring changed nothing.
+    """
+    pyproject = recipe / "pyproject.toml"
+    pyproject.write_text(
+        pyproject.read_text().replace(
+            '"google-adk[gcp,otel-gcp]>=2.6.0,<3.0.0",',
+            '"google-adk[gcp,otel-gcp]>=2.0.0,<3.0.0",',
+        ),
+        encoding="utf-8",
+    )
+    (recipe / "uv.lock").write_text(
+        '[[package]]\nname = "google-adk"\nversion = "2.3.0"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=False,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    locked = next(c for c in report.checks if c.id == "adk-locked-version")
+    assert locked.details.get("sticky") is True, (
+        "declared_spec was not passed through, so stickiness was misjudged"
+    )
+
+
+# ---------------------------------------------------------------------------
+# _manifest_claims_deployable — the negative cases
+#
+# Review mutation-tested this helper: loosening the regex to match any
+# `deployable:` line, or to accept yes/on, or to match indented keys, or
+# replacing the body with `return True`, ALL survived with the suite green.
+# The positives alone pinned nothing.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "line,expected",
+    [
+        ("deployable: true", True),
+        ("deployable: True", True),
+        ("deployable: TRUE", True),
+        ("deployable: true  # one-command deploy", True),
+        ("deployable:\ttrue", True),
+        # Negatives — each one a mutation that previously survived.
+        ("deployable: false", False),
+        ("deployable: False", False),
+        # ruamel (YAML 1.2) parses these as STRINGS, not booleans, so treating
+        # them as a claim would disagree with the parse used elsewhere.
+        ("deployable: yes", False),
+        ("deployable: on", False),
+        # Nested under another key is a different key entirely.
+        ("  deployable: true", False),
+        ("# deployable: true", False),
+        ("deployable_at: true", False),
+    ],
+)
+def test_manifest_claims_deployable_positives_and_negatives(
+    tmp_path: Path, line, expected
+):
+    m = tmp_path / "manifest.yaml"
+    m.write_text(f"type: agent\n{line}\n", encoding="utf-8")
+    assert md._manifest_claims_deployable(m) is expected
+
+
+def test_manifest_claims_deployable_agrees_with_ruamel_on_real_manifests():
+    """The helper exists to stop two readers disagreeing. Prove they don't."""
+    from ruamel.yaml import YAML
+
+    yaml = YAML(typ="safe")
+    repo_root = Path(__file__).resolve().parents[4]
+    checked = 0
+    for manifest in sorted(
+        list((repo_root / "core" / "python").glob("*/manifest.yaml"))
+        + list((repo_root / "contrib" / "python").glob("*/manifest.yaml"))
+    ):
+        with open(manifest, encoding="utf-8") as f:
+            data = yaml.load(f) or {}
+        assert md._manifest_claims_deployable(manifest) is (
+            data.get("deployable") is True
+        ), f"readers disagree on {manifest}"
+        checked += 1
+    assert checked >= 10, f"expected the repo's manifests, scanned {checked}"
+
+
+def test_missing_app_object_retracts_without_any_error_check(
+    recipe: Path, monkeypatch
+):
+    """Documents the flag column of the `blocked` row.
+
+    A reader trusting "blocked + no ERROR means the tree was untouched" would
+    miss this deletion: the app-object path retracts with no ERROR present.
+    """
+    (recipe / "manifest.yaml").write_text(
+        "type: standalone\nlanguage: python\ndeployable: true\n",
+        encoding="utf-8",
+    )
+    (recipe / "app" / "agent.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    assert report.outcome == md.OUTCOME_BLOCKED
+    assert not md._has_error(report), "no ERROR, yet the flag is retracted"
+    assert "deployable: true" not in (recipe / "manifest.yaml").read_text()
+
+
+# ---------------------------------------------------------------------------
+# Pass-5: the platform/verdict boundary, and the mutants that survived
+# ---------------------------------------------------------------------------
+
+
+def test_runtime_exec_failure_does_not_retract_the_flag(
+    tmp_path: Path, monkeypatch
+):
+    """The arm64 case that actually happens: `docker run -d` SUCCEEDS and the
+    container then dies because the runtime cannot exec the binary.
+
+    Nothing consulted that path, so a contributor's flag was deleted because
+    our host lacked binfmt.
+    """
+    fake = FakeDocker(
+        {
+            "port": (0, "127.0.0.1:54321\n", ""),
+            "inspect": (0, "false\n", ""),
+            "logs": (0, "exec /usr/local/bin/uv: exec format error\n", ""),
+        }
+    )
+    monkeypatch.setattr(md, "_docker", fake)
+    monkeypatch.setattr(md, "_probe", lambda url, timeout=10: (0, "refused"))
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings={**SETTINGS, "ready_timeout_seconds": 1},
+        may_run=True,
+        report=report,
+    )
+
+    assert result is None, "the runtime refusing to exec is the host's fault"
+    serves = next(c for c in report.checks if c.id == "container-serves")
+    assert serves.details["platform_failure"] is True
+    assert serves.status == md.REPORT_ONLY
+
+
+@pytest.mark.parametrize(
+    "log",
+    [
+        # An app printing the phrase mid-traceback is NOT the runtime refusing
+        # to exec — this is the laundering bug's last hiding place.
+        "Traceback...\nRuntimeError: exec /usr/local/bin/uv: exec format error",
+        "ConnectionResetError: [Errno 104] Connection reset by peer",
+        "ModuleNotFoundError: No module named 'app'",
+        "",
+    ],
+)
+def test_only_a_whole_line_runtime_error_counts(log):
+    assert md.runtime_platform_failure(log) is False
+
+
+def test_whole_line_runtime_error_is_recognised():
+    assert md.runtime_platform_failure(
+        "exec /usr/local/bin/uv: exec format error"
+    )
+    assert md.runtime_platform_failure("  exec /bin/sh: exec format error  \n")
+
+
+def test_inconclusive_is_distinguishable_from_never_tried(
+    recipe: Path, monkeypatch
+):
+    """Guards OUTCOME_VERIFICATION_INCONCLUSIVE.
+
+    "go find docker" and "retry, the network defeated you" are opposite
+    instructions, and they used to share one outcome string.
+    """
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    monkeypatch.setattr(
+        md, "detect_docker", lambda: (md.DOCKER_USABLE, "stubbed")
+    )
+    monkeypatch.setattr(
+        md, "lockfile_is_current", lambda *a, **k: (True, "stubbed")
+    )
+
+    def env_failure(**kwargs):
+        kwargs["report"].add(
+            md.Check(
+                id="container-build",
+                status=md.REPORT_ONLY,
+                message="dns died",
+                details={"environmental": True},
+            )
+        )
+
+    monkeypatch.setattr(md, "verify_container", env_failure)
+    attempted = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+        verify_container_requested=True,
+    )
+    assert attempted.outcome == md.OUTCOME_VERIFICATION_INCONCLUSIVE
+
+    # Never tried is a different string.
+    monkeypatch.setattr(
+        md, "detect_docker", lambda: (md.DOCKER_ABSENT, "stubbed")
+    )
+    never = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    assert never.outcome == md.OUTCOME_DEPLOYABLE_UNVERIFIED
+    assert never.outcome != attempted.outcome
+
+
+def test_deferral_discloses_a_concurrent_disqualification(
+    recipe: Path, monkeypatch
+):
+    """`container-verify` is the documented way to spot a deferral, so it must
+    not say "held back" when the flag was actually deleted."""
+    (recipe / "manifest.yaml").write_text(
+        "type: standalone\nlanguage: python\ndeployable: true\n",
+        encoding="utf-8",
+    )
+    (recipe / "app" / "agent.py").write_text("x = 1\n", encoding="utf-8")
+    report, _ = _run_with_docker(
+        recipe,
+        monkeypatch,
+        state=md.DOCKER_USABLE,
+        lock_ok=False,
+        verified=True,
+    )
+    verify = next(c for c in report.checks if c.id == "container-verify")
+    assert verify.details["also_disqualified"] is True
+    assert "RETRACTED" in verify.message
+    assert "deployable: true" not in (recipe / "manifest.yaml").read_text()
+
+
+def test_inconclusive_messages_do_not_claim_the_manifest_was_untouched(
+    tmp_path: Path, monkeypatch
+):
+    """An inconclusive run still lets static checks earn the flag, so no
+    message may claim "no manifest flag was changed"."""
+    fake = FakeDocker(
+        {"build": (1, "", "Temporary failure in name resolution")}
+    )
+    monkeypatch.setattr(md, "_docker", fake)
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+    md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings=SETTINGS,
+        may_run=True,
+        report=report,
+    )
+    build = next(c for c in report.checks if c.id == "container-build")
+    assert "no manifest flag was changed" not in build.message
+    assert "nothing was RETRACTED" in build.message
+
+
+def test_backing_infra_message_does_not_overclaim(tmp_path: Path):
+    """Guards the reworded message (mutant M7 survived)."""
+    (tmp_path / "app").mkdir()
+    (tmp_path / "terraform").mkdir()
+    check = md.check_backing_infra(tmp_path, tmp_path / "app")
+    assert "will not SET" in check.message
+    assert "is left unset" not in check.message
+
+
+def test_failed_to_create_endpoint_is_environmental():
+    """Guards a pattern whose deletion survived mutation (M3)."""
+    proc = subprocess.CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout="",
+        stderr="failed to create endpoint adk-verify on network bridge",
+    )
+    assert md.failure_is_environmental(proc) is True

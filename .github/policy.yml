@@ -748,3 +748,4 @@ deployability:
     run_allowlist:
       - contrib/python/financial-advisor
       - core/python/rag-agent-search
+      - core/python/rag-vector-search

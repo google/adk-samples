@@ -54,8 +54,9 @@ with one click". Two independent questions decide the outcome:
 | `deployable-unverified` | No bespoke infra, but nothing built it. | set to `true`, on static checks |
 | `containerized-verified` | Built and served, but needs backing infra. | **left unset** |
 | `containerized-unverified` | Needs backing infra, and unproven. | **left unset** |
-| `verification-failed` | Docker was usable and the recipe failed. | **left unset** |
-| `blocked` | The run stopped without a usable verdict: a gate refused it up front (nothing written), a hard ERROR disqualified the recipe partway through, or the **skill itself** faulted. Check `files_written` — only the gate case guarantees a clean tree. | untouched, except that a recipe disqualified by a hard ERROR has a stale flag retracted |
+| `verification-failed` | Docker was usable and the recipe failed. | **left unset**, and a pre-existing flag is retracted |
+| `verification-inconclusive` | Verification was **attempted** and defeated by the environment — network, registry, or a runtime that could not exec the image here. It proves nothing, so nothing is retracted. Not the same as `-unverified`: that means nobody tried, this means you did and should retry. | set if static checks earned it |
+| `blocked` | The run stopped without a usable verdict. Four causes: a gate refused it up front (nothing written); a hard ERROR disqualified the recipe; the **skill itself** faulted; or verification was **deferred** pending `uv lock` — a pause, not a judgement, so re-invoke to finish. Check `files_written` (only a gate stop guarantees a clean tree) and read `container-verify` to tell a deferral from a real stop. | untouched — EXCEPT that a disqualified recipe has a stale flag **retracted**. Disqualified means a hard ERROR *or* no usable `app` object in agent.py, and the latter records no ERROR — so never infer from the absence of an ERROR that the tree was left alone. |
 
 Never describe a `containerized` result as "deployable" to the user. Setting
 that flag on a recipe that still needs hand-written terraform puts a false
@@ -136,7 +137,10 @@ If any check is `needs_input`, **stop**. The three that gate:
 
 - **`adk-locked-version`** — `uv.lock` resolves `google-adk` to an older major
   than the standard requires. The declared specifier may well permit the newer
-  version, which is exactly the trap: re-locking would cross a major silently,
+  version, which is exactly the trap — in both directions. Re-locking IN
+  PLACE keeps the old major (uv is sticky), so the recipe would ship the new
+  serving dependencies against an ADK that cannot support them; resolving
+  FRESH crosses the major silently,
   and the agent code has only ever run against the old one. The owner must port
   the agent first. This script rewrites metadata; it cannot migrate code.
 - **`adk-version-floor`** — the specifier itself excludes the required version
@@ -199,6 +203,20 @@ cd <RECIPE_DIR> && uv lock --python 3.11
 
 `--python 3.11` because CI pins it — locking with a newer local interpreter
 produces a lockfile CI rejects with a misleading "out of date" error.
+
+**Check the report's todos before running it.** If `adk-locked-version` came
+back `report_only`, the recipe is pinned below the ADK floor and the command
+above is a **no-op** — uv keeps any locked version that still satisfies the
+declared specifier. The report will hand you this instead:
+
+```bash
+cd <RECIPE_DIR> && uv lock --upgrade-package google-adk --python 3.11
+```
+
+Then confirm the resolved pair. An ADK below 2.5 alongside `a2a-sdk` 1.x looks
+fine in the lockfile and dies at import with `cannot import name 'TextPart'
+from 'a2a.types'` — invisible to every static check, and one of the reasons
+Step 6.5 exists.
 
 ```bash
 # from the REPO ROOT, so the root ruff config wins
@@ -436,18 +454,19 @@ the reason this step exists:
    to `google-adk 2.3.0` against `a2a-sdk 1.1.2`, and adk ≤2.4.0 expects
    `a2a-sdk<0.4`. See the warning below; this one is a live trap.
 
-> ⚠️ **`uv lock` does not raise an already-locked version.** The
-> `adk-locked-version` check says re-locking "will raise it to at least the
-> floor". That is **wrong**: uv is sticky and preserves any locked version
-> that still satisfies the constraints, so a recipe declaring
-> `google-adk>=2.0.0` stays on whatever it was pinned at. `rag-agent-search`
-> stayed on 2.3.0 through a plain `uv lock` and only moved to 2.7.1 under
-> `uv lock --upgrade-package google-adk`. The coupling the policy relies on
-> (`a2a-sdk>=1.0` forcing adk to 2.5+) travels with google-adk's **`a2a`
-> extra**, which the required dependency list does not use — so it never
-> constrains resolution. Until that check is fixed, if a report shows
-> `adk-locked-version` as `report_only`, re-lock with `--upgrade-package
-> google-adk` and confirm the resolved pair before trusting it.
+> ⚠️ **`uv lock` does not raise an already-locked version.** uv is sticky: it
+> preserves any locked version that still satisfies the declared specifier, so
+> a recipe declaring `google-adk>=2.0.0` stays on whatever it was pinned at.
+> `rag-agent-search` stayed on 2.3.0 through a plain `uv lock` and only moved
+> to 2.7.1 under `uv lock --upgrade-package google-adk`. The coupling the
+> policy leans on (`a2a-sdk>=1.0` forcing adk to 2.5+) travels with
+> google-adk's **`a2a` extra**, which the required dependency list does not
+> use — so it never constrains resolution.
+>
+> The `adk-locked-version` check now states this correctly and emits
+> `uv lock --upgrade-package google-adk` as the remedy in its `details` and in
+> the run's todos. **Use the command the report gives you**, not a plain
+> `uv lock`, whenever that check is `report_only`.
 
 ### Against a live interpreter
 
@@ -468,19 +487,22 @@ boot check looks like when it works:
 
 ## Current recipe landscape
 
-Measured, and useful for setting expectations before a run:
+Measured by running the dry-run against every Python recipe under `core/` and
+`contrib/` — not predicted. Deployable recipes live in those two trees;
+vertical skills under `skills/` are out of scope.
 
-Measured by running the dry-run against every recipe in the repo — not
-predicted. Useful for setting expectations before a run.
+Outcomes below are the dry-run's, so they all end `-unverified`: a dry run
+builds nothing. Running with `--apply --verify-container` on a machine with
+docker is what upgrades them (`financial-advisor` and `rag-agent-search` have
+both been taken to `deployable-verified` and `containerized-verified`).
 
-| Recipe | Outcome | Why |
+| Recipe | Dry-run outcome | Why |
 |---|---|---|
-| `skills/retail/product-search` | `deployable` | — |
-| `contrib/python/financial-advisor` | `deployable` | loose pin, but locked at 2.6.2 |
-| `core/python/rag-agent-search`, `rag-vector-search` | `containerized` | need a datastore / vector index |
-| `core/python/long-horizon-harness`, `ambient-expense-agent` | `containerized` + **already-deployable** flag | they already serve; see the advisory below |
-| `contrib/python/market-research-agent`, `core/python/deep-search`, `core/python/safety-plugins` | `blocked` | locked on ADK 1.28.0 |
-| `core/python/cross-session-memory`, `genmedia-for-commerce`, `oauth-user-consent-flow` | `blocked` | ADK ceiling excludes the floor |
+| `contrib/python/financial-advisor` | `deployable-unverified` | loose pin, but locked at 2.6.2 |
+| `core/python/rag-agent-search`, `rag-vector-search` | `containerized-unverified` | need a datastore / vector index |
+| `core/python/long-horizon-harness`, `ambient-expense-agent` | `containerized-unverified` + **already-deployable** flag | they already serve; see the advisory below |
+| `contrib/python/market-research-agent`, `core/python/deep-search`, `core/python/safety-plugins` | `blocked` | `adk-locked-version` — locked on ADK 1.x |
+| `core/python/cross-session-memory`, `genmedia-for-commerce`, `oauth-user-consent-flow` | `blocked` | `adk-version-floor` — the ceiling excludes the floor |
 | `contrib/python/cross-border-data-router` | `blocked` | legacy `app_utils` |
 
 **The `already-deployable` advisory.** When a recipe already has a `Dockerfile`

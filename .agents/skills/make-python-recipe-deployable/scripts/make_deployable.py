@@ -112,17 +112,36 @@ Crossing the two gives the vocabulary:
   containerized-unverified Same, without container evidence. Flag NOT touched.
   verification-failed      Docker was usable and the recipe FAILED — the build
                            broke, or the container never served. Flag NOT set,
-                           whatever the static checks said.
+                           whatever the static checks said, and a pre-existing
+                           one is retracted.
+  verification-inconclusive
+                           Verification was ATTEMPTED and defeated by the
+                           environment (network, registry, or a runtime that
+                           could not exec the image on this host). It proves
+                           nothing either way, so nothing is retracted; static
+                           checks may still have earned the flag. Distinct
+                           from `-unverified`, which means nobody tried: that
+                           one says "go find a machine with docker", this one
+                           says "you already did — retry".
   blocked                  The run stopped without a usable verdict, in one
-                           of three ways: a GATE refused it up front (nothing
-                           was written), a hard ERROR disqualified the recipe
-                           partway through, or the skill ITSELF faulted (bad
-                           policy, missing template). The first two say the
-                           recipe is not deployable; the third says nothing
-                           about the recipe at all and leaves manifest.yaml
-                           exactly as found. Check `files_written` rather than
-                           assuming a clean tree — only the gate case
-                           guarantees one.
+                           of FOUR ways:
+                             1. a GATE refused it up front (nothing written);
+                             2. the recipe was DISQUALIFIED partway through —
+                                a hard ERROR, or no usable `app` object in
+                                agent.py. A stale flag is RETRACTED in both
+                                cases, and the app-object case carries no
+                                ERROR check, so do not use the presence of an
+                                ERROR to infer whether the tree was touched;
+                             3. the skill ITSELF faulted (bad policy, missing
+                                template) — says nothing about the recipe and
+                                leaves manifest.yaml exactly as found;
+                             4. verification was DEFERRED pending `uv lock`
+                                (files written, flag held back, exit 1) — a
+                                pause, not a judgement. Re-invoke to finish.
+                           Only case 1 guarantees a clean tree, so check
+                           `files_written` rather than assuming one, and read
+                           the `container-verify` check to tell 4 from the
+                           rest.
 
 A recipe proven broken is not deployable, so verification outranks every
 static check that came before it.
@@ -232,6 +251,12 @@ OUTCOME_DEPLOYABLE_UNVERIFIED = "deployable-unverified"
 OUTCOME_CONTAINERIZED_VERIFIED = "containerized-verified"
 OUTCOME_CONTAINERIZED_UNVERIFIED = "containerized-unverified"
 OUTCOME_VERIFICATION_FAILED = "verification-failed"
+# Tried, and could not tell. Distinct from `-unverified` (never tried),
+# because the two call for opposite responses: `-unverified` means "run
+# verification somewhere with docker", while this means "you already did, and
+# the environment defeated it — retry, do not re-plan". Two independent
+# reviewers flagged that collapsing them left a caller unable to choose.
+OUTCOME_VERIFICATION_INCONCLUSIVE = "verification-inconclusive"
 OUTCOME_BLOCKED = "blocked"
 
 
@@ -241,6 +266,9 @@ def outcome_for(
     verified: bool | None,
     has_error: bool = False,
     skill_fault: bool = False,
+    disqualified: bool = False,
+    deferred: bool = False,
+    inconclusive: bool = False,
 ) -> str:
     """Pick the outcome from the infra axis and the evidence axis.
 
@@ -251,7 +279,16 @@ def outcome_for(
     """
     if verified is False:
         return OUTCOME_VERIFICATION_FAILED
-    if has_error or skill_fault:
+    if inconclusive:
+        # Attempted and defeated by the environment. The flag may still have
+        # been earned by static checks — see the manifest-deployable check;
+        # what this outcome asserts is only that the CONTAINER proved nothing.
+        return OUTCOME_VERIFICATION_INCONCLUSIVE
+    if deferred:
+        # The flag is withheld pending a verdict, so no `-unverified` outcome
+        # (which SKILL.md defines as "flag set") may be reported here.
+        return OUTCOME_BLOCKED
+    if has_error or skill_fault or disqualified:
         # An ERROR anywhere disqualifies the recipe, and the outcome must say
         # so. Without this the report could read `deployable-verified` while
         # the manifest flag had just been retracted for that same error —
@@ -570,7 +607,40 @@ def locked_version(lock_path: Path, package: str) -> Version | None:
     return None
 
 
-def check_adk_locked_version(lock_path: Path, min_adk: str) -> Check:
+def _requirement_name(raw: str) -> str | None:
+    """Canonical package name from a requirement string, or None if unparseable."""
+    try:
+        return Requirement(raw).name.lower().replace("_", "-")
+    except InvalidRequirement:
+        return None
+
+
+def _spec_still_admits(declared_spec: str | None, version: Version) -> bool:
+    """Would uv keep `version` when re-locking against `declared_spec`?
+
+    This is what decides whether a plain `uv lock` is a no-op. uv preserves an
+    already-locked version only while it still satisfies the declared
+    specifier; once the specifier has moved past it, the lockfile is simply
+    stale and a bare re-lock does raise it.
+
+    Unknown or unparseable specifier -> True, the conservative answer: it
+    sends the owner to `--upgrade-package`, which is correct in both cases,
+    rather than to a command that might do nothing.
+    """
+    if not declared_spec:
+        return True
+    try:
+        req = Requirement(declared_spec)
+    except InvalidRequirement:
+        return True
+    if not str(req.specifier):
+        return True
+    return req.specifier.contains(version, prereleases=True)
+
+
+def check_adk_locked_version(
+    lock_path: Path, min_adk: str, declared_spec: str | None = None
+) -> Check:
     """Judge the ADK migration risk on what the recipe RESOLVES to today.
 
     The declared specifier is the wrong signal on its own. A recipe pinning
@@ -585,6 +655,16 @@ def check_adk_locked_version(lock_path: Path, min_adk: str) -> Check:
 
     So: compare MAJORS. Crossing one stops the run; a minor bump inside the
     same major is reported but allowed.
+
+    A property of uv that this check must not misstate: `uv lock` is STICKY.
+    It preserves an already-locked version that still satisfies the declared
+    specifier, so re-locking does NOT raise a pin — only
+    `uv lock --upgrade-package <name>` does. This check previously told owners
+    the opposite, and core/python/rag-agent-search is what it cost: locked at
+    google-adk 2.3.0 under `>=2.0.0`, re-locked as instructed, still 2.3.0,
+    and the container then died on `cannot import name 'TextPart' from
+    'a2a.types'` because adk <=2.4 predates the a2a-sdk <2 widening. Only a
+    container build caught it.
     """
     floor = Version(min_adk)
     have = locked_version(lock_path, "google-adk")
@@ -606,27 +686,72 @@ def check_adk_locked_version(lock_path: Path, min_adk: str) -> Check:
             status=NEEDS_INPUT,
             message=(
                 f"uv.lock resolves google-adk to {have}, but deployability "
-                f"needs {min_adk}. The declared specifier permits the newer "
-                "version, so re-locking WOULD silently cross a major — and the "
-                "agent code has only ever run against "
-                f"{have.major}.x. Port the agent to {floor.major}.x first, "
-                "re-lock, then re-run. This script only rewrites metadata; it "
-                "cannot migrate code."
+                f"needs {min_adk}. "
+                + (
+                    "The declared specifier still admits it, so re-locking "
+                    f"IN PLACE keeps {have.major}.x (uv preserves a locked "
+                    "version that satisfies the specifier) and the recipe "
+                    "would ship the new serving dependencies against an ADK "
+                    "major that cannot support them; resolving FRESH moves "
+                    "it to "
+                    if _spec_still_admits(declared_spec, have)
+                    else "The declared specifier no longer admits it, so even "
+                    "a plain re-lock moves this to "
+                )
+                + f"{floor.major}.x, which is code the agent has never run "
+                f"against. Either way, port the agent to {floor.major}.x "
+                "first, then re-lock and re-run. This script only rewrites "
+                "metadata; it cannot migrate code."
             ),
             details={"locked": str(have), "min_google_adk": min_adk},
         )
 
     if have < floor:
+        # Stickiness only bites when the locked version STILL SATISFIES the
+        # declared specifier. If the recipe declares `>=2.6.0` while the lock
+        # says 2.3.0, the lock is simply stale and a plain `uv lock` does
+        # raise it — telling that owner "uv lock will not raise it" would be
+        # just as false as the claim this replaced.
+        sticky = _spec_still_admits(declared_spec, have)
+        consequence = (
+            " Then confirm the resolved pair — google-adk 2.5+ is what "
+            "widened a2a-sdk to <2, and an older ADK alongside a2a-sdk 1.x "
+            "fails at import with `cannot import name 'TextPart' from "
+            "'a2a.types'`, which no static check can see."
+        )
+        if sticky:
+            return Check(
+                id="adk-locked-version",
+                status=REPORT_ONLY,
+                message=(
+                    f"uv.lock resolves google-adk to {have}, below the "
+                    f"{min_adk} floor, and the recipe's own specifier still "
+                    f"admits {have}. A PLAIN `uv lock` WILL NOT RAISE IT: uv "
+                    "preserves an already-locked version that satisfies the "
+                    "specifier. Run `uv lock --upgrade-package google-adk` "
+                    "instead." + consequence
+                ),
+                details={
+                    "locked": str(have),
+                    "min_google_adk": min_adk,
+                    "sticky": True,
+                    "remedy": "uv lock --upgrade-package google-adk",
+                },
+            )
         return Check(
             id="adk-locked-version",
             status=REPORT_ONLY,
             message=(
-                f"uv.lock resolves google-adk to {have}; re-locking will raise "
-                f"it to at least {min_adk}. Same major, so this is a minor "
-                "upgrade rather than a migration — but exercise the agent "
-                "afterwards."
+                f"uv.lock resolves google-adk to {have}, below the {min_adk} "
+                f"floor, but the declared specifier no longer admits {have}, "
+                "so the lockfile is merely stale and a plain `uv lock` will "
+                "raise it." + consequence
             ),
-            details={"locked": str(have), "min_google_adk": min_adk},
+            details={
+                "locked": str(have),
+                "min_google_adk": min_adk,
+                "sticky": False,
+            },
         )
 
     return Check(
@@ -637,7 +762,12 @@ def check_adk_locked_version(lock_path: Path, min_adk: str) -> Check:
     )
 
 
-def check_already_deployable(recipe_dir: Path, package_dir: Path) -> Check:
+def check_already_deployable(
+    recipe_dir: Path,
+    package_dir: Path,
+    *,
+    generated_by_us: bool = False,
+) -> Check:
     """Warn when the recipe already serves, by its own arrangement.
 
     `long-horizon-harness` is the case this exists for: it ships a Dockerfile,
@@ -652,6 +782,22 @@ def check_already_deployable(recipe_dir: Path, package_dir: Path) -> Check:
     """
     has_dockerfile = (recipe_dir / "Dockerfile").is_file()
     has_entrypoint = (package_dir / "fast_api_app.py").is_file()
+    if has_dockerfile and has_entrypoint and generated_by_us:
+        # These are OUR files, from an earlier invocation. The two-phase
+        # --verify-container flow makes that the normal case: phase one
+        # writes them, phase two re-runs after `uv lock` and finds them
+        # present. Calling them "the recipe's own arrangement" would advise
+        # the owner to protect a bespoke entrypoint that does not exist.
+        return Check(
+            id="already-deployable",
+            status=CLEAN,
+            message=(
+                "A Dockerfile and entrypoint are present, but they are the "
+                "ones this skill generated (content matches the templates), "
+                "not a bespoke arrangement. Nothing to protect."
+            ),
+            details={"generated_by_us": True},
+        )
     if not (has_dockerfile and has_entrypoint):
         return Check(
             id="already-deployable",
@@ -751,7 +897,7 @@ def check_backing_infra(recipe_dir: Path, package_dir: Path) -> Check:
             "Recipe needs infrastructure this skill cannot provision: "
             + "; ".join(reasons)
             + ". It can still be containerized, but it is not one-click "
-            "deployable, so manifest.deployable is left unset."
+            "deployable, so this skill will not SET manifest.deployable."
         ),
         details={"reasons": reasons},
     )
@@ -1270,6 +1416,78 @@ def patch_app_object(agent_py: Path, package: str, apply: bool) -> Check:
 SKILL_FAULT = "skill_fault"
 
 
+def _manifest_claims_deployable(manifest_path: Path) -> bool:
+    """Does manifest.yaml already assert `deployable: true`?
+
+    Shared by every branch that wants to say something about the flag. Two
+    branches previously asserted "not set" without looking, and this repo has
+    recipes that ship the flag — a claim the reader falsifies by opening the
+    file.
+
+    Only the spellings ruamel actually resolves to boolean true. YAML 1.2,
+    which ruamel defaults to, parses `yes`/`on` as STRINGS, so accepting them
+    here would disagree with the parse used elsewhere in this module.
+    """
+    if not manifest_path.is_file():
+        return False
+    try:
+        text = manifest_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(
+        re.match(r"^deployable[ \t]*:[ \t]*true[ \t]*(#.*)?$", ln, re.I)
+        for ln in text.splitlines()
+    )
+
+
+def runtime_platform_failure(logs: str) -> bool:
+    """Did the CONTAINER RUNTIME refuse to exec the image's binary?
+
+    Deliberately far narrower than failure_is_environmental, and separate from
+    it, because this one reads the container's log — and an earlier attempt to
+    run that log through the general infrastructure vocabulary was a disaster:
+    phrases like "connection reset by peer" and "timed out" appear constantly
+    in ordinary Python tracebacks, so a genuine boot crash was laundered into
+    a pass.
+
+    This matches ONE signature, as a whole line:
+
+        exec /usr/local/bin/uv: exec format error
+
+    which the containerd shim writes BEFORE any application code runs, when
+    the image's architecture does not match the host and no emulation is
+    registered. An application cannot reach the point of printing its own
+    tracebacks and also be the thing that failed to exec. That is what makes
+    it safe to read here where the general vocabulary was not.
+
+    A shebang-less script inside a bespoke Dockerfile produces the same errno,
+    but we only build a foreign Dockerfile for an allowlisted recipe, so the
+    exposure is bounded and the alternative — deleting a contributor's flag
+    because our host lacks binfmt — is worse.
+    """
+    return any(
+        re.match(r"^\s*exec /\S+: exec format error\s*$", line)
+        for line in (logs or "").splitlines()
+    )
+
+
+def _verification_was_inconclusive(report: Report) -> bool:
+    """Was verification ATTEMPTED but defeated by the environment?
+
+    Distinguished from "never attempted" by the presence of a container-*
+    check that reported an environmental or platform problem. Telling those
+    apart is the whole point: one asks the owner to go find docker, the other
+    asks them to retry the command they just ran.
+    """
+    return any(
+        c.id in ("container-build", "container-serves")
+        and (
+            c.details.get("environmental") or c.details.get("platform_failure")
+        )
+        for c in report.checks
+    )
+
+
 def _has_error(report: Report) -> bool:
     """Did anything fail in a way that disqualifies THE RECIPE?
 
@@ -1383,6 +1601,25 @@ def patch_manifest_deployable(
 ) -> Check:
     """Set `deployable: true`, but only when no backing infra was detected."""
     if not infra_clean:
+        # Read before asserting. Two recipes in this repo already ship
+        # `deployable: true`, and reporting "left unset" about a file that
+        # says otherwise is a statement the reader can immediately falsify.
+        already = _manifest_claims_deployable(manifest_path)
+        if already:
+            return Check(
+                id="manifest-deployable",
+                status=REPORT_ONLY,
+                message=(
+                    "NOT changed. This recipe needs backing infrastructure, "
+                    "so this skill would not set `deployable`, but the "
+                    "manifest ALREADY says `deployable: true` — pre-existing, "
+                    "not written here. It is left alone: the infra detector "
+                    "fires on signals as broad as an `import sqlalchemy`, so "
+                    "overriding an owner's explicit claim on that basis would "
+                    "be presumptuous. Confirm it is accurate."
+                ),
+                details={"pre_existing_flag": True},
+            )
         return Check(
             id="manifest-deployable",
             status=REPORT_ONLY,
@@ -1530,6 +1767,7 @@ def write_agents_cli_manifest(
     agent_directory: str,
     region: str,
     apply: bool,
+    report: Report | None = None,
 ) -> Check:
     """Write agents-cli-manifest.yaml with only fields that are actually true."""
     path = recipe_dir / "agents-cli-manifest.yaml"
@@ -1552,6 +1790,10 @@ def write_agents_cli_manifest(
     )
     if apply:
         path.write_text(content, encoding="utf-8")
+        # Record it: a crash-recovery reader is told to trust files_written,
+        # and this file landing unrecorded made that list quietly incomplete.
+        if report is not None:
+            report.files_written.append("agents-cli-manifest.yaml")
 
     return Check(
         id="agents-cli-manifest",
@@ -1740,6 +1982,31 @@ def dockerfile_is_generated(
     return dockerfile.read_text(encoding="utf-8") == expected
 
 
+def entrypoint_is_generated(
+    *,
+    package_dir: Path,
+    templates_dir: Path,
+    package: str,
+    project_name: str,
+) -> bool:
+    """Is `<pkg>/fast_api_app.py` byte-identical to the rendered template?
+
+    Separate from the Dockerfile check because the two can disagree, and the
+    already-deployable advisory is about the ENTRYPOINT. Deciding it on the
+    Dockerfile alone suppressed the advisory on the second run for a recipe
+    whose entrypoint is bespoke and whose Dockerfile we had just written —
+    and the two-phase flow makes that second run mandatory.
+    """
+    existing = package_dir / "fast_api_app.py"
+    template = templates_dir / "fast_api_app.py"
+    if not existing.is_file() or not template.is_file():
+        return False
+    expected = render_template(
+        template.read_text(encoding="utf-8"), package, project_name
+    )
+    return existing.read_text(encoding="utf-8") == expected
+
+
 def parse_env_example(path: Path) -> dict[str, str]:
     """Read a recipe's .env.example into a plain dict.
 
@@ -1851,7 +2118,7 @@ def verify_container(
                     (
                         f"Build of {which} could not be completed for an "
                         "ENVIRONMENTAL reason, so nothing was concluded about "
-                        "the recipe and no manifest flag was changed. "
+                        "the recipe and nothing was RETRACTED (an inconclusive run cannot disprove a recipe). Static checks may still earn the flag on their own — see the manifest-deployable check for what actually happened. "
                     )
                     if environmental
                     else (
@@ -1942,7 +2209,7 @@ def verify_container(
                         (
                             "Image built, but the container could not be "
                             "started for an ENVIRONMENTAL reason. Nothing was "
-                            "concluded and no manifest flag was changed.\n"
+                            "concluded and nothing was RETRACTED (an inconclusive run cannot disprove a recipe). Static checks may still earn the flag on their own — see the manifest-deployable check for what actually happened. \n"
                         )
                         if environmental
                         else (
@@ -1981,8 +2248,24 @@ def verify_container(
             # non-200 — both are facts about the app. Total silence from a
             # still-running container is the only inconclusive case.
             answered = "answered but never returned 200" in boot_detail
-            verdict = exited or answered
-            if exited:
+            logs = _container_logs(name)
+            # The ONE case where the container's own log is trustworthy
+            # evidence about the host: the runtime refused to exec the binary,
+            # so no application code ran at all. Everything else in that log
+            # was written by the recipe and must never override `exited`.
+            platform_failure = exited and runtime_platform_failure(logs)
+            # `exited` is otherwise the strongest evidence this tool has, and
+            # nothing else in the log may override it.
+            verdict = (exited or answered) and not platform_failure
+            if platform_failure:
+                headline = (
+                    "The container runtime could not exec the image's binary "
+                    "(architecture mismatch with no emulation registered on "
+                    "this host). No application code ran, so nothing was "
+                    "concluded about the recipe and nothing was RETRACTED. "
+                    "Verify on an amd64 host, or register binfmt. "
+                )
+            elif exited:
                 headline = "Container never served: it EXITED during startup. "
             elif answered:
                 headline = (
@@ -1993,7 +2276,7 @@ def verify_container(
             else:
                 headline = (
                     "Container did not answer at all in time. This is "
-                    "INCONCLUSIVE, so no manifest flag was changed. "
+                    "INCONCLUSIVE, so nothing was RETRACTED (an inconclusive run cannot disprove a recipe). Static checks may still earn the flag on their own — see the manifest-deployable check for what actually happened. "
                 )
             report.add(
                 Check(
@@ -2006,8 +2289,12 @@ def verify_container(
                         else ""
                     )
                     + f"{boot_detail}\nContainer log tail:\n"
-                    + _container_logs(name),
-                    details={"exited": exited, "answered": answered},
+                    + logs,
+                    details={
+                        "exited": exited,
+                        "answered": answered,
+                        "platform_failure": platform_failure,
+                    },
                 )
             )
             return False if verdict else None
@@ -2030,7 +2317,9 @@ def verify_container(
                     message=(
                         f"{list_apps} returned {results.get(list_apps)}, not "
                         "200. The container runs but does not serve the "
-                        "recipe. manifest.deployable was NOT set."
+                        "recipe. No deployable flag was set on the strength "
+                        "of this build, and any pre-existing one was "
+                        "retracted."
                     ),
                     details={"probes": results},
                 )
@@ -2221,6 +2510,18 @@ def failure_is_environmental(proc: subprocess.CompletedProcess[str]) -> bool:
             r"|error pulling image|failed to copy: httpreadseeker"
             # `no such host` is the standard Go DNS failure for registry
             # lookups and the single most common infra failure of all.
+            # Anchored to the RUNTIME form. A bare `exec format error` also
+            # appears when a recipe ships a script with no shebang — the
+            # recipe's bug, not the host's.
+            # Only the interpreters OUR generated Dockerfile invokes. A
+            # shebang-less script at some other path produces the identical
+            # errno and is the RECIPE's bug, so it must stay a verdict. This
+            # is reached only from build/`docker run` failures, where the
+            # text is docker's own output rather than anything the recipe
+            # wrote.
+            r"|exec /bin/sh: exec format error"
+            r"|exec /usr/local/bin/(uv|python[\d.]*): exec format error"
+            r"|failed to create endpoint"
             r"|no such host|error getting credentials"
             r"|cannot connect to the docker daemon"
             r"|error during connect|unexpected eof",
@@ -2407,8 +2708,14 @@ def run(
         return report
 
     # --- GATE: what the recipe actually resolves to today ------------------
+    declared_adk = next(
+        (d for d in deps if _requirement_name(d) == "google-adk"),
+        None,
+    )
     locked_check = check_adk_locked_version(
-        recipe_dir / "uv.lock", str(policy["min_google_adk"])
+        recipe_dir / "uv.lock",
+        str(policy["min_google_adk"]),
+        declared_spec=declared_adk,
     )
     report.add(locked_check)
     if locked_check.status == NEEDS_INPUT:
@@ -2431,7 +2738,34 @@ def run(
         return report
 
     # --- advisory: recipe already serves by its own arrangement ------------
-    report.add(check_already_deployable(recipe_dir, package_dir))
+    report.add(
+        check_already_deployable(
+            recipe_dir,
+            package_dir,
+            # Content-based, so phase two recognises phase one's own output
+            # instead of mistaking it for a contributor's bespoke entrypoint.
+            # BOTH must be ours before the advisory is suppressed. Either
+            # file being the contributor's is reason to warn: a bespoke
+            # entrypoint means generated app_utils/ is dead code, and a
+            # bespoke Dockerfile means we would be describing their build.
+            generated_by_us=(
+                dockerfile_is_generated(
+                    recipe_dir=recipe_dir,
+                    templates_dir=templates_dir,
+                    package=package_dir.name,
+                    project_name=project_name,
+                    python_version=python_version,
+                    data_dirs=data_dirs,
+                )
+                and entrypoint_is_generated(
+                    package_dir=package_dir,
+                    templates_dir=templates_dir,
+                    package=package_dir.name,
+                    project_name=project_name,
+                )
+            ),
+        )
+    )
 
     # --- GATE (advisory): backing infra ------------------------------------
     infra_check = check_backing_infra(recipe_dir, package_dir)
@@ -2538,8 +2872,22 @@ def run(
                             "3.11` in the recipe, then re-invoke this script "
                             "with the same flags to build and probe. The flag "
                             "is written only once verification passes."
+                            + (
+                                " NOTE: this recipe is ALSO disqualified on "
+                                "static grounds (see above), so a "
+                                "pre-existing flag was RETRACTED rather than "
+                                "merely held back — re-locking alone will not "
+                                "restore it."
+                                if (not app_object_ok or _has_error(report))
+                                else ""
+                            )
                         ),
-                        details={"phase": "awaiting-lock"},
+                        details={
+                            "phase": "awaiting-lock",
+                            "also_disqualified": (
+                                not app_object_ok or _has_error(report)
+                            ),
+                        },
                     )
                 )
             else:
@@ -2602,6 +2950,9 @@ def run(
         verified=verified,
         has_error=_has_error(report),
         skill_fault=_has_skill_fault(report),
+        disqualified=not app_object_ok,
+        deferred=defer_manifest,
+        inconclusive=_verification_was_inconclusive(report),
     )
 
     if defer_manifest and app_object_ok and not _has_error(report):
@@ -2610,8 +2961,18 @@ def run(
                 id="manifest-deployable",
                 status=NEEDS_INPUT,
                 message=(
-                    "Not written yet — held back until container "
-                    "verification has a verdict. Re-invoke after `uv lock`."
+                    "Held back until container verification has a verdict; "
+                    "re-invoke after `uv lock`."
+                    + (
+                        " NOTE: manifest.yaml ALREADY carries a `deployable` "
+                        "flag from before this run. It has been left exactly "
+                        "as found — this run neither earned it nor disproved "
+                        "it."
+                        if _manifest_claims_deployable(
+                            recipe_dir / "manifest.yaml"
+                        )
+                        else " Nothing was written to manifest.yaml."
+                    )
                 ),
             )
         )
@@ -2669,14 +3030,29 @@ def run(
                 agent_directory=package_dir.name,
                 region=region,
                 apply=apply,
+                report=report,
             )
         )
 
     # --- follow-up the owner must do --------------------------------------
-    report.todo(
-        "Run `uv lock --python 3.11` in the recipe — dependencies changed and "
-        "the lockfile is now stale."
-    )
+    # Which lock command depends on whether the recipe is already pinned below
+    # the floor. Recommending a plain `uv lock` there would be recommending a
+    # no-op, which is how a recipe ends up shipping an ADK too old for the
+    # serving dependencies this script just added.
+    if locked_check.details.get("remedy"):
+        report.todo(
+            "Run `uv lock --upgrade-package google-adk --python 3.11` in the "
+            f"recipe. A plain `uv lock` will NOT move google-adk off "
+            f"{locked_check.details.get('locked')} — uv keeps a locked "
+            "version that still satisfies the specifier — and the serving "
+            "dependencies need the floor. Confirm the resolved google-adk / "
+            "a2a-sdk pair afterwards."
+        )
+    else:
+        report.todo(
+            "Run `uv lock --python 3.11` in the recipe — dependencies changed "
+            "and the lockfile is now stale."
+        )
     report.todo(
         "Run ruff format + check from the REPO ROOT so the root config wins."
     )
@@ -2685,11 +3061,20 @@ def run(
         "extract-python-environment-variables skill does this)."
     )
     if not infra_clean:
-        report.todo(
-            "Provision the backing infrastructure and write its terraform — "
-            "this skill cannot, and manifest.deployable stays unset until it "
-            "exists."
-        )
+        if _manifest_claims_deployable(recipe_dir / "manifest.yaml"):
+            report.todo(
+                "Provision the backing infrastructure and write its "
+                "terraform — this skill cannot. NOTE: manifest.yaml already "
+                "claims `deployable: true` from before this run, which this "
+                "skill has left alone. Confirm that claim is accurate, "
+                "because the recipe needs infrastructure a human provisions."
+            )
+        else:
+            report.todo(
+                "Provision the backing infrastructure and write its "
+                "terraform — this skill cannot, and manifest.deployable "
+                "stays unset until it exists."
+            )
     report.note(
         "Generating a2a.py does not prove the recipe supports A2A. These files "
         "assume an agents-cli-scaffolded project; they were copied and "
@@ -2717,6 +3102,9 @@ def run(
         verified=verified,
         has_error=_has_error(report),
         skill_fault=_has_skill_fault(report),
+        disqualified=not app_object_ok,
+        deferred=defer_manifest,
+        inconclusive=_verification_was_inconclusive(report),
     )
 
     if verified is True:
@@ -2747,7 +3135,7 @@ def run(
                 "Container verification was ATTEMPTED but reached no verdict "
                 "— see the container-* checks for why (typically a network, "
                 "registry or host problem rather than the recipe). Nothing "
-                "was concluded and no manifest flag was changed, so the "
+                "was concluded and nothing was RETRACTED (an inconclusive run cannot disprove a recipe). Static checks may still earn the flag on their own — see the manifest-deployable check for what actually happened. so the "
                 "outcome ends `-unverified`. Re-run when the environment is "
                 "healthy; do not read this as a pass or a failure."
             )
@@ -2766,7 +3154,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Generate and configure the files a Python recipe needs to be "
-            "deployable. Does not build images or deploy."
+            "deployable. With --verify-container it also builds the "
+            "generated Dockerfile and probes the running container to prove "
+            "the claim; it never deploys or publishes an image."
         )
     )
     parser.add_argument(
