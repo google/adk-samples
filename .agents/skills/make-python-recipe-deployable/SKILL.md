@@ -55,7 +55,7 @@ with one click". Two independent questions decide the outcome:
 | `containerized-verified` | Built and served, but needs backing infra. | **left unset** |
 | `containerized-unverified` | Needs backing infra, and unproven. | **left unset** |
 | `verification-failed` | Docker was usable and the recipe failed. | **left unset** |
-| `blocked` | A gate stopped the run. Nothing was written. | untouched |
+| `blocked` | The run stopped without a usable verdict: a gate refused it up front (nothing written), a hard ERROR disqualified the recipe partway through, or the **skill itself** faulted. Check `files_written` — only the gate case guarantees a clean tree. | untouched, except that a recipe disqualified by a hard ERROR has a stale flag retracted |
 
 Never describe a `containerized` result as "deployable" to the user. Setting
 that flag on a recipe that still needs hand-written terraform puts a false
@@ -268,7 +268,9 @@ If they decline, carry on — the outcome ends `-unverified` and that is a
 legitimate result. **Do not decide for them, and do not skip the question
 because verification seems slow.**
 
-On a "yes", re-invoke with `--verify-container` (it implies `--apply`):
+On a "yes", re-invoke with **both** `--apply` and `--verify-container`.
+`--verify-container` does *not* imply `--apply` — on its own it reports that
+verification needs the files on disk, and builds nothing:
 
 ```bash
 uv run --no-project --with tomlkit --with 'ruamel.yaml' --with packaging \

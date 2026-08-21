@@ -113,7 +113,16 @@ Crossing the two gives the vocabulary:
   verification-failed      Docker was usable and the recipe FAILED — the build
                            broke, or the container never served. Flag NOT set,
                            whatever the static checks said.
-  blocked                  A gate stopped the run. Nothing was written.
+  blocked                  The run stopped without a usable verdict, in one
+                           of three ways: a GATE refused it up front (nothing
+                           was written), a hard ERROR disqualified the recipe
+                           partway through, or the skill ITSELF faulted (bad
+                           policy, missing template). The first two say the
+                           recipe is not deployable; the third says nothing
+                           about the recipe at all and leaves manifest.yaml
+                           exactly as found. Check `files_written` rather than
+                           assuming a clean tree — only the gate case
+                           guarantees one.
 
 A recipe proven broken is not deployable, so verification outranks every
 static check that came before it.
@@ -226,7 +235,13 @@ OUTCOME_VERIFICATION_FAILED = "verification-failed"
 OUTCOME_BLOCKED = "blocked"
 
 
-def outcome_for(*, infra_clean: bool, verified: bool | None) -> str:
+def outcome_for(
+    *,
+    infra_clean: bool,
+    verified: bool | None,
+    has_error: bool = False,
+    skill_fault: bool = False,
+) -> str:
     """Pick the outcome from the infra axis and the evidence axis.
 
     `verified` is tri-state on purpose: True (proved it works), False (proved
@@ -236,6 +251,12 @@ def outcome_for(*, infra_clean: bool, verified: bool | None) -> str:
     """
     if verified is False:
         return OUTCOME_VERIFICATION_FAILED
+    if has_error or skill_fault:
+        # An ERROR anywhere disqualifies the recipe, and the outcome must say
+        # so. Without this the report could read `deployable-verified` while
+        # the manifest flag had just been retracted for that same error —
+        # two halves of one report contradicting each other.
+        return OUTCOME_BLOCKED
     if infra_clean:
         return (
             OUTCOME_DEPLOYABLE_VERIFIED
@@ -804,25 +825,90 @@ def generate_serving_files(
     apply: bool,
     overwrite: bool,
     report: Report,
+    required_files: list[str] | None = None,
 ) -> None:
-    """Write the five required files plus .dockerignore."""
+    """Write the required serving files plus .dockerignore.
+
+    The file list comes from `deployability.required_files` so the standard
+    stays editable in policy.yml, which is what SKILL.md and this module's
+    docstring both promise. It used to be hardcoded here, which made adding a
+    file to policy.yml a silent no-op — the worst kind of configuration,
+    because it looks like it worked.
+
+    Each entry is a destination relative to the recipe, with `<pkg>` standing
+    for the agent package; the template is found at the same path with the
+    `<pkg>/` prefix removed.
+    """
     package = package_dir.name
-    jobs: list[tuple[Path, Path]] = [
-        (templates_dir / "Dockerfile", recipe_dir / "Dockerfile"),
-        (templates_dir / "fast_api_app.py", package_dir / "fast_api_app.py"),
-        (
-            templates_dir / "app_utils" / "a2a.py",
-            package_dir / "app_utils" / "a2a.py",
-        ),
-        (
-            templates_dir / "app_utils" / "services.py",
-            package_dir / "app_utils" / "services.py",
-        ),
-        (
-            templates_dir / "app_utils" / "reasoning_engine_adapter.py",
-            package_dir / "app_utils" / "reasoning_engine_adapter.py",
-        ),
-    ]
+    entries = required_files or []
+    if not entries:
+        # A policy that lists nothing must be an error, never a quiet no-op.
+        # Silently generating zero serving files and then flagging the recipe
+        # deployable is precisely the failure this list is supposed to
+        # prevent, and an empty or commented-out list looks like it worked.
+        report.add(
+            Check(
+                id="serving-files",
+                status=ERROR,
+                message=(
+                    "`deployability.required_files` is empty or missing from "
+                    ".github/policy.yml, so no serving files would be "
+                    "generated. Refusing to continue: a recipe with no "
+                    "Dockerfile and no entrypoint cannot be deployable, and "
+                    "reporting success here would be a false claim. This is "
+                    "a fault in the SKILL's configuration, not in the recipe."
+                ),
+                details={SKILL_FAULT: True},
+            )
+        )
+        return
+    jobs: list[tuple[Path, Path]] = []
+    for entry in entries:
+        rel_entry = str(entry).strip().lstrip("/")
+        # Never let a policy entry escape the recipe. `..` in a path would
+        # otherwise write into a sibling recipe or the repo itself:
+        # `dst.relative_to()` resolves it lexically instead of objecting.
+        if ".." in Path(rel_entry).parts:
+            report.add(
+                Check(
+                    id=f"file:{rel_entry}",
+                    status=ERROR,
+                    message=(
+                        f"`deployability.required_files` entry `{entry}` "
+                        "escapes the recipe directory. Refusing to write "
+                        "outside the recipe. This is a fault in the SKILL's "
+                        "policy, not in the recipe, so no deployable flag "
+                        "was retracted."
+                    ),
+                    details={SKILL_FAULT: True},
+                )
+            )
+            continue
+        if rel_entry.startswith("<pkg>/"):
+            tail = rel_entry[len("<pkg>/") :]
+            dst = package_dir / tail
+        else:
+            tail = rel_entry
+            dst = recipe_dir / rel_entry
+        src = templates_dir / tail
+        if not src.is_file():
+            report.add(
+                Check(
+                    id=f"file:{rel_entry}",
+                    status=ERROR,
+                    message=(
+                        f"`deployability.required_files` lists `{entry}` but "
+                        f"no template exists at {src.relative_to(templates_dir.parent.parent)}. "
+                        "Add the template or correct the policy entry — the "
+                        "recipe would be missing a file the standard "
+                        "requires. This is a fault in the SKILL, not in the "
+                        "recipe, so no deployable flag was retracted."
+                    ),
+                    details={SKILL_FAULT: True},
+                )
+            )
+            continue
+        jobs.append((src, dst))
 
     for src, dst in jobs:
         rel = dst.relative_to(recipe_dir)
@@ -1180,6 +1266,118 @@ def patch_app_object(agent_py: Path, package: str, apply: bool) -> Check:
 # ---------------------------------------------------------------------------
 
 
+# Marks a Check whose failure is OUR fault, not the recipe's.
+SKILL_FAULT = "skill_fault"
+
+
+def _has_error(report: Report) -> bool:
+    """Did anything fail in a way that disqualifies THE RECIPE?
+
+    A blanket rule, because listing the specific disqualifying conditions
+    proved fragile — each new check is one someone can forget to add, and the
+    failure mode is a false one-click-deploy claim rather than a visible
+    crash.
+
+    But it deliberately ignores checks flagged SKILL_FAULT. A policy entry
+    naming a template nobody vendored is a packaging bug in this skill; if
+    that deleted a contributor's `deployable: true`, our own broken release
+    would be destroying their data. Skill faults must stop the run loudly
+    without passing judgement on the recipe.
+    """
+    return any(
+        c.status == ERROR and not c.details.get(SKILL_FAULT)
+        for c in report.checks
+    )
+
+
+def _has_skill_fault(report: Report) -> bool:
+    """Did the SKILL itself fail (bad policy, missing template)?
+
+    Such a run says nothing about the recipe, so it must neither set a
+    deployable flag nor retract an existing one: leave the manifest exactly
+    as found and report loudly.
+    """
+    return any(
+        c.status == ERROR and c.details.get(SKILL_FAULT) for c in report.checks
+    )
+
+
+def clear_manifest_deployable(manifest_path: Path, apply: bool) -> Check:
+    """Remove a `deployable: true` that verification has just disproved.
+
+    Declining to WRITE the flag is not enough. The ordinary sequence is: run
+    once with no docker (flag written on static checks, outcome
+    `-unverified`), then later run with --verify-container on a machine that
+    has one. If that verification fails and we merely skip the write, the
+    earlier `true` survives while the report says "NOT set" — the report lies,
+    and the manifest keeps exactly the false one-click claim this feature
+    exists to prevent.
+
+    The key is removed rather than set to false because the schema treats it
+    as optional and false by default ("omit if false"), so removal is how a
+    manifest says "not deployable" in this repo's own convention.
+    """
+    if not manifest_path.is_file():
+        return Check(
+            id="manifest-deployable",
+            status=REPORT_ONLY,
+            message=(
+                "NOT set: container verification failed. No manifest.yaml "
+                "exists, so there was no claim to retract."
+            ),
+        )
+    # newline="" so line terminators survive verbatim rather than being
+    # translated to \n by universal-newline mode.
+    with open(manifest_path, encoding="utf-8", newline="") as f:
+        text = f.read()
+    # keepends preserves each line's own terminator, so a CRLF file is not
+    # silently rewritten to LF — that turns a one-line removal into an
+    # every-line diff on a Windows checkout.
+    lines = text.splitlines(keepends=True)
+    # Require a SCALAR value on the same line. `deployable:` followed by an
+    # indented block, a list, or a nested mapping is off-schema, and deleting
+    # only its first line splices the orphaned body onto the previous key —
+    # silent semantic corruption rather than a removal. Leave those alone and
+    # say so.
+    scalar_flag = re.compile(r"^deployable[ \t]*:[ \t]*\S[^\r\n]*[\r\n]*$")
+    kept = [ln for ln in lines if not scalar_flag.match(ln)]
+
+    if len(kept) == len(lines):
+        # Nothing removable. Either there was no flag, or it is an off-schema
+        # non-scalar we will not touch — flag that case rather than implying
+        # the manifest is clean.
+        odd = any(re.match(r"^deployable[ \t]*:", ln) for ln in lines)
+        return Check(
+            id="manifest-deployable",
+            status=REPORT_ONLY,
+            message=(
+                (
+                    "A `deployable:` key exists but its value is not a simple "
+                    "scalar, so it was left untouched to avoid corrupting the "
+                    "document. REVIEW IT BY HAND — the recipe did not pass "
+                    "verification. "
+                )
+                if odd
+                else "NOT set. "
+            )
+            + "A recipe that did not pass is not deployable, whatever the "
+            "static checks said. Fix the failure above and re-run.",
+        )
+
+    if apply:
+        with open(manifest_path, "w", encoding="utf-8", newline="") as f:
+            f.write("".join(kept))
+    return Check(
+        id="manifest-deployable",
+        status=FIXED if apply else WOULD_FIX,
+        message=(
+            f"{'REMOVED' if apply else 'Would remove'} the existing "
+            "`deployable` flag: the recipe did not pass, so the claim already "
+            "in manifest.yaml is false. Re-verify successfully to restore it."
+        ),
+    )
+
+
 def patch_manifest_deployable(
     manifest_path: Path, infra_clean: bool, apply: bool
 ) -> Check:
@@ -1505,6 +1703,43 @@ def _sanitise_tag(name: str) -> str:
     return re.sub(r"[^a-z0-9_.-]+", "-", name.lower()).strip("-.") or "recipe"
 
 
+def dockerfile_is_generated(
+    *,
+    recipe_dir: Path,
+    templates_dir: Path,
+    package: str,
+    project_name: str,
+    python_version: str | None,
+    data_dirs: list[str],
+) -> bool:
+    """Is the Dockerfile on disk byte-identical to what we would generate?
+
+    Content comparison rather than "did this invocation write it". The
+    two-phase flow makes the latter wrong: phase one writes the Dockerfile,
+    phase two re-invokes after `uv lock` and finds it already present, so the
+    generation step reports "left untouched" for a file this skill authored
+    moments earlier. Trusting that signal would label our own output foreign,
+    and — because a foreign Dockerfile is not built unattended — would skip
+    verification entirely for every recipe not on the allowlist, silently
+    disabling the feature in its normal mode.
+
+    Comparing content answers the question actually being asked: is executing
+    this file's RUN instructions equivalent to executing our own template?
+    """
+    dockerfile = recipe_dir / "Dockerfile"
+    if not dockerfile.is_file():
+        return False
+    template = templates_dir / "Dockerfile"
+    if not template.is_file():
+        return False
+    expected = render_template(
+        template.read_text(encoding="utf-8"), package, project_name
+    )
+    expected = set_python_base_image(expected, python_version)
+    expected = inject_data_dir_copies(expected, package, data_dirs)
+    return dockerfile.read_text(encoding="utf-8") == expected
+
+
 def parse_env_example(path: Path) -> dict[str, str]:
     """Read a recipe's .env.example into a plain dict.
 
@@ -1550,6 +1785,7 @@ def verify_container(
     settings: dict[str, Any],
     may_run: bool,
     report: Report,
+    dockerfile_is_ours: bool = True,
 ) -> bool | None:
     """Build the generated Dockerfile, run it, and probe it.
 
@@ -1598,29 +1834,60 @@ def verify_container(
         timeout=build_timeout,
     )
     if build.returncode != 0:
+        # An environmental failure is not evidence about the recipe. Returning
+        # False here would retract a `deployable: true` the contributor wrote,
+        # because our DNS was down — data loss caused by our own machine.
+        environmental = failure_is_environmental(build)
+        which = (
+            "the recipe's OWN Dockerfile"
+            if not dockerfile_is_ours
+            else "the generated Dockerfile"
+        )
         report.add(
             Check(
                 id="container-build",
-                status=ERROR,
+                status=REPORT_ONLY if environmental else ERROR,
                 message=(
-                    "THE GENERATED DOCKERFILE DOES NOT BUILD. The recipe is "
-                    "not deployable and manifest.deployable was NOT set. "
-                    "Build log tail:\n"
-                    + _tail(build.stderr or build.stdout, 25)
-                ),
-                details={"image": tag, "hint": _build_failure_hint(build)},
+                    (
+                        f"Build of {which} could not be completed for an "
+                        "ENVIRONMENTAL reason, so nothing was concluded about "
+                        "the recipe and no manifest flag was changed. "
+                    )
+                    if environmental
+                    else (
+                        f"{which.upper()} DOES NOT BUILD. The recipe is not "
+                        "deployable, and any existing manifest.deployable "
+                        "flag has been retracted. "
+                    )
+                )
+                + "Build log tail:\n"
+                + _tail(build.stderr or build.stdout, 25),
+                details={
+                    "image": tag,
+                    "hint": _build_failure_hint(build),
+                    "environmental": environmental,
+                },
             )
         )
         # Still clean up: a build that fails at a late layer leaves the tag
         # and its completed layers behind just as a successful one does.
         _cleanup(name, tag)
-        return False
+        return None if environmental else False
+    # Say which Dockerfile was built. Claiming "the generated Dockerfile"
+    # when an existing one was left in place would attribute a pass to code
+    # this skill did not write.
+    provenance = (
+        "the generated Dockerfile"
+        if dockerfile_is_ours
+        else "the recipe's OWN pre-existing Dockerfile (not generated by "
+        "this skill)"
+    )
     report.add(
         Check(
             id="container-build",
             status=CLEAN,
-            message=f"Image built from the generated Dockerfile ({tag}).",
-            details={"image": tag},
+            message=f"Image built from {provenance} ({tag}).",
+            details={"image": tag, "dockerfile_is_ours": dockerfile_is_ours},
         )
     )
 
@@ -1664,18 +1931,30 @@ def verify_container(
             timeout=120,
         )
         if started.returncode != 0:
+            # "port is already allocated" is a leftover container, not a
+            # broken recipe — inconclusive, so no verdict and no retraction.
+            environmental = failure_is_environmental(started)
             report.add(
                 Check(
                     id="container-serves",
-                    status=ERROR,
+                    status=REPORT_ONLY if environmental else ERROR,
                     message=(
-                        "Image built but the container would not start. "
-                        "manifest.deployable was NOT set.\n"
-                        + _tail(started.stderr or started.stdout, 20)
-                    ),
+                        (
+                            "Image built, but the container could not be "
+                            "started for an ENVIRONMENTAL reason. Nothing was "
+                            "concluded and no manifest flag was changed.\n"
+                        )
+                        if environmental
+                        else (
+                            "Image built but the container would not start. "
+                            "Any existing manifest.deployable was retracted.\n"
+                        )
+                    )
+                    + _tail(started.stderr or started.stdout, 20),
+                    details={"environmental": environmental},
                 )
             )
-            return False
+            return None if environmental else False
 
         mapped = _docker(["port", name, str(port)], timeout=30)
         host_port = _parse_host_port(mapped.stdout)
@@ -1694,20 +1973,44 @@ def verify_container(
             return False
 
         base = f"http://127.0.0.1:{host_port}"
-        ready, boot_detail = _await_ready(base + paths[0], name, ready_timeout)
+        ready, boot_detail, exited = _await_ready(
+            base + paths[0], name, ready_timeout
+        )
         if not ready:
+            # A verdict exists if the container exited OR it answered with a
+            # non-200 — both are facts about the app. Total silence from a
+            # still-running container is the only inconclusive case.
+            answered = "answered but never returned 200" in boot_detail
+            verdict = exited or answered
+            if exited:
+                headline = "Container never served: it EXITED during startup. "
+            elif answered:
+                headline = (
+                    "Container is running but does NOT serve the expected "
+                    "endpoint (it answered with a non-200 for the whole "
+                    "window; it did not crash). "
+                )
+            else:
+                headline = (
+                    "Container did not answer at all in time. This is "
+                    "INCONCLUSIVE, so no manifest flag was changed. "
+                )
             report.add(
                 Check(
                     id="container-serves",
-                    status=ERROR,
-                    message=(
-                        "Container never served. manifest.deployable was NOT "
-                        f"set. {boot_detail}\nContainer log tail:\n"
-                        + _container_logs(name)
-                    ),
+                    status=ERROR if verdict else REPORT_ONLY,
+                    message=headline
+                    + (
+                        "Any existing manifest.deployable was retracted. "
+                        if verdict
+                        else ""
+                    )
+                    + f"{boot_detail}\nContainer log tail:\n"
+                    + _container_logs(name),
+                    details={"exited": exited, "answered": answered},
                 )
             )
-            return False
+            return False if verdict else None
 
         # --- the probe contract --------------------------------------------
         results: dict[str, int] = {}
@@ -1778,25 +2081,59 @@ def verify_container(
         _cleanup(name, tag)
 
 
-def _await_ready(url: str, name: str, timeout: int) -> tuple[bool, str]:
-    """Poll until the app answers, aborting early if the container died.
+def _await_ready(url: str, name: str, timeout: int) -> tuple[bool, str, bool]:
+    """Poll until the app answers. Returns (ready, detail, exited).
 
     The early abort matters: a container that crashes on import would
     otherwise hold the run hostage for the whole timeout before reporting
     something we already knew within a second.
+
+    `exited` separates a verdict from a non-verdict. A container that EXITED
+    is proven broken. One still running that has not answered in time may
+    simply be on a loaded machine, and treating that as proof would retract a
+    contributor's deployable flag because our host was busy.
     """
     deadline = time.monotonic() + timeout
+    answered_at_all = False
+    last_status = 0
     while time.monotonic() < deadline:
         status, _ = _probe(url, timeout=5)
         if status == 200:
-            return True, ""
+            return True, "", False
+        if status:
+            # An HTTP status — any status — means the server is up and
+            # answering. That is evidence about the APP, not about the host.
+            answered_at_all = True
+            last_status = status
         alive = _docker(
             ["inspect", "-f", "{{.State.Running}}", name], timeout=30
         )
         if alive.stdout.strip() == "false":
-            return False, "The container exited before it began serving."
+            return False, "The container exited before it began serving.", True
         time.sleep(2)
-    return False, f"No response within {timeout}s."
+
+    if answered_at_all:
+        # Serving, but not serving THIS. A bespoke entrypoint left in place
+        # without --overwrite routinely 404s /list-apps. Calling that
+        # "inconclusive" would let a recipe that demonstrably does not serve
+        # the expected API keep a `deployable: true`.
+        #
+        # Reported as a verdict WITHOUT claiming the container exited: it did
+        # not, and saying so sends the owner hunting for a crash in a healthy
+        # process.
+        return (
+            False,
+            f"The server answered but never returned 200 (last status "
+            f"{last_status}), so it runs without serving this endpoint.",
+            False,
+        )
+    return (
+        False,
+        f"No HTTP response at all within {timeout}s and the container is "
+        "still running — inconclusive rather than proof of a defect, since a "
+        "loaded host looks identical.",
+        False,
+    )
 
 
 def _cleanup(name: str, tag: str) -> None:
@@ -1810,16 +2147,28 @@ def _cleanup(name: str, tag: str) -> None:
 
 
 def _parse_host_port(text: str) -> str | None:
-    """Pull the port out of `docker port`'s `127.0.0.1:54321` output.
+    """Pull the host port out of `docker port` output.
 
-    Only the first line: with both IPv4 and IPv6 published, docker prints one
-    mapping per line and either one reaches the same container.
+    Docker prints one mapping per line and may publish both families:
+
+        0.0.0.0:54321
+        [::]:54321
+
+    We bind to 127.0.0.1 and probe over IPv4, so prefer an IPv4 line and fall
+    back to any line with a trailing port. Taking the first line blindly would
+    pick the IPv6 mapping on a dual-stack host and, where the two families get
+    different host ports, probe a port nothing is listening on — reported as
+    "container never served" for a container that is serving perfectly.
     """
-    lines = (text or "").strip().splitlines()
-    if not lines:
-        return None
-    match = re.search(r":(\d+)\s*$", lines[0])
-    return match.group(1) if match else None
+    lines = [
+        ln.strip() for ln in (text or "").strip().splitlines() if ln.strip()
+    ]
+    ipv4 = [ln for ln in lines if re.match(r"^\d+\.\d+\.\d+\.\d+:\d+$", ln)]
+    for candidate in (*ipv4, *lines):
+        match = re.search(r":(\d+)$", candidate)
+        if match:
+            return match.group(1)
+    return None
 
 
 def _container_logs(name: str, lines: int = 30) -> str:
@@ -1836,6 +2185,50 @@ def _tail(text: str, lines: int) -> str:
     return "\n".join((text or "").strip().splitlines()[-lines:])
 
 
+def failure_is_environmental(proc: subprocess.CompletedProcess[str]) -> bool:
+    """Did this fail because of the machine rather than the recipe?
+
+    The distinction decides whether we have a VERDICT or merely an absence of
+    one, and that in turn decides whether an existing `deployable: true` is
+    retracted. Deleting a contributor's flag because a DNS lookup failed, or
+    because a leftover container was still holding the port, is data loss
+    caused by our own environment — and it would happen while the report tells
+    the owner "re-run before concluding anything".
+
+    A network blip is not evidence about the recipe, so it maps to "no
+    verdict" (None), never to "proven broken" (False).
+    """
+    blob = ((proc.stderr or "") + (proc.stdout or "")).lower()
+    return bool(
+        re.search(
+            # Every pattern is anchored to infrastructure phrasing. A bare
+            # `timeout` would be catastrophic: `async-timeout` is a
+            # transitive dependency of aiohttp and appears in most lockfiles
+            # in this repo, so "Failed to build async-timeout==4.0.3" — a
+            # genuine recipe fault — would be excused as environmental, the
+            # recipe would keep a false `deployable: true`, and the run would
+            # exit 0. That is the original bug arriving from the opposite
+            # direction. Match the machine's vocabulary, not a word that
+            # happens to appear in package names.
+            r"temporary failure in name resolution|could not resolve host"
+            r"|could not resolve proxy|network is unreachable"
+            r"|connection reset by peer|failed to fetch oauth token"
+            r"|i/o timeout|tls handshake timeout|context deadline exceeded"
+            r"|timeout exceeded while awaiting headers"
+            r"|timed out after \d+s"
+            r"|port is already allocated|address already in use"
+            r"|no space left on device|toomanyrequests|rate limit exceeded"
+            r"|error pulling image|failed to copy: httpreadseeker"
+            # `no such host` is the standard Go DNS failure for registry
+            # lookups and the single most common infra failure of all.
+            r"|no such host|error getting credentials"
+            r"|cannot connect to the docker daemon"
+            r"|error during connect|unexpected eof",
+            blob,
+        )
+    )
+
+
 def _build_failure_hint(proc: subprocess.CompletedProcess[str]) -> str:
     """Name the likely structural cause instead of only dumping the log.
 
@@ -1843,19 +2236,70 @@ def _build_failure_hint(proc: subprocess.CompletedProcess[str]) -> str:
     "your recipe is broken", when the truth is usually one specific missing
     precondition. Cheap triage until a real compatibility preflight exists.
     """
-    blob = ((proc.stderr or "") + (proc.stdout or "")).lower()
-    if "frozen" in blob or "out of date" in blob or "--locked" in blob:
+    # Match ONLY against lines that carry a diagnostic, never the whole log.
+    # BuildKit echoes each Dockerfile instruction as it runs, so `COPY
+    # ./README.md` and `RUN uv sync --frozen` appear in the output of every
+    # build — including ones that failed for an unrelated reason like a
+    # network timeout. Substring-matching the full blob therefore reports a
+    # confident, specific and wrong cause, which is worse than saying nothing:
+    # it sends the owner to fix a file that was never the problem.
+    blob = (proc.stderr or "") + (proc.stdout or "")
+    # Drop a line only when it is PURELY an echoed instruction. BuildKit
+    # reprints every step as it runs, so a naive substring match over the whole
+    # log reports `RUN uv sync --frozen` as a lockfile fault even when the real
+    # error was a DNS timeout — confident, specific and wrong.
+    #
+    # But the filter must not be greedy either: `=> ERROR [5/5] RUN ...` and
+    # `COPY failed: ... README.md ...` both BEGIN like echoes while actually
+    # carrying the diagnosis. So a line survives if it contains any error
+    # token, and is dropped only if, once decoration is stripped, nothing is
+    # left but the instruction itself.
+    decoration = re.compile(
+        r"^[\s=>|#\d-]*(\[[\d/\s]+\]\s*)?(Step\s+\d+/\d+\s*:\s*)?"
+    )
+    instruction = re.compile(
+        r"^(RUN|COPY|FROM|WORKDIR|CMD|ENV|ARG|EXPOSE|ADD|ENTRYPOINT)\s", re.I
+    )
+    error_token = re.compile(
+        r"\berror\b|\bfailed\b|cannot|unable|denied|not found|non-zero", re.I
+    )
+
+    def is_pure_echo(line: str) -> bool:
+        if error_token.search(line):
+            return False
+        return bool(instruction.match(decoration.sub("", line)))
+
+    diagnostics = "\n".join(
+        ln for ln in blob.splitlines() if not is_pure_echo(ln)
+    ).lower()
+
+    # Environmental first. `=> ERROR [5/5] RUN uv sync --frozen` legitimately
+    # survives the echo filter (it carries the ERROR token), so the string
+    # `--frozen` is present in the log of a build that died of a DNS timeout.
+    # Testing the lockfile pattern first would blame the lockfile every time.
+    if failure_is_environmental(proc):
+        return (
+            "Looks like a network/registry/host failure rather than a defect "
+            "in the recipe. Nothing was concluded about the recipe and no "
+            "manifest flag was changed. Re-run before drawing conclusions."
+        )
+    if re.search(
+        r"lock.*(out of date|needs to be updated)"
+        r"|frozen.*(out of date|mismatch)"
+        r"|the lockfile.*(is not|does not)",
+        diagnostics,
+    ):
         return (
             "uv.lock does not match pyproject.toml — run `uv lock` and "
             "re-verify. This is a lockfile problem, not a template problem."
         )
-    if "readme" in blob:
+    if "readme" in diagnostics:
         return (
             "The build backend reads `readme` from pyproject.toml and the "
             "file is missing from the build context. The Dockerfile's "
             "`COPY ./README.md` is functional, not decorative."
         )
-    if "hatch" in blob or "editable" in blob or "build backend" in blob:
+    if re.search(r"hatch|editable|build backend|build-backend", diagnostics):
         return (
             "Build-backend/packaging failure. Check that the agent package "
             "is declared to the backend the recipe actually uses "
@@ -1877,10 +2321,16 @@ def run(
     data_dirs: list[str],
     region: str,
     verify_container_requested: bool = False,
+    report: Report | None = None,
 ) -> Report:
-    report = Report(
-        recipe_dir=str(recipe_dir), mode="apply" if apply else "dry-run"
-    )
+    # The caller may supply the Report so that a crash mid-run does not lose
+    # what already happened. Reporting `blocked` with `files_written: []`
+    # after six files landed on disk tells the owner nothing was written when
+    # their working tree says otherwise.
+    if report is None:
+        report = Report(
+            recipe_dir=str(recipe_dir), mode="apply" if apply else "dry-run"
+        )
 
     repo_root = find_repo_root(recipe_dir)
     if repo_root is None:
@@ -2011,6 +2461,7 @@ def run(
         apply=apply,
         overwrite=overwrite,
         report=report,
+        required_files=[str(f) for f in (policy.get("required_files") or [])],
     )
 
     # --- patch -------------------------------------------------------------
@@ -2030,7 +2481,13 @@ def run(
     if apply:
         pyproject_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
-    report.add(patch_app_object(agent_py, package_dir.name, apply))
+    app_check = patch_app_object(agent_py, package_dir.name, apply)
+    report.add(app_check)
+    # The generated entrypoint does `from <pkg>.agent import app`. If that
+    # symbol could not be established the container cannot start, so the
+    # recipe is not deployable however clean everything else looks — the same
+    # standard applied to the ADK and legacy-app_utils gates.
+    app_object_ok = app_check.status not in (NEEDS_INPUT, ERROR)
 
     # --- verify -------------------------------------------------------------
     # Runs before the manifest flag is written, because the flag is what it
@@ -2090,24 +2547,64 @@ def run(
                 allowlist = [
                     str(p) for p in (settings.get("run_allowlist") or [])
                 ]
-                may_run = any(
+                allowlisted = any(
                     str(recipe_dir)
                     .replace("\\", "/")
                     .rstrip("/")
                     .endswith(entry.rstrip("/"))
                     for entry in allowlist
                 )
-                verified = verify_container(
+                # Is the Dockerfile about to be built one WE wrote? An
+                # existing one is left untouched without --overwrite, and
+                # `docker build` executes every RUN in whatever it is given.
+                # Building a bespoke contributor Dockerfile is arbitrary code
+                # execution, so it needs the same allowlist the run step has —
+                # while our own generated file (pip install uv; uv sync) does
+                # not. Decided on CONTENT, not on whether this invocation
+                # wrote it: see dockerfile_is_generated.
+                dockerfile_is_ours = dockerfile_is_generated(
                     recipe_dir=recipe_dir,
+                    templates_dir=templates_dir,
                     package=package_dir.name,
-                    settings=settings,
-                    may_run=may_run,
-                    report=report,
+                    project_name=project_name,
+                    python_version=python_version,
+                    data_dirs=data_dirs,
                 )
+                if not dockerfile_is_ours and not allowlisted:
+                    report.add(
+                        Check(
+                            id="container-verify",
+                            status=REPORT_ONLY,
+                            message=(
+                                "Skipped: the Dockerfile in this recipe is "
+                                "not the one this skill generated (an "
+                                "existing one is never replaced without "
+                                "--overwrite), and the recipe is not on "
+                                "`run_allowlist`. Building it would execute "
+                                "its RUN instructions, which this skill will "
+                                "not do unattended for a file it did not "
+                                "write. Outcome stays `-unverified`."
+                            ),
+                        )
+                    )
+                else:
+                    verified = verify_container(
+                        recipe_dir=recipe_dir,
+                        package=package_dir.name,
+                        settings=settings,
+                        may_run=allowlisted,
+                        report=report,
+                        dockerfile_is_ours=dockerfile_is_ours,
+                    )
 
-    report.outcome = outcome_for(infra_clean=infra_clean, verified=verified)
+    report.outcome = outcome_for(
+        infra_clean=infra_clean,
+        verified=verified,
+        has_error=_has_error(report),
+        skill_fault=_has_skill_fault(report),
+    )
 
-    if defer_manifest:
+    if defer_manifest and app_object_ok and not _has_error(report):
         report.add(
             Check(
                 id="manifest-deployable",
@@ -2118,18 +2615,45 @@ def run(
                 ),
             )
         )
-    elif verified is False:
+    # Any ERROR recorded anywhere disqualifies the recipe. Enumerating
+    # individual disqualifying conditions has repeatedly missed one — the
+    # app-object gate and an empty required_files list both reached
+    # `deployable: true` while the report carried an ERROR. A blanket rule
+    # cannot be outflanked by the next new check.
+    elif _has_skill_fault(report):
         report.add(
             Check(
                 id="manifest-deployable",
                 status=REPORT_ONLY,
                 message=(
-                    "NOT set: container verification failed. A recipe proven "
-                    "broken is not deployable, whatever the static checks "
-                    "said. Fix the failure above and re-run."
+                    "manifest.yaml was left EXACTLY as found. This run hit a "
+                    "fault in the skill itself (see the ERROR above), so it "
+                    "learned nothing about the recipe: setting the flag would "
+                    "be an unearned claim, and retracting one would destroy a "
+                    "contributor's assertion over our bug. Fix the skill and "
+                    "re-run."
                 ),
             )
         )
+    elif verified is False or not app_object_ok or _has_error(report):
+        # RETRACTION COMES FIRST, and covers both disqualifying conditions.
+        # Ordering the app-object branch ahead of this one meant the MORE
+        # broken recipe — no `root_agent` AND a failed container — kept its
+        # stale `deployable: true`, because control never reached the
+        # retraction. Any condition that disqualifies a recipe must also
+        # withdraw a claim already on disk.
+        if verified is False:
+            reason = "container verification failed"
+        elif not app_object_ok:
+            reason = (
+                "the `app` object could not be established in agent.py, "
+                "which the generated entrypoint imports"
+            )
+        else:
+            reason = "the run recorded an ERROR (see the checks above)"
+        check = clear_manifest_deployable(recipe_dir / "manifest.yaml", apply)
+        check.message = f"{check.message} Cause: {reason}."
+        report.add(check)
     else:
         report.add(
             patch_manifest_deployable(
@@ -2185,6 +2709,16 @@ def run(
         "ships it only under agent_runtime; whether the doc should change is "
         "a standards decision, not a code one."
     )
+    # Recomputed: the manifest patch above can itself record an ERROR, and it
+    # runs after the first computation. Leaving the earlier value would report
+    # a success outcome beside a check that just failed.
+    report.outcome = outcome_for(
+        infra_clean=infra_clean,
+        verified=verified,
+        has_error=_has_error(report),
+        skill_fault=_has_skill_fault(report),
+    )
+
     if verified is True:
         report.note(
             "Container verification PASSED: the generated Dockerfile was "
@@ -2192,12 +2726,39 @@ def run(
             "evidence, not inference."
         )
     elif verified is None and not defer_manifest:
-        report.note(
-            "No container evidence was gathered, so the outcome ends "
-            "`-unverified`. The files are correct by static inspection; "
-            "nobody has yet built the image. Run with --verify-container on "
-            "a machine with docker to upgrade this to a proven result."
+        # "We never tried" and "we tried and could not tell" are different
+        # facts, and telling someone whose build just died of a DNS failure to
+        # "run with --verify-container" is advice to repeat what they did.
+        # Only an INCONCLUSIVE attempt, not any attempt. A clean build of a
+        # non-allowlisted recipe also produces container-* checks, and telling
+        # that owner to "re-run when the environment is healthy" is advice to
+        # repeat a run that already succeeded and will never change.
+        attempted = any(
+            c.id in ("container-build", "container-serves")
+            and (
+                c.details.get("environmental")
+                or c.status == ERROR
+                or "INCONCLUSIVE" in c.message
+            )
+            for c in report.checks
         )
+        if attempted:
+            report.note(
+                "Container verification was ATTEMPTED but reached no verdict "
+                "— see the container-* checks for why (typically a network, "
+                "registry or host problem rather than the recipe). Nothing "
+                "was concluded and no manifest flag was changed, so the "
+                "outcome ends `-unverified`. Re-run when the environment is "
+                "healthy; do not read this as a pass or a failure."
+            )
+        else:
+            report.note(
+                "No container evidence was gathered, so the outcome ends "
+                "`-unverified`. The files are correct by static inspection; "
+                "nobody has yet built the image. Run with --apply "
+                "--verify-container on a machine with docker to upgrade this "
+                "to a proven result."
+            )
     return report
 
 
@@ -2270,23 +2831,43 @@ def main() -> int:
     # Any unforeseen exception is surfaced as one ERROR check inside the normal
     # JSON envelope, so the calling agent renders it like any other outcome
     # instead of parsing a stack trace off stderr.
+    # Owned here, not inside run(), so a crash keeps every check and every
+    # filename already recorded.
+    report = Report(
+        recipe_dir=str(args.recipe_dir),
+        mode="apply" if args.apply else "dry-run",
+    )
     try:
-        report = run(
+        run(
             recipe_dir=args.recipe_dir,
             apply=args.apply,
             overwrite=args.overwrite,
             data_dirs=data_dirs,
             region=args.region,
             verify_container_requested=args.verify_container,
+            report=report,
         )
     except Exception as e:  # final safety net for the CLI
-        report = Report(
-            recipe_dir=str(args.recipe_dir),
-            mode="apply" if args.apply else "dry-run",
-        )
         report.add(
             Check(
                 id="internal", status=ERROR, message=f"{type(e).__name__}: {e}"
+            )
+        )
+        # A crash must never leave a success outcome in the envelope. run()
+        # sets `outcome` partway through, so without this the report would
+        # read `deployable-unverified` beside an internal ERROR, and a caller
+        # switching on `outcome` would treat the crash as a pass.
+        report.outcome = OUTCOME_BLOCKED
+        report.note(
+            f"CRASHED partway through ({type(e).__name__}). Outcome forced to "
+            "`blocked`. "
+            + (
+                f"{len(report.files_written)} file(s) had already been "
+                "written, so the recipe is in a PARTIALLY MODIFIED state — "
+                "see files_written, and check pyproject.toml, agent.py and "
+                "manifest.yaml before re-running."
+                if report.files_written
+                else "No files had been written at the point of failure."
             )
         )
 
