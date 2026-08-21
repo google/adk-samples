@@ -1,7 +1,7 @@
 type: standalone
 status: active
 language: python
-description: Virtual try-on agent supporting image and video (catwalk) try-ons via Vertex AI Gemini image models and Veo, with a pre-flight product-cutout classifier and configurable safety levels.
+description: Virtual try-on agent supporting image and video (catwalk) try-ons via Gemini image models and Veo on Gemini Enterprise Agent Platform, with a pre-flight product-cutout classifier and configurable safety levels.
 license: Apache-2.0
 architecture:
   agent: single
