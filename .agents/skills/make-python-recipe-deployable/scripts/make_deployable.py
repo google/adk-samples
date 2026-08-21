@@ -279,10 +279,17 @@ def outcome_for(
     """
     if verified is False:
         return OUTCOME_VERIFICATION_FAILED
-    if inconclusive:
+    if inconclusive and not (has_error or skill_fault or disqualified):
         # Attempted and defeated by the environment. The flag may still have
         # been earned by static checks — see the manifest-deployable check;
         # what this outcome asserts is only that the CONTAINER proved nothing.
+        #
+        # It must NOT outrank a disqualification. Verification is not gated on
+        # the static checks, so a broken recipe still gets built; without this
+        # guard any passing network hiccup would mask the disqualification and
+        # report "nothing is retracted" for a run that had just deleted the
+        # flag. That is the outcome-contradicts-the-manifest defect twice
+        # shipped already, re-entering through the newest branch.
         return OUTCOME_VERIFICATION_INCONCLUSIVE
     if deferred:
         # The flag is withheld pending a verdict, so no `-unverified` outcome
@@ -1465,9 +1472,13 @@ def runtime_platform_failure(logs: str) -> bool:
     exposure is bounded and the alternative — deleting a contributor's flag
     because our host lacks binfmt — is worse.
     """
-    return any(
-        re.match(r"^\s*exec /\S+: exec format error\s*$", line)
-        for line in (logs or "").splitlines()
+    lines = [ln for ln in (logs or "").splitlines() if ln.strip()]
+    # Require it to be the ONLY output. The justification above is precisely
+    # that no application code ran; a log that also contains application
+    # output contradicts that, and would let a recipe whose crash happens to
+    # echo a subprocess's exec error escape its verdict.
+    return len(lines) == 1 and bool(
+        re.match(r"^\s*exec /\S+: exec format error\s*$", lines[0])
     )
 
 
@@ -2504,6 +2515,13 @@ def failure_is_environmental(proc: subprocess.CompletedProcess[str]) -> bool:
             r"|connection reset by peer|failed to fetch oauth token"
             r"|i/o timeout|tls handshake timeout|context deadline exceeded"
             r"|timeout exceeded while awaiting headers"
+            # uv's own wording for a download that timed out. Caught live:
+            # a real rag-agent-search build died on
+            # "Failed to download distribution due to network timeout" and was
+            # classified a RECIPE fault, retracting the contributor's flag.
+            r"|due to network timeout|uv_http_timeout"
+            r"|i/o operation failed during extraction"
+            r"|failed to download distribution"
             r"|timed out after \d+s"
             r"|port is already allocated|address already in use"
             r"|no space left on device|toomanyrequests|rate limit exceeded"
@@ -3125,6 +3143,7 @@ def run(
             c.id in ("container-build", "container-serves")
             and (
                 c.details.get("environmental")
+                or c.details.get("platform_failure")
                 or c.status == ERROR
                 or "INCONCLUSIVE" in c.message
             )
@@ -3135,9 +3154,14 @@ def run(
                 "Container verification was ATTEMPTED but reached no verdict "
                 "— see the container-* checks for why (typically a network, "
                 "registry or host problem rather than the recipe). Nothing "
-                "was concluded and nothing was RETRACTED (an inconclusive run cannot disprove a recipe). Static checks may still earn the flag on their own — see the manifest-deployable check for what actually happened. so the "
-                "outcome ends `-unverified`. Re-run when the environment is "
-                "healthy; do not read this as a pass or a failure."
+                "was concluded, so the outcome is "
+                "`verification-inconclusive`. Nothing was RETRACTED — an "
+                "inconclusive run cannot disprove a recipe — and static "
+                "checks may still have earned the flag on their own; see the "
+                "manifest-deployable check for what actually happened. Re-run "
+                "when the environment is healthy. Do not read this as a pass "
+                "or a failure, and do not go looking for another machine: "
+                "this one built the image, it just could not finish."
             )
         else:
             report.note(

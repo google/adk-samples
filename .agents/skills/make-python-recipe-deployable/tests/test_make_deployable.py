@@ -2753,3 +2753,213 @@ def test_failed_to_create_endpoint_is_environmental():
         stderr="failed to create endpoint adk-verify on network bridge",
     )
     assert md.failure_is_environmental(proc) is True
+
+
+# ---------------------------------------------------------------------------
+# Pass-6: the inconclusive escape hatch must not mask a disqualification
+#
+# Every mutation below survived with 179 tests green before these were added.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"has_error": True},
+        {"skill_fault": True},
+        {"disqualified": True},
+    ],
+)
+def test_inconclusive_never_outranks_a_disqualification(kwargs):
+    """A network hiccup must not relabel a run that RETRACTED the flag.
+
+    Verification is not gated on the static checks, so a disqualified recipe
+    still gets built. Without this precedence, any environmental failure
+    during that build reported `verification-inconclusive` — documented as
+    "nothing is retracted" — for a run that had just deleted the flag.
+    """
+    assert (
+        md.outcome_for(
+            infra_clean=True, verified=None, inconclusive=True, **kwargs
+        )
+        == md.OUTCOME_BLOCKED
+    )
+
+
+def test_inconclusive_applies_when_nothing_else_disqualifies():
+    assert (
+        md.outcome_for(infra_clean=True, verified=None, inconclusive=True)
+        == md.OUTCOME_VERIFICATION_INCONCLUSIVE
+    )
+
+
+def test_proven_failure_still_outranks_inconclusive():
+    assert (
+        md.outcome_for(infra_clean=True, verified=False, inconclusive=True)
+        == md.OUTCOME_VERIFICATION_FAILED
+    )
+
+
+def test_inconclusive_outcome_string_is_the_documented_one():
+    """SKILL.md names this literal; changing it silently broke nothing."""
+    assert md.OUTCOME_VERIFICATION_INCONCLUSIVE == "verification-inconclusive"
+    assert md.OUTCOME_VERIFICATION_INCONCLUSIVE not in (
+        md.OUTCOME_CONTAINERIZED_UNVERIFIED,
+        md.OUTCOME_DEPLOYABLE_UNVERIFIED,
+    )
+
+
+def test_disqualified_recipe_with_env_failure_reports_blocked_end_to_end(
+    recipe: Path, monkeypatch
+):
+    """The full path the unit test above abstracts."""
+    (recipe / "manifest.yaml").write_text(
+        "type: standalone\nlanguage: python\ndeployable: true\n",
+        encoding="utf-8",
+    )
+    (recipe / "app" / "agent.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    monkeypatch.setattr(
+        md, "detect_docker", lambda: (md.DOCKER_USABLE, "stubbed")
+    )
+    monkeypatch.setattr(
+        md, "lockfile_is_current", lambda *a, **k: (True, "stubbed")
+    )
+
+    def env_failure(**kwargs):
+        kwargs["report"].add(
+            md.Check(
+                id="container-build",
+                status=md.REPORT_ONLY,
+                message="dns died",
+                details={"environmental": True},
+            )
+        )
+
+    monkeypatch.setattr(md, "verify_container", env_failure)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+        verify_container_requested=True,
+    )
+    # The flag WAS retracted, so the outcome must not claim otherwise.
+    assert "deployable: true" not in (recipe / "manifest.yaml").read_text()
+    assert report.outcome == md.OUTCOME_BLOCKED
+
+
+def test_platform_failure_counts_as_an_attempt_for_the_closing_note(
+    recipe: Path, monkeypatch
+):
+    """The arm64 path set no `environmental` detail, so the note told the
+    owner "nobody has yet built the image" about a run that built one."""
+    monkeypatch.setattr(md, "load_policy", lambda _root: _policy())
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    monkeypatch.setattr(
+        md, "detect_docker", lambda: (md.DOCKER_USABLE, "stubbed")
+    )
+    monkeypatch.setattr(
+        md, "lockfile_is_current", lambda *a, **k: (True, "stubbed")
+    )
+
+    def platform_failure(**kwargs):
+        kwargs["report"].add(
+            md.Check(
+                id="container-serves",
+                status=md.REPORT_ONLY,
+                message="runtime could not exec the image's binary",
+                details={"platform_failure": True},
+            )
+        )
+
+    monkeypatch.setattr(md, "verify_container", platform_failure)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=True,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+        verify_container_requested=True,
+    )
+    joined = " ".join(report.notes)
+    assert "nobody has yet built the image" not in joined
+    assert "verification-inconclusive" in joined
+    assert report.outcome == md.OUTCOME_VERIFICATION_INCONCLUSIVE
+
+
+def test_runtime_exec_signature_must_be_the_only_output(tmp_path: Path):
+    """Guards the `and exited` + sole-line hardening.
+
+    The justification is that NO application code ran. A log carrying app
+    output as well contradicts that, and would let a crash that happens to
+    echo a subprocess's exec error escape its verdict.
+    """
+    assert md.runtime_platform_failure(
+        "exec /usr/local/bin/uv: exec format error"
+    )
+    assert not md.runtime_platform_failure(
+        "RuntimeError: could not start the scanner sidecar\n"
+        "exec /opt/tools/scanner: exec format error"
+    )
+
+
+def test_exited_guard_is_required_for_platform_failure(
+    tmp_path: Path, monkeypatch
+):
+    """A RUNNING container must never be excused by log text, whatever it says."""
+    fake = FakeDocker(
+        {
+            "port": (0, "127.0.0.1:54321\n", ""),
+            "inspect": (0, "true\n", ""),  # still running
+            "logs": (0, "exec /usr/local/bin/uv: exec format error\n", ""),
+        }
+    )
+    monkeypatch.setattr(md, "_docker", fake)
+    monkeypatch.setattr(md, "_probe", lambda url, timeout=10: (404, "nope"))
+    report = md.Report(recipe_dir=str(tmp_path), mode="apply")
+    result = md.verify_container(
+        recipe_dir=tmp_path,
+        package="app",
+        settings={**SETTINGS, "ready_timeout_seconds": 1},
+        may_run=True,
+        report=report,
+    )
+    # Answered 404 for the whole window while alive: that is a verdict.
+    assert result is False
+
+
+@pytest.mark.parametrize(
+    "log",
+    [
+        # Caught live during verification: a real build died here and the
+        # contributor's flag was retracted for a network problem.
+        "Failed to download distribution due to network timeout. Try "
+        "increasing UV_HTTP_TIMEOUT (current value: 30s).",
+        "I/O operation failed during extraction",
+        "error: Failed to download `protobuf==6.33.6` due to network timeout",
+    ],
+)
+def test_uv_download_timeout_is_environmental(log):
+    """uv's own download-failure wording matched none of the docker-centric
+    patterns, so a registry timeout read as a broken recipe."""
+    proc = subprocess.CompletedProcess(
+        args=[], returncode=1, stdout="", stderr=log
+    )
+    assert md.failure_is_environmental(proc) is True
+
+
+def test_a_real_dependency_conflict_is_still_a_verdict():
+    """The widening must not excuse a genuine resolution failure."""
+    proc = subprocess.CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout="",
+        stderr=(
+            "error: No solution found when resolving dependencies:\n"
+            "  Because foo==1.0 depends on bar>=2 and bar<2, we can conclude"
+        ),
+    )
+    assert md.failure_is_environmental(proc) is False
