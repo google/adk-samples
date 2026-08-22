@@ -131,8 +131,9 @@ TURNS: list[Turn] = [
     ),
     (
         "bring those shoe cards back up",
-        # Nothing is computed here. Four turns on, the register still holds
-        # the carousel, and reviving it is two flag writes.
+        # Nothing is computed here. The register still holds the carousel that
+        # turn 4 staged -- turn 5 re-ranked and wrote the same bytes -- and
+        # reviving it flips three flags.
         lambda ctx: show_again("those shoe cards", ctx),
     ),
     (
