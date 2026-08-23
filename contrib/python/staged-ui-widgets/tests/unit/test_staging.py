@@ -116,6 +116,28 @@ def test_suppressed_widget_is_held_back(ctx: StubContext) -> None:
     assert ctx.widgets == []
 
 
+def test_the_last_decision_wins_between_staging_and_suppressing(
+    ctx: StubContext,
+) -> None:
+    """Order decides, so a stale veto cannot swallow fresh data.
+
+    Both directions matter and they are easy to get wrong together. Staging
+    after a suppression must ship: the suppression was an earlier, less
+    informed decision, and leaving it set would report ``suppressed for this
+    turn`` for a widget the shopper just got new data for. Suppressing after
+    staging must still hold the widget back, because that is the order
+    ``tools/picks.py`` uses for a re-rank that changed nothing.
+    """
+    suppress_widget(ctx.state, "picks")
+    stage_widget(ctx.state, "picks", PICKS)
+    assert outcomes_by_name(ctx)["picks"] == (True, EMITTED)
+
+    later = ctx.next_turn()
+    stage_widget(later.state, "picks", PICKS)
+    suppress_widget(later.state, "picks")
+    assert outcomes_by_name(later)["picks"] == (False, SUPPRESSED)
+
+
 def test_empty_register_is_reported_not_rendered(ctx: StubContext) -> None:
     """Gate 4. Dirty but empty is a tool bug, and says so."""
     stage_widget(ctx.state, "picks", {})

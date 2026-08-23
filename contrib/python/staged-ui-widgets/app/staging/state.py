@@ -53,7 +53,8 @@ def stage_widget(state: State, name: str, payload: Mapping[str, Any]) -> None:
 
     Clears the emitted flag, because a new payload is new information: the
     shopper should see it even if an older payload for the same widget
-    already went out earlier in the conversation.
+    already went out earlier in the conversation. Clears the revived and
+    suppress flags too, for the reasons in the comments below.
     """
     spec = spec_for(name)
     state[spec.register_key] = dict(payload)
@@ -65,6 +66,14 @@ def stage_widget(state: State, name: str, payload: Mapping[str, Any]) -> None:
     # revived flag decides how the model is told to talk about the widget, and
     # new data deserves a full description.
     state[spec.revived_key] = False
+    # Same reason, for the veto: an earlier tool in this turn may have decided
+    # a carousel would be noise, and staging is a later, more specific decision
+    # that there is something worth seeing. Left set, it would veto the fresh
+    # payload and the flush would report ``suppressed for this turn`` for a
+    # widget the shopper did just get new data for. The last explicit decision
+    # wins -- suppressing *after* staging still suppresses, which is the order
+    # the no-op refresh in ``tools/picks.py`` uses.
+    state[spec.suppress_key] = False
 
 
 def revive_widget(state: State, name: str) -> bool:

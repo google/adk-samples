@@ -284,6 +284,36 @@ def test_comparison_cell_formatting() -> None:
     assert "cmp-item-1-flag" not in rendered
 
 
+def test_a_seven_figure_cell_is_not_scientific_notation() -> None:
+    """A spec number crossing a million must stay readable.
+
+    ``g`` defaults to six significant digits, which silently turns 1000000
+    into ``1e+06`` -- correct, and unreadable in a product comparison. Whole
+    floats must still lose their trailing zero, which is what ``g`` is for.
+    """
+    widget = render(
+        "product_comparison",
+        {
+            "attributes": ["Abrasion cycles", "Weight grams"],
+            "money_attributes": [],
+            "items": [
+                {
+                    "name": "Cirrus Trail 3",
+                    "values": {
+                        "Abrasion cycles": 1000000,
+                        "Weight grams": 278.0,
+                    },
+                }
+            ],
+        },
+    )
+    assert widget is not None
+    rendered = texts_of(widget)
+
+    assert rendered["cmp-item-0-value-0"] == "1,000,000"
+    assert rendered["cmp-item-0-value-1"] == "278"
+
+
 def test_timeline_icons_follow_step_state() -> None:
     """State picks the icon; an unknown state degrades instead of raising."""
     widget = render(

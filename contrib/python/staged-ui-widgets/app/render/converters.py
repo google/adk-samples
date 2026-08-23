@@ -379,7 +379,11 @@ def _cell_text(value: Any, *, as_money: bool = False) -> str:
     if isinstance(value, bool):
         return "Yes" if value else "No"
     if isinstance(value, (int, float)):
-        return money(value) if as_money else f"{value:,g}"
+        # Precision is pinned rather than left to ``g``'s default of 6, which
+        # renders a seven-figure number as ``1e+06`` in a product comparison.
+        # Ten significant digits keeps thousands separators and still drops the
+        # trailing zero on a whole float, which is what ``g`` was chosen for.
+        return money(value) if as_money else f"{value:,.10g}"
     return str(value)
 
 
