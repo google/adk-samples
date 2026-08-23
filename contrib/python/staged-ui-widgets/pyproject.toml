@@ -21,6 +21,14 @@ dev = [
     "pytest>=8.3.4",
 ]
 
+# Kept out of the runtime dependencies deliberately: the eval extra pulls the
+# judge-model stack, which nothing in `adk run` or the unit suite touches. It
+# is an extra rather than a dev group because `adk eval` is a user-facing
+# command -- without it declared somewhere installable, the CLI refuses with
+# "Eval module is not installed" and tests/eval cannot be run at all.
+[project.optional-dependencies]
+eval = ["google-adk[eval]>=2.6.0,<3.0.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

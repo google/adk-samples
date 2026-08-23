@@ -27,9 +27,11 @@ both callers import it. If it were duplicated, the drift would not show up as
 an exception -- it would show up as a reply pointing at a widget that never
 arrived, which is precisely the failure the whole recipe exists to avoid.
 
-The one asymmetry is deliberate and documented in ``blocking_reason``: the
-resolver runs before rendering, so it cannot know whether the converter will
-produce components. That gate can only fail at flush time.
+Two gates sit outside that symmetry, for two different reasons, and both are
+documented in ``blocking_reason``: the resolver runs before rendering, so it
+cannot know whether the converter will produce components, and a host's
+rejection is a verdict on a widget already handed over. Neither can fail
+before flush time.
 """
 
 from __future__ import annotations
@@ -60,9 +62,11 @@ def blocking_reason(
     that was never staged reads better as "not staged".
 
     Covers the four gates that are decidable from state alone. Two more can
-    only fail during the flush -- ``NOTHING_RENDERED`` and ``RENDER_FAILED``
-    both need the converter to have run -- so a ``None`` here means "nothing
-    in state stops this", not "this is guaranteed to ship".
+    only fail during the flush, for two different reasons:
+    ``NOTHING_RENDERED`` needs the converter to have run, and
+    ``RENDER_FAILED`` is the host's verdict on a widget already handed over.
+    So a ``None`` here means "nothing in state stops this", not "this is
+    guaranteed to ship".
     """
     if not is_dirty(state, spec):
         return NOT_STAGED

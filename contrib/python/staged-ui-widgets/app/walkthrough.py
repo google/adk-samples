@@ -16,17 +16,17 @@
     uv run python -m app.walkthrough
 
 Calls the tools in the order a conversation would, flushes after each turn,
-and prints what the client receives: the staging outcome per widget and the
-A2UI messages themselves. Everything below the model is exercised -- ranking,
-converters, the gates, the surface assembly -- because the only thing this
-script stands in for is the model's choice of tool.
+and prints what the client receives: the staging outcome per widget, and with
+``--a2ui`` the A2UI messages themselves. Everything below the model is
+exercised -- ranking, converters, the gates, the surface assembly -- because
+the only thing this script stands in for is the model's choice of tool.
 
 Useful for four things: reading real A2UI without setting up a host, seeing
-which gate held a widget back, watching turn 4 re-stage a carousel that no
-tool built this turn, and reading the presentation contract each turn resolves
-to -- turn 3 asks for an ``answer`` because a delivery timeline is a detail
-panel, and turn 6 drops to ``acknowledge`` because the shopper has seen that
-carousel already.
+which gate held a widget back, watching turn 4 re-stage a carousel without the
+model calling a pick tool, and reading the presentation contract each turn
+resolves to -- turn 3 asks for an ``answer`` because a delivery timeline is a
+detail panel, and turn 6 drops to ``acknowledge`` because the shopper has seen
+that carousel already.
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ TURNS: list[Turn] = [
     ),
     (
         "actually I only buy Fellstone now",
-        # No pick tool this turn -- yet the carousel refreshes.
+        # The model calls no pick tool this turn -- yet the carousel refreshes.
         lambda ctx: update_shopper_preference(
             "favorite_brands", "Fellstone", ctx
         ),
@@ -133,7 +133,7 @@ TURNS: list[Turn] = [
         "bring those shoe cards back up",
         # Nothing is computed here. The register still holds the carousel that
         # turn 4 staged -- turn 5 re-ranked and wrote the same bytes -- and
-        # reviving it flips three flags.
+        # reviving it flips four flags.
         lambda ctx: show_again("those shoe cards", ctx),
     ),
     (

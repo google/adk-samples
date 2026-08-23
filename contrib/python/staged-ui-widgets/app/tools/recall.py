@@ -14,10 +14,10 @@
 """ "Bring those back up" -- re-showing a widget without rebuilding it.
 
 The tool with no inline equivalent whatsoever. Every other tool here computes
-something and stages the result; this one computes nothing. It flips three
-flags -- dirty and emitted for the flush, revived for the contract resolver --
-and the flush re-emits a payload that has been sitting in session state for
-however many turns.
+something and stages the result; this one computes nothing. It flips four
+flags -- dirty, emitted and suppress for the flush, revived for the contract
+resolver -- and the flush re-emits a payload that has been sitting in session
+state for however many turns.
 
 Worth having as a real tool rather than a framework demo, because the
 alternative is a product bug. Without it, "show me those shoes again" is

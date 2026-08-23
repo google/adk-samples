@@ -12,7 +12,7 @@ description: >-
   converts and emits them. That split buys deterministic emission order,
   duplicate-id safety across parallel tool calls, and a widget lifecycle
   independent of tool calls: re-showing or re-ranking a widget in a turn where
-  the tool that built it never ran.
+  the model never calls the tool that built it.
 
 architecture:
   agent: "single"
