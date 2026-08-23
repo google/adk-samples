@@ -89,10 +89,19 @@ __all__ = [
 ]
 
 # The ``UiWidget.provider`` value. ADK treats provider as an opaque routing
-# key -- it ships a renderer for 'mcp' and nothing for A2UI -- so this string
-# is a contract between this agent and whatever host renders its surfaces.
-# The test suite validates the payload against the published A2UI schema,
-# which is the part a host actually depends on.
+# key: ``events/ui_widget.py`` documents 'mcp' as the one known value and
+# defines no A2UI renderer on this channel, so this string is a contract
+# between this agent and whatever host renders its surfaces. The test suite
+# validates the payload against the published A2UI schema, which is the part
+# a host actually depends on.
+#
+# Worth knowing before reaching for ``adk web``: its bundled UI *does* ship a
+# full A2UI renderer (``a2ui-surface``, ``a2ui-card`` and the rest), but it
+# feeds that renderer from ``<a2ui-json>`` blocks found in model text and
+# from content parts carrying an ``a2ui`` field. It reads
+# ``actions.render_ui_widgets`` nowhere, for any provider. So the agent runs
+# fine under ``adk web`` and every widget stays invisible there -- see the
+# README's Requirements note.
 WIDGET_PROVIDER = "a2ui"
 
 # A spec names its converter with a bare string, and ``resolve_converter``

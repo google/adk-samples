@@ -223,6 +223,16 @@ per-invocation, so a stale flag cannot emit a widget nobody asked for next turn
 - To *see* the widgets rendered, an A2UI-capable host. Everything else —
   including the walkthrough and the full test suite — runs without one.
 
+> **`adk web` is not that host, and it is the first thing worth knowing.**
+> `uv run adk web` from this directory starts and serves the agent correctly —
+> tools run, replies arrive, the contract is applied. No widget appears. Its
+> bundled UI ships a complete A2UI renderer, but feeds it from `<a2ui-json>`
+> blocks in model text and from content parts carrying an `a2ui` field; it
+> reads `actions.render_ui_widgets` nowhere, for any `provider`. Nothing is
+> misconfigured, and nothing will log a warning. To watch the delivery
+> mechanism itself, use the walkthrough below — it prints every widget, gate,
+> and contract without a model or a host.
+
 ## Setup
 
 > All commands run from the recipe root (`contrib/python/staged-ui-widgets/`).
