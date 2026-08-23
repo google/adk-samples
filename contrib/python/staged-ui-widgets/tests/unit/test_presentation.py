@@ -175,6 +175,23 @@ def test_every_contract_is_reachable(ctx: StubContext) -> None:
     assert reachable == set(PresentationContract)
 
 
+# The phrase that makes each block the one it is. Asserting the wrapper tags
+# alone would pass with all three contracts returning the same text, which
+# would collapse the whole point of this module -- three widgets, three reply
+# shapes -- without failing anything.
+_DISTINGUISHING_PHRASE: dict[PresentationContract, str] = {
+    PresentationContract.SYNTHESIS: (
+        "at most three things the visual cannot say"
+    ),
+    PresentationContract.ANSWER: (
+        "Answer the question directly in a sentence or"
+    ),
+    PresentationContract.ACKNOWLEDGE: (
+        "One short sentence confirming it is back"
+    ),
+}
+
+
 @pytest.mark.parametrize("contract", list(PresentationContract))
 def test_every_contract_has_an_instruction(
     contract: PresentationContract,
@@ -182,6 +199,26 @@ def test_every_contract_has_an_instruction(
     block = instruction_for(contract)
     assert block.startswith("<presentation_contract>")
     assert block.endswith("</presentation_contract>")
+    assert _DISTINGUISHING_PHRASE[contract] in block
+
+
+def test_no_two_contracts_share_an_instruction() -> None:
+    """Three contracts, three different instructions.
+
+    The parametrized test above pins each block's own phrase; this pins the
+    other half, that no block is a copy of another. Together they fail if
+    ``instruction_for`` ever returns one shared block for every contract --
+    which is the regression that costs the module its reason to exist while
+    leaving every mapping test green.
+    """
+    blocks = [instruction_for(contract) for contract in PresentationContract]
+
+    assert len(set(blocks)) == len(PresentationContract)
+    # And each phrase belongs to exactly one block, so the three are not merely
+    # distinct by some incidental byte.
+    for contract, phrase in _DISTINGUISHING_PHRASE.items():
+        owners = [b for b in blocks if phrase in b]
+        assert owners == [instruction_for(contract)]
 
 
 def test_precedence_is_total_over_the_roles() -> None:
@@ -318,7 +355,17 @@ def test_the_contract_lands_at_the_tail_of_the_instruction(
     instruction = request.config.system_instruction
     assert isinstance(instruction, str)
     assert instruction.startswith("Be a shopping assistant.")
-    assert instruction.endswith(instruction_for(PresentationContract.SYNTHESIS))
+    # Pinned to the block's own text rather than to ``instruction_for(...)``,
+    # which is the function the callback itself calls: comparing the two would
+    # agree with each other whatever that function returned, including a block
+    # for the wrong contract.
+    assert instruction.rstrip().endswith("</presentation_contract>")
+    tail = instruction[len("Be a shopping assistant.") :]
+    assert _DISTINGUISHING_PHRASE[PresentationContract.SYNTHESIS] in tail
+    # A carousel is data-primary, so the acknowledge block must not be what
+    # landed -- the failure this test is really guarding against is the right
+    # position with the wrong contract.
+    assert _DISTINGUISHING_PHRASE[PresentationContract.ACKNOWLEDGE] not in tail
 
 
 def test_a_second_model_call_does_not_duplicate_the_block(
@@ -369,6 +416,32 @@ def test_an_empty_reply_beside_a_live_widget_gets_a_companion(
     assert altered.content is not None
     assert altered.content.parts is not None
     assert altered.content.parts[0].text == spec_for("picks").default_companion
+
+
+def test_two_live_widgets_are_both_captioned(ctx: StubContext) -> None:
+    """The floor covers every widget shipping, not just the first one.
+
+    ``ensure_widget_companion`` joins one companion per live spec, so a turn
+    that stages a carousel and a chart must not caption only one of them --
+    the shopper would be left with an uncaptioned visual, which is the exact
+    outcome the floor exists to rule out. Joined in ``WIDGET_SPECS`` order,
+    the same order the flush emits in, so the words and the widgets agree.
+    """
+    stage_widget(ctx.state, "picks", PICKS)
+    stage_widget(ctx.state, "spend", SPEND)
+
+    altered = ensure_widget_companion(ctx, reply(""))  # type: ignore[arg-type]
+
+    assert altered is not None
+    assert altered.content is not None
+    assert altered.content.parts is not None
+    text = altered.content.parts[0].text
+    assert text == " ".join(
+        (
+            spec_for("picks").default_companion,
+            spec_for("spend").default_companion,
+        )
+    )
 
 
 def test_a_reply_with_text_is_left_alone(ctx: StubContext) -> None:

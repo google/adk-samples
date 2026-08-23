@@ -190,7 +190,11 @@ def test_the_schema_check_has_teeth() -> None:
     bogus_icon = Surface("sfc", catalog_id())
     bogus_icon.add({"id": "a", "component": "Icon", "name": "notARealIcon"})
     bogus_icon.add(column(ROOT_ID, children=["a"]))
-    with pytest.raises(ValueError):
+    # Matched on the bad name, not on bare ``ValueError``: this payload draws
+    # two complaints from the validator, and only one of them is the icon
+    # catalogue doing its job. Without the match, a bump that stopped checking
+    # icon names would still raise on the other and the test would pass.
+    with pytest.raises(ValueError, match="notARealIcon"):
         validator().validate(bogus_icon.messages())
 
 
@@ -358,8 +362,16 @@ def test_duplicate_component_ids_are_caught() -> None:
             column(ROOT_ID, children=["dup"]),
         ]
 
+    # A real payload, not ``{}``: the genuine product_picks converter returns
+    # nothing for an empty payload, so with ``{}`` this assertion would also
+    # hold on a build that ignored the override entirely and never ran
+    # ``duplicating`` at all.
     assert (
-        render("product_picks", {}, overrides={"product_picks": duplicating})
+        render(
+            "product_picks",
+            PICKS_PAYLOAD,
+            overrides={"product_picks": duplicating},
+        )
         is None
     )
 
@@ -410,6 +422,14 @@ def test_overrides_layer_over_the_shared_table() -> None:
         "spend_trend", SPEND_PAYLOAD, overrides={"product_picks": minimal}
     )
     assert untouched is not None
+    # ``is not None`` alone cannot see the regression this test exists for.
+    # An override table that *replaced* the shared one instead of layering over
+    # it would send spend_trend through the generic fallback, which also
+    # returns a widget -- a real chart silently degrading to a plain card. So
+    # assert it is still the chart: none of the generic card's ids, and
+    # identical to the render with no overrides in play at all.
+    assert "generic-title" not in [c["id"] for c in components_of(untouched)]
+    assert untouched == render("spend_trend", SPEND_PAYLOAD)
 
 
 def test_surface_rejects_a_duplicate_id_at_add_time() -> None:
