@@ -6,11 +6,17 @@ next to its reply.
 
 The interesting part is not that it renders widgets. ADK will let a tool call
 `render_ui_widget` the moment it has something to show, and for a single widget
-that is the right amount of machinery. This recipe is about what happens after
-that: a second widget, a parallel tool call, a shopper who says "bring those
-back up" three turns later. Each of those breaks inline rendering in a way that
-does not raise an exception, and the fix is the same each time — separate
-*deciding what to show* from *sending it*.
+that is the right amount of machinery. This recipe is about the turn where that
+stops being enough: a shopper who says "bring those back up" three turns later,
+a refresh that turns out to change nothing, two tool calls that both want the
+same widget id. Inline rendering has no answer to the first, no way to take back
+the second, and silently ships a duplicate for the third — none of them raising
+an exception. The fix is the same each time — separate *deciding what to show*
+from *sending it*.
+
+Worth being precise about what is *not* broken, since it is the obvious guess:
+two tools rendering two different widgets inline both arrive. Only the order
+follows the model's tool calls.
 
 So no tool here renders. Every tool writes a payload into session state and
 returns a short summary; one `after_agent_callback` at the end of the turn
@@ -44,12 +50,14 @@ model happened to call the tools. The flush walks a declared tuple
 carousel and a chart always emits them in the same sequence. Verified live: a
 model that called the spend tool first still got `['ui-picks', 'ui-spend']`.
 
-**Duplicate-id safety under parallel tool calls.** `render_ui_widget` rejects a
+**Duplicate-id safety across tool calls.** `render_ui_widget` rejects a
 duplicate widget id, but each function call gets its own `ToolContext`
 (`flows/llm_flows/functions.py:1228`), so the check only ever sees one call's
-widgets — and `merge_parallel_function_response_events` concatenates the two
-lists into one without re-checking ids. Flushing once, from one context, is
-where that check actually bites.
+widgets. Verified live: two tools rendering the same id ship it twice whether
+the model calls them sequentially or in parallel — and in the parallel case
+`merge_parallel_function_response_events` concatenates the two lists into one
+without re-checking ids. Flushing once, from one context, is where that check
+actually bites.
 
 **An answer to "why is my widget missing".** The flush returns one outcome per
 declared widget, emitted or not, with the gate that stopped it: `not staged
@@ -143,14 +151,21 @@ strings — and the `presentation_role` field is required, with no default, so a
 new widget cannot be added without someone deciding how the model should talk
 about it.
 
-**The contract cannot promise a widget that isn't shipping.** This is the one
-worth dwelling on. The resolver and the flush both call
+**The contract cannot promise a widget that state says isn't shipping.** This is
+the one worth dwelling on. The resolver and the flush both call
 [app/staging/gates.py](app/staging/gates.py) — the same predicate, not two
 copies — so a suppressed widget produces no contract. Walkthrough turn 5 is that
 case: the re-rank comes out identical, the carousel is held back, and the
 contract line prints `none`. With the gates duplicated, drift would not raise
 anything; it would ship a reply saying "the cards above are updated" beside
 cards that never moved.
+
+One asymmetry survives, and `gates.py` documents it rather than hiding it: the
+resolver runs before the converters, so it cannot know that a payload will
+render to zero components. Staging an empty payload is the one case where the
+contract can still outrun the flush — the gate that catches it, `converter
+produced no components`, can only fail after the model has spoken. The reply
+floor below is what keeps that from reading as a bug.
 
 The instruction is appended at the *tail* of the system instruction from
 `before_model_callback`, which is where a model weights output-shaping

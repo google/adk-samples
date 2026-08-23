@@ -275,9 +275,10 @@ def restage_picks(tool_context: ToolContext) -> PicksRefresh:
 
     Called after a preference change. This is the interaction inline
     rendering cannot express: ``update_shopper_preference`` refreshes a
-    widget that ``get_personalized_picks`` produced, in a turn where the
-    ranking tool is not called at all. The staged query makes it free -- the
-    shopper does not repeat themselves.
+    widget that ``get_personalized_picks`` produced, in a turn where the model
+    never calls the ranking tool. The ranking itself does re-run -- this
+    helper calls it below -- but the shopper never asked for it and never
+    repeats their query, because the query was staged alongside the payload.
 
     A re-rank that changes nothing is suppressed rather than sent. Republishing
     a byte-identical carousel costs a message and, worse, invites the agent to
