@@ -37,7 +37,7 @@ from ..profile import load_profile
 from ..ranking import rank_products
 from ..render.placeholder_svg import product_tile_uri
 from ..staging import clear_staged, spec_for, stage_widget, suppress_widget
-from ..staging.state import register_payload
+from ..staging.state import is_suppressed, register_payload, was_emitted
 
 # How many cards fit a carousel before it stops being scannable.
 _MAX_PICKS = 3
@@ -261,13 +261,25 @@ def compare_picks(
 
 @dataclass(frozen=True)
 class PicksRefresh:
-    """What a re-rank did to the carousel already on screen."""
+    """What a re-rank did to the staged pick carousel."""
 
     cards: int
     """Cards in the carousel after re-ranking. ``0`` if there is none."""
 
     changed: bool
-    """Whether the shopper will see any difference."""
+    """Whether the shopper will see any difference from the re-rank."""
+
+    suppressed: bool
+    """Whether the carousel was held back as a byte-identical resend.
+
+    Not the inverse of ``changed``, and the gap between the two is the case
+    that matters: a re-rank can come out identical and still ship, when the
+    carousel was staged earlier in this same turn and the shopper has not
+    seen it yet. The caller needs that difference, because "nothing
+    changed" is the wrong thing to say beside a carousel arriving for the
+    first time -- and because keying the reported widget off ``changed``
+    alone announces no widget in a turn where one goes out.
+    """
 
 
 def restage_picks(tool_context: ToolContext) -> PicksRefresh:
@@ -280,15 +292,37 @@ def restage_picks(tool_context: ToolContext) -> PicksRefresh:
     helper calls it below -- but the shopper never asked for it and never
     repeats their query, because the query was staged alongside the payload.
 
-    A re-rank that changes nothing is suppressed rather than sent. Republishing
-    a byte-identical carousel costs a message and, worse, invites the agent to
-    announce an update the shopper cannot see -- which is the same failure as
-    describing a widget that never shipped, in the other direction.
+    A re-rank that changes nothing is suppressed rather than sent -- but only
+    when the shopper has already seen the carousel. Republishing a
+    byte-identical widget costs a message and, worse, invites the agent to
+    announce an update the shopper cannot see, which is the same failure as
+    describing a widget that never shipped, in the other direction. When the
+    carousel was staged earlier in *this* turn and has not gone out yet there
+    is nothing to republish, and suppressing would not spare a resend, it
+    would delete the only send: a shopper opening with "I need trail shoes,
+    and I'm an XL" would get the confirmation and no cards at all.
     """
     spec = spec_for("picks")
     before = register_payload(tool_context.state, spec)
+    # Sampled here, not next to the comparison below, because the re-rank calls
+    # ``stage_widget``, which clears both of these flags. Read afterwards this
+    # would say "never shipped" for every carousel, including one the shopper
+    # has been looking at for three turns.
+    #
+    # The suppress flag is the second half because ``emitted`` is cleared by
+    # that same re-rank and this function can run twice in a turn -- two
+    # preference writes in one breath ("I'm an XL and I avoid asbestos"). The
+    # first call suppresses and re-stages; a second reading ``emitted`` alone
+    # then concludes the carousel was never seen and republishes it
+    # byte-identical, which is the failure this whole branch exists to prevent.
+    # Consulting the flag cannot resurrect that failure in the other direction,
+    # because the flag is only ever set below, on the turn's first call, and
+    # only when this same test already passed.
+    on_screen = was_emitted(tool_context.state, spec) or is_suppressed(
+        tool_context.state, spec
+    )
     if not before.get("items"):
-        return PicksRefresh(cards=0, changed=False)
+        return PicksRefresh(cards=0, changed=False, suppressed=False)
 
     query = str(before.get("query", ""))
     result = get_personalized_picks(query, tool_context)
@@ -298,17 +332,18 @@ def restage_picks(tool_context: ToolContext) -> PicksRefresh:
         # it rather than leaving a carousel in the register that a later
         # revive would resurrect against a profile it no longer matches.
         clear_staged(tool_context.state, "picks")
-        return PicksRefresh(cards=0, changed=False)
+        return PicksRefresh(cards=0, changed=False, suppressed=False)
 
     after = register_payload(tool_context.state, spec)
     if after == before:
         # Compared whole, not by id order: a changed price ceiling can leave
         # the ranking alone and still rewrite every reason chip, and that is
         # a difference worth showing.
-        suppress_widget(tool_context.state, "picks")
-        return PicksRefresh(cards=count, changed=False)
+        if on_screen:
+            suppress_widget(tool_context.state, "picks")
+        return PicksRefresh(cards=count, changed=False, suppressed=on_screen)
 
-    return PicksRefresh(cards=count, changed=True)
+    return PicksRefresh(cards=count, changed=True, suppressed=False)
 
 
 def _candidates(

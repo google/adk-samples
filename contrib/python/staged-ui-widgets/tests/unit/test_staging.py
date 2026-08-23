@@ -138,6 +138,25 @@ def test_the_last_decision_wins_between_staging_and_suppressing(
     assert outcomes_by_name(later)["picks"] == (False, SUPPRESSED)
 
 
+def test_reviving_also_beats_an_earlier_suppression(ctx: StubContext) -> None:
+    """The same rule, for the other way a widget goes live.
+
+    Staging and reviving are the two writers, and a rule applied to one of
+    them is a rule that holds half the time. Here the suppression is the
+    stale decision and the revival is the shopper explicitly asking to see
+    the carousel again, so the revival wins -- otherwise "bring those back
+    up" is answered with ``suppressed for this turn`` and no widget.
+    """
+    stage_widget(ctx.state, "picks", PICKS)
+    emit_staged_widgets(ctx)
+
+    later = ctx.next_turn()
+    suppress_widget(later.state, "picks")
+    assert revive_widget(later.state, "picks") is True
+    assert outcomes_by_name(later)["picks"] == (True, EMITTED)
+    assert later.widget_ids == ["ui-picks"]
+
+
 def test_empty_register_is_reported_not_rendered(ctx: StubContext) -> None:
     """Gate 4. Dirty but empty is a tool bug, and says so."""
     stage_widget(ctx.state, "picks", {})

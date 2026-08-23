@@ -35,11 +35,18 @@ import pytest
 import app.tools as tools_package
 from app import store
 from app.catalog import catalog_id, validator
+from app.presentation import PresentationContract
 from app.profile import PROFILE_KEY, load_profile, update_preference
 from app.render.converters import money
 from app.render.registry import build_widget
-from app.staging import spec_for
-from app.staging.state import is_dirty, is_suppressed, register_payload
+from app.staging import resolve_contract, spec_for
+from app.staging.gates import blocking_reason
+from app.staging.state import (
+    is_dirty,
+    is_suppressed,
+    mark_emitted,
+    register_payload,
+)
 from app.tools import (
     ALL_TOOLS,
     compare_picks,
@@ -458,9 +465,10 @@ def test_a_preference_change_refreshes_the_cards_on_screen(
 ) -> None:
     """The interaction that inline rendering cannot express.
 
-    ``get_personalized_picks`` is not called this turn, yet its widget is
-    re-ranked and re-staged -- because the payload and the original query are
-    in session state.
+    The model does not call ``get_personalized_picks`` this turn, yet its
+    widget is re-ranked and re-staged -- because the payload and the original
+    query are in session state, so the preference tool can run the ranking
+    itself without the shopper repeating anything.
     """
     get_personalized_picks("shoes", ctx)
     before = [i["id"] for i in staged(ctx, "picks")["items"]]
@@ -485,18 +493,132 @@ def test_a_change_that_reranks_nothing_leaves_the_carousel_alone(
     announce an update the shopper cannot see.
     """
     get_personalized_picks("trail shoes", ctx)
-    before = staged(ctx, "picks")
-    stored_size = load_profile(ctx.state)["shoe_size"]
+    mark_emitted(ctx.state, spec_for("picks"))
+    # A later turn, because "already on screen" is the whole premise: the
+    # carousel has to have gone out for resending it to be the waste this
+    # test is about. The register survives the turn boundary; the temp flags
+    # do not, which is what makes the suppression below this turn's decision.
+    later = ctx.next_turn()
+    before = staged(later, "picks")
+    stored_size = load_profile(later.state)["shoe_size"]
 
-    result = update_shopper_preference("shoe_size", stored_size, ctx)
+    result = update_shopper_preference("shoe_size", stored_size, later)
 
     assert result["status"] == "ok"
     assert result["widget"] is None
     assert result["picks_refreshed"] == 0
     assert "unchanged" in result["summary"]
     # The payload stays put; only this turn's emission is vetoed.
-    assert staged(ctx, "picks") == before
-    assert is_suppressed(ctx.state, spec_for("picks"))
+    assert staged(later, "picks") == before
+    assert is_suppressed(later.state, spec_for("picks"))
+
+
+def test_a_change_in_the_turn_that_built_the_carousel_still_ships_it(
+    ctx: StubContext,
+) -> None:
+    """The mirror case, where a veto would delete the only send.
+
+    "I need trail shoes, and I'm an XL" is one turn and two tools. The size
+    changes no ranking, so the re-rank comes out identical -- but the
+    carousel has not gone out yet, so suppressing it spares the shopper
+    nothing and costs them every card. Asserted through ``blocking_reason``
+    rather than just the flag, because what matters is that the flush would
+    still ship it.
+
+    The result the model reads is asserted alongside the state, because
+    getting one right is not getting the other right: this shipped a
+    carousel while telling the model no widget arrived and that the cards
+    were "already on screen" -- unseen cards, described as unchanged, in the
+    same turn the contract was asking for a reply written around them.
+    """
+    get_personalized_picks("trail shoes", ctx)
+    before = staged(ctx, "picks")
+
+    result = update_shopper_preference("apparel_size", "XL", ctx)
+
+    assert result["status"] == "ok"
+    assert staged(ctx, "picks") == before, "the re-rank must come out identical"
+    assert not is_suppressed(ctx.state, spec_for("picks"))
+    assert blocking_reason(ctx.state, spec_for("picks")) is None
+    rendered(ctx, "picks")
+
+    # What the model is told, against what the turn actually does.
+    assert result["widget"] == "picks", "a carousel ships this turn"
+    assert "already on screen" not in result["summary"]
+    assert resolve_contract(ctx.state) is PresentationContract.SYNTHESIS
+
+
+def test_two_no_op_changes_in_one_turn_still_suppress_the_resend(
+    ctx: StubContext,
+) -> None:
+    """One turn, two preference writes -- the suppression must survive both.
+
+    "I'm an XL and I avoid asbestos" is ordinary phrasing, and neither field
+    can move a trail-shoe ranking. The trap is that the emitted flag is
+    per-turn state and the first call's re-rank clears it: read again, it says
+    the carousel was never seen, and the second call republishes byte-identical
+    cards the shopper has been looking at since last turn. Suppression that
+    holds for one call and not two is not suppression.
+
+    Both results are asserted, not just the last, because the failure showed
+    up as two tool results describing the same carousel in opposite terms in
+    the same turn -- one saying it was unchanged and on screen, the next saying
+    it was arriving with this reply.
+    """
+    get_personalized_picks("trail shoes", ctx)
+    mark_emitted(ctx.state, spec_for("picks"))
+    later = ctx.next_turn()
+    before = staged(later, "picks")
+
+    first = update_shopper_preference("apparel_size", "XL", later)
+    second = update_shopper_preference("avoid_materials", "asbestos", later)
+
+    assert staged(later, "picks") == before, "neither field re-ranks these"
+    assert is_suppressed(later.state, spec_for("picks"))
+    assert blocking_reason(later.state, spec_for("picks")) == (
+        "suppressed for this turn"
+    )
+    assert resolve_contract(later.state) is None
+    for result in (first, second):
+        assert result["status"] == "ok"
+        assert result["widget"] is None, "nothing ships, so nothing is claimed"
+        assert "unchanged" in result["summary"]
+
+
+def test_a_real_rerank_then_a_no_op_change_still_ships_the_carousel(
+    ctx: StubContext,
+) -> None:
+    """The same turn shape, but the first change genuinely re-ranks.
+
+    Here the carousel *must* go out: it no longer matches what the shopper is
+    looking at. This is the case that rules out simply remembering the emitted
+    flag from the start of the turn -- that reading suppresses on the second
+    call and ships nothing, losing a re-rank the shopper asked for.
+
+    The second summary is asserted for what it must *not* say. It cannot tell
+    that an earlier call re-ranked these cards, so it states only that the
+    arriving cards reflect the change; telling the model not to call them an
+    update would contradict the first result in the same turn.
+    """
+    get_personalized_picks("trail shoes", ctx)
+    mark_emitted(ctx.state, spec_for("picks"))
+    later = ctx.next_turn()
+    on_screen = staged(later, "picks")
+
+    first = update_shopper_preference("favorite_brands", "Fellstone", later)
+    second = update_shopper_preference("avoid_materials", "asbestos", later)
+
+    assert staged(later, "picks") != on_screen, "the brand must re-rank these"
+    assert not is_suppressed(later.state, spec_for("picks"))
+    assert blocking_reason(later.state, spec_for("picks")) is None
+    assert resolve_contract(later.state) is PresentationContract.SYNTHESIS
+    rendered(later, "picks")
+
+    assert first["widget"] == "picks"
+    assert first["picks_refreshed"] > 0
+    assert second["widget"] == "picks", "the carousel still ships"
+    assert "unchanged" not in second["summary"]
+    assert "not call them an update" not in second["summary"]
 
 
 def test_a_preference_change_with_nothing_on_screen_is_still_stored(

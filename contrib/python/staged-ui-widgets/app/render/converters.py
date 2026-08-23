@@ -227,7 +227,7 @@ def comparison_to_a2ui(
 def order_timeline_to_a2ui(
     payload: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    """A fulfilment timeline.
+    """A fulfillment timeline.
 
     Step order carries meaning, so it comes straight from the payload. A
     model asked to narrate a timeline can reorder or invent stages; this
@@ -379,11 +379,21 @@ def _cell_text(value: Any, *, as_money: bool = False) -> str:
     if isinstance(value, bool):
         return "Yes" if value else "No"
     if isinstance(value, (int, float)):
-        # Precision is pinned rather than left to ``g``'s default of 6, which
-        # renders a seven-figure number as ``1e+06`` in a product comparison.
-        # Ten significant digits keeps thousands separators and still drops the
-        # trailing zero on a whole float, which is what ``g`` was chosen for.
-        return money(value) if as_money else f"{value:,.10g}"
+        if as_money:
+            return money(value)
+        # ``g`` earns its place by dropping the trailing zero on a whole float
+        # (278.0 -> "278"), but its exponent form makes a large spec number
+        # unreadable in a product comparison: at ``g``'s default of six
+        # significant digits 1000000 rendered as ``1e+06``, and raising the
+        # precision only moves that cliff further out. So whole values format
+        # exactly at any magnitude, and ``g`` is left the one job it is good
+        # at. Integers go through ``,`` rather than ``,.0f`` because ``f``
+        # routes through a float and overflows on a big enough int.
+        if isinstance(value, int):
+            return f"{value:,}"
+        if value.is_integer():
+            return f"{value:,.0f}"
+        return f"{value:,.10g}"
     return str(value)
 
 

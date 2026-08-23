@@ -92,6 +92,12 @@ def revive_widget(state: State, name: str) -> bool:
         return False
     state[spec.dirty_key] = True
     state[spec.emitted_key] = False
+    # Cleared for the same reason ``stage_widget`` clears it: the shopper
+    # asking to see something again is a later and more specific decision
+    # than an earlier tool's judgement that it would be noise. Left set, the
+    # flush would answer "bring those back up" with ``suppressed for this
+    # turn`` and no carousel.
+    state[spec.suppress_key] = False
     # Otherwise a revival and a fresh staging leave identical state, and the
     # model would describe the widget from scratch a second time. Read by the
     # contract resolver, not by the flush -- both paths emit the same way.

@@ -40,7 +40,7 @@ from app.render.components import (
     references,
     text,
 )
-from app.render.converters import money
+from app.render.converters import _cell_text, money
 from app.render.placeholder_svg import product_tile_uri, tile_color
 from app.render.registry import (
     CONVERTERS,
@@ -284,23 +284,34 @@ def test_comparison_cell_formatting() -> None:
     assert "cmp-item-1-flag" not in rendered
 
 
-def test_a_seven_figure_cell_is_not_scientific_notation() -> None:
-    """A spec number crossing a million must stay readable.
+def test_a_large_whole_cell_is_never_scientific_notation() -> None:
+    """A big whole spec number must stay readable at any magnitude.
 
     ``g`` defaults to six significant digits, which silently turns 1000000
-    into ``1e+06`` -- correct, and unreadable in a product comparison. Whole
-    floats must still lose their trailing zero, which is what ``g`` is for.
+    into ``1e+06`` -- correct, and unreadable in a product comparison. The
+    trap in the obvious fix is that raising the precision only *moves* the
+    cliff, so this pins an int past any precision worth naming as well as the
+    seven-figure one. Whole floats must still lose their trailing zero, which
+    is the only reason ``g`` is in this function.
+
+    Scoped to whole values, as the converter's own comment is: a *fractional*
+    float above ``,.10g``'s cliff still renders as an exponent. No comparison
+    cell this recipe can produce is one -- every numeric attribute in
+    ``products.json`` is a whole price -- so closing that too would be
+    speculative formatting nobody can reach. Naming the test for what it
+    actually pins is the point of the round that added it.
     """
     widget = render(
         "product_comparison",
         {
-            "attributes": ["Abrasion cycles", "Weight grams"],
+            "attributes": ["Abrasion cycles", "Fibre metres", "Weight grams"],
             "money_attributes": [],
             "items": [
                 {
                     "name": "Cirrus Trail 3",
                     "values": {
                         "Abrasion cycles": 1000000,
+                        "Fibre metres": 12345678901,
                         "Weight grams": 278.0,
                     },
                 }
@@ -311,7 +322,24 @@ def test_a_seven_figure_cell_is_not_scientific_notation() -> None:
     rendered = texts_of(widget)
 
     assert rendered["cmp-item-0-value-0"] == "1,000,000"
-    assert rendered["cmp-item-0-value-1"] == "278"
+    assert rendered["cmp-item-0-value-1"] == "12,345,678,901"
+    assert rendered["cmp-item-0-value-2"] == "278"
+
+
+def test_cell_precision_survives_a_whole_float_and_a_fractional_one() -> None:
+    """The two float shapes ``g`` was kept for, at both ends of the scale.
+
+    A whole float loses its zero however large it is; a fractional one keeps
+    its digits. Asserted directly on ``_cell_text`` because a comparison
+    payload cannot show the boundary as clearly.
+    """
+    assert _cell_text(278.0) == "278"
+    assert _cell_text(1e11) == "100,000,000,000"
+    assert _cell_text(132.55) == "132.55"
+    assert _cell_text(9.8) == "9.8"
+    # Not a number, not a crash: the cell falls through to ``str``.
+    assert _cell_text("11.2 oz") == "11.2 oz"
+    assert _cell_text(None) == "—"
 
 
 def test_timeline_icons_follow_step_state() -> None:
