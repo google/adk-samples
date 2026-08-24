@@ -1,0 +1,7 @@
+type: standalone
+status: active
+language: java
+description: Time series forecasting agent using ADK for Java.
+ownership:
+  team: ADK Samples Team
+  poc: happyhuman
