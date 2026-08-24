@@ -2,7 +2,7 @@
 name: retail-virtual-tryon
 description: >-
   Creates virtual try-on agents supporting image and video (catwalk animation) try-ons
-  on Google Cloud (Vertex AI Gemini image models and Veo). Handles resource setup,
+  on Google Cloud (Gemini image models and Veo on Gemini Enterprise Agent Platform). Handles resource setup,
   user photo uploading, image/video generation pipelines, local testing, and evaluation.
 metadata:
   author: Google
@@ -306,7 +306,7 @@ To test the VTO skill interactively with your own catalog of product images, lau
 ## Completion Checklist
 
 - [ ] GCP project ID and try-on mode configured.
-- [ ] GCP resources provisioned and verified (Buckets, Vertex AI APIs).
+- [ ] GCP resources provisioned and verified (Buckets, Gemini Enterprise Agent Platform APIs).
 - [ ] Sample catalog generated.
 - [ ] Smoke tests for image try-on succeed.
 - [ ] Catwalk video generation using Veo verified.
