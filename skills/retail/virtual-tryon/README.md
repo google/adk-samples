@@ -72,8 +72,9 @@ uv run python scripts/setup_tryon.py --project-id $PROJECT --model pro
 The sandbox is a FastAPI app, so it deploys to Cloud Run as a container.
 `scripts/export_app.py` generates a standalone codebase — it copies the
 backend modules and UI assets, rewrites the `scripts.*` imports for a flat
-layout, and renders `Dockerfile`, `requirements.txt`, `cloudbuild.yaml` and
-`deploy_cloudrun.sh` with your project values baked in.
+layout, renders `Dockerfile`, `cloudbuild.yaml` and `deploy_cloudrun.sh`
+with your project values baked in, and generates the container's
+`requirements.txt` from the `serving` extra in `pyproject.toml`.
 
 Through the agent, this is Q-MODE option 2 ("Export Web App & GCS Catalog
 Sync"). Directly:
