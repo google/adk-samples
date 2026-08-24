@@ -194,8 +194,8 @@ List `files_written` and the checks that moved to `fixed`.
 
 ### Step 5 — Follow-ups (you run these)
 
-The script changes dependencies, so the lockfile is stale and the new files
-are unformatted. In order:
+When the script changes dependencies the lockfile goes stale, and the new
+files are unformatted. In order:
 
 ```bash
 cd <RECIPE_DIR> && uv lock --python 3.11
@@ -204,10 +204,23 @@ cd <RECIPE_DIR> && uv lock --python 3.11
 `--python 3.11` because CI pins it — locking with a newer local interpreter
 produces a lockfile CI rejects with a misleading "out of date" error.
 
-**Check the report's todos before running it.** If `adk-locked-version` came
-back `report_only`, the recipe is pinned below the ADK floor and the command
-above is a **no-op** — uv keeps any locked version that still satisfies the
-declared specifier. The report will hand you this instead:
+**Run the lock command the report's todos actually give you**, and if they
+give you none, skip it. The report picks between three states rather than
+always asking for a re-lock:
+
+| Report todo | State | What to run |
+|---|---|---|
+| `uv lock --upgrade-package google-adk --python 3.11` | Pinned below the ADK floor | That command — a plain `uv lock` here is a **no-op** |
+| `uv lock --python 3.11` | This run changed dependencies, or uv says the lockfile is out of date | A plain re-lock |
+| *no lock todo* | Nothing changed and `uv lock --check` passes | Nothing — re-locking would only churn `uv.lock` |
+
+The third row is why an idempotent re-run is quiet. The script asks
+`uv lock --check` before staying silent, so an earlier run that added
+dependencies and never locked still produces the todo.
+
+If `adk-locked-version` came back `report_only`, the recipe is pinned below
+the ADK floor — uv keeps any locked version that still satisfies the declared
+specifier. The report will hand you this instead:
 
 ```bash
 cd <RECIPE_DIR> && uv lock --upgrade-package google-adk --python 3.11

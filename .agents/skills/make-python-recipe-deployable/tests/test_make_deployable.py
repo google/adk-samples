@@ -103,6 +103,21 @@ def no_docker(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def lock_is_current(monkeypatch):
+    """Same hermeticity argument as `no_docker`, for `uv lock --check`.
+
+    The follow-up todos shell out to uv when a run changed no dependency, and
+    these fixtures are not resolvable uv projects — so the real call reports
+    whatever the host's uv makes of a synthetic pyproject.toml, and a test
+    asserting on todos would be asserting on that. Default to "current" and
+    let the tests that care state the answer they mean.
+    """
+    monkeypatch.setattr(
+        md, "lockfile_is_current", lambda _d: (True, "stubbed for tests")
+    )
+
+
 # ---------------------------------------------------------------------------
 # Detection
 # ---------------------------------------------------------------------------
@@ -2011,6 +2026,116 @@ def test_at_or_above_floor_still_gets_the_plain_lock_todo(
         t.startswith("Run `uv lock --python 3.11`") for t in report.todos
     )
     assert not any("--upgrade-package" in t for t in report.todos)
+
+
+def _declare_all_required(recipe: Path, policy: dict, *, extras=True) -> None:
+    """Rewrite the fixture's deps so every required package is present."""
+    pyproject = recipe / "pyproject.toml"
+    specs = [
+        s if extras else s.replace("[gcp,otel-gcp]", "")
+        for s in policy["required_dependencies"]
+    ]
+    pyproject.write_text(
+        pyproject.read_text().replace(
+            '"google-adk[gcp,otel-gcp]>=2.6.0,<3.0.0",',
+            ",\n            ".join(f'"{s}"' for s in specs) + ",",
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_no_lock_todo_when_nothing_changed_and_lock_is_current(
+    recipe: Path, monkeypatch
+):
+    """An idempotent re-run must not claim the lockfile went stale.
+
+    Found by running the skill twice against core/python/ambient-expense-agent:
+    the second run reported `required-dependencies: clean`, wrote no file, and
+    still emitted "dependencies changed and the lockfile is now stale". That
+    is a false statement about the run that produced it, and acting on it
+    churns uv.lock for nothing.
+    """
+    policy = _policy()
+    _declare_all_required(recipe, policy)
+    monkeypatch.setattr(md, "load_policy", lambda _root: policy)
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    # `lock_is_current` (autouse) already pins the lockfile as up to date.
+    report = md.run(
+        recipe_dir=recipe,
+        apply=False,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    deps = next(c for c in report.checks if c.id == "required-dependencies")
+    assert deps.status == md.CLEAN
+    assert not md.dependencies_changed(deps)
+    assert not [t for t in report.todos if "uv lock" in t], (
+        "nothing changed and the lockfile is current, so there is no follow-up"
+    )
+
+
+def test_lock_todo_survives_when_an_earlier_run_left_it_stale(
+    recipe: Path, monkeypatch
+):
+    """Suppressing the false todo must not create a blind spot.
+
+    Dependencies added by an EARLIER run leave this run with nothing to
+    change and a stale lockfile regardless. The todo has to survive that,
+    and quote uv's own reason rather than inventing one.
+    """
+    policy = _policy()
+    _declare_all_required(recipe, policy)
+    monkeypatch.setattr(md, "load_policy", lambda _root: policy)
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    monkeypatch.setattr(
+        md, "lockfile_is_current", lambda _d: (False, "uv.lock is out of date.")
+    )
+    report = md.run(
+        recipe_dir=recipe,
+        apply=False,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    assert not md.dependencies_changed(
+        next(c for c in report.checks if c.id == "required-dependencies")
+    )
+    lock_todos = [t for t in report.todos if "uv lock" in t]
+    assert lock_todos == [
+        "Run `uv lock --python 3.11` in the recipe — uv.lock is out of date."
+    ]
+
+
+def test_lock_todo_fires_when_only_an_extra_was_merged(
+    recipe: Path, monkeypatch
+):
+    """A CLEAN deps status can still mean pyproject.toml was edited.
+
+    `patch_dependencies` merges a missing extra in place and reports CLEAN
+    when nothing had to be ADDED. Gating the lock todo on status alone would
+    therefore drop it for a run that really did change resolution — the
+    opposite error to the one above, and the reason `dependencies_changed`
+    reads `kept[].rewritten_to` as well as `added`.
+    """
+    policy = _policy()
+    # Every required dependency present, but google-adk stripped of extras.
+    _declare_all_required(recipe, policy, extras=False)
+    monkeypatch.setattr(md, "load_policy", lambda _root: policy)
+    monkeypatch.setattr(md, "find_repo_root", lambda _p: recipe)
+    report = md.run(
+        recipe_dir=recipe,
+        apply=False,
+        overwrite=False,
+        data_dirs=[],
+        region="us-east1",
+    )
+    deps = next(c for c in report.checks if c.id == "required-dependencies")
+    assert deps.status == md.CLEAN, "nothing to ADD, so the status is CLEAN"
+    assert md.dependencies_changed(deps), "but an extra was merged in place"
+    assert any(
+        t.startswith("Run `uv lock --python 3.11`") for t in report.todos
+    )
 
 
 def test_major_gate_states_both_relock_directions(tmp_path: Path):

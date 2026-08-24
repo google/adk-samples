@@ -1281,6 +1281,21 @@ def patch_dependencies(
     )
 
 
+def dependencies_changed(deps_check: Check) -> bool:
+    """Did this run alter [project].dependencies?
+
+    Read BOTH signals, because the check's status is not sufficient on its
+    own. When every required package is already declared but one of them
+    lacks an extra, `patch_dependencies` rewrites that requirement in place
+    and still reports CLEAN — so a status test alone would conclude nothing
+    changed for a run that just edited pyproject.toml.
+    """
+    details = deps_check.details
+    if details.get("added"):
+        return True
+    return any(k.get("rewritten_to") for k in details.get("kept", []))
+
+
 def patch_hatch_packages(
     doc: tomlkit.TOMLDocument, package: str, apply: bool
 ) -> Check:
@@ -3057,6 +3072,17 @@ def run(
     # the floor. Recommending a plain `uv lock` there would be recommending a
     # no-op, which is how a recipe ends up shipping an ADK too old for the
     # serving dependencies this script just added.
+    #
+    # And when this run changed no dependency, the plain form's stated reason
+    # — "dependencies changed and the lockfile is now stale" — is false.
+    # Emitting it anyway teaches owners to discount the todo list and sends
+    # them re-locking for nothing.
+    #
+    # Staying silent instead would only trade that for a blind spot: a recipe
+    # whose dependencies were added by an EARLIER run still has a stale
+    # lockfile, and nothing here would say so. So the unchanged case ASKS uv
+    # rather than guessing. `uv lock --check` resolves without writing and
+    # costs about 80ms, which is cheap enough to buy an accurate answer.
     if locked_check.details.get("remedy"):
         report.todo(
             "Run `uv lock --upgrade-package google-adk --python 3.11` in the "
@@ -3066,11 +3092,21 @@ def run(
             "dependencies need the floor. Confirm the resolved google-adk / "
             "a2a-sdk pair afterwards."
         )
-    else:
+    elif dependencies_changed(deps_check):
         report.todo(
             "Run `uv lock --python 3.11` in the recipe — dependencies changed "
             "and the lockfile is now stale."
         )
+    else:
+        # `lockfile_is_current` reports False both for a stale lockfile and
+        # for a check it could not run, so the todo quotes its reason verbatim
+        # instead of restating it as staleness. Re-locking is the right move
+        # either way; claiming to know which one it was would not be.
+        lock_ok, lock_why = lockfile_is_current(recipe_dir)
+        if not lock_ok:
+            report.todo(
+                f"Run `uv lock --python 3.11` in the recipe — {lock_why}"
+            )
     report.todo(
         "Run ruff format + check from the REPO ROOT so the root config wins."
     )
