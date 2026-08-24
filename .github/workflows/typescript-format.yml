@@ -162,7 +162,7 @@ jobs:
                     -name="biome-formatter" \
                     -reporter=github-pr-review \
                     -filter-mode=added \
-                    -fail-level=none < "$WORK/fmt.diff" || true
+                    -fail-on-error=false < "$WORK/fmt.diff" || true
 
           exit 1
 
@@ -236,7 +236,7 @@ jobs:
                       -name="biome-lint-suggestions" \
                       -reporter=github-pr-review \
                       -filter-mode=added \
-                      -fail-level=none < "$WORK/fix.diff" || true
+                      -fail-on-error=false < "$WORK/fix.diff" || true
           fi
 
           # 5. Restore files so diagnostic pass runs against original commits
@@ -244,7 +244,7 @@ jobs:
 
           # 6. Run diagnostic lint and print human-readable output to log first
           LINT_STATUS=0
-          biome lint --error-on-warnings --reporter=concise "${CHANGED_FILES[@]}" || LINT_STATUS=$?
+          biome lint --error-on-warnings "${CHANGED_FILES[@]}" || LINT_STATUS=$?
 
           # 7. Post inline annotations via reviewdog using rdjson format
           biome lint --reporter=rdjson "${CHANGED_FILES[@]}" > "$WORK/lint.rdjson" || true
@@ -254,7 +254,7 @@ jobs:
                       -name="biome-linter" \
                       -reporter=github-pr-review \
                       -filter-mode=added \
-                      -fail-level=none < "$WORK/lint.rdjson" || true
+                      -fail-on-error=false < "$WORK/lint.rdjson" || true
           fi
 
           if [ "$LINT_STATUS" -ne 0 ]; then
