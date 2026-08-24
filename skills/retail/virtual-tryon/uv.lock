@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -1677,6 +1677,19 @@ dependencies = [
     { name = "pyyaml" },
 ]
 
+[package.optional-dependencies]
+serving = [
+    { name = "fastapi" },
+    { name = "google-cloud-storage" },
+    { name = "google-genai" },
+    { name = "httpx" },
+    { name = "pillow" },
+    { name = "python-dotenv" },
+    { name = "python-multipart" },
+    { name = "pyyaml" },
+    { name = "uvicorn" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -1686,13 +1699,23 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", marker = "extra == 'serving'", specifier = ">=0.100.0" },
     { name = "google-adk", specifier = ">=2.2.0" },
     { name = "google-cloud-storage", specifier = ">=2.0" },
+    { name = "google-cloud-storage", marker = "extra == 'serving'", specifier = ">=2.0.0" },
     { name = "google-genai", specifier = ">=1.0" },
+    { name = "google-genai", marker = "extra == 'serving'", specifier = ">=1.0.0" },
+    { name = "httpx", marker = "extra == 'serving'", specifier = ">=0.23.0" },
     { name = "pillow", specifier = ">=9.0" },
+    { name = "pillow", marker = "extra == 'serving'", specifier = ">=9.0.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "python-dotenv", marker = "extra == 'serving'", specifier = ">=1.0.0" },
+    { name = "python-multipart", marker = "extra == 'serving'", specifier = ">=0.0.6" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "pyyaml", marker = "extra == 'serving'", specifier = ">=6.0" },
+    { name = "uvicorn", marker = "extra == 'serving'", specifier = ">=0.20.0" },
 ]
+provides-extras = ["serving"]
 
 [package.metadata.requires-dev]
 dev = [

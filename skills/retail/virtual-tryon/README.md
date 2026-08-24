@@ -27,10 +27,14 @@ uv sync
 ## Prerequisites
 
 - Python 3.11+
-- Google Cloud project with Vertex AI APIs enabled
-- The sibling recipe [`skills/retail/product-search/`](../product-search/) set up
-  first (proposed in PR #2473 — landing separately). Its Vector Search collection
-  supplies the product catalog that VTO's `EVAL.yaml` grades against.
+- A Google Cloud project with billing enabled
+- [`gcloud` CLI](https://cloud.google.com/sdk/docs/install) with ADC configured
+  (`gcloud auth application-default login`)
+- Gemini Enterprise Agent Platform and Cloud Storage APIs enabled —
+  `scripts/setup_tryon.py` enables these for you
+- Model access in your project: `gemini-2.5-flash-image` (try-on) and
+  `gemini-3.5-flash` (agent and catalog classifier)
+- For catwalk video only: access to Veo (`veo-3.1-generate-001`)
 
 ## Run
 
@@ -50,8 +54,8 @@ Use the retail-virtual-tryon skill to set up a virtual try-on app on Google Clou
 
 The agent walks Q-MODE (4-5 questions Quick / 4 questions Export), runs
 `scripts/bootstrap.sh` to create the venv, then `scripts/setup.py` to
-provision GCS buckets, verify Vertex AI access, and launch the local
-sandbox at [http://localhost:8080](http://localhost:8080).
+provision GCS buckets, verify Gemini Enterprise Agent Platform access,
+and launch the local sandbox at [http://localhost:8080](http://localhost:8080).
 
 ### Direct CLI (no agent)
 
@@ -62,6 +66,49 @@ uv run python scripts/setup_tryon.py --config assets/design-spec.md
 uv run python scripts/setup_tryon.py --project-id $PROJECT --model flash
 uv run python scripts/setup_tryon.py --project-id $PROJECT --model pro
 ```
+
+## Deploy to Cloud Run
+
+The sandbox is a FastAPI app, so it deploys to Cloud Run as a container.
+`scripts/export_app.py` generates a standalone codebase — it copies the
+backend modules and UI assets, rewrites the `scripts.*` imports for a flat
+layout, renders `Dockerfile`, `cloudbuild.yaml` and `deploy_cloudrun.sh`
+with your project values baked in, and generates the container's
+`requirements.txt` from the `serving` extra in `pyproject.toml`.
+
+Through the agent, this is Q-MODE option 2 ("Export Web App & GCS Catalog
+Sync"). Directly:
+
+```bash
+# 1. Set gcp_project_id (and optionally export_directory) in the design spec
+uv run python scripts/export_app.py \
+  --config assets/design-spec.md \
+  --skill-dir .
+
+# 2. Deploy the generated app (defaults to ./vto-retail-app)
+cd vto-retail-app
+./deploy_cloudrun.sh
+```
+
+`deploy_cloudrun.sh` enables the Cloud Run and Cloud Build APIs, then runs
+`gcloud run deploy vto-retail-app --source .` — Cloud Build builds the
+Dockerfile and Cloud Run serves it on port 8080 with
+`uvicorn server:app`. Use the generated `cloudbuild.yaml` instead if you want
+a CI pipeline that tags images by commit SHA.
+
+Notes:
+
+- The container runs as a non-root user and reads its configuration from
+  `ENV` values written into the Dockerfile at export time, so it does not
+  need a `.env` file.
+- `catalog_images/` is excluded by `.dockerignore`; the app recreates the
+  directory at startup and serves catalog images from your GCS bucket. Set
+  `tryon_catalog_upload: true` in the design spec so the catalog is synced.
+- The Cloud Run service account needs `roles/aiplatform.user` and
+  `roles/storage.objectAdmin`, the same roles `setup_tryon.py` grants for
+  local runs.
+- `deploy_cloudrun.sh` passes `--allow-unauthenticated`. Remove that flag if
+  the service should not be publicly reachable.
 
 ## Model tiers
 
@@ -86,7 +133,8 @@ Open [http://localhost:8080](http://localhost:8080) once the sandbox says
    or use `catalog_images/sample_user.jpg`
 2. Click a product card (e.g. `shirt_001`) to select it
 3. Click **Try On Image**
-4. First call takes 15-30s (Vertex AI cold start); subsequent calls under 10s
+4. First call takes 15-30s (Gemini Enterprise Agent Platform cold start);
+   subsequent calls under 10s
 
 **Video (catwalk) try-on flow:**
 
@@ -104,9 +152,9 @@ a rescan, cached results are used unless you tick **Force reindex**.
 **Failure modes to watch for:**
 
 - `404 NOT_FOUND: Publisher model .../gemini-<X>-flash-image was not found` →
-  the model name isn't real in Vertex. Only `gemini-2.5-flash-image` and
-  `gemini-2.5-pro-image` exist today. Check `GEMINI_IMAGE_MODEL` in your
-  environment.
+  the model name isn't real in Gemini Enterprise Agent Platform. Only
+  `gemini-2.5-flash-image` and `gemini-2.5-pro-image` exist today. Check
+  `GEMINI_IMAGE_MODEL` in your environment.
 - Image renders but face looks distorted → the Veo reference-image cropping
   in `tryon_processor.py` didn't get a clean face crop. Retry with a
   higher-resolution portrait photo.
