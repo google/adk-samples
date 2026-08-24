@@ -81,8 +81,21 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
         method = resolve_method(body["class_method"], streaming=True)
 
         async def generator():
-            async for event in method(**(body.get("input") or {})):
-                yield json.dumps(event) + "\n"
+            # `streaming_methods` merges the registry's SYNC `stream` bucket
+            # with its `async_stream` one, so this is either a plain generator
+            # or an async one. A plain generator has no `__aiter__`, and
+            # `async for` over it raises TypeError at request time — invisible
+            # until someone actually streams. Duck-type the object rather than
+            # the callable, so a sync method returning an async iterable also
+            # works. The sync route below draws the same distinction for the
+            # `""` and `async` buckets via iscoroutinefunction.
+            stream = method(**(body.get("input") or {}))
+            if hasattr(stream, "__aiter__"):
+                async for event in stream:
+                    yield json.dumps(event) + "\n"
+            else:
+                for event in stream:
+                    yield json.dumps(event) + "\n"
 
         return responses.StreamingResponse(
             content=generator(), media_type="application/json"

@@ -415,11 +415,22 @@ lint-checked in place rather than only after substitution.
 `known-first-party` so isort orders template imports exactly as the rendered
 output needs them.
 
-**Known divergences from agents-cli, both deliberate:**
+**Known divergences from agents-cli, all deliberate:**
 
 - The Dockerfile's `FROM python:X-slim` is rewritten from the recipe's own
   `requires-python` floor. The template hardcodes 3.12; recipes here target
   3.11, 3.12 and 3.13.
+- `reasoning_engine_adapter.py`'s streaming route duck-types the object it is
+  about to iterate instead of assuming an async generator. `streaming_methods`
+  merges the operation registry's **sync** `stream` bucket with `async_stream`,
+  so `async for` over a method from the former raises
+  `TypeError: 'async for' requires an object with __aiter__ method, got
+  generator` — at request time, only for whoever streams, and never during a
+  build. The sync route already drew exactly this distinction for the `""` and
+  `async` buckets via `iscoroutinefunction`; the streaming route did not.
+  **This is a fix to the vendored source, so re-rendering from a newer
+  agents-cli will silently revert it** — re-check the streaming route after any
+  re-render.
 - `reasoning_engine_adapter.py` is included even for cloud_run because the
   Recipe Deployability doc lists it unconditionally, while agents-cli ships it
   only under `agent_runtime`. **Settled by verification: in a cloud_run recipe
