@@ -1204,18 +1204,44 @@ def test_real_run_with_no_docker_on_path(standalone_repo: Path, tmp_path: Path):
     assert not any(c["status"] == md.ERROR for c in report["checks"])
 
 
-def test_real_run_with_an_unreachable_daemon(standalone_repo: Path):
-    """A docker binary that cannot reach its daemon: also a skip, not an error."""
-    if md.shutil.which("docker") is None:
-        pytest.skip("no docker binary on this machine to point at a bad socket")
+def test_real_run_with_an_unreachable_daemon(
+    standalone_repo: Path, tmp_path: Path
+):
+    """A docker binary that cannot reach its daemon: also a skip, not an error.
+
+    The dead daemon is a STUB on PATH, not a real docker CLI aimed at a bad
+    socket with DOCKER_HOST. That earlier mechanism tested the CLI's own
+    host-vs-context precedence as much as it tested this script, and that is
+    not portable: the same call resolved to `unreachable` on Docker 29.6.1
+    locally and to `usable` on the CI runner, which broke the build. What
+    this test is actually about is what the script does when `docker info`
+    fails, so it creates that condition directly instead of asking a real
+    docker to produce it.
+    """
+    fake_bin = tmp_path / "fake-docker-bin"
+    fake_bin.mkdir()
+    stub = fake_bin / "docker"
+    stub.write_text(
+        "#!/bin/sh\n"
+        "echo 'Cannot connect to the Docker daemon at "
+        "unix:///var/run/docker.sock. Is the docker daemon running?' >&2\n"
+        "exit 1\n"
+    )
+    stub.chmod(0o755)
+    # PREPEND rather than replace: only `docker` is shadowed, so the script
+    # can still find uv and anything else it shells out to.
     report = _run_script(
-        standalone_repo, {"DOCKER_HOST": "unix:///nonexistent/docker.sock"}
+        standalone_repo,
+        {"PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"},
     )
 
     docker = next(c for c in report["checks"] if c["id"] == "docker")
     assert docker["details"]["docker_state"] == md.DOCKER_UNREACHABLE
     assert docker["status"] == md.REPORT_ONLY
     assert "not a failure" in docker["message"]
+    # Proves the stub was found AND its failure was read, rather than the run
+    # quietly taking the `absent` path and passing for the wrong reason.
+    assert "Cannot connect to the Docker daemon" in docker["message"]
     assert not any(c["status"] == md.ERROR for c in report["checks"])
 
 
