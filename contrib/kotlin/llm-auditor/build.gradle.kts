@@ -21,7 +21,7 @@ kotlin {
 application {
     mainClass.set(
         project.findProperty("mainClass") as? String
-            ?: "com.google.adk.samples.agents.llmauditor.MainKt"
+            ?: "com.google.adk.samples.agents.llmauditor.MainKt",
     )
 }
 

@@ -27,13 +27,14 @@ fun main() {
     val sessionService = InMemorySessionService()
     val artifactService = InMemoryArtifactService()
 
-    val server = AdkWebServer(
-        port = 8080,
-        sessionService = sessionService,
-        artifactService = artifactService,
-        agentLoader = SingleAgentLoader(agent),
-        apiServerSpanExporter = ApiServerSpanExporter(),
-    )
+    val server =
+        AdkWebServer(
+            port = 8080,
+            sessionService = sessionService,
+            artifactService = artifactService,
+            agentLoader = SingleAgentLoader(agent),
+            apiServerSpanExporter = ApiServerSpanExporter(),
+        )
 
     println("Starting ADK web server on http://localhost:8080...")
     server.start(wait = true)
