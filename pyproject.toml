@@ -101,7 +101,19 @@ ignore = [
 # treat it as first-party across the whole repo. Hoisted here so recipe
 # pyproject.toml files no longer need their own [tool.ruff*] block (see the
 # A1 check in .github/workflows/python-validate-recipe.yml).
-known-first-party = ["app"]
+#
+# `__AGENT_PACKAGE__` is the placeholder the make-python-recipe-deployable
+# skill substitutes for a recipe's agent package (`app`, `horizon`,
+# `expense_agent`, ...) when copying a serving template into a recipe. It is a
+# valid Python identifier on purpose, so the template files parse and stay
+# lint-checked in place rather than only after substitution.
+#
+# Without this entry isort reads it as third-party and demands the agent
+# imports be merged into the third-party block — the OPPOSITE of the shape
+# they need once substituted, since `src` (above) makes the real package
+# first-party inside its own recipe. Listing it keeps a template's import
+# order identical to its rendered output's.
+known-first-party = ["app", "__AGENT_PACKAGE__"]
 
 [tool.ruff.format]
 quote-style = "double"
