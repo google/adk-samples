@@ -47,7 +47,7 @@ This sample ships with **[Google Agents CLI](https://github.com/google/agents-cl
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Google Cloud project (Vertex AI) **or** a [Gemini API key](https://ai.google.dev/gemini-api/docs/quickstart?lang=python#make-first-request)
 - [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) when using Vertex / Application Default Credentials (ADC)

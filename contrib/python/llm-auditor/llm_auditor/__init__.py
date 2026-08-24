@@ -31,6 +31,6 @@ except google.auth.exceptions.DefaultCredentialsError:
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-east1")
 
-from . import agent
+from . import agent  # noqa: E402 -- must come after load_dotenv()
 
 __all__ = ["agent"]
