@@ -36,6 +36,7 @@ from horizon.memory.preload import HorizonPreloadMemoryTool
 from horizon.commands.dispatcher import make_slash_command_dispatcher
 from horizon.context.summarizer import HorizonSummarizer
 from horizon.context.artifact_url_redaction import redact_artifact_urls_callback
+from horizon.context.declaration_compaction import compact_tool_declarations
 from horizon.context.schema_normalization import (
     normalize_tool_schemas_callback,
 )
@@ -97,11 +98,6 @@ _logger = logging.getLogger(__name__)
 # building the agent keeps it (the project-wide default is global Vertex).
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
-# ADK's pydantic-JSON-Schema declaration path ships model_json_schema()
-# artifacts verbatim: a "title" next to every self-describing param name,
-# "default":null on every optional, and anyOf[X,null] instead of nullable.
-# That is 2,812 chars of the tool surface on every turn for zero meaning.
-os.environ.setdefault("ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL", "1")
 if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
     try:
         _, project_id = google.auth.default()
@@ -229,7 +225,10 @@ def _build_app_object() -> App:
         static_instruction=_static_instruction_for(
             tools, has_code_executor=code_executor is not None
         ),
-        tools=tools,
+        # Compact declarations, scoped to our own tools: the env var that
+        # selects them is process-wide and would re-render the tool surface
+        # of any other ADK agent sharing this process.
+        tools=compact_tool_declarations(tools),
         code_executor=code_executor,
         # Order in each list matters — callbacks run top-to-bottom; later entries
         # can read state mutated by earlier ones.

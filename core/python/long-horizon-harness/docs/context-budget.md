@@ -74,9 +74,13 @@ individually fine. Dropping either one leaves a real session unbounded.
 
 Tool declarations are usually the largest component, so two settings matter:
 
-- `ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL=1` (set in `agent.py`). ADK's pydantic
-  path emits `title` on every parameter, `default: null`, and `anyOf[X, null]`.
-  The legacy path expresses the same parameters without them.
+- `context/declaration_compaction.py` builds the root agent's declarations on
+  ADK's legacy path, worth 2,549 chars a turn. The pydantic path emits `title`
+  on every parameter, `default: null`, and `anyOf[X, null]`; the legacy path
+  expresses the same parameters without them.
+  `ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL` selects it process-wide, so the
+  module scopes it to one build; child agents (`delegate_builder`, the memory
+  forks, `web_research`) stay on the pydantic path.
 - `context/schema_normalization.py` runs `inspect.cleandoc` over tool
   descriptions, since the legacy path otherwise ships raw indented docstrings.
 
