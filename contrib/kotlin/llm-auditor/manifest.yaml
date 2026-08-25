@@ -1,3 +1,0 @@
-name: llm-auditor
-description: Multi-agent LLM answer auditor and reviser pipeline.
-language: kotlin
