@@ -1,0 +1,16 @@
+type: "standalone"
+status: "active"
+language: "go"
+description: "Multi-agent financial advisor in Go that analyzes tickers and proposes trading, execution, and risk plans."
+
+architecture:
+  agent: "multi"
+  stateful: false
+  datasources:
+    - "external"
+
+ownership:
+  team: "octo"
+  poc: "agulli"
+
+license: "Apache-2.0"
