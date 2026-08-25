@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { env } from 'node:process';
+import { env } from "node:process";
 
 /**
  * Configuration module for the customer service agent.
@@ -30,18 +30,18 @@ function getEnv(key: string, defaultValue: string): string {
 }
 
 export class AgentModel {
-  name: string = 'customer_service_agent';
-  model: string = 'gemini-2.5-flash';
+  name: string = "customer_service_agent";
+  model: string = "gemini-2.5-flash";
 }
 
 export class Config {
   agentSettings: AgentModel = new AgentModel();
-  appName: string = 'customer_service_app';
+  appName: string = "customer_service_app";
 
-  CLOUD_PROJECT: string = getEnv('GOOGLE_CLOUD_PROJECT', 'my_project');
-  CLOUD_LOCATION: string = getEnv('GOOGLE_CLOUD_LOCATION', 'us-central1');
-  GENAI_USE_VERTEXAI: string = getEnv('GOOGLE_GENAI_USE_VERTEXAI', '1');
-  API_KEY: string = getEnv('GOOGLE_API_KEY', 'GOOGLE_API_KEY');
+  CLOUD_PROJECT: string = getEnv("GOOGLE_CLOUD_PROJECT", "my_project");
+  CLOUD_LOCATION: string = getEnv("GOOGLE_CLOUD_LOCATION", "us-central1");
+  GENAI_USE_VERTEXAI: string = getEnv("GOOGLE_GENAI_USE_VERTEXAI", "1");
+  API_KEY: string = getEnv("GOOGLE_API_KEY", "GOOGLE_API_KEY");
 }
 
 // Export a singleton instance of the config

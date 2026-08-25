@@ -18,11 +18,15 @@
  * Callback functions for FOMC Research Agent.
  */
 
-import { BaseTool, LlmRequest, ToolContext, CallbackContext } from '@google/adk';
-import { State } from '@google/adk/dist/types/sessions/state';
+import {
+  BaseTool,
+  LlmRequest,
+  ToolContext,
+  CallbackContext,
+} from "@google/adk";
+import { State } from "@google/adk/dist/types/sessions/state";
 
-
-import { Customer } from '../entities/customer';
+import { Customer } from "../entities/customer";
 
 const RATE_LIMIT_SECS = 60;
 const RPM_QUOTA = 10;
@@ -34,22 +38,24 @@ const RPM_QUOTA = 10;
  */
 export async function rateLimitCallback({
   context: callbackContext,
-  request: llmRequest
+  request: llmRequest,
 }: {
-    context: CallbackContext;
-    request: LlmRequest;
+  context: CallbackContext;
+  request: LlmRequest;
 }): Promise<any> {
   // Add null checks for llmRequest and llmRequest.contents
   if (!llmRequest || !llmRequest.contents) {
-    console.debug('llmRequest or llmRequest.contents is undefined. Skipping rate limit.');
+    console.debug(
+      "llmRequest or llmRequest.contents is undefined. Skipping rate limit.",
+    );
     return undefined;
   }
 
   for (const content of llmRequest.contents) {
     if (content.parts) {
       for (const part of content.parts) {
-        if ('text' in part && part.text === '') {
-          part.text = ' ';
+        if ("text" in part && part.text === "") {
+          part.text = " ";
         }
       }
     }
@@ -57,21 +63,22 @@ export async function rateLimitCallback({
 
   const now = Date.now() / 1000; // Time in seconds
 
-  if (!callbackContext.state.has('timer_start')) {
-    callbackContext.state.set('timer_start', now);
-    callbackContext.state.set('request_count', 1);
+  if (!callbackContext.state.has("timer_start")) {
+    callbackContext.state.set("timer_start", now);
+    callbackContext.state.set("request_count", 1);
     console.debug(
-      `rate_limit_callback [timestamp: ${now}, req_count: 1, elapsed_secs: 0]`
+      `rate_limit_callback [timestamp: ${now}, req_count: 1, elapsed_secs: 0]`,
     );
     return undefined;
   }
 
-  const requestCount = (callbackContext.state.get<number>('request_count') || 0) + 1;
-  const timerStart = callbackContext.state.get<number>('timer_start') || now;
+  const requestCount =
+    (callbackContext.state.get<number>("request_count") || 0) + 1;
+  const timerStart = callbackContext.state.get<number>("timer_start") || now;
   const elapsedSecs = now - timerStart;
 
   console.debug(
-    `rate_limit_callback [timestamp: ${now}, request_count: ${requestCount}, elapsed_secs: ${elapsedSecs}]`
+    `rate_limit_callback [timestamp: ${now}, request_count: ${requestCount}, elapsed_secs: ${elapsedSecs}]`,
   );
 
   if (requestCount > RPM_QUOTA) {
@@ -82,10 +89,10 @@ export async function rateLimitCallback({
       await new Promise((resolve) => setTimeout(resolve, delay * 1000));
     }
     // Reset timer
-    callbackContext.state.set('timer_start', Date.now() / 1000);
-    callbackContext.state.set('request_count', 1);
+    callbackContext.state.set("timer_start", Date.now() / 1000);
+    callbackContext.state.set("request_count", 1);
   } else {
-    callbackContext.state.set('request_count', requestCount);
+    callbackContext.state.set("request_count", requestCount);
   }
 
   return undefined;
@@ -101,15 +108,15 @@ export function validateCustomerId({
   customerId: string;
   sessionState: State;
 }): [boolean, string | null] {
-  if (!sessionState.has('customer_profile')) {
-    return [false, 'No customer profile selected. Please select a profile.'];
+  if (!sessionState.has("customer_profile")) {
+    return [false, "No customer profile selected. Please select a profile."];
   }
 
   try {
-    const profileJson = sessionState.get<string>('customer_profile');
-    
+    const profileJson = sessionState.get<string>("customer_profile");
+
     if (!profileJson) {
-      return [false, 'Customer profile is empty.'];
+      return [false, "Customer profile is empty."];
     }
 
     const profileData = JSON.parse(profileJson);
@@ -135,13 +142,13 @@ export function validateCustomerId({
  * Make dictionary values lowercase recursively.
  */
 function lowercaseValue(value: unknown): unknown {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
     const newDict: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       newDict[k] = lowercaseValue(v);
     }
     return newDict;
-  } else if (typeof value === 'string') {
+  } else if (typeof value === "string") {
     return value.toLowerCase();
   } else if (Array.isArray(value)) {
     return value.map((i) => lowercaseValue(i));
@@ -157,7 +164,7 @@ function lowercaseValue(value: unknown): unknown {
 export function beforeTool({
   tool,
   args,
-  context: toolContext
+  context: toolContext,
 }: {
   tool: BaseTool;
   args: Record<string, any>;
@@ -165,7 +172,7 @@ export function beforeTool({
 }): Record<string, any> | undefined {
   // Make sure all values that the agent is sending to tools are lowercase
   const lowercasedArgs = lowercaseValue(args) as Record<string, any>;
-  
+
   // Mutate args in place
   for (const key in args) {
     if (Object.prototype.hasOwnProperty.call(args, key)) {
@@ -175,9 +182,9 @@ export function beforeTool({
   Object.assign(args, lowercasedArgs);
 
   // Several tools require customer_id as input. We validate it.
-  if ('customer_id' in args) {
+  if ("customer_id" in args) {
     const [valid, err] = validateCustomerId({
-      customerId: args['customer_id'],
+      customerId: args["customer_id"],
       sessionState: toolContext.state,
     });
     if (!valid && err) {
@@ -185,19 +192,19 @@ export function beforeTool({
     }
   }
 
-  if (tool.name === 'sync_ask_for_approval') {
-    const amount = args['value'];
+  if (tool.name === "sync_ask_for_approval") {
+    const amount = args["value"];
     if (amount !== undefined && Number(amount) <= 10) {
       return {
-        status: 'approved',
-        message: 'You can approve this discount; no manager needed.',
+        status: "approved",
+        message: "You can approve this discount; no manager needed.",
       };
     }
   }
 
-  if (tool.name === 'modify_cart') {
-    if (args['items_added'] === true && args['items_removed'] === true) {
-      return { result: 'I have added and removed the requested items.' };
+  if (tool.name === "modify_cart") {
+    if (args["items_added"] === true && args["items_removed"] === true) {
+      return { result: "I have added and removed the requested items." };
     }
   }
 
@@ -212,24 +219,23 @@ export function afterTool({
   tool,
   args,
   context: ToolContext,
-  response: toolResponse
+  response: toolResponse,
 }: {
   tool: BaseTool;
   args: Record<string, unknown>;
   context: ToolContext;
   response: Record<string, unknown>;
 }): Record<string, unknown> | undefined {
-  
-  if (tool.name === 'sync_ask_for_approval') {
-    if (toolResponse && toolResponse['status'] === 'approved') {
-      console.debug('Applying discount to the cart');
+  if (tool.name === "sync_ask_for_approval") {
+    if (toolResponse && toolResponse["status"] === "approved") {
+      console.debug("Applying discount to the cart");
       // Actually make changes to the cart
     }
   }
 
-  if (tool.name === 'approve_discount') {
-    if (toolResponse && toolResponse['status'] === 'ok') {
-      console.debug('Applying discount to the cart');
+  if (tool.name === "approve_discount") {
+    if (toolResponse && toolResponse["status"] === "ok") {
+      console.debug("Applying discount to the cart");
       // Actually make changes to the cart
     }
   }
@@ -241,13 +247,13 @@ export function afterTool({
  * Callback Method: Before Agent Execution
  * * PATTERN: Positional Argument (Required for Agents)
  * * FIXED: Uses CallbackContext directly.
- */ 
+ */
 export function beforeAgent(callbackContext: CallbackContext): undefined {
   // Use state directly from the callbackContext, matching your working example.
-  if (!callbackContext.state.has('customer_profile')) {
-    const customer = Customer.getCustomer('123');
+  if (!callbackContext.state.has("customer_profile")) {
+    const customer = Customer.getCustomer("123");
     if (customer) {
-      callbackContext.state.set('customer_profile', customer.toJson());
+      callbackContext.state.set("customer_profile", customer.toJson());
     }
   }
 }

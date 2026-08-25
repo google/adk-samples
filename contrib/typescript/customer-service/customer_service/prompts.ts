@@ -18,11 +18,11 @@
  * Global instruction and instruction for the customer service agent.
  */
 
-import { Customer } from './entities/customer';
+import { Customer } from "./entities/customer";
 
 // Helper to safely get the default customer JSON for the instruction
-const defaultCustomer = Customer.getCustomer('123');
-const defaultCustomerJson = defaultCustomer ? defaultCustomer.toJson() : '{}';
+const defaultCustomer = Customer.getCustomer("123");
+const defaultCustomerJson = defaultCustomer ? defaultCustomer.toJson() : "{}";
 
 export const GLOBAL_INSTRUCTION = `
 The profile of the current customer is:  ${defaultCustomerJson}

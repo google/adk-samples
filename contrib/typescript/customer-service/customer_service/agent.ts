@@ -1,4 +1,4 @@
- /**
+/**
  * Copyright 2025 Google LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,30 +18,30 @@
  * Agent module for the customer service agent.
  */
 
-import { LlmAgent, InMemoryRunner, isFinalResponse } from '@google/adk';
-import { config } from './config';
-import { createUserContent, Part } from '@google/genai';
-import { GLOBAL_INSTRUCTION, INSTRUCTION } from './prompts';
+import { LlmAgent, InMemoryRunner, isFinalResponse } from "@google/adk";
+import { config } from "./config";
+import { createUserContent, Part } from "@google/genai";
+import { GLOBAL_INSTRUCTION, INSTRUCTION } from "./prompts";
 import {
   rateLimitCallback,
   beforeAgent,
   beforeTool,
   afterTool,
-} from './shared_libraries/callbacks';
+} from "./shared_libraries/callbacks";
 import {
-    sendCallCompanionLinkTool,
-    approveDiscountTool,
-    syncAskForApprovalTool,
-    updateSalesforceCrmTool,
-    accessCartInformationTool,
-    modifyCartTool,
-    getProductRecommendationsTool,
-    checkProductAvailabilityTool,
-    schedulePlantingServiceTool,
-    getAvailablePlantingTimesTool,
-    sendCareInstructionsTool,
-    generateQrCodeTool
-} from './tools/function_tools';
+  sendCallCompanionLinkTool,
+  approveDiscountTool,
+  syncAskForApprovalTool,
+  updateSalesforceCrmTool,
+  accessCartInformationTool,
+  modifyCartTool,
+  getProductRecommendationsTool,
+  checkProductAvailabilityTool,
+  schedulePlantingServiceTool,
+  getAvailablePlantingTimesTool,
+  sendCareInstructionsTool,
+  generateQrCodeTool,
+} from "./tools/function_tools";
 
 // Combine instructions as LlmAgent typically takes a single instruction string
 // or you can handle globalInstruction separately if your ADK version supports it.
@@ -65,7 +65,7 @@ export const rootAgent = new LlmAgent({
     schedulePlantingServiceTool,
     getAvailablePlantingTimesTool,
     sendCareInstructionsTool,
-    generateQrCodeTool
+    generateQrCodeTool,
   ],
   // Mapping callbacks to their TypeScript equivalents
   beforeToolCallback: beforeTool,

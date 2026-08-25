@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { rootAgent } from '../customer_service/agent';
+import { describe, it, expect } from "vitest";
+import { rootAgent } from "../customer_service/agent";
 
-describe('Customer Service Agent', () => {
-  it('initializes rootAgent successfully', () => {
+describe("Customer Service Agent", () => {
+  it("initializes rootAgent successfully", () => {
     expect(rootAgent).toBeDefined();
-    expect(rootAgent.name).toBe('customer_service_agent');
+    expect(rootAgent.name).toBe("customer_service_agent");
   });
 });

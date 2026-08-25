@@ -18,7 +18,7 @@
  * Tools module for the customer service agent.
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 
 export interface StatusResponse {
   status: string;
@@ -38,7 +38,7 @@ export function sendCallCompanionLink({
   phoneNumber: string;
 }): StatusResponse {
   console.info(`Sending call companion link to ${phoneNumber}`);
-  return { status: 'success', message: `Link sent to ${phoneNumber}` };
+  return { status: "success", message: `Link sent to ${phoneNumber}` };
 }
 
 /**
@@ -62,14 +62,14 @@ export function approveDiscount({
     console.info(`Denying ${discountType} discount of ${value}`);
     // Send back a reason for the error so that the model can recover.
     return {
-      status: 'rejected',
-      message: 'discount too large. Must be 10 or less.',
+      status: "rejected",
+      message: "discount too large. Must be 10 or less.",
     };
   }
   console.info(
-    `Approving a ${discountType} discount of ${value} because ${reason}`
+    `Approving a ${discountType} discount of ${value} because ${reason}`,
   );
-  return { status: 'ok' };
+  return { status: "ok" };
 }
 
 /**
@@ -90,9 +90,9 @@ export function syncAskForApproval({
   reason: string;
 }): StatusResponse {
   console.info(
-    `Asking for approval for a ${discountType} discount of ${value} because ${reason}`
+    `Asking for approval for a ${discountType} discount of ${value} because ${reason}`,
   );
-  return { status: 'approved' };
+  return { status: "approved" };
 }
 
 /**
@@ -111,10 +111,10 @@ export function updateSalesforceCrm({
 }): StatusResponse {
   console.info(
     `Updating Salesforce CRM for customer ID ${customerId} with details: ${JSON.stringify(
-      details
-    )}`
+      details,
+    )}`,
   );
-  return { status: 'success', message: 'Salesforce record updated.' };
+  return { status: "success", message: "Salesforce record updated." };
 }
 
 interface CartItem {
@@ -145,13 +145,13 @@ export function accessCartInformation({
   const mockCart: Cart = {
     items: [
       {
-        product_id: 'soil-123',
-        name: 'Standard Potting Soil',
+        product_id: "soil-123",
+        name: "Standard Potting Soil",
         quantity: 1,
       },
       {
-        product_id: 'fert-456',
-        name: 'General Purpose Fertilizer',
+        product_id: "fert-456",
+        name: "General Purpose Fertilizer",
         quantity: 1,
       },
     ],
@@ -183,8 +183,8 @@ export function modifyCart({
 
   // MOCK API RESPONSE - Replace with actual API call
   return {
-    status: 'success',
-    message: 'Cart updated successfully.',
+    status: "success",
+    message: "Cart updated successfully.",
     items_added: true,
     items_removed: true,
   };
@@ -211,24 +211,24 @@ export function getProductRecommendations({
   customerId: string;
 }): { recommendations: ProductRecommendation[] } {
   console.info(
-    `Getting product recommendations for plant type: ${plantType} and customer ${customerId}`
+    `Getting product recommendations for plant type: ${plantType} and customer ${customerId}`,
   );
 
   // MOCK API RESPONSE - Replace with actual API call or recommendation engine
   let recommendations: { recommendations: ProductRecommendation[] };
 
-  if (plantType.toLowerCase() === 'petunias') {
+  if (plantType.toLowerCase() === "petunias") {
     recommendations = {
       recommendations: [
         {
-          product_id: 'soil-456',
-          name: 'Bloom Booster Potting Mix',
-          description: 'Provides extra nutrients that Petunias love.',
+          product_id: "soil-456",
+          name: "Bloom Booster Potting Mix",
+          description: "Provides extra nutrients that Petunias love.",
         },
         {
-          product_id: 'fert-789',
-          name: 'Flower Power Fertilizer',
-          description: 'Specifically formulated for flowering annuals.',
+          product_id: "fert-789",
+          name: "Flower Power Fertilizer",
+          description: "Specifically formulated for flowering annuals.",
         },
       ],
     };
@@ -236,14 +236,14 @@ export function getProductRecommendations({
     recommendations = {
       recommendations: [
         {
-          product_id: 'soil-123',
-          name: 'Standard Potting Soil',
-          description: 'A good all-purpose potting soil.',
+          product_id: "soil-123",
+          name: "Standard Potting Soil",
+          description: "A good all-purpose potting soil.",
         },
         {
-          product_id: 'fert-456',
-          name: 'General Purpose Fertilizer',
-          description: 'Suitable for a wide variety of plants.',
+          product_id: "fert-456",
+          name: "General Purpose Fertilizer",
+          description: "Suitable for a wide variety of plants.",
         },
       ],
     };
@@ -272,7 +272,7 @@ export function checkProductAvailability({
   storeId: string;
 }): ProductAvailability {
   console.info(
-    `Checking availability of product ID: ${productId} at store: ${storeId}`
+    `Checking availability of product ID: ${productId} at store: ${storeId}`,
   );
   // MOCK API RESPONSE - Replace with actual API call
   return { available: true, quantity: 10, store: storeId };
@@ -299,17 +299,17 @@ export function schedulePlantingService({
   details: string;
 }): StatusResponse {
   console.info(
-    `Scheduling planting service for customer ID: ${customerId} on ${date} (${timeRange})`
+    `Scheduling planting service for customer ID: ${customerId} on ${date} (${timeRange})`,
   );
   console.info(`Details: ${details}`);
 
   // MOCK API RESPONSE - Replace with actual API call to your scheduling system
   // Calculate confirmation time based on date and time_range
-  const startTimeStr = timeRange.split('-')[0]; // Get the start time (e.g., "9")
+  const startTimeStr = timeRange.split("-")[0]; // Get the start time (e.g., "9")
   const confirmationTimeStr = `${date} ${startTimeStr}:00`; // e.g., "2024-07-29 9:00"
 
   return {
-    status: 'success',
+    status: "success",
     appointment_id: uuidv4(),
     date: date,
     time: timeRange,
@@ -331,7 +331,7 @@ export function getAvailablePlantingTimes({
   console.info(`Retrieving available planting times for ${date}`);
   // MOCK API RESPONSE - Replace with actual API call
   // Generate some mock time slots
-  return ['9-12', '13-16'];
+  return ["9-12", "13-16"];
 }
 
 /**
@@ -352,11 +352,11 @@ export function sendCareInstructions({
   deliveryMethod: string;
 }): StatusResponse {
   console.info(
-    `Sending care instructions for ${plantType} to customer: ${customerId} via ${deliveryMethod}`
+    `Sending care instructions for ${plantType} to customer: ${customerId} via ${deliveryMethod}`,
   );
   // MOCK API RESPONSE - Replace with actual API call or email/SMS sending logic
   return {
-    status: 'success',
+    status: "success",
     message: `Care instructions for ${plantType} sent via ${deliveryMethod}.`,
   };
 }
@@ -382,28 +382,28 @@ export function generateQrCode({
   expirationDays: number;
 }): StatusResponse | string {
   // Guardrails to validate the amount of discount is acceptable for a auto-approved discount.
-  if (discountType === '' || discountType === 'percentage') {
+  if (discountType === "" || discountType === "percentage") {
     if (discountValue > 10) {
-      return 'cannot generate a QR code for this amount, must be 10% or less';
+      return "cannot generate a QR code for this amount, must be 10% or less";
     }
   }
-  if (discountType === 'fixed' && discountValue > 20) {
-    return 'cannot generate a QR code for this amount, must be 20 or less';
+  if (discountType === "fixed" && discountValue > 20) {
+    return "cannot generate a QR code for this amount, must be 20 or less";
   }
 
   console.info(
-    `Generating QR code for customer: ${customerId} with ${discountValue} - ${discountType} discount.`
+    `Generating QR code for customer: ${customerId} with ${discountValue} - ${discountType} discount.`,
   );
 
   // MOCK API RESPONSE - Replace with actual QR code generation library
   const expirationDateObj = new Date();
   expirationDateObj.setDate(expirationDateObj.getDate() + expirationDays);
   // Format as YYYY-MM-DD
-  const expirationDate = expirationDateObj.toISOString().split('T')[0];
+  const expirationDate = expirationDateObj.toISOString().split("T")[0];
 
   return {
-    status: 'success',
-    qr_code_data: 'MOCK_QR_CODE_DATA', // Replace with actual QR code
+    status: "success",
+    qr_code_data: "MOCK_QR_CODE_DATA", // Replace with actual QR code
     expiration_date: expirationDate,
   };
 }
