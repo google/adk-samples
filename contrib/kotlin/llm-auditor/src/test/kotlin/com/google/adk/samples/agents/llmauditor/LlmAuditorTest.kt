@@ -16,6 +16,7 @@
 
 package com.google.adk.samples.agents.llmauditor
 
+import com.google.adk.kt.models.Gemini
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -23,24 +24,34 @@ import kotlin.test.assertTrue
 
 class LlmAuditorTest {
     @Test
-    fun testCriticPromptContainsClaimsInstruction() {
+    fun testCriticPromptConstants() {
         assertNotNull(CRITIC_PROMPT)
-        assertTrue(CRITIC_PROMPT.contains("claims"))
+        assertTrue(CRITIC_PROMPT.contains("CLAIMS"))
+        assertTrue(CRITIC_PROMPT.contains("Verify each CLAIM"))
     }
 
     @Test
-    fun testReviserPromptContainsReviserInstruction() {
+    fun testReviserPromptConstants() {
         assertNotNull(REVISER_PROMPT)
-        assertTrue(REVISER_PROMPT.contains("fact-check"))
+        assertTrue(REVISER_PROMPT.contains("VERDICT"))
+        assertEquals("---END-OF-EDIT---", END_MARK)
     }
 
     @Test
-    fun testRootAgentInitialization() {
-        val rootAgent = LlmAuditorAgent.rootAgent
-        assertNotNull(rootAgent)
-        assertEquals("llm_auditor", rootAgent.name)
-        assertEquals(2, rootAgent.subAgents.size)
-        assertEquals("critic_agent", rootAgent.subAgents[0].name)
-        assertEquals("reviser_agent", rootAgent.subAgents[1].name)
+    fun testCriticAgentFactory() {
+        val model = Gemini(apiKey = "fake-key-for-test", name = "gemini-flash-latest")
+        val critic = createCriticAgent(model)
+        assertNotNull(critic)
+        assertEquals("critic_agent", critic.name)
+        assertEquals(1, critic.tools.size)
+    }
+
+    @Test
+    fun testReviserAgentFactory() {
+        val model = Gemini(apiKey = "fake-key-for-test", name = "gemini-flash-latest")
+        val reviser = createReviserAgent(model)
+        assertNotNull(reviser)
+        assertEquals("reviser_agent", reviser.name)
+        assertEquals(1, reviser.afterModelCallbacks.size)
     }
 }
