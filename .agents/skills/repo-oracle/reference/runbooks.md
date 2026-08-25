@@ -139,8 +139,8 @@ write access can apply labels.
 1. **`.agents/skills/<name>/SKILL.md`** — frontmatter needs `name` and `description`.
    The description is what makes the skill trigger; write it around what the user will
    say, not around what the skill does internally.
-2. **`scripts/` and `tests/`** — only if the skill needs code.
-   `.github/workflows/tools-tests.yml` runs tests under `.agents/skills/*/scripts/`, so
+2. **`scripts/` and `tests/`** — only if the skill needs code. The code goes in
+   `scripts/`, its tests in `tests/`. `.github/workflows/tools-tests.yml` runs them, so
    code without tests is code CI does not cover.
 3. **`docs/recipe-handbook/skills-catalog.md`** — add an entry if the skill helps
    contributors prepare a recipe. `docs-links.yml` validates the links.

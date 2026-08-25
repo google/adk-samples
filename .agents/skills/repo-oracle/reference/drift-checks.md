@@ -46,8 +46,8 @@ the expected `<root>/<language|vertical>/<recipe>` shape when that is the questi
 
 ## Check 2 — the language list, across every source
 
-The language set is duplicated in six places and nothing enforces agreement. This is
-the highest-value consistency check in the repo.
+The language set is duplicated across every source the script below reads, and nothing
+enforces agreement. This is the highest-value consistency check in the repo.
 
 ```bash
 uv run --with pyyaml python3 -c "
@@ -155,7 +155,7 @@ The blast-radius question. Given a key such as `deployability.min_google_adk`:
 3. **Search the literal value**, which is what finds the dangerous case — somewhere that
    hardcoded the number instead of reading it. These are the hits that turn "edit one
    line" into a multi-file change.
-4. **Check the four consumer families**: `.github/workflows/`, `.github/scripts/`,
+4. **Check every consumer family**: `.github/workflows/`, `.github/scripts/`,
    `tools/`, and `.agents/skills/` — plus `docs/`, which should link rather than restate.
 
 **Never filter the search by file extension.** `.github/CODEOWNERS` has none, and an
