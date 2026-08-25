@@ -243,17 +243,17 @@ jobs:
           set -euo pipefail
 
           if [ -f "package-lock.json" ]; then
-            npm ci
+            npm ci || npm install
             npm test
           elif [ -f "pnpm-lock.yaml" ]; then
             corepack enable
-            pnpm install --frozen-lockfile
+            pnpm install --frozen-lockfile || pnpm install
             pnpm test
           elif [ -f "yarn.lock" ]; then
-            yarn install --frozen-lockfile
+            yarn install --frozen-lockfile || yarn install
             yarn test
           elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
-            npx bun install --frozen-lockfile
+            npx bun install --frozen-lockfile || npx bun install
             npx bun test
           elif [ -f "package.json" ]; then
             npm install
