@@ -16,15 +16,40 @@ plausible-but-wrong line is routine. Anchors are recomputed from the same diff
 the reviewer was shown, so a bad position is dropped on its own instead of
 taking every other comment down with it.
 
+It is also where the reviewer's output is checked rather than trusted. The
+prompt's severity gate ("only critical or high") used to be the only thing
+standing between a wrong finding and a contributor's PR, and it worked by
+making the reviewer say almost nothing — across eight recent PRs the three
+lanes posted one or two comments between them, all from Correctness. Trading
+that gate for a wider one is only safe if something downstream can tell a real
+finding from an invented one, so four checks live here:
+
+  WINDOW      Each finding quotes the diff lines it sits on. Those are matched
+              against the diff itself. No match means the finding was
+              fabricated and it is dropped; a match a few lines off means the
+              finding is real and only its arithmetic was wrong, so the anchor
+              is corrected instead of the finding being lost.
+  CHEAPNESS   A finding whose own stated verification procedure admits it
+              needs a second file, or a traced value, or an assumed input,
+              costs the author more to check than it is worth. Dropped.
+  DUPLICATES  Anything already said on this PR — by an earlier run of this
+              lane, by one of the other three, or by a human — is suppressed.
+              Four lanes re-running on every push otherwise repeat themselves.
+  CONTEXT     A verified finding on a line the PR does not add cannot be an
+              inline comment, but it is still true. It goes in the review body
+              rather than into the log where nobody reads it.
+
 Usage:
   python3 post_review_comments.py \
     --result agy_result.json \
     --diff pr_diff_used.txt \
     --label Correctness \
-    --out review_payload.json
+    --out review_payload.json \
+    [--repo owner/name --pr 123]
 
---out is written ONLY when there is at least one postable comment, so the
-caller can treat "file absent" as "nothing to post".
+--repo/--pr enable duplicate suppression; without them the other three checks
+still run. --out is written ONLY when there is something to post, so the caller
+can treat "file absent" as "nothing to post".
 
 Every failure here is a CI fault, never the contributor's: the reviewer agent
 returned something unusable, or a file this workflow wrote is unreadable. None
@@ -40,7 +65,9 @@ Exit codes:
 import argparse
 import json
 import re
+import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
@@ -63,6 +90,47 @@ HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 # "]" in the block swallowed anything the model appended after the array.
 # json's own parser draws that boundary in extract_findings instead.
 FENCED_BLOCK = re.compile(r"```(?:json)?\s*(\[.*?)```", re.DOTALL)
+
+# A window row: "  42: os.system(cmd)". Both ":" and "|" are seen as the
+# separator, and the leading whitespace is the model aligning its numbers.
+WINDOW_LINE = re.compile(r"^\s*(\d+)\s*[:|]\s?(.*)$")
+
+# Literal escape text a model writes where the diff holds the real character.
+ESCAPE_SEQ = re.compile(
+    r"\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|\\x[0-9a-fA-F]{2}"
+)
+
+# Phrases in verify_steps that admit the reader must leave the anchored lines.
+# Ported from .agents/skills/github-pr-review/scripts/verify_findings.py, where
+# they were tuned against two real reviews.
+NOT_CHEAP_MARKERS = re.compile(
+    r"\btrace\b|\bassum\w*\b|consider the case|if an attacker|"
+    r"\bsimulat\w*\b|\bimagine\b|run the code|execute\b|another file|"
+    r"\bgrep the repo\b|across (the )?(repo|codebase)",
+    re.IGNORECASE,
+)
+
+# How far an anchor may be wrong before a window match stops being believable.
+MAX_DRIFT = 3
+
+# Below this many characters, a window line must equal the diff line exactly.
+# A short line is a prefix of almost anything and matches spuriously.
+MIN_PREFIX = 8
+
+# A duplicate is the same line or within this many of it. Tight on purpose:
+# widening it starts eating genuinely new findings near an old comment.
+PROXIMITY = 2
+
+# Token overlap above which two comments are saying the same thing.
+SIMILARITY = 0.55
+
+_STOPWORDS = set(
+    """a an the is are was were be been being this that these those it its of to
+    in on for with from by at as and or not no any some all each every into out
+    here there which what when where line lines file files code value values
+    never only still also just even than then them they their should does did
+    has have""".split()
+)
 
 
 class ReviewerOutputError(Exception):
@@ -91,11 +159,24 @@ def _resolve_path(reported: str, anchors: dict[str, set[int]]) -> str:
     return reported
 
 
-def added_line_anchors(diff: str) -> dict[str, set[int]]:
-    """Map each path to the new-file line numbers this diff adds.
+def walk_right_side(
+    diff: str,
+) -> tuple[dict[str, set[int]], dict[str, dict[int, str]]]:
+    """Read the diff's RIGHT side once: (added anchors, line text).
 
-    Only `+` lines are valid anchors on the RIGHT side of a review, so this
-    doubles as enforcement of the prompt's "added lines only" rule.
+    The first return value is the set of new-file lines each file ADDS, which
+    is what GitHub will accept as an inline anchor. The second is the text of
+    every new-file line the diff shows — added and context alike — which is
+    what a finding's quoted window is checked against.
+
+    Both come from one walk because they are the same traversal, and two
+    traversals that disagree about where a hunk starts would put a comment on
+    a line whose text was read from somewhere else.
+
+    Only `+` lines are valid anchors on the RIGHT side of a review, so the
+    first value doubles as enforcement of the prompt's "added lines only"
+    rule. Context lines are still worth indexing: a finding anchored to one is
+    real but unpostable inline, and belongs in the review body.
 
     Hunk lengths are tracked rather than sniffing line prefixes, because the
     two are not distinguishable by prefix alone. An added line whose text
@@ -112,6 +193,7 @@ def added_line_anchors(diff: str) -> dict[str, set[int]]:
     posted.
     """
     anchors: dict[str, set[int]] = {}
+    text: dict[str, dict[int, str]] = {}
     path: str | None = None
     new_line = 0
     old_remaining = 0
@@ -144,16 +226,24 @@ def added_line_anchors(diff: str) -> dict[str, set[int]]:
         if row.startswith("+"):
             if path is not None:
                 anchors.setdefault(path, set()).add(new_line)
+                text.setdefault(path, {})[new_line] = row[1:]
             new_line += 1
             new_remaining -= 1
         elif row.startswith("-"):
             old_remaining -= 1
         else:
+            if path is not None:
+                text.setdefault(path, {})[new_line] = row[1:]
             new_line += 1
             new_remaining -= 1
             old_remaining -= 1
 
-    return anchors
+    return anchors, text
+
+
+def added_line_anchors(diff: str) -> dict[str, set[int]]:
+    """The new-file lines each path adds. See walk_right_side."""
+    return walk_right_side(diff)[0]
 
 
 def extract_findings(response: str) -> list:
@@ -172,11 +262,28 @@ def extract_findings(response: str) -> list:
     drift and not a reason to throw away findings already in hand. Only the
     first array failing to parse is fatal — at that point there is nothing to
     post and nothing to infer.
+
+    The LAST fenced block wins, not the first. The prompt now asks the
+    reviewer to work through the diff in plain text before answering, because
+    a model told to emit nothing but JSON does no reasoning and finds
+    correspondingly little. That scan quotes diff rows and sometimes brackets
+    them, so the first fenced array in the response is no longer reliably the
+    answer — the prompt says the findings block comes last, and this reads it
+    from the same end.
+
+    A block that will not parse AT ALL is salvaged finding by finding rather
+    than thrown away whole. Findings now quote source verbatim in `window`,
+    and source is full of double quotes: a reviewer emitted
+
+        "window": "  211:     assert res["success"] is True\\n ..."
+
+    which is one unescaped pair away from valid and killed an entire review
+    of three good findings. One malformed finding should cost that finding.
     """
-    match = FENCED_BLOCK.search(response)
+    matches = list(FENCED_BLOCK.finditer(response))
     # Both branches guarantee a block starting at "[", so the scan below
     # always decodes at least once.
-    block = match.group(1) if match else None
+    block = matches[-1].group(1) if matches else None
     if block is None and response.strip().startswith("["):
         block = response.strip()
     if block is None:
@@ -184,7 +291,6 @@ def extract_findings(response: str) -> list:
 
     decoder = json.JSONDecoder()
     findings: list = []
-    seen: set[str] = set()
     parsed_any = False
     index = 0
 
@@ -194,20 +300,59 @@ def extract_findings(response: str) -> list:
         except json.JSONDecodeError as exc:
             if parsed_any:
                 break
+            salvaged = _salvage_findings(block, decoder)
+            if salvaged:
+                print(
+                    f"  findings block is malformed JSON ({exc}); "
+                    f"salvaged {len(salvaged)} finding(s) from it"
+                )
+                return _dedupe(salvaged)
             raise ReviewerOutputError(
                 f"findings block is not valid JSON: {exc}"
             ) from exc
 
         parsed_any = True
-        # A repeated block repeats its findings, and posting the same note
-        # twice on the same line is worse than posting it once.
-        for finding in array:
-            key = json.dumps(finding, sort_keys=True)
-            if key not in seen:
-                seen.add(key)
-                findings.append(finding)
+        findings.extend(array)
 
-    return findings
+    return _dedupe(findings)
+
+
+def _dedupe(findings: list) -> list:
+    """A repeated block repeats its findings, and posting the same note twice
+    on the same line is worse than posting it once."""
+    seen: set[str] = set()
+    unique: list = []
+    for finding in findings:
+        key = json.dumps(finding, sort_keys=True, default=str)
+        if key not in seen:
+            seen.add(key)
+            unique.append(finding)
+    return unique
+
+
+def _salvage_findings(block: str, decoder: json.JSONDecoder) -> list[dict]:
+    """Decode findings one object at a time, skipping ones that will not parse.
+
+    Only objects carrying the fields a finding must have are kept. Advancing
+    past a failure means the next `{` tried may be one inside a string, so
+    something has to reject the resulting debris; requiring `path` and `body`
+    does, and every real finding has both.
+    """
+    salvaged: list[dict] = []
+    index = 0
+    while (start := block.find("{", index)) != -1:
+        try:
+            candidate, index = decoder.raw_decode(block, start)
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+        if (
+            isinstance(candidate, dict)
+            and str(candidate.get("path") or "").strip()
+            and str(candidate.get("body") or "").strip()
+        ):
+            salvaged.append(candidate)
+    return salvaged
 
 
 def _coerce_line(value: object) -> int | None:
@@ -225,16 +370,276 @@ def _coerce_line(value: object) -> int | None:
     return None
 
 
-def build_comments(
-    findings: list, anchors: dict[str, set[int]]
-) -> tuple[list[dict], list[str]]:
-    """Convert findings into review comments, dropping unpostable ones.
+def _norm(text: str) -> str:
+    """Reduce a source line to a comparable ASCII skeleton.
 
-    Returns the comments and a reason per dropped finding. Dropping beats
-    failing: one bad anchor would otherwise cost the whole review.
+    A model writes an emoji as the literal escape text `\\u26a0` where the diff
+    holds the real character, and round-tripping through unicode_escape does
+    not reconcile the two — it mojibakes the diff side instead, so every line
+    holding a non-ASCII character then looks fabricated.
+
+    Comparing ASCII skeletons sidesteps that: drop escape sequences, drop
+    non-ASCII, drop whitespace. Real fabrication still differs in the ASCII
+    text, which is where the substance of a line of code lives.
     """
+    text = ESCAPE_SEQ.sub("", text)
+    text = unicodedata.normalize("NFKC", text)
+    return "".join(c for c in text if c.isascii() and not c.isspace())
+
+
+def _window_rows(window: object) -> list[tuple[int, str]]:
+    """[(claimed_line, text)] from a finding's quoted window."""
+    rows: list[tuple[int, str]] = []
+    for raw in str(window or "").split("\n"):
+        match = WINDOW_LINE.match(raw)
+        if not match:
+            continue
+        # Models abbreviate a long line with an ellipsis. A Unicode one
+        # vanishes in _norm as non-ASCII, but an ASCII "..." survives and
+        # would turn a valid prefix into a mismatch.
+        rows.append(
+            (
+                int(match.group(1)),
+                re.sub(r"(\.{3}|\u2026)\s*$", "", match.group(2)),
+            )
+        )
+    return rows
+
+
+def _window_matches(
+    rows: list[tuple[int, str]], lines: dict[int, str], offset: int
+) -> int:
+    """How many window rows match the diff at this offset; 0 if any conflicts.
+
+    A row whose line the diff does not show is not a conflict — the model may
+    quote a couple of lines either side of a hunk boundary — but it does not
+    count towards the match either.
+    """
+    matched = 0
+    for number, claimed in rows:
+        actual = lines.get(number + offset)
+        if actual is None:
+            continue
+        want, have = _norm(claimed), _norm(actual)
+        if not want:
+            continue
+        if want == have:
+            matched += 1
+        elif min(len(want), len(have)) >= MIN_PREFIX and (
+            want.startswith(have) or have.startswith(want)
+        ):
+            # Prefix, not substring: a one-character line is a substring of
+            # almost anything and matches spuriously.
+            matched += 1
+        else:
+            return 0
+    return matched
+
+
+def _snap_to_window(line: int, rows: list[tuple[int, str]], offset: int) -> int:
+    """Pull an anchor that sits outside its own verified window back into it.
+
+    The prompt requires the anchored line to be one of the window's rows, so
+    the two disagreeing means the model quoted the right code and then named a
+    different line beside it. The window has been checked against the diff and
+    the anchor has not, so the verified side wins.
+
+    Without this the comment lands a line or two from the thing it is about —
+    a placeholder value flagged on the `return` statement underneath it, say —
+    which reads as carelessness even when the finding itself is right.
+    """
+    claimed = [number + offset for number, _text in rows]
+    if line in claimed:
+        return line
+    return min(
+        claimed, key=lambda candidate: (abs(candidate - line), candidate)
+    )
+
+
+def check_window(
+    finding: dict, line: int, lines: dict[int, str]
+) -> tuple[bool, int, str]:
+    """(verified, line, reason) for a finding's quoted window.
+
+    A window matching at a CONSISTENT offset is arithmetic drift, not
+    fabrication: the finding is real and only the model's line counting was
+    wrong, so the anchor is corrected rather than the finding thrown away.
+    Requiring two matching rows before accepting a shift keeps a single
+    coincidental match from moving a comment onto unrelated code.
+
+    Counting new-file line numbers out of a unified diff by hand is the part
+    of this job a model is worst at, and it is the part that decides whether a
+    correct finding is postable at all. Both repairs here exist because
+    dropping a finding over its arithmetic throws away work that was right.
+    """
+    rows = _window_rows(finding.get("window"))
+    if not rows:
+        return False, line, "no window supplied"
+
+    if _window_matches(rows, lines, 0):
+        snapped = _snap_to_window(line, rows, 0)
+        if snapped != line:
+            return (
+                True,
+                snapped,
+                f"anchor {line} was outside its own window; moved to {snapped}",
+            )
+        return True, line, "window matches the diff"
+
+    for step in range(1, MAX_DRIFT + 1):
+        for offset in (step, -step):
+            if _window_matches(rows, lines, offset) >= 2:
+                return (
+                    True,
+                    _snap_to_window(line + offset, rows, offset),
+                    f"window matched {offset:+d} lines away; anchor corrected",
+                )
+
+    number, claimed = rows[0]
+    actual = lines.get(number, "")
+    return (
+        False,
+        line,
+        f"window says {claimed.strip()[:40]!r}, diff has {actual.strip()[:40]!r}",
+    )
+
+
+def _tokens(text: str) -> set[str]:
+    return {
+        word
+        for word in re.findall(r"[a-z_][a-z_0-9]{3,}", str(text).lower())
+        if word not in _STOPWORDS
+    }
+
+
+def fetch_existing_comments(repo: str, pr: int) -> list[dict]:
+    """Everything already said on this PR, inline and top-level.
+
+    Four lanes review every push, so without this the same observation is
+    re-posted on every `synchronize` and each lane repeats whatever the other
+    three found in the overlap between their remits.
+
+    A failure here is not fatal. Suppression improves the review; it is not a
+    precondition for having one, and losing a whole review to a transient API
+    error is a worse outcome than posting a comment twice.
+
+    Those failures are logged as plain lines, not `::warning::` annotations,
+    for the same reason the dropped findings in main() are: a contributor
+    reading their PR can neither act on this nor be helped by seeing it.
+    """
+    existing: list[dict] = []
+    for endpoint, kind in (
+        (f"repos/{repo}/pulls/{pr}/comments", "inline"),
+        (f"repos/{repo}/issues/{pr}/comments", "top-level"),
+    ):
+        try:
+            proc = subprocess.run(
+                ["gh", "api", "--paginate", f"{endpoint}?per_page=100"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            print(f"  could not read {kind} comments: {exc}")
+            continue
+        if proc.returncode != 0:
+            print(
+                f"  could not read {kind} comments: {proc.stderr.strip()[:200]}"
+            )
+            continue
+        # --paginate concatenates one JSON array per page, so decode them in
+        # sequence rather than parsing the output as a single document.
+        decoder = json.JSONDecoder()
+        text, index = proc.stdout, 0
+        while (start := text.find("[", index)) != -1:
+            try:
+                batch, index = decoder.raw_decode(text, start)
+            except json.JSONDecodeError:
+                break
+            for item in batch:
+                existing.append(
+                    {
+                        "kind": kind,
+                        "path": item.get("path"),
+                        "line": item.get("line"),
+                        "original_line": item.get("original_line"),
+                        "body": item.get("body") or "",
+                    }
+                )
+    return existing
+
+
+def build_exclusions(
+    existing: list[dict],
+) -> tuple[dict[str, dict[int, dict]], list[tuple[set[str], dict]]]:
+    """(line zones, tokenised bodies) from comments already on the PR."""
+    zones: dict[str, dict[int, dict]] = {}
+    texts: list[tuple[set[str], dict]] = []
+    for comment in existing or []:
+        if (comment.get("body") or "").strip():
+            texts.append((_tokens(comment["body"]), comment))
+        if comment.get("kind") != "inline":
+            continue
+        path = comment.get("path")
+        if not path:
+            continue
+        # `line` is nulled by GitHub once a thread goes outdated, and only
+        # `original_line` survives. Both are claimed so a moved comment still
+        # blocks the place it was originally made about.
+        for anchor in (comment.get("line"), comment.get("original_line")):
+            if not anchor:
+                continue
+            for delta in range(-PROXIMITY, PROXIMITY + 1):
+                zones.setdefault(path, {}).setdefault(anchor + delta, comment)
+    return zones, texts
+
+
+def already_raised(
+    path: str,
+    line: int,
+    body: str,
+    zones: dict[str, dict[int, dict]],
+    texts: list[tuple[set[str], dict]],
+) -> str:
+    """Why this finding repeats something already on the PR, or ""."""
+    if zones.get(path, {}).get(line):
+        return "already commented on this line"
+
+    mine = _tokens(body)
+    if len(mine) < 4:
+        return ""
+    for tokens, _comment in texts:
+        if len(tokens) < 4:
+            continue
+        if len(mine & tokens) / min(len(mine), len(tokens)) >= SIMILARITY:
+            return "very similar to a comment already on this PR"
+    return ""
+
+
+def build_comments(
+    findings: list,
+    anchors: dict[str, set[int]],
+    line_text: dict[str, dict[int, str]] | None = None,
+    existing: list[dict] | None = None,
+) -> tuple[list[dict], list[dict], list[str]]:
+    """Sort findings into inline comments, body notes, and the discarded.
+
+    Returns (comments, notes, skipped-with-reasons). Dropping beats failing:
+    one bad anchor would otherwise cost the whole review.
+
+    `notes` are findings whose window verified against a line the PR does not
+    ADD — real, but with nowhere to hang inline. They used to go into the job
+    log and be lost; they go in the review body instead. Only window-verified
+    findings qualify, because an unverifiable line number is a model
+    arithmetic error and promoting those would surface exactly the mistakes
+    this function exists to catch.
+    """
+    line_text = line_text or {}
     comments: list[dict] = []
+    notes: list[dict] = []
     skipped: list[str] = []
+    zones, texts = build_exclusions(existing or [])
 
     for finding in findings:
         if not isinstance(finding, dict):
@@ -251,15 +656,43 @@ def build_comments(
         if not path or not body:
             skipped.append(f"{path or '<no path>'}:{line}: empty path or body")
             continue
-        if line not in anchors.get(path, frozenset()):
-            skipped.append(f"{path}:{line}: not a line this PR adds")
+
+        steps = str(finding.get("verify_steps") or "")
+        marker = NOT_CHEAP_MARKERS.search(steps)
+        if marker:
+            skipped.append(
+                f"{path}:{line}: not cheap to verify ({marker.group(0)!r} "
+                "in verify_steps)"
+            )
             continue
 
-        comments.append(
-            {"path": path, "line": line, "side": "RIGHT", "body": body}
+        # Window first: it can move the anchor, and everything below depends
+        # on the anchor being the one the finding is really about.
+        declared = line
+        verified, line, reason = check_window(
+            finding, line, line_text.get(path, {})
         )
+        if not verified and finding.get("window"):
+            skipped.append(f"{path}:{line}: {reason}")
+            continue
+        if line != declared:
+            print(f"  {path}: {reason}")
 
-    return comments, skipped
+        duplicate = already_raised(path, line, body, zones, texts)
+        if duplicate:
+            skipped.append(f"{path}:{line}: {duplicate}")
+            continue
+
+        if line in anchors.get(path, frozenset()):
+            comments.append(
+                {"path": path, "line": line, "side": "RIGHT", "body": body}
+            )
+        elif verified:
+            notes.append({"path": path, "line": line, "body": body})
+        else:
+            skipped.append(f"{path}:{line}: not a line this PR adds")
+
+    return comments, notes, skipped
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -288,7 +721,40 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="payload destination; written only when there is something to post",
     )
+    parser.add_argument(
+        "--repo",
+        default=None,
+        help="owner/name; with --pr, suppresses comments already on the PR",
+    )
+    parser.add_argument(
+        "--pr",
+        type=int,
+        default=None,
+        help="PR number; with --repo, suppresses comments already on the PR",
+    )
     return parser
+
+
+def build_payload(label: str, comments: list[dict], notes: list[dict]) -> dict:
+    """The review payload. `body` is required whenever `event` is COMMENT."""
+    header = f"Automated **{label}** review — {len(comments)} finding(s)."
+    if notes:
+        # These sit on lines the PR does not add, so GitHub will not take them
+        # inline. Listing them here is the only way they reach the author at
+        # all, and on PR #2373 this class held all three hard CI failures.
+        lines = [
+            header,
+            "",
+            "Also, on lines this PR does not change:",
+            "",
+        ]
+        lines += [f"- `{n['path']}:{n['line']}` — {n['body']}" for n in notes]
+        return {
+            "event": "COMMENT",
+            "body": "\n".join(lines),
+            "comments": comments,
+        }
+    return {"event": "COMMENT", "body": header, "comments": comments}
 
 
 def main() -> int:
@@ -333,24 +799,35 @@ def main() -> int:
             infra_fault(CHECKER, f"cannot read diff {args.diff}: {exc}")
         )
 
-    comments, skipped = build_comments(findings, added_line_anchors(diff))
+    existing = (
+        fetch_existing_comments(args.repo, args.pr)
+        if args.repo and args.pr
+        else []
+    )
+    if existing:
+        print(f"{len(existing)} comment(s) already on this PR.")
+
+    anchors, line_text = walk_right_side(diff)
+    comments, notes, skipped = build_comments(
+        findings, anchors, line_text, existing
+    )
     # A plain log line, not a ::warning:: annotation. Which findings were
     # dropped is debugging detail for whoever is looking at this job, and
     # nothing a contributor reading their PR could act on.
     for reason in skipped:
         print(f"  dropped finding — {reason}")
-    print(f"{len(findings)} finding(s) returned, {len(comments)} postable.")
+    print(
+        f"{len(findings)} finding(s) returned, {len(comments)} postable, "
+        f"{len(notes)} on unchanged lines."
+    )
 
-    if not comments:
+    if not comments and not notes:
         return EXIT_OK
 
-    # `body` is required by the REST API whenever `event` is COMMENT.
-    payload = {
-        "event": "COMMENT",
-        "body": f"Automated **{args.label}** review — {len(comments)} finding(s).",
-        "comments": comments,
-    }
-    args.out.write_text(json.dumps(payload), encoding="utf-8")
+    args.out.write_text(
+        json.dumps(build_payload(args.label, comments, notes)),
+        encoding="utf-8",
+    )
     return EXIT_OK
 
 
