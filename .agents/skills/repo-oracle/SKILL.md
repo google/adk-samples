@@ -1,6 +1,6 @@
 ---
 name: repo-oracle
-description: Answer questions about how the adk-samples repo itself is governed — CI and workflow behavior, the limits and thresholds in .github/policy.yml and the reasoning behind them, CODEOWNERS routing, what the bots (stale sweep, Dependabot, recipe canary, AI review) do, how the repo is organised (core vs contrib vs skills verticals), what the repo skills and validators cover, and the admin runbooks for changing any of it. Also answers generic contribution-process questions from docs/ — how a recipe is prepared and validated, what a field in manifest.yaml means, what a runnability test is, what a README must contain, what a named CI error means. On explicit request it also traces which files consume a config key, and audits whether the repo still obeys its own policy. STRICTLY READ-ONLY — it never edits, commits, comments, or labels; it cites the source file and describes the change for a human to make. Use when someone says "oracle", or asks how/why/who about this repo's own configuration, CI, governance, or layout. Don't use for writing or preparing a recipe (use prepare-python-recipe, generate-manifest, align-recipe-pyproject and friends), for ADK API questions (use the google-agents-cli-* skills), or for anything needing the caller's screen — a failing check on their PR, their working tree, their branch.
+description: Answer questions about how the adk-samples repo itself is governed — CI and workflow behavior, the limits and thresholds in .github/policy.yml and the reasoning behind them, CODEOWNERS routing, what the bots (stale sweep, Dependabot, recipe canary, AI review) do, how the repo is organised (core vs contrib vs skills verticals), what the repo skills and validators cover, when a rule last changed and which PR changed it, what a label means, and the admin runbooks for changing any of it. Also answers generic contribution-process questions from docs/ — how a recipe is prepared and validated, what a field in manifest.yaml means, what a runnability test is, what a README must contain, what a named CI error means. On explicit request it also traces which files consume a config key, and audits whether the repo still obeys its own policy. STRICTLY READ-ONLY — it never edits, commits, comments, or labels; it cites the source file and describes the change for a human to make. Use when someone says "oracle", or asks how/why/who about this repo's own configuration, CI, governance, or layout. Don't use for writing or preparing a recipe (use prepare-python-recipe, generate-manifest, align-recipe-pyproject and friends), for ADK API questions (use the google-agents-cli-* skills), or for anything needing the caller's screen — a failing check on their PR, their working tree, their branch.
 ---
 
 # Repo Oracle
@@ -129,9 +129,12 @@ to?" The caller decides whether it is worth the wait.
 | What a specific validator checks | `tools/validate_<name>.py` | `validate.py` lists the registered subcommands |
 | Repo layout, `core` vs `contrib` vs `skills`, what a recipe is | `README.md`, `docs/README.md`, `docs/recipe-handbook/` | |
 | What the repo skills do | `ls .agents/skills/`, then that skill's `SKILL.md` frontmatter | read the frontmatter, don't grep one line — some are folded YAML blocks |
+| Formatting and lint rules | Python → root `pyproject.toml`, `[tool.ruff]`; Go → `.golangci.yml`; TypeScript → `biome.json` | config is repo-wide; `AGENTS.md` forbids a per-recipe Ruff config |
 | Docs writing rules | `.github/style.md` | |
 | CI cloud auth, OIDC | `.github/terraform/README.md` | |
 | Repo conventions for agents | `AGENTS.md` | |
+| Filing a bug, requesting a recipe | `.github/ISSUE_TEMPLATE/` | blank issues are disabled, so one of the templates is mandatory |
+| The CLA, contribution terms, licence | `CONTRIBUTING.md`, `LICENSE` | |
 
 ### Contributor process — the "how does one do X" questions
 
@@ -151,6 +154,59 @@ page rather than reproducing it.
 
 The docs are well written and word-count disciplined. Give the short answer and the
 link; do not paste the page back at the caller.
+
+### When a rule changed, and why it changed
+
+The comments beside a rule say what it is for. Git says what it replaced and what
+prompted it. Reach for this when someone asks "when did this change?", "why was this
+added?", or "what was it before?".
+
+```bash
+git log --oneline -- .github/policy.yml
+git log -p -L '<start>,<end>:.github/policy.yml'
+git blame -L '<start>,<end>' .github/policy.yml
+```
+
+Commit subjects carry the PR number, so an answer can name the change that introduced
+a rule. Works on any governance file, not only `policy.yml`.
+
+### Two things no file can answer
+
+Labels and repository settings live on GitHub, not in the working tree. Both reads are
+read-only and cost a network round trip (~0.5s), so use them only when a file genuinely
+cannot answer.
+
+| Question is about | Command | If `gh` is unavailable, fall back to |
+|---|---|---|
+| What a label means, which labels exist | `gh label list` | `.github/policy.yml` names the labels the sweeps depend on, and the workflows show which get applied. The label's *description* exists only on GitHub. |
+| Merge method, branch deletion, other repo settings | `gh api 'repos/<owner>/<repo>'` | `.github/policy.yml` states both in prose, in the branch-sweep comments. Cite it as what the policy asserts, not as verified configuration. |
+
+Worth knowing that several `policy.yml` comments *depend* on these settings — the whole
+branch-sweep design rests on the repo being squash-merge only — so confirming the
+premise is fair game when a caller questions the reasoning.
+
+### When a tool is not available
+
+`gh` is not installed everywhere, and where it is installed it may not be logged in.
+The same goes for `uv`. Assume nothing about the caller's machine.
+
+**Never let a tool failure become a factual claim.** This is the single most damaging
+thing this skill can do, because the failure is silent and the answer sounds certain.
+An unauthenticated `gh label list` returns nothing, and "nothing" reads exactly like
+"that label does not exist".
+
+So, in order:
+
+1. **Check before you conclude.** A command that exits non-zero, or returns an
+   implausibly empty result, has told you about your tooling — not about the repo.
+2. **Say which question you could not answer, and why.** One line: "`gh` isn't
+   available here, so I can't confirm that against GitHub."
+3. **Give the file-based answer, labelled as what it is.** The fallbacks above are real
+   answers; they just come from what the repo *says* rather than from GitHub's current
+   state. Never present the two as equivalent.
+
+The same rule covers `gh pr view` and `gh issue view` in the hard rules above, and
+`uv run` for the validators: no tool, no claim.
 
 For multi-file admin procedures — adding a language, changing a reviewer, raising a
 limit, retiring a recipe — read `reference/runbooks.md`.
@@ -188,7 +244,9 @@ drill into any line.
   recipe is, repo skills vs vertical skills, the retired `<lang>/agents/` roots
 - **What a rule is** — size limits, required files, naming, what a manifest must declare
 - **Why a rule is what it is** — the reasoning recorded in `policy.yml`'s comments
+- **When a rule changed** — what it replaced, and the PR that changed it
 - **Who owns or reviews something** — by path, or by recipe
+- **What a label means**, and which repo settings the policy depends on
 - **What the bots do** — stale sweeps, the recipe canary, Dependabot, the AI reviewers
 - **What a workflow, validator, or repo skill is for**
 - **How the contribution process works** — how a recipe is prepared and validated, what

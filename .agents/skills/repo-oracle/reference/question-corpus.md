@@ -54,6 +54,32 @@ response and carries the marker.
 
 ---
 
+## History, labels, and settings
+
+| # | Question | Expected source | Reads |
+|---|---|---|---|
+| 21 | "when did the contrib file limit change?" | `git log --oneline -- .github/policy.yml`, then the PR it names | 1–2 |
+| 22 | "what does the `keep-open` label mean?" | `gh label list` | 1 |
+| 23 | "why can't I merge this with a merge commit?" | `gh api 'repos/<owner>/<repo>'` — squash is the only method enabled | 1 |
+| 24 | "what's the Ruff line length?" | root `pyproject.toml`, `[tool.ruff]` | 1 |
+| 25 | "do I need to sign a CLA?" | `CONTRIBUTING.md` | 1 |
+
+**Answer-quality notes.**
+
+- #21 needs both sources: git says what the rule replaced, the comment beside it says
+  why it exists. Neither alone is the answer.
+- #22 and #23 are network reads at roughly half a second. Prefer a file whenever one
+  can answer; these two cannot.
+- #23 is not trivia. Several `policy.yml` comments — the entire branch-sweep design —
+  rest on squash-only being true, so this confirms a premise the reasoning depends on.
+- **#22 and #23 must survive `gh` being absent or logged out.** The correct answer is
+  then the file-based fallback plus one line saying GitHub could not be reached. Never
+  silence, and never a fallback presented as verified fact. Reproduce the two states
+  with `env PATH=/usr/bin:/bin …` and with `GH_CONFIG_DIR` pointed at an empty
+  directory.
+
+---
+
 ## Contributor process — generic "how does one do X"
 
 In scope because the process is written down and applies to everyone. None of these
@@ -61,20 +87,20 @@ need the caller's machine.
 
 | # | Question | Expected source | Reads |
 |---|---|---|---|
-| 21 | "how do I prepare a recipe?" | `docs/recipe-checklist.md` | 1 |
-| 22 | "how do I validate a recipe?" | `docs/recipe-checklist.md` pre-PR section, `tools/README.md` | 1–2 |
-| 23 | "what does the `deployable` field mean?" | `.github/schemas/manifest-schema.json`, that field's `description` | 1 |
-| 24 | "what is a runnability test?" | `docs/recipe-handbook/languages/python.md` | 1 |
-| 25 | "what does a README have to contain?" | `docs/recipe-handbook/anatomy.md` | 1 |
-| 26 | "what does `Required file or directory missing` mean?" | `docs/recipe-handbook/troubleshooting.md` | 1 |
+| 26 | "how do I prepare a recipe?" | `docs/recipe-checklist.md` | 1 |
+| 27 | "how do I validate a recipe?" | `docs/recipe-checklist.md` pre-PR section, `tools/README.md` | 1–2 |
+| 28 | "what does the `deployable` field mean?" | `.github/schemas/manifest-schema.json`, that field's `description` | 1 |
+| 29 | "what is a runnability test?" | `docs/recipe-handbook/languages/python.md` | 1 |
+| 30 | "what does a README have to contain?" | `docs/recipe-handbook/anatomy.md` | 1 |
+| 31 | "what does `Required file or directory missing` mean?" | `docs/recipe-handbook/troubleshooting.md` | 1 |
 
 **Answer-quality notes.**
 
 - Answer in a sentence or two and link the page. These docs are word-count disciplined
   and better written than a paraphrase; pasting them back is bombardment.
-- #23 comes from the schema, not from prose. Every field carries its own `description`,
+- #28 comes from the schema, not from prose. Every field carries its own `description`,
   and that is the authoritative wording.
-- #26 is generic even though it arrives from a failing run. Explaining what a named
+- #31 is generic even though it arrives from a failing run. Explaining what a named
   error means is fine; diagnosing the caller's particular run is not.
 
 ---
@@ -83,8 +109,8 @@ need the caller's machine.
 
 | # | Question | Procedure |
 |---|---|---|
-| 27 | "what breaks if I bump `min_google_adk`?" | `reference/drift-checks.md`, the consumer trace |
-| 28 | "audit the repo for drift" | `reference/drift-checks.md`, checks 1–7 |
+| 32 | "what breaks if I bump `min_google_adk`?" | `reference/drift-checks.md`, the consumer trace |
+| 33 | "audit the repo for drift" | `reference/drift-checks.md`, checks 1–8 |
 
 Both must begin by scoping to the committed state. Check 1 completes in well under a
 second, so an audit is not slow — but it reports untracked local directories as broken
@@ -96,13 +122,13 @@ recipes unless filtered, which is the failure mode to guard against.
 
 | # | Question | Correct response |
 |---|---|---|
-| 29 | "why did `validate-recipe-structure` fail on my PR?" | Decline: that needs their CI output, which this skill cannot see. Point at the failure text, which is written to be actionable. If they read the error out, answer it as #26. |
-| 30 | "should my recipe go in `core/` or `contrib/`?" | Explain how the two roots differ and who each is for. Do not choose for them. |
-| 31 | "is my recipe ready to push?" | Decline: that needs their working tree. Name the command they can run. |
-| 32 | "prepare my recipe" | Hand off to `prepare-python-recipe`. Contrast with #21, which is the same subject as a process question and is answered. |
-| 33 | "fix the placeholder owner in this manifest" | Decline: read-only. Say what to change and who should change it. |
-| 34 | "how do I write an ADK callback?" | Hand off to the `google-agents-cli-*` skills. |
-| 35 | "what does `financial-advisor` actually do?" | Point at that recipe's `README.md`. Not a catalogue. |
+| 34 | "why did `validate-recipe-structure` fail on my PR?" | Decline: that needs their CI output, which this skill cannot see. Point at the failure text, which is written to be actionable. If they read the error out, answer it as #31. |
+| 35 | "should my recipe go in `core/` or `contrib/`?" | Explain how the two roots differ and who each is for. Do not choose for them. |
+| 36 | "is my recipe ready to push?" | Decline: that needs their working tree. Name the command they can run. |
+| 37 | "prepare my recipe" | Hand off to `prepare-python-recipe`. Contrast with #26, which is the same subject as a process question and is answered. |
+| 38 | "fix the placeholder owner in this manifest" | Decline: read-only. Say what to change and who should change it. |
+| 39 | "how do I write an ADK callback?" | Hand off to the `google-agents-cli-*` skills. |
+| 40 | "what does `financial-advisor` actually do?" | Point at that recipe's `README.md`. Not a catalogue. |
 
 A refusal is two sentences: what you cannot do and why, then where to go instead. Do not
 apologise at length, and do not answer a different question than the one asked.
@@ -117,5 +143,8 @@ apologise at length, and do not answer a different question than the one asked.
    question means the routing table was not used.
 3. **Bombarding.** A correct answer buried in related context fails the test.
 4. **Reporting local scratch as repo drift.** See step zero of `drift-checks.md`.
-5. **Answering the artifact question.** Sliding from "here is the rule" into "so put
+5. **Reporting a tool failure as a finding.** An unauthenticated `gh` returns nothing,
+   and nothing reads exactly like "that does not exist". A missing tool is news about
+   the caller's machine, never about the repo.
+6. **Answering the artifact question.** Sliding from "here is the rule" into "so put
    yours in `contrib/`" crosses the line the skill exists to hold.

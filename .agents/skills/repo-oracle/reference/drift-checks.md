@@ -175,6 +175,63 @@ though the language is supported.
 
 ---
 
+## Check 8 — labels the policy depends on but the repo does not have
+
+`.github/policy.yml` names labels that must exist on GitHub for the sweeps and their
+escape hatches to work. Nothing enforces that they do, and a missing one fails
+silently: an exemption naming a nonexistent label exempts nothing, and a maintainer
+reaching for a documented escape hatch finds it is not there.
+
+This is the one check that reaches outside the repo, so it has to prove its instrument
+works before believing its own output. A naive version asks `gh` for the labels and
+treats whatever comes back as the truth — and when `gh` is missing or simply not
+logged in, the empty result reads as *every label is missing*. That is a confident,
+totally false report of a broken repo. The guards below are not defensive padding;
+without them this check is worse than not running it.
+
+```bash
+uv run --with pyyaml python3 -c "
+import shutil, subprocess, sys, yaml
+
+if shutil.which('gh') is None:
+    sys.exit('SKIPPED: gh is not installed, so labels cannot be checked.')
+
+r = subprocess.run(
+    ['gh', 'label', 'list', '--limit', '200', '--json', 'name', '--jq', '.[].name'],
+    capture_output=True, text=True)
+if r.returncode != 0:
+    first = (r.stderr.strip().splitlines() or ['unknown error'])[0]
+    sys.exit(f'SKIPPED: gh could not list labels ({first}).')
+
+have = set(r.stdout.split())
+if not have:
+    sys.exit('SKIPPED: gh returned no labels at all — treating that as a tool failure.')
+
+p = yaml.safe_load(open('.github/policy.yml'))['stale_policy']
+want = {p['stale_label'], p['keep_open_label'], p['pull_requests']['bot_label'],
+        *p['issues']['exempt_labels']}
+for label in sorted(want):
+    print(f'{label:20} {\"OK\" if label in have else \"MISSING FROM REPO\"}')
+"
+```
+
+Three failure states, three distinct outcomes: `gh` absent, `gh` present but not
+authenticated, and `gh` answering with nothing. All three exit non-zero with `SKIPPED`
+and report no findings at all. **Report a skip as a skip.** An audit that cannot run
+this check is missing one check; an audit that reports its own tooling failure as
+missing labels has lied to an admin.
+
+This covers the labels `policy.yml` holds as *values*. At least one more is named only
+inside a comment — the frozen-paths escape hatch — so also grep the file for
+label-shaped names before calling the check complete.
+
+Report a missing label as a repo problem, not a policy problem: the fix is almost
+always to create the label rather than to edit the policy. Note also that a label the
+canary creates on its first run is absent until then, which is expected rather than
+broken.
+
+---
+
 ## Tracing what consumes a config key
 
 The blast-radius question. Given a key such as `deployability.min_google_adk`:
