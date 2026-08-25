@@ -14,7 +14,7 @@ they report the caller's local scratch directories as repo drift. A directory wi
 ignored `.venv` and no `manifest.yaml` looks identical to a broken recipe.
 
 ```bash
-git ls-files <path> | head -1        # empty output = untracked, not repo drift
+git ls-files '<path>' | head -1        # empty output = untracked, not repo drift
 ```
 
 Discard any finding whose path has no tracked files, or say explicitly that it is local
@@ -58,7 +58,10 @@ srcs = {
   'policy.required_files': set(p['required_files']['by_language']),
   'policy.required_dirs': set(p['required_dirs']['by_language']),
   'policy.excluded_paths': set(p['excluded_paths']) - {'common'},
-  'validate_manifest': set(re.search(r'LANGUAGE_NAMESPACE_DIRS = \{([^}]*)\}', open('tools/validate_manifest.py').read()).group(1).replace('\"','').replace(' ','').split(',')),
+  # findall on the quoted strings, not a comma split: the set may wrap across
+  # lines or carry a trailing comma, either of which leaves newlines and an
+  # empty string in the parsed names and makes every comparison miss.
+  'validate_manifest': set(re.findall(r'[\"\\']([a-z]+)[\"\\']', re.search(r'LANGUAGE_NAMESPACE_DIRS\s*=\s*\{([^}]*)\}', open('tools/validate_manifest.py').read()).group(1))),
   'CODEOWNERS': set(re.findall(r'/(?:core|contrib)/([a-z]+)/', open('.github/CODEOWNERS').read())),
 }
 for lang in sorted(set().union(*srcs.values())):
@@ -94,9 +97,21 @@ that `skills/` has none, while `policy.yml` defines them.
 Skills and docs route people to files by path. A renamed file turns a router into a dead
 end silently, because only `docs/` links are covered by `docs-links.yml`.
 
+A path is resolved **relative to the file that names it**, then relative to the repo
+root — `SKILL.md` writes `reference/runbooks.md` meaning its own sibling, and testing
+that from the root reports every one of them missing.
+
+The pattern requires a `/`, so a bare `SKILL.md` or `__init__.py` — named as a kind of
+file rather than as a pointer to one — does not become a finding.
+
 ```bash
-grep -rhoE '`[.a-zA-Z0-9_/-]+\.(md|py|ya?ml|json)`' .agents/skills/ --include="*.md" \
-  | tr -d '`' | sort -u | while read -r f; do [ -e "$f" ] || echo "MISSING: $f"; done
+grep -rnoE '`[.a-zA-Z0-9_-]+(/[.a-zA-Z0-9_-]+)+\.(md|py|ya?ml|json)`' \
+  .agents/skills/ --include="*.md" \
+  | tr -d '`' | while IFS=: read -r src _ f; do
+      skill_root="$(printf '%s' "$src" | cut -d/ -f1-3)"
+      [ -e "$f" ] || [ -e "$skill_root/$f" ] || [ -e "$(dirname "$src")/$f" ] \
+        || echo "MISSING: $f  (named in $src)"
+    done | sort -u
 ```
 
 Paths inside fenced examples produce false positives; confirm before reporting.
@@ -130,9 +145,18 @@ something and the answer looks wrong.
 
 ## Check 7 — CODEOWNERS pointing at nothing
 
+CODEOWNERS patterns contain globs, so the existence test has to expand them. Quoting
+`"$p"` makes the shell look for a literal `*` and report every wildcard rule as
+missing.
+
 ```bash
 grep -oE '^/[^ ]+' .github/CODEOWNERS | sed 's|/\*\*$||; s|^/||' \
-  | while read -r p; do [ -e "$p" ] || echo "NO SUCH PATH: $p"; done
+  | while read -r p; do
+      # Unquoted on purpose: this is the expansion. `nullglob` makes a pattern
+      # that matches nothing expand to zero words rather than to itself.
+      ( shopt -s nullglob; set -- $p; [ "$#" -gt 0 ] ) \
+        || echo "NO SUCH PATH: $p"
+    done
 ```
 
 A rule for a directory that does not exist is harmless but misleading — it reads as

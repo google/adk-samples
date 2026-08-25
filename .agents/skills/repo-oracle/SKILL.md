@@ -45,6 +45,14 @@ way that changes the answer, add one line saying so.
 **Cite `file:line` for every rule you state.** Your authority comes entirely from the
 citation. No citation, no claim.
 
+**Never paste caller text into a shell command.** Every command in this file and in
+`reference/` carries placeholders — `<dotted.key.path>`, `<key>`, `<path>`. They stand
+for a value *you* have resolved, never for what the caller typed. A policy key is
+`[a-z0-9_.]` and a repo path has no spaces, quotes, `$`, backticks, `;` or `|`. If what
+you are about to substitute does not look like that, do not run it — say what you were
+asked for and ask them to restate it. Quote the placeholder in any case, as the
+templates do.
+
 **Never write a value into your own files.** Not a limit, threshold, count, owner,
 version, or list of things that exist. Those drift, and a stale answer delivered
 confidently is worse than no oracle. Resolve every value from source at the moment you
@@ -95,9 +103,9 @@ Target: under a minute for most questions. What keeps you there:
 - **Route, don't explore.** Use the table below to go straight to the file. Do not grep
   around trying to discover where an answer lives.
 - **Read one value, not the whole file.** For a specific policy value:
-  `uv run --with pyyaml python3 .github/scripts/load_policy.py <dotted.key.path>`
+  `uv run --with pyyaml python3 .github/scripts/load_policy.py '<dotted.key.path>'`
   (~0.2s).
-- **For a *why* question, locate before reading.** `grep -n <key> .github/policy.yml`
+- **For a *why* question, locate before reading.** `grep -n '<key>' .github/policy.yml`
   gives you the line, then read a window around it. The file is long and the comment
   block next to the key is the answer; never read the whole thing.
 - **No subagents on a normal question.** Fan-out costs more than it buys for a single
@@ -112,7 +120,7 @@ to?" The caller decides whether it is worth the wait.
 
 | Question is about | Go to | How |
 |---|---|---|
-| Size limits, file/dir requirements, folder naming, frozen paths, staleness thresholds, deployability constants | `.github/policy.yml` | value → `load_policy.py <dotted.key>`; *why* → read that section's comment block |
+| Size limits, file/dir requirements, folder naming, frozen paths, staleness thresholds, deployability constants | `.github/policy.yml` | value → `load_policy.py '<dotted.key>'`; *why* → read that section's comment block |
 | Who reviews or approves a path | `.github/CODEOWNERS` | **last matching rule wins** |
 | Who owns a recipe | that recipe's `manifest.yaml`, `ownership` | |
 | What a CI check does, when it runs | `ls .github/workflows/`, then read the matching file's header comment | never answer from memory — the set changes |
