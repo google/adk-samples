@@ -1,4 +1,4 @@
-<!-- word count: 714 (target 800, cap 1200) -->
+<!-- word count: 848 (target 800, cap 1200) -->
 
 # Repo Skills Catalog
 
@@ -128,6 +128,46 @@ without credentials.
 - **Modes:** dry-run (preview) and apply.
 - **When to use:** adding the required runnability test.
 - **Trigger:** "generate runnability test for contrib/python/my-recipe".
+
+### `make-python-recipe-deployable`
+
+Turns a working recipe into a **deployable** one — packageable into
+a container and runnable as a service. Generates the serving files
+(`Dockerfile`, `.dockerignore`, `fast_api_app.py`,
+`app_utils/{a2a,services,reasoning_engine_adapter}.py`,
+`agents-cli-manifest.yaml`) and configures the recipe to match.
+
+Opt-in, and deliberately not part of `prepare-python-recipe`: most
+recipes do not need to be deployable.
+
+- **Input:** recipe path. Optional `--data-dirs`, `--region`,
+  `--overwrite`, `--verify-container`.
+- **Writes:** the serving files, plus `pyproject.toml` (serving
+  deps, hatch wheel package), `agent.py` (the `App` object), and
+  `manifest.yaml` (`deployable: true`).
+- **Modes:** dry-run reports; `--apply` writes.
+- **Stops rather than guessing** when the recipe needs an ADK major
+  migration, or carries the old `app_utils` generation
+  (`telemetry.py` / `typing.py` / `deploy.py`).
+- **Verifies its own output** when docker is available: builds the
+  generated Dockerfile, runs it, and probes `/list-apps` and the A2A
+  agent card. A container that will not come up **blocks**
+  `manifest.deployable`. The skill asks before doing this, and skips
+  cleanly when there is no container runtime — the common case, and
+  not a failure.
+- **Six outcomes,** crossing whether the recipe needs provisioned
+  infrastructure with whether a container actually proved it:
+  `deployable-verified`, `deployable-unverified`,
+  `containerized-verified`, `containerized-unverified`,
+  `verification-failed`, `blocked`. Both `containerized-*` and
+  `verification-failed` leave `manifest.deployable` unset on purpose,
+  so a reader can always tell a proven result from an assumed one.
+- **Does not** deploy or write terraform. It builds an image only to
+  check its own work and then deletes it; publishing belongs to Cloud
+  Build and Artifact Registry.
+- **Standard lives in** [`.github/policy.yml`](../../.github/policy.yml)
+  under `deployability:`, not in the skill's code.
+- **Trigger:** "make contrib/python/my-recipe deployable".
 
 ## Java / Go / TypeScript / Kotlin skills
 

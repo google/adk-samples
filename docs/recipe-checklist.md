@@ -1,4 +1,4 @@
-<!-- word count: 889 (target 900, cap 1200) -->
+<!-- word count: 906 (target 900, cap 1200) -->
 
 # Recipe Checklist
 
@@ -22,6 +22,7 @@ skill in the right order.
 | `align-recipe-pyproject` | Fixes `pyproject.toml` to match repo conventions | `align pyproject.toml for contrib/python/my-recipe` |
 | `extract-python-environment-variables` | Populates `.env.example` from Python source and adds `load_dotenv()` where needed | `extract env vars for contrib/python/my-recipe` |
 | `generate-python-runnability-test` | Writes `tests/test_runnability.py` | `generate runnability test for contrib/python/my-recipe` |
+| `make-python-recipe-deployable` | Adds the serving files so the recipe can run as a container. Opt-in — not run by `prepare-python-recipe` | `make contrib/python/my-recipe deployable` |
 
 For deep detail on each skill, see the
 [Repo Skills Catalog](./recipe-handbook/skills-catalog.md).

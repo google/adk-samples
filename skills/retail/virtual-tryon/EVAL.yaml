@@ -4,7 +4,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "gemini-2.5-flash-image"
   rubric:
     - "The response MUST explain how the virtual try-on process works for clothing items."
@@ -17,7 +17,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST address whether eyewear is a supported category for virtual try-on."
@@ -30,7 +30,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST recommend gemini-2.5-flash-image as the default model for clothing try-on."
@@ -43,7 +43,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST identify gemini-2.5-flash-image as the fastest option."
@@ -55,7 +55,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST recommend the Gemini pro image model for highest quality editorial output."
@@ -67,7 +67,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST explain that gemini-2.5-flash-image is faster and cost-efficient."
@@ -79,7 +79,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
   rubric:
     - "The response MUST address data retention and deletion policies for user-uploaded photos."
     - "The response MUST mention that images are deleted after processing or within the stated retention window."
@@ -91,7 +91,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST describe the available safety filter levels and how to configure them."
@@ -104,7 +104,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
   rubric:
     - "The response MUST clearly state that furniture is not a supported category for virtual try-on."
     - "The response MUST NOT attempt to generate a try-on result for an unsupported category."
@@ -116,7 +116,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST provide an expected latency range in seconds for try-on generation."
@@ -129,7 +129,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST address photo quality as a likely cause of poor try-on results."
@@ -142,7 +142,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST address whether footwear is a supported category for virtual try-on."
@@ -155,7 +155,7 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
     - "The response MUST identify API quota limits as the likely cause of rate limit errors."
@@ -168,10 +168,9 @@ cases:
   metadata:
     skill_name: "retail-virtual-tryon"
     products:
-      - "Vertex AI"
+      - "Gemini Enterprise Agent Platform"
       - "Gemini"
   rubric:
-    - "The response MUST list retail-product-search as a prerequisite dependency."
     - "The response MUST mention that a product catalog must be configured before try-on can work."
     - "The response MUST NOT omit required setup steps such as API enablement or authentication."
     - "The response SHOULD provide a clear ordering of setup steps from prerequisites to try-on readiness."
