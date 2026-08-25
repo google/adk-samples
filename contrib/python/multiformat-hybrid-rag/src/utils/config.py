@@ -78,9 +78,22 @@ def bootstrap_auth() -> None:
 # ---------------------------------------------------------------------------
 # Config dataclass
 # ---------------------------------------------------------------------------
-def _get(key: str, default: str | None = None) -> str:
-    """Get a config value from environment, raising if missing and no default."""
-    val = os.environ.get(key, default)
+def _get(
+    key: str, default: str | None = None, allow_empty: bool = False
+) -> str:
+    """Get a config value from environment, raising if missing and no default.
+
+    An empty value counts as unset unless allow_empty is True. .env.example is
+    loaded as a runtime fallback and necessarily declares some keys empty, so
+    treating "" as a real value would both shadow the defaults below and let a
+    blanked *required* key slip through as "" instead of raising. Mirrors
+    app.config.env_or.
+    """
+    val = os.environ.get(key)
+    if val == "" and not allow_empty:
+        val = None
+    if val is None:
+        val = default
     if val is None:
         raise ValueError(f"Missing required config: {key}")
     return val
@@ -146,7 +159,8 @@ config = Config(
     project_id=_get("GOOGLE_CLOUD_PROJECT"),
     region=_get("GOOGLE_CLOUD_LOCATION"),
     gcs_bucket=_get("GCS_BUCKET"),
-    gcs_prefix=_get("GCS_PREFIX", "documents/"),
+    # allow_empty: an empty prefix legitimately means "the whole bucket".
+    gcs_prefix=_get("GCS_PREFIX", "documents/", allow_empty=True),
     bq_dataset=_get("BQ_DATASET"),
     bq_object_table=_get("BQ_OBJECT_TABLE"),
     bq_preprocessed_table=_get("BQ_PREPROCESSED_TABLE"),

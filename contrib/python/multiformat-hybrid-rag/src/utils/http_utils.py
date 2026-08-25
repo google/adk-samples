@@ -38,6 +38,7 @@ def post_with_retry(
     body: dict,
     timeout: int,
     attempts: int = 4,
+    rate_limit_attempts: int = 20,
 ) -> dict:
     """POST with exponential backoff on 5xx, 429, and connection errors.
 
@@ -46,11 +47,13 @@ def post_with_retry(
     - 429 (rate limit): retried with backoff but does NOT count toward
       the attempt limit — Cloud Run platform 429s during burst dispatch
       are expected and should not exhaust retry budget for transient
-      service errors.
+      service errors. Bounded separately by `rate_limit_attempts` so a
+      service stuck returning 429 cannot loop forever.
     - Other 4xx: raise immediately (non-retryable).
     """
     last_exc: Exception | None = None
     attempt = 0
+    rate_limited = 0
     while attempt < attempts:
         try:
             response = requests.post(
@@ -79,7 +82,12 @@ def post_with_retry(
             wait = min(30.0, 0.5 * (2**attempt)) * (0.5 + random.random())
             if status == 429:
                 # Don't burn an attempt on platform rate-limit; Cloud Run
-                # will admit us once the autoscaler catches up.
+                # will admit us once the autoscaler catches up. Capped
+                # independently so a permanently rate-limited endpoint
+                # cannot spin here indefinitely.
+                rate_limited += 1
+                if rate_limited >= rate_limit_attempts:
+                    raise
                 time.sleep(wait)
                 continue
             attempt += 1

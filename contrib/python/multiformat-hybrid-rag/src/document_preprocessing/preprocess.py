@@ -45,7 +45,11 @@ Identity:
     file's location rather than its contents.
 
 Supported file types:
-    PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS, RTF, HTML, Markdown, plain text.
+    PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS, RTF, HTML, JSON, JSONL, Markdown,
+    plain text. This list, the extension filter in the change-detection
+    query below, and PARSEABLE_MIMES in
+    src/document_preprocessing/parser/__init__.py must stay in step — a
+    format missing from any one of them is silently never ingested.
 """
 
 from __future__ import annotations
@@ -161,8 +165,13 @@ def find_changed_with_dedup(
       -- no Gemini call, no stub row written. Adding a new garbage type
       -- to the bucket is harmless: the regex won't match.
       --
-      -- The attachment_urls.jsonl exclusion drops the SITO TUO scrape
-      -- index file (a list of URLs, not knowledge content).
+      -- Keep this allowlist in step with the module docstring and with
+      -- PARSEABLE_MIMES in src/document_preprocessing/parser/__init__.py.
+      -- A format missing from any one of the three is silently dropped.
+      -- A deployment that needs to exclude a noisy source (large
+      -- machine-generated JSON, scrape index files, and so on) should
+      -- filter it out of the bucket prefix rather than narrowing this
+      -- allowlist, so the recipe keeps matching what its README promises.
       --
       -- file_id is the deterministic identity (MD5 of the URI) so we can
       -- join against `preprocessed.file_id` without storing it on the
@@ -176,9 +185,11 @@ def find_changed_with_dedup(
         FROM `{fq_object_table}`
         WHERE STARTS_WITH(uri, 'gs://')
           AND STRPOS(uri, '{gcs_prefix}') > 0
+          -- Keep in step with PARSEABLE_MIMES in
+          -- src/document_preprocessing/parser/__init__.py. Anything parseable
+          -- but absent here is silently never ingested.
           AND REGEXP_CONTAINS(LOWER(uri),
-                r'\\.(html?|pdf|docx?|pptx?|rtf|md|txt)$')
-          AND NOT ENDS_WITH(uri, '/attachment_urls.jsonl')
+                r'\\.(html?|pdf|docx?|pptx?|xlsx?|rtf|md|txt|jsonl?)$')
       ),
 
       -- Step 2 — existing: minimal projection of preprocessed used only

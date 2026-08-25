@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
@@ -26,6 +27,8 @@ from app.config import (
 from app.mcp_server import _generate_answer
 from app.mcp_server import server as mcp_server
 from app.vector_search import search_collection
+
+logger = logging.getLogger(__name__)
 
 allow_origins = (
     os.getenv("ALLOW_ORIGINS", "").split(",")
@@ -85,8 +88,15 @@ def search(req: SearchRequest) -> dict:
 
         answer = _generate_answer(context, req.conversation_summary, req.query)
         return {"result": answer}
-    except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+    except Exception:
+        # Log the detail server-side; return something generic. The previous
+        # form handed the exception class and message to the caller, which
+        # leaks internals (resource paths, backend errors) and reports a
+        # failure as HTTP 200.
+        logger.exception("search request failed")
+        raise HTTPException(
+            status_code=500, detail="Search failed. See server logs."
+        ) from None
 
 
 # --- Mount MCP server into FastAPI (same port, externally reachable) ---

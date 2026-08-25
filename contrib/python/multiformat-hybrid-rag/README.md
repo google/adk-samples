@@ -50,7 +50,7 @@ For a detailed walkthrough of every component, edge case, and design decision, s
 **Option A: Clone directly from adk-samples**
 ```bash
 git clone https://github.com/google/adk-samples.git
-cd adk-samples/python/agents/multiformat-hybrid-rag
+cd adk-samples/contrib/python/multiformat-hybrid-rag
 ```
 
 **Option B: Create project from template**
@@ -73,11 +73,20 @@ You'll be prompted to select a deployment option — choose **None** if you want
 
 ### Step 2: Configure Environment
 
-Edit `.env` and set at least:
+The recipe ships `.env.example` as a template; `.env` itself is gitignored, so
+create your own copy first:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and set at least:
 ```env
 GOOGLE_CLOUD_PROJECT=your-gcp-project-id
 ```
 All other variables have sensible defaults and can be customized later.
+`.env.example` is also read at runtime as a fallback, so anything you leave
+out falls back to the committed default rather than being empty.
 
 ### Step 3: Install Dependencies
 ```bash

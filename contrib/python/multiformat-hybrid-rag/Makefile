@@ -4,7 +4,7 @@
 # ==============================================================================
 
 install:
-	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/0.8.13/install.sh | sh; . $HOME/.local/bin/env; }
+	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/0.8.13/install.sh | sh; . $$HOME/.local/bin/env; }
 	uv sync
 
 # ==============================================================================
@@ -59,7 +59,9 @@ setup-infra:
 		--substitutions=_IMAGE="$$CHUNK_INDEX_SERVICE_IMAGE" --project="$$GOOGLE_CLOUD_PROJECT" . & \
 	gcloud builds submit --config=data_ingestion_pipeline/cloudbuild.yaml \
 		--substitutions=_IMAGE="$$PIPELINE_IMAGE" --project="$$GOOGLE_CLOUD_PROJECT" . & \
-	wait && echo "All images built."; }
+	fail=0; for job in $$(jobs -p); do wait $$job || fail=1; done; \
+	if [ $$fail -ne 0 ]; then echo "ERROR: at least one image build failed." >&2; exit 1; fi; \
+	echo "All images built."; }
 	@echo "Deploying Cloud Run services..."
 	@set -a && . ./.env && set +a && { \
 	gcloud run deploy $${PROJECT_NAME:-multiformat-hybrid-rag}-preprocess \
@@ -72,7 +74,9 @@ setup-infra:
 		--region="$$GOOGLE_CLOUD_LOCATION" \
 		--project="$$GOOGLE_CLOUD_PROJECT" \
 		--quiet & \
-	wait && echo "All services deployed."; }
+	fail=0; for job in $$(jobs -p); do wait $$job || fail=1; done; \
+	if [ $$fail -ne 0 ]; then echo "ERROR: at least one service deploy failed." >&2; exit 1; fi; \
+	echo "All services deployed."; }
 
 tf-plan:
 	@if [ ! -f ./.env ]; then echo "Error: .env not found"; exit 1; fi

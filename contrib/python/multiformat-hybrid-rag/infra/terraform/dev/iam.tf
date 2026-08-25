@@ -24,8 +24,11 @@ data "google_project" "dev_project" {
   project_id = var.project_id
 }
 
-# Grant Storage Object Creator role to default compute service account
-resource "google_project_iam_member" "default_compute_sa_storage_object_creator" {
+# The default compute service account is what Cloud Build runs as. It needs
+# the Cloud Build Builder role to push images to Artifact Registry and write
+# build logs. (The name and comment previously said Storage Object Creator,
+# which never matched the role actually granted.)
+resource "google_project_iam_member" "default_compute_sa_cloudbuild_builder" {
   project    = var.project_id
   role       = "roles/cloudbuild.builds.builder"
   member     = "serviceAccount:${data.google_project.dev_project.number}-compute@developer.gserviceaccount.com"
