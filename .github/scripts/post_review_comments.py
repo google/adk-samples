@@ -270,6 +270,15 @@ def extract_findings(response: str) -> list:
     them, so the first fenced array in the response is no longer reliably the
     answer — the prompt says the findings block comes last, and this reads it
     from the same end.
+
+    A block that will not parse AT ALL is salvaged finding by finding rather
+    than thrown away whole. Findings now quote source verbatim in `window`,
+    and source is full of double quotes: a reviewer emitted
+
+        "window": "  211:     assert res["success"] is True\\n ..."
+
+    which is one unescaped pair away from valid and killed an entire review
+    of three good findings. One malformed finding should cost that finding.
     """
     matches = list(FENCED_BLOCK.finditer(response))
     # Both branches guarantee a block starting at "[", so the scan below
@@ -282,7 +291,6 @@ def extract_findings(response: str) -> list:
 
     decoder = json.JSONDecoder()
     findings: list = []
-    seen: set[str] = set()
     parsed_any = False
     index = 0
 
@@ -292,20 +300,59 @@ def extract_findings(response: str) -> list:
         except json.JSONDecodeError as exc:
             if parsed_any:
                 break
+            salvaged = _salvage_findings(block, decoder)
+            if salvaged:
+                print(
+                    f"  findings block is malformed JSON ({exc}); "
+                    f"salvaged {len(salvaged)} finding(s) from it"
+                )
+                return _dedupe(salvaged)
             raise ReviewerOutputError(
                 f"findings block is not valid JSON: {exc}"
             ) from exc
 
         parsed_any = True
-        # A repeated block repeats its findings, and posting the same note
-        # twice on the same line is worse than posting it once.
-        for finding in array:
-            key = json.dumps(finding, sort_keys=True)
-            if key not in seen:
-                seen.add(key)
-                findings.append(finding)
+        findings.extend(array)
 
-    return findings
+    return _dedupe(findings)
+
+
+def _dedupe(findings: list) -> list:
+    """A repeated block repeats its findings, and posting the same note twice
+    on the same line is worse than posting it once."""
+    seen: set[str] = set()
+    unique: list = []
+    for finding in findings:
+        key = json.dumps(finding, sort_keys=True, default=str)
+        if key not in seen:
+            seen.add(key)
+            unique.append(finding)
+    return unique
+
+
+def _salvage_findings(block: str, decoder: json.JSONDecoder) -> list[dict]:
+    """Decode findings one object at a time, skipping ones that will not parse.
+
+    Only objects carrying the fields a finding must have are kept. Advancing
+    past a failure means the next `{` tried may be one inside a string, so
+    something has to reject the resulting debris; requiring `path` and `body`
+    does, and every real finding has both.
+    """
+    salvaged: list[dict] = []
+    index = 0
+    while (start := block.find("{", index)) != -1:
+        try:
+            candidate, index = decoder.raw_decode(block, start)
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+        if (
+            isinstance(candidate, dict)
+            and str(candidate.get("path") or "").strip()
+            and str(candidate.get("body") or "").strip()
+        ):
+            salvaged.append(candidate)
+    return salvaged
 
 
 def _coerce_line(value: object) -> int | None:

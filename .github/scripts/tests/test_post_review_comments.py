@@ -873,3 +873,58 @@ def test_an_anchor_inside_its_window_is_left_alone():
         }
     )
     assert [c["line"] for c in comments] == [2]
+
+
+# --------------------------------------------------------------------------
+# Salvaging a malformed findings block
+#
+# Findings quote source verbatim in `window`, and source is full of double
+# quotes. A reviewer that forgets to escape one used to cost the whole review
+# AND turn the check red. Caught by a dry run against a real PR, not by any
+# test written beforehand — hence the recorded fixture.
+# --------------------------------------------------------------------------
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_one_unescaped_quote_does_not_destroy_the_whole_review():
+    """Regression: run 32896537749, Maintainability on PR #2545.
+
+    The reviewer emitted `"window": "  211:     assert res["success"] is True"`
+    — valid but for one unescaped pair. Three good findings were thrown away
+    and the job failed with a CI-fault annotation on the contributor's PR.
+    """
+    response = (FIXTURES / "malformed_findings_response.txt").read_text(
+        encoding="utf-8"
+    )
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(m.FENCED_BLOCK.findall(response)[-1])
+
+    findings = m.extract_findings(response)
+    assert len(findings) == 2
+    paths = {f["path"].split("/")[-1] for f in findings}
+    assert paths == {"test_routine_tool.py", "test_process_tool.py"}
+    # The malformed one is the casualty, and only it.
+    assert all(
+        "errno" in f["body"] or "duplicated" in f["body"] for f in findings
+    )
+
+
+def test_salvage_keeps_only_things_shaped_like_findings():
+    """Advancing past a bad object can land on a `{` inside a string.
+
+    Requiring path and body is what stops that debris becoming a comment.
+    """
+    block = (
+        '[{"path": "a.py", "line": 1, "body": "real", "window": "x"broken"},'
+        ' {"nested": {"not": "a finding"}},'
+        ' {"path": "b.py", "line": 2, "body": "also real"}]'
+    )
+    salvaged = m._salvage_findings(block, json.JSONDecoder())
+    assert [f["path"] for f in salvaged] == ["b.py"]
+
+
+def test_a_block_that_salvages_nothing_is_still_a_ci_fault():
+    """Silence must not be mistaken for a clean review."""
+    with pytest.raises(m.ReviewerOutputError):
+        m.extract_findings("```json\n[{totally broken}\n```")
