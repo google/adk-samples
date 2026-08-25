@@ -14,6 +14,7 @@
 
 """Translator from SQLite to BigQuery."""
 
+import os
 import re
 from typing import Any, Final
 
@@ -35,6 +36,10 @@ SQLGlotColumnsDictType = dict[str, str]
 SQLGlotSchemaType = dict[str, Any]
 
 BirdSampleType = dict[str, Any]
+
+# Read once at import so it can serve as an argument default without
+# tripping ruff B008 (function call in default argument).
+_DEFAULT_MODEL = os.getenv("MODEL_NAME")
 
 
 def _isinstance_list_of_str_tuples_lists(obj: Any) -> bool:
@@ -120,7 +125,7 @@ class SqlTranslator:
 
     def __init__(
         self,
-        model: str | GeminiModel = "gemini-2.5-flash",
+        model: str | GeminiModel = _DEFAULT_MODEL,
         temperature: float = 0.5,
         process_input_errors: bool = False,
         process_tool_output_errors: bool = False,

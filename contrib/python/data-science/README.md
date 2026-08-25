@@ -97,7 +97,7 @@ set up the data sources to be used with the agent.
 
     ```bash
     git clone https://github.com/google/adk-samples.git
-    cd adk-samples/python/agents/data-science
+    cd adk-samples/contrib/python/data-science
     ```
 
 1.  **Install Dependencies with uv:**
@@ -111,7 +111,7 @@ set up the data sources to be used with the agent.
     this command will also create a new virtual environment.
 
     By default, the virtual environment will be created in a `.venv` directory
-    inside `adk-samples/python/agents/data-science`. If you already have a virtual
+    inside `adk-samples/contrib/python/data-science`. If you already have a virtual
     environment created, or you want to use a different location, you can use
     the `--active` flag for `uv` commands, and/or change the
     `UV_PROJECT_ENVIRONMENT` environment variable. See
@@ -353,7 +353,7 @@ and BQML analytics queries.
 You will find this sample dataset in the
 `data-science/data_science/utils/data/` directory. To load this dataset into
 BigQuery, make sure you are still in the working directory
-(`agents/data-science`). Then run the following commands:
+(`contrib/python/data-science`). Then run the following commands:
 ```bash
 python3 data_science/utils/create_bq_table.py
 ```
@@ -569,7 +569,7 @@ The Google Agents CLI will prompt you to select deployment options and provides 
 ## Testing and Evaluation
 
 To run the test and evaluation code, you need a few additional dependencies. Run
-the following uv command from the `agents/data-science` directory to install them:
+the following uv command from the `contrib/python/data-science` directory to install them:
 ```bash
 uv sync --dev
 ```
@@ -613,6 +613,9 @@ uv run pytest tests
 
 - This command executes all test files within the `tests/` directory.
 - `uv run` ensures that pytest runs within the project's virtual environment.
+- The tests under `tests/integration/` drive the agents for real, so they need
+  credentials and a populated dataset. To run only the checks that work without
+  them, use `uv run pytest tests --ignore=tests/integration`.
 
 
 ## Deployment on Agent Runtime
@@ -801,12 +804,13 @@ The main part of the `test_deployment.py` script is approximately this code:
 
 ```python
 from vertexai import agent_engines
+
 remote_agent = vertexai.agent_engines.get(RESOURCE_ID)
 session = remote_agent.create_session(user_id=USER_ID)
 while True:
     user_input = input("Input: ")
     if user_input == "quit":
-      break
+        break
 
     for event in remote_agent.stream_query(
         user_id=USER_ID,
@@ -836,7 +840,7 @@ python3 deployment/deploy.py --delete --resource_id=RESOURCE_ID
     levels of detail.
 *   **Extension:** Extend the multi-agent system with your own AgentTools or
     sub_agents. You can do so by adding additional tools and sub_agents to the
-    root agent inside `agents/data-science/data_science/agent.py`.
+    root agent inside `contrib/python/data-science/data_science/agent.py`.
 *   **Partial imports:** If you only need certain capabilities inside the
     multi-agent system, e.g. just the data agent, you can import the data_agent
     as an AgentTool into your own root agent.

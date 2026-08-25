@@ -28,7 +28,9 @@ from data_science.agent import root_agent
 from data_science.sub_agents.bigquery.agent import database_agent
 from data_science.sub_agents.bqml.agent import root_agent as bqml_agent
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+)
 
 session_service = InMemorySessionService()
 artifact_service = InMemoryArtifactService()

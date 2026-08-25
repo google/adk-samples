@@ -7,7 +7,7 @@ authors = [
 ]
 license = {text = "Apache License 2.0"}
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 
 dependencies = [
     "python-dotenv>=1.0.1",
@@ -38,17 +38,6 @@ dev = [
     "agent-starter-pack>=0.14.1",
 ]
 
-[tool.ruff]
-# Points back to the Master template in the root
-extend = "../../../pyproject.toml"
-
-[tool.ruff.lint]
-ignore = ["C901", "PLR0911", "PLR0912", "PLW0603"]
-
-[tool.ruff.lint.isort]
-# Ensures the data science source is treated as first-party
-known-first-party = ["data_science"]
-
 [tool.hatch.build.targets.wheel]
 # Maps the package source correctly for Hatchling
 packages = ["data_science"]
@@ -75,3 +64,7 @@ agent_directory = "data_science"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true

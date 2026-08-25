@@ -120,7 +120,7 @@ class GeminiModel:
 
     def __init__(
         self,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = os.getenv("MODEL_NAME"),
         finetuned_model: bool = False,
         distribute_requests: bool = False,
         cache_name: str | None = None,
