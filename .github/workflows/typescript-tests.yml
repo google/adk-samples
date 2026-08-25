@@ -73,7 +73,7 @@ jobs:
   detect-recipes:
     name: Detect affected TypeScript recipes
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       recipes: ${{ steps.detect.outputs.recipes }}
       count: ${{ steps.detect.outputs.count }}
