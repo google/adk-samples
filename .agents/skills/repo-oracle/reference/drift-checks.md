@@ -52,21 +52,27 @@ enforces agreement. This is the highest-value consistency check in the repo.
 ```bash
 uv run --with pyyaml python3 -c "
 import json, re, yaml
-p = yaml.safe_load(open('.github/policy.yml'))
-srcs = {
-  'schema.enum': set(json.load(open('.github/schemas/manifest-schema.json'))['properties']['language']['enum']),
-  'policy.required_files': set(p['required_files']['by_language']),
-  'policy.required_dirs': set(p['required_dirs']['by_language']),
-  'policy.excluded_paths': set(p['excluded_paths']) - {'common'},
-  # findall on the quoted strings, not a comma split: the set may wrap across
+policy = yaml.safe_load(open('.github/policy.yml'))
+schema = json.load(open('.github/schemas/manifest-schema.json'))
+validate_manifest_src = open('tools/validate_manifest.py').read()
+codeowners_src = open('.github/CODEOWNERS').read()
+
+# Keys are lowercase dotted 'file.thing' paths, so the MISSING FROM line below
+# names where to go and not just what is wrong.
+sources = {
+  'schema.language_enum': set(schema['properties']['language']['enum']),
+  'policy.required_files': set(policy['required_files']['by_language']),
+  'policy.required_dirs': set(policy['required_dirs']['by_language']),
+  'policy.excluded_paths': set(policy['excluded_paths']) - {'common'},
+  # findall over the quoted strings, not a comma split: the set may wrap across
   # lines or carry a trailing comma, either of which leaves newlines and an
-  # empty string in the parsed names and makes every comparison miss.
-  'validate_manifest': set(re.findall(r'[\"\\']([a-z]+)[\"\\']', re.search(r'LANGUAGE_NAMESPACE_DIRS\s*=\s*\{([^}]*)\}', open('tools/validate_manifest.py').read()).group(1))),
-  'CODEOWNERS': set(re.findall(r'/(?:core|contrib)/([a-z]+)/', open('.github/CODEOWNERS').read())),
+  # empty string among the names and makes every comparison miss.
+  'validate_manifest.language_namespace_dirs': set(re.findall(r'[\"\\']([a-z]+)[\"\\']', re.search(r'LANGUAGE_NAMESPACE_DIRS\s*=\s*\{([^}]*)\}', validate_manifest_src).group(1))),
+  'codeowners.recipe_roots': set(re.findall(r'/(?:core|contrib)/([a-z]+)/', codeowners_src)),
 }
-for lang in sorted(set().union(*srcs.values())):
-    missing = [n for n, s in srcs.items() if lang not in s]
-    print(f'{lang:12} {\"OK\" if not missing else \"MISSING FROM: \" + \", \".join(missing)}')
+for language in sorted(set().union(*sources.values())):
+    absent_from = [name for name, langs in sources.items() if language not in langs]
+    print(f'{language:12} {\"OK\" if not absent_from else \"MISSING FROM: \" + \", \".join(absent_from)}')
 "
 ```
 
@@ -154,7 +160,12 @@ grep -oE '^/[^ ]+' .github/CODEOWNERS | sed 's|/\*\*$||; s|^/||' \
   | while read -r p; do
       # Unquoted on purpose: this is the expansion. `nullglob` makes a pattern
       # that matches nothing expand to zero words rather than to itself.
-      ( shopt -s nullglob; set -- $p; [ "$#" -gt 0 ] ) \
+      #
+      # BOTH tests are needed. A path with no wildcard is never expanded, so
+      # it survives as one literal word and `$#` is 1 whether or not it
+      # exists. Counting alone therefore passes every non-glob path — which
+      # is most of the file — and the check silently finds nothing.
+      ( shopt -s nullglob; set -- $p; [ "$#" -gt 0 ] && [ -e "$1" ] ) \
         || echo "NO SUCH PATH: $p"
     done
 ```
