@@ -248,3 +248,9 @@ skills-lock.json
 /consolidate.py
 /get_failures.py
 /ge-tool-call-wire-sample.json
+
+# Runtime + tooling artifacts (never source)
+lha-skills-mirror/
+pytest-of-*/
+.eval-review/
+tests/eval/horizon_eval/.adk/

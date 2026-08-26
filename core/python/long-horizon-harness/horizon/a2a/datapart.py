@@ -67,11 +67,14 @@ def _render_fileref(payload: dict) -> str | None:
 def _render_selection(payload: dict) -> str | None:
     """Prose for a text selection the user highlighted in the web UI.
 
-    Hands over character offsets rather than asking the model to locate the
-    text: the same words may appear many times in a file, and a search anchor
-    cannot tell which one was pointed at. Deliberately states what was
-    selected, not what to do with it — the user's own message carries the
-    instruction.
+    ``edit`` has no character-offset targeting, so unlike the earlier
+    `patch` tool this asks the model to search with the
+    highlighted text plus enough surrounding context to match only this
+    location, rather than handing over ``start``/``end``. Deliberately states
+    what was selected, not what to do with it — the user's own message
+    carries the instruction. ``start``/``end`` are still required in the
+    payload as a shape check that this really is a selection event, even
+    though the rendered text no longer surfaces them.
     """
     path = payload.get("path")
     snippet = payload.get("snippet")
@@ -93,10 +96,10 @@ def _render_selection(payload: dict) -> str | None:
     return (
         f"[The user highlighted this exact text in {where}:]\n"
         f"{snippet}\n"
-        f"[It spans characters {start}-{end}. To act on exactly that span, "
-        f"call patch with start={start}, end={end}, and old_string set to the "
-        "highlighted text above — do not search for the text, as it may occur "
-        "elsewhere in the file.]"
+        "[To act on exactly that span, call edit with "
+        "edits=[{'oldText': <the highlighted text above, plus enough "
+        "surrounding context from the file to make it match only this "
+        "location>, 'newText': ...}].]"
     )
 
 
