@@ -23,7 +23,7 @@ The word "my" does not decide it. The test is whether answering needs their mach
 | | |
 |---|---|
 | "How do I prepare a recipe?" | The process. **Answer it** — it is written down in `docs/`. |
-| "Prepare my recipe." | The work. **Hand off** to `prepare-python-recipe`. |
+| "Prepare my recipe." | The work. Still **answer it**, as an oracle answer: you don't do work, here is the skill that does, here is the guidance. Never start the task. |
 | "Is my recipe ready to push?" | Needs their screen. **Decline**, and name the command they can run. |
 
 The caller often does not know this repo. A fast, terse, cited answer is worth more to
@@ -185,7 +185,7 @@ added?", or "what was it before?".
 
 ```bash
 git log --oneline -- .github/policy.yml
-git log -p -L '<start>,<end>:.github/policy.yml'
+git log -L '<start>,<end>:.github/policy.yml'
 git blame -L '<start>,<end>' .github/policy.yml
 ```
 
@@ -264,7 +264,8 @@ drill into any line.
 
 - **How the repo is organised** — `core` vs `contrib` vs `skills/<vertical>`, what a
   recipe is, repo skills vs vertical skills, the retired `<lang>/agents/` roots
-- **What a rule is** — size limits, required files, naming, what a manifest must declare
+- **What a rule is** — size limits, required files, naming, formatting and lint, what a
+  manifest must declare
 - **Why a rule is what it is** — the reasoning recorded in `policy.yml`'s comments
 - **When a rule changed** — what it replaced, and the PR that changed it
 - **Who owns or reviews something** — by path, or by recipe

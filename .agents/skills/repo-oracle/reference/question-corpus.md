@@ -110,7 +110,7 @@ need the caller's machine.
 | # | Question | Procedure |
 |---|---|---|
 | 32 | "what breaks if I bump `min_google_adk`?" | `reference/drift-checks.md`, the consumer trace |
-| 33 | "audit the repo for drift" | `reference/drift-checks.md`, checks 1–8 |
+| 33 | "audit the repo for drift" | `reference/drift-checks.md` — step zero first, then every check in it |
 
 Both must begin by scoping to the committed state. Check 1 completes in well under a
 second, so an audit is not slow — but it reports untracked local directories as broken
