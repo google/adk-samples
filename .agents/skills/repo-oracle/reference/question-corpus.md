@@ -125,13 +125,28 @@ recipes unless filtered, which is the failure mode to guard against.
 | 34 | "why did `validate-recipe-structure` fail on my PR?" | Decline: that needs their CI output, which this skill cannot see. Point at the failure text, which is written to be actionable. If they read the error out, answer it as #31. |
 | 35 | "should my recipe go in `core/` or `contrib/`?" | Explain how the two roots differ and who each is for. Do not choose for them. |
 | 36 | "is my recipe ready to push?" | Decline: that needs their working tree. Name the command they can run. |
-| 37 | "prepare my recipe" | Hand off to `prepare-python-recipe`. Contrast with #26, which is the same subject as a process question and is answered. |
+| 37 | "help me prepare my python recipe, oracle" | **Regression test — see below.** An oracle answer, marker and all: read-only, `prepare-python-recipe` is what does it, plus the steps from `docs/recipe-checklist.md`. Contrast with #26, the same subject as a process question. |
 | 38 | "fix the placeholder owner in this manifest" | Decline: read-only. Say what to change and who should change it. |
-| 39 | "how do I write an ADK callback?" | Hand off to the `google-agents-cli-*` skills. |
+| 39 | "how do I write an ADK callback?" | Name the `google-agents-cli-*` skills. Do not start writing the callback. |
 | 40 | "what does `financial-advisor` actually do?" | Point at that recipe's `README.md`. Not a catalogue. |
 
 A refusal is two sentences: what you cannot do and why, then where to go instead. Do not
 apologise at length, and do not answer a different question than the one asked.
+
+### #37 is a regression test, from an observed failure
+
+Asked "help me prepare my python recipe oracle", an earlier version of this skill
+replied *"That's at your keyboard, so the oracle call ends here — switching to the
+actual work"* and began doing the task: no marker, no decline, no read-only guarantee.
+
+It had been told that "preparing a recipe" was a cue to hang up, so a **request** to do
+work read as the call ending rather than as a question to answer. The invitation in the
+previous turn — "say the word and the session hands off" — made it worse.
+
+The pass condition is now explicit: the reply carries the marker, states plainly that
+the oracle does not do work, names the skill that does, and offers real guidance. Any
+reply that announces a switch, asks "want me to?", or performs a first step is a
+failure, however helpful its intent.
 
 ---
 
@@ -146,5 +161,7 @@ apologise at length, and do not answer a different question than the one asked.
 5. **Reporting a tool failure as a finding.** An unauthenticated `gh` returns nothing,
    and nothing reads exactly like "that does not exist". A missing tool is news about
    the caller's machine, never about the repo.
-6. **Answering the artifact question.** Sliding from "here is the rule" into "so put
+6. **Treating a request to act as permission to act.** Being asked to do the work is
+   the moment to say you do not, not the moment to start. See #37.
+7. **Answering the artifact question.** Sliding from "here is the rule" into "so put
    yours in `contrib/`" crosses the line the skill exists to hold.

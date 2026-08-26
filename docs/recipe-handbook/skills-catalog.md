@@ -1,4 +1,4 @@
-<!-- word count: 1103 (target 800, cap 1200) -->
+<!-- word count: 1112 (target 800, cap 1200) -->
 
 # Repo Skills Catalog
 
@@ -39,9 +39,9 @@ they are set that way, who reviews which paths, what the bots do, and
 how a recipe is prepared and validated. It reads the repo and cites the
 file it answered from.
 
-**Read-only.** It never edits, commits, or comments. When something
-needs changing it says what and who, then hands off to the skill that
-owns the work.
+**Read-only.** It never edits, commits, comments, or does the work
+itself. Ask it to prepare your recipe and you get the steps plus the
+name of the skill that does it — never the work.
 
 - **When to use:** you have a question about the repo rather than a
   task to run — including "which skill do I need?"
