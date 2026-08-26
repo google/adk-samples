@@ -34,9 +34,14 @@ CI" when it will not is the fastest way to lose their trust.
 enforced" — unless a reviewer might plausibly *recommend* the banned thing, in
 which case it goes in both.
 
-Keep the marked region under 16 KB (it is ~11.6 KB today). Past that the
-workflow truncates it, and the tail — the language contracts — is what goes. Changes take effect only once merged — the review workflow
-checks out the BASE branch, so a PR cannot weaken the rules that judge it.
+The marked region has a byte cap, `MAX_RULES_BYTES` in
+[`_ai-pr-review-core.yml`](./workflows/_ai-pr-review-core.yml). The value is
+deliberately not restated here, so there is one number to change; the build log
+prints the region's size on every run. Past the cap the workflow truncates, and
+the tail of the region is what goes.
+
+Changes take effect only once merged — the review workflow checks out the BASE
+branch, so a PR cannot weaken the rules that judge it.
 
 <!-- BEGIN REVIEWER RULES -->
 ## Repository rules
