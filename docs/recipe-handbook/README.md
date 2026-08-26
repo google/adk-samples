@@ -1,4 +1,4 @@
-<!-- word count: 589 (target 500, cap 800) -->
+<!-- word count: 603 (target 500, cap 800) -->
 
 # Recipe Handbook
 
@@ -47,6 +47,8 @@ any new requirements automatically. Then check the
 
 - [Repo skills catalog](./skills-catalog.md) — the assistant
   helpers that do the work for you
+- [Repo oracle](./skills-catalog.md#repo-oracle) — ask how the repo
+  itself works: policy, CI, ownership, process
 - [Troubleshooting](./troubleshooting.md) — errors mapped
   directly to fixes
 - Other languages *(coming soon)*: Java · Go · TypeScript ·
