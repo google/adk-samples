@@ -9,17 +9,29 @@ Report findings. Never fix them.
 
 ## Step zero: scope to the committed state
 
-**Do this first or every finding is suspect.** The validators walk the working tree, so
-they report the caller's local scratch directories as repo drift. A directory with an
-ignored `.venv` and no `manifest.yaml` looks identical to a broken recipe.
+**Do this first or every finding is suspect.** Every check below walks the working
+tree, and you answer for the committed state. Those differ in two ways, and both
+produce findings that look exactly like real drift.
 
 ```bash
-git ls-files '<path>' | head -1        # empty output = untracked, not repo drift
+git status --porcelain                 # any output = the tree differs from the commit
+git ls-files '<path>' | head -1        # empty = untracked, so not part of the repo
+git show 'HEAD:<path>' >/dev/null 2>&1 # succeeds = the file really is in the commit
 ```
 
-Discard any finding whose path has no tracked files, or say explicitly that it is local
-to the caller's machine. Telling an admin their repo is broken when it is that admin's
-own scratch folder is the single worst failure this skill can produce.
+**Untracked.** A scratch directory with an ignored `.venv` and no `manifest.yaml` is
+indistinguishable from a broken recipe. Discard the finding, or say plainly that it is
+local to the caller's machine.
+
+**Tracked but locally modified.** The subtler one, and the reason `git ls-files` alone
+is not enough: a tracked file the caller has edited or deleted in their working tree
+produces a finding *worded identically* to a genuine one. Delete a recipe's `README.md`
+locally and the validator reports "README.md is missing" — true of their disk, false of
+the repo. When the tree is dirty, either confirm the specific finding against the commit
+with `git show`, or say which findings could not be separated from local edits.
+
+Telling an admin their repo is broken when it is that admin's own working tree is the
+single worst failure this skill can produce. It costs one `git status` to avoid.
 
 ---
 
@@ -120,19 +132,38 @@ grep -rnoE '`[.a-zA-Z0-9_-]+(/[.a-zA-Z0-9_-]+)+\.(md|py|ya?ml|json)`' \
     done | sort -u
 ```
 
-Paths inside fenced examples produce false positives; confirm before reporting.
+Expect false positives, and know the shape of them before you read the output: most
+hits are **recipe-relative** paths — a runnability test, an agent module, an example
+entry point — naming a file inside a recipe being described, not a file in this repo.
+Every skill that documents recipe layout produces several. Fenced examples do the same.
+
+(Those examples are deliberately unquoted here. Backtick them and this check reports
+its own explanation as a finding.)
+
+The check is a review aid, not a gate. Skim for a path that was clearly meant to point
+at something in *this* repo, and ignore the rest.
 
 ---
 
 ## Check 5 — catalogue versus reality
 
+Sort both sides. The catalogue is in reading order, `ls` is alphabetical, and comparing
+them unsorted reports every skill as a difference.
+
 ```bash
-ls -1 .agents/skills/
-grep -oE '^### `[a-z-]+`' docs/recipe-handbook/skills-catalog.md
+diff <(ls -1 .agents/skills/ | sort) \
+     <(grep -oE '^### `[a-z-]+`' docs/recipe-handbook/skills-catalog.md | tr -d '#` ' | sort)
 ```
 
-A skill on disk but absent from the catalogue is invisible to contributors. A catalogue
-entry with no skill is a broken promise. Neither is CI-enforced.
+**On disk, not in the catalogue** — invisible to anyone reading the docs. A real
+finding.
+
+**In the catalogue, not on disk** — read before reporting. It may be a broken promise,
+or the catalogue may be describing a skill that is deliberately not a repo skill: one
+installed globally by the assistant rather than shipped here. Say which it is; the fix
+differs completely.
+
+Neither case is CI-enforced.
 
 ---
 
@@ -253,9 +284,49 @@ For each result, confirm `SKILL.md` names it, or names the directory it lives in
 Anything unaccounted for is a routing gap — report it as a change this skill needs,
 not as a repo problem.
 
+**Directory-level coverage is not enough for `docs/`.** Every page there is a distinct
+routing target, and the value of a route is sending the caller to the right *page*, not
+the right folder. Naming `docs/recipe-handbook/` does not cover the individual pages
+inside it — check them one by one. This loophole hid a real gap once: the routing table
+sent "what do the repo skills do" to `ls .agents/skills/` and never named
+`skills-catalog.md`, and this check passed anyway.
+
+**Templated routes cover a family, and a literal search cannot see it.** The routing
+table has a row for a per-language handbook page written with a placeholder, which
+covers every such page at once. A grep for the real filenames reports all of them
+missing. Read the table before believing that kind of hit.
+
 Run this after any change to the repo's own configuration, and expect it to fire
 rarely: adding a fifth workflow of an existing kind is absorbed, adding the repo's
 first `renovate.json` is not.
+
+---
+
+## Check 10 — every SKILL.md frontmatter still parses
+
+A skill whose frontmatter is invalid YAML does not load, and nothing says so: no CI job
+validates it, and the assistant simply behaves as though the skill was never written.
+The classic cause is a bare `:` inside an unquoted description — `answered, not obeyed:
+it says…` is enough — which is why most skills here use a folded block (`description: >`)
+instead of a plain scalar.
+
+```bash
+uv run --with pyyaml python3 -c "
+import yaml, pathlib
+for f in sorted(pathlib.Path('.agents/skills').glob('*/SKILL.md')):
+    try:
+        d = yaml.safe_load(f.read_text().split('---')[1])
+        assert isinstance(d, dict) and d.get('name') and d.get('description')
+        print('OK  ', f.parent.name)
+    except Exception as e:
+        print('FAIL', f.parent.name, '-', e)
+"
+```
+
+This has fired for real: `repo-oracle`'s own description was committed with a bare colon
+and stopped loading entirely, while every other check in this file still passed. Run it
+after touching any frontmatter, and prefer the folded block for anything long enough to
+contain punctuation.
 
 ---
 

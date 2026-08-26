@@ -112,9 +112,16 @@ need the caller's machine.
 | 32 | "what breaks if I bump `min_google_adk`?" | `reference/drift-checks.md`, the consumer trace |
 | 33 | "audit the repo for drift" | `reference/drift-checks.md` — step zero first, then every check in it |
 
-Both must begin by scoping to the committed state. Check 1 completes in well under a
-second, so an audit is not slow — but it reports untracked local directories as broken
-recipes unless filtered, which is the failure mode to guard against.
+Both must begin by scoping to the committed state.
+
+**These are genuinely slow, and that is why they are gated.** Individual commands are
+fast — `uv run validate all` finishes in well under a second — but a full audit means
+running every check and *reading* each result, which measured a little over two minutes
+end to end. Do not promise a sub-minute answer here; offer the scan and let the caller
+accept the wait.
+
+The failure to guard against is unchanged: without step zero, an audit reports the
+caller's untracked scratch and local edits as broken recipes.
 
 ---
 
@@ -128,7 +135,9 @@ recipes unless filtered, which is the failure mode to guard against.
 | 37 | "help me prepare my python recipe, oracle" | **Regression test — see below.** An oracle answer, marker and all: read-only, `prepare-python-recipe` is what does it, plus the steps from `docs/recipe-checklist.md`. Contrast with #26, the same subject as a process question. |
 | 38 | "fix the placeholder owner in this manifest" | Decline: read-only. Say what to change and who should change it. |
 | 39 | "how do I write an ADK callback?" | Name the `google-agents-cli-*` skills. Do not start writing the callback. |
-| 40 | "what does `financial-advisor` actually do?" | Point at that recipe's `README.md`. Not a catalogue. |
+| 40 | "what does `financial-advisor` actually do?" | One or two facts off `manifest.yaml` / the top of its `README.md`, then stop. |
+| 41 | "how is `financial-advisor` architected?" | **Regression test.** Decline — that needs source read and synthesised. Name the recipe's `README.md` and `AGENTS.md`. Producing the analysis and appending "that's as far as I go" is a failure, not a decline. |
+| 42 | "how many AI reviewers run on my PR?" | **Regression test.** Count `.github/workflows/ai-pr-review-*.yml`. `docs/recipe-checklist.md` says three and there are four — report the disagreement and cite both. Citing only the doc is a failure. |
 
 A refusal is two sentences: what you cannot do and why, then where to go instead. Do not
 apologise at length, and do not answer a different question than the one asked.
@@ -165,3 +174,7 @@ failure, however helpful its intent.
    the moment to say you do not, not the moment to start. See #37.
 7. **Answering the artifact question.** Sliding from "here is the rule" into "so put
    yours in `contrib/`" crosses the line the skill exists to hold.
+8. **Laundering a stale doc.** A citation proves someone wrote it, not that it is true.
+   For anything countable, check the disk. See #42.
+9. **Declining after the fact.** Producing deep recipe analysis and then saying it is
+   out of scope. The disclaimer does not undo the answer. See #41.

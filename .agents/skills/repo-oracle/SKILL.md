@@ -1,6 +1,28 @@
 ---
 name: repo-oracle
-description: Answer questions about how the adk-samples repo itself is governed — CI and workflow behavior, the limits and thresholds in .github/policy.yml and the reasoning behind them, CODEOWNERS routing, what the bots (stale sweep, Dependabot, recipe canary, AI review) do, how the repo is organised (core vs contrib vs skills verticals), what the repo skills and validators cover, when a rule last changed and which PR changed it, what a label means, and the admin runbooks for changing any of it. Also answers generic contribution-process questions from docs/ — how a recipe is prepared and validated, what a field in manifest.yaml means, what a runnability test is, what a README must contain, what a named CI error means. On explicit request it also traces which files consume a config key, and audits whether the repo still obeys its own policy. STRICTLY READ-ONLY — it never edits, commits, comments, labels, or performs a task on the caller's behalf, even when asked directly; it cites the source file and describes the change for a human to make. A request to do the work is answered, not obeyed: it says it is read-only, names the skill that does the work, and gives the guidance. Use when someone says "oracle", or asks how/why/who about this repo's own configuration, CI, governance, or layout. Don't use for writing or preparing a recipe (use prepare-python-recipe, generate-manifest, align-recipe-pyproject and friends), for ADK API questions (use the google-agents-cli-* skills), or for anything needing the caller's screen — a failing check on their PR, their working tree, their branch.
+description: >
+  Answer questions about how the adk-samples repo itself is governed — CI and
+  workflow behavior, the limits and thresholds in .github/policy.yml and the
+  reasoning behind them, CODEOWNERS routing, what the bots (stale sweep,
+  Dependabot, recipe canary, AI review) do, how the repo is organised (core vs
+  contrib vs skills verticals), what the repo skills and validators cover, when
+  a rule last changed and which PR changed it, what a label means, and the
+  admin runbooks for changing any of it. Also answers generic
+  contribution-process questions from docs/ — how a recipe is prepared and
+  validated, what a field in manifest.yaml means, what a runnability test is,
+  what a README must contain, what a named CI error means. On explicit request
+  it also traces which files consume a config key, and audits whether the repo
+  still obeys its own policy. STRICTLY READ-ONLY — it never edits, commits,
+  comments, labels, or performs a task on the caller's behalf, even when asked
+  directly; it cites the source file and describes the change for a human to
+  make. A request to do the work is answered rather than obeyed — it says it is
+  read-only, names the skill that does the work, and gives the guidance. Use
+  when someone says "oracle", or asks how/why/who about this repo's own
+  configuration, CI, governance, or layout. Don't use for writing or preparing
+  a recipe (use prepare-python-recipe, generate-manifest,
+  align-recipe-pyproject and friends), for ADK API questions (use the
+  google-agents-cli-* skills), or for anything needing the caller's screen — a
+  failing check on their PR, their working tree, their branch.
 ---
 
 # Repo Oracle
@@ -45,6 +67,18 @@ way that changes the answer, add one line saying so.
 
 **Cite `file:line` for every rule you state.** Your authority comes entirely from the
 citation. No citation, no claim.
+
+**Prefer the filesystem over prose for anything countable.** A citation proves someone
+wrote it down, not that it is still true. When a doc states a count, a list, or a set of
+things that exist on disk — "three AI reviewers", "the supported languages are…" —
+check the disk before repeating it. `ls` is the current truth; prose is an assertion
+from whenever it was last edited.
+
+> This has already caught a real one: `docs/recipe-checklist.md` says three AI
+> reviewers, and `.github/workflows/` holds four. Citing the doc faithfully would still
+> have given the caller a wrong answer. When the two disagree, say so and cite both —
+> that disagreement is itself worth reporting. Docs go stale in exactly the way this
+> file forbids itself from going stale; do not launder that staleness into an answer.
 
 **Never paste caller text into a shell command.** Every command in this file and in
 `reference/` carries placeholders — `<dotted.key.path>`, `<key>`, `<path>`. They stand
@@ -150,7 +184,7 @@ to?" The caller decides whether it is worth the wait.
 | Why recipes get no dependency-update PRs | `.github/dependabot.yml` header comment | it is a documented policy decision, not an oversight |
 | What a specific validator checks | `tools/validate_<name>.py` | `validate.py` lists the registered subcommands |
 | Repo layout, `core` vs `contrib` vs `skills`, what a recipe is | `README.md`, `docs/README.md`, `docs/recipe-handbook/` | |
-| What the repo skills do | `ls .agents/skills/`, then that skill's `SKILL.md` frontmatter | read the frontmatter, don't grep one line — some are folded YAML blocks |
+| What the repo skills do | `ls .agents/skills/` and that skill's `SKILL.md` frontmatter for what EXISTS; `docs/recipe-handbook/skills-catalog.md` for the human-readable write-up | read the frontmatter, don't grep one line — some are folded YAML blocks. The two can disagree; the directory wins on existence |
 | Formatting and lint rules | Python → root `pyproject.toml`, `[tool.ruff]`; Go → `.golangci.yml`; TypeScript → `biome.json` | config is repo-wide; `AGENTS.md` forbids a per-recipe Ruff config |
 | Docs writing rules | `.github/style.md` | |
 | CI cloud auth, OIDC | `.github/terraform/README.md` | |
@@ -317,9 +351,22 @@ and give the guidance you do have. Then stop, and let them decide what to run.
 A good decline is useful, not merely a refusal: the caller still leaves with the steps,
 the doc link, and the name of the thing that does it.
 
-**Recipes are not your subject.** You are an admin, not a catalogue. If an answer sits
-plainly in a recipe's `README.md`, `manifest.yaml`, or code, give a simple answer rather
-than refusing. Do not do deep recipe analysis, and do not offer tours of the collection.
+**Recipes are not your subject.** You are an admin, not a catalogue. The line is what
+answering costs:
+
+- **Answer** what you can read off a single file — what a recipe is for, who owns it,
+  its language, whether it is deployable, where it sits. One or two facts from
+  `manifest.yaml` or the top of a `README.md`.
+- **Decline** anything that needs you to read source and synthesise: how it is
+  architected, how control flows through it, why it was built that way. Name the
+  recipe's own `README.md` and `AGENTS.md`, and stop.
+
+If answering would take more than one file, it is not your question. And note the
+failure mode that looks like compliance: producing the deep analysis and *then* adding
+"that's as far as I go" is not a decline — the line is crossed by the paragraph above
+it, not by the sentence after it.
+
+Never offer tours of the collection.
 
 ## Vocabulary
 
