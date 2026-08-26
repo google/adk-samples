@@ -474,6 +474,79 @@ jobs:
           [... ${FILE_COUNT} files changed in total; list truncated ...]"
           fi
 
+          # Extract this repo's own review rules, which the reviewer has no
+          # other way to learn: the agent runs in an empty scratch directory,
+          # reads nothing off disk, and the sanitize step above deliberately
+          # deleted AGENTS.md and .agents/. Without this the four lanes review
+          # against the base model's generic priors alone, which is how one of
+          # them came to recommend a default for `os.getenv("MODEL_NAME")` —
+          # banned here — using a model id this repo deprecated.
+          #
+          # Safe to read despite the sanitize step: the checkout is the BASE
+          # repo, so this is the rules file as it exists on the target branch,
+          # not a version a PR author can edit to weaken their own review.
+          #
+          # Only the marked region is injected. The rest of the file explains
+          # to maintainers what belongs in it, which is guidance the model
+          # neither needs nor should spend prompt budget on.
+          #
+          # Both markers must be present, and only the FIRST region is taken.
+          # A `sed` range would restart on a second BEGIN and splice the two
+          # regions together with the intervening markers left in the middle
+          # of the prompt; awk with an explicit `exit` cannot.
+          #
+          # MAX_RULES_BYTES is a ceiling, not just an alarm. Left merely
+          # warned, a file that grew far past it would push DIFF_BUDGET under
+          # MIN_DIFF_BYTES and hard-fail EVERY review — the opposite of the
+          # degrade-never-fail rule this whole block follows. So an oversized
+          # region is truncated and the reviewer told, exactly as the diff
+          # itself is when it will not fit.
+          #
+          # 16000 against ~11.6KB of rules today. The headroom is the point:
+          # at 12000 a single added rule (they average ~330 bytes) would trip
+          # the cap and silently truncate the tail of the region — the
+          # language contracts — while the file's own instructions tell
+          # maintainers to add rules. A cap that punishes correct maintenance
+          # gets raised, not obeyed. Worst case still leaves the diff ~101KB.
+          RULES_FILE='.github/review-rules.md'
+          RULES_TEXT=''
+          MAX_RULES_BYTES=16000
+          if [[ -f "${RULES_FILE}" ]] \
+            && grep -q '<!-- BEGIN REVIEWER RULES -->' "${RULES_FILE}" \
+            && grep -q '<!-- END REVIEWER RULES -->' "${RULES_FILE}"; then
+            RULES_TEXT="$(
+              awk '
+                /<!-- BEGIN REVIEWER RULES -->/ { inside = 1; next }
+                /<!-- END REVIEWER RULES -->/   { if (inside) exit }
+                inside
+              ' "${RULES_FILE}"
+            )"
+          fi
+
+          # Degrade, never fail. A review without the repo rules is worse than
+          # one with them but still worth posting, whereas a hard error here
+          # would turn every PR red over a maintainer's editing slip. The
+          # MIN_DIFF_BYTES guard below remains the hard backstop for the only
+          # case that truly voids a review: no room left for the diff.
+          if [[ -z "${RULES_TEXT//[[:space:]]/}" ]]; then
+            echo "::warning::${RULES_FILE} is missing or has no BEGIN/END REVIEWER RULES markers; reviewing without repo-specific rules"
+            RULES_TEXT=''
+          else
+            RULES_BYTES="$(printf '%s' "${RULES_TEXT}" | wc -c | tr -d ' ')"
+            echo "repo review rules: ${RULES_BYTES} bytes"
+            if (( RULES_BYTES > MAX_RULES_BYTES )); then
+              echo "::warning::${RULES_FILE} contributes ${RULES_BYTES} bytes, over the ${MAX_RULES_BYTES}-byte cap; truncating so it cannot starve the diff"
+              # Via a file, never `printf ... | head -c`. head exits at the cap
+              # and the writer takes SIGPIPE, which `set -o pipefail` turns
+              # into a dead step (exit 141) — the same trap the diff
+              # truncation below documents. With a file argument nothing
+              # writes into a pipe, so there is no signal to trip over.
+              printf '%s' "${RULES_TEXT}" > rules_full.txt
+              RULES_TEXT="$(head -c "${MAX_RULES_BYTES}" rules_full.txt)
+          [... repo rules truncated — apply only what is shown above ...]"
+            fi
+          fi
+
           # Inline the whole review context into the prompt. Passing it via
           # env vars still required the agent to `echo` them, and it kept
           # improvising around that (writing the diff to a file, re-fetching
@@ -593,6 +666,14 @@ jobs:
           REST_EOF
 
             printf '\n'
+
+            # Placed next to "## Guidelines" because it is the same kind of
+            # thing — a constraint on what may be said — and late in the
+            # prompt, where an instruction competes better against the model's
+            # priors than it does buried above the hunt list.
+            if [[ -n "${RULES_TEXT}" ]]; then
+              printf '%s\n\n' "${RULES_TEXT}"
+            fi
 
             cat <<'GUIDE_EOF'
           ## Guidelines
