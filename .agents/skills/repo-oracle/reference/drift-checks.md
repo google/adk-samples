@@ -126,6 +126,8 @@ file rather than as a pointer to one — does not become a finding.
 grep -rnoE '`[.a-zA-Z0-9_-]+(/[.a-zA-Z0-9_-]+)+\.(md|py|ya?ml|json)`' \
   .agents/skills/ --include="*.md" \
   | tr -d '`' | while IFS=: read -r src _ f; do
+      # f1-3 is `.agents/skills/<skill>`, which is exact because the grep root
+      # above fixes the depth. Change that root and this must change with it.
       skill_root="$(printf '%s' "$src" | cut -d/ -f1-3)"
       [ -e "$f" ] || [ -e "$skill_root/$f" ] || [ -e "$(dirname "$src")/$f" ] \
         || echo "MISSING: $f  (named in $src)"
@@ -224,23 +226,42 @@ without them this check is worse than not running it.
 uv run --with pyyaml python3 -c "
 import shutil, subprocess, sys, yaml
 
+LABEL_LIMIT = 500
+
 if shutil.which('gh') is None:
     sys.exit('SKIPPED: gh is not installed, so labels cannot be checked.')
 
-r = subprocess.run(
-    ['gh', 'label', 'list', '--limit', '200', '--json', 'name', '--jq', '.[].name'],
+result = subprocess.run(
+    ['gh', 'label', 'list', '--limit', str(LABEL_LIMIT), '--json', 'name',
+     '--jq', '.[].name'],
     capture_output=True, text=True)
-if r.returncode != 0:
-    first = (r.stderr.strip().splitlines() or ['unknown error'])[0]
-    sys.exit(f'SKIPPED: gh could not list labels ({first}).')
+if result.returncode != 0:
+    first_line = (result.stderr.strip().splitlines() or ['unknown error'])[0]
+    sys.exit(f'SKIPPED: gh could not list labels ({first_line}).')
 
-have = set(r.stdout.split())
+# splitlines, never split: a label may contain spaces ('good first issue'),
+# and whitespace splitting would shred it into words that match nothing.
+have = {line.strip() for line in result.stdout.splitlines() if line.strip()}
 if not have:
     sys.exit('SKIPPED: gh returned no labels at all — treating that as a tool failure.')
+if len(have) >= LABEL_LIMIT:
+    sys.exit(f'SKIPPED: hit the {LABEL_LIMIT}-label ceiling, so the list may be '
+             'truncated and a present label could read as missing. Raise LABEL_LIMIT.')
 
-p = yaml.safe_load(open('.github/policy.yml'))['stale_policy']
-want = {p['stale_label'], p['keep_open_label'], p['pull_requests']['bot_label'],
-        *p['issues']['exempt_labels']}
+stale_policy = yaml.safe_load(open('.github/policy.yml'))['stale_policy']
+
+# exempt_labels may be absent, null, or a bare string; unpacking any of those
+# with * yields a TypeError or a set of single characters.
+exempt = stale_policy['issues'].get('exempt_labels') or []
+if isinstance(exempt, str):
+    exempt = [exempt]
+
+want = {label for label in (
+            stale_policy.get('stale_label'),
+            stale_policy.get('keep_open_label'),
+            stale_policy.get('pull_requests', {}).get('bot_label'),
+            *exempt,
+        ) if label}
 for label in sorted(want):
     print(f'{label:20} {\"OK\" if label in have else \"MISSING FROM REPO\"}')
 "
