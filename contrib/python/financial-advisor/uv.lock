@@ -596,7 +596,7 @@ requires-dist = [
     { name = "google-adk", extras = ["gcp", "otel-gcp"], specifier = ">=1.0.0" },
     { name = "google-cloud-aiplatform", extras = ["adk", "agent-engines"], specifier = ">=1.93.0" },
     { name = "google-genai", specifier = ">=1.9.0" },
-    { name = "opentelemetry-resourcedetector-gcp", specifier = "<=1.12.0a0" },
+    { name = "opentelemetry-resourcedetector-gcp", specifier = "<=1.12.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
 ]
@@ -820,6 +820,7 @@ dependencies = [
     { name = "google-auth" },
     { name = "requests-oauthlib" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/dd/fb/e8def92f788410d96d1aff0cadfadb3f044bbffbe3d2560a1ad8fa0d9466/google_auth_oauthlib-1.4.1.tar.gz", hash = "sha256:1a83f5f2a8421dedadaa3caf25b3a710dddf85a33a63144be41c2fc79174b106", size = 22436, upload-time = "2026-08-25T19:18:25.424Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6f/32/ebf82c6ae8c1caf975b3153d763f3b765dddafa01d2a6c2a142fde28bda7/google_auth_oauthlib-1.4.1-py3-none-any.whl", hash = "sha256:a1be43ec69fe563ac9b2c4d6fc4334b323b21cbdc59a638b5fa34dd4d5a2a348", size = 19540, upload-time = "2026-08-24T21:55:06.96Z" },
 ]
@@ -934,6 +935,7 @@ dependencies = [
     { name = "proto-plus" },
     { name = "protobuf" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/45/de/d499a74cad60fe548986504da00e20177cb1d3c8bfbb1fc2347e518f8cbd/google_cloud_bigquery_storage-2.41.0.tar.gz", hash = "sha256:b999295f08ce7e2d6a260d245b5b9843ba1603f6164515c9f0cb5d81ee71a5d2", size = 315252, upload-time = "2026-08-25T19:18:34.837Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b2/c9/1dc5941062fd196959ab343174d91f132cb2308cc3c80deb7dd194543977/google_cloud_bigquery_storage-2.41.0-py3-none-any.whl", hash = "sha256:a7511f05aedb533e01f029e30b26ff073ca66d672f701bb736024553697b589c", size = 308013, upload-time = "2026-08-24T21:55:17.697Z" },
 ]
@@ -955,6 +957,7 @@ dependencies = [
     { name = "proto-plus" },
     { name = "protobuf" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/ca/ea/3dce419947cc7afbeba80db0dbf3a5b92791e547ddff0a5e1d398c53a7b8/google_cloud_bigtable-2.43.0.tar.gz", hash = "sha256:e6724b66f3924f0cb96e92dea42c033b6bd71714f02e86b69a5d548425c6699e", size = 853566, upload-time = "2026-08-25T19:18:37.632Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/69/d8/fd7efc98895c2796cfa05a22bd182722ce474a4837aa244e9b13b7ea0103/google_cloud_bigtable-2.43.0-py3-none-any.whl", hash = "sha256:1e5b846424d0694b2249475c4a5bec157c2f82e516d2601ea961f5b61dc162bb", size = 576293, upload-time = "2026-08-24T21:55:21.105Z" },
 ]
@@ -1106,6 +1109,7 @@ dependencies = [
     { name = "proto-plus" },
     { name = "protobuf" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/2f/a70b6ba2016acc16ca3e4d357151edda047f63752ddcf8baee29c41e5f94/google_cloud_pubsub-2.39.2.tar.gz", hash = "sha256:934a3ab7496a6da09cd97d866bef3e47092e904688a66f60750895a7484bd585", size = 403181, upload-time = "2026-08-25T19:18:59.568Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/e1/14519798b767f1ce4adf3c239c31bb1a5af607646e293e92ed1770faaa06/google_cloud_pubsub-2.39.2-py3-none-any.whl", hash = "sha256:b1295c6641032aff1dabbddf495b10642a5b547f6783ee4c6bb3365682e71354", size = 323836, upload-time = "2026-08-24T21:55:46.512Z" },
 ]
@@ -1165,6 +1169,7 @@ dependencies = [
     { name = "protobuf" },
     { name = "sqlparse" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/4d/94/8f1512f4423b6f468e98e59956a9503f9fe37bc69d0a309193c6b873982f/google_cloud_spanner-3.70.0.tar.gz", hash = "sha256:34eb9bd16c2b66adb534244bd9c2596fefb93905b7f1e739516f9b25fb6df0a8", size = 920505, upload-time = "2026-08-25T19:19:04.345Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1b/61/e32bbbd87f40cc98a5f14286fc7a1ea17cf01047e7b9472f702aee8e35a0/google_cloud_spanner-3.70.0-py3-none-any.whl", hash = "sha256:9c22c29dff352e323fe658c59ed0b98a9264fb5fc05b710060c0a050dde77845", size = 624929, upload-time = "2026-08-24T21:55:53.276Z" },
 ]
@@ -1214,6 +1219,7 @@ dependencies = [
     { name = "proto-plus" },
     { name = "protobuf" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/68/7f/8ea8b90f036b529233345daebd93866b111df8e78fdf521f73e39c878a6d/google_cloud_storage_control-1.14.0.tar.gz", hash = "sha256:9549b617ec63f21bd2e2961c75557883cfdf927858f9519557acb7cec82d5ea0", size = 158000, upload-time = "2026-08-25T19:19:05.673Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2c/5d/870d15331d1a7196655b5db3d1e13eeb3a7bf80c7128cd81fb11f30b1a76/google_cloud_storage_control-1.14.0-py3-none-any.whl", hash = "sha256:f1dc978ed9fdf624dabe66bffdf47a64dba0d6428d8ca913e450758d40deaca2", size = 113448, upload-time = "2026-08-24T21:55:54.943Z" },
 ]

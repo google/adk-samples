@@ -97,7 +97,10 @@ async def _add_v0_3_compat_interface(card: AgentCard) -> AgentCard:
     """Advertise a v0.3 JSON-RPC interface so the served card stays consumable by
     v0.3 A2A clients — notably Gemini Enterprise registration, whose validator
     still requires the 0.3 card shape (top-level ``url``/``protocolVersion``)."""
-    if card.supported_interfaces:
+    if card.supported_interfaces and not any(
+        getattr(iface, "protocol_version", None) == "0.3"
+        for iface in card.supported_interfaces
+    ):
         card.supported_interfaces.append(
             AgentInterface(
                 protocol_binding="JSONRPC",
@@ -123,6 +126,29 @@ def _default_capabilities() -> AgentCapabilities:
     )
 
 
+async def generate_agent_card(
+    agent: BaseAgent,
+    *,
+    rpc_url: str,
+    capabilities: AgentCapabilities | None = None,
+    agent_version: str | None = None,
+) -> AgentCard:
+    """Generate an A2A AgentCard for an agent conforming to the A2A specification."""
+    resolved_agent_version = agent_version or os.getenv(
+        "AGENT_VERSION", "0.1.0"
+    )
+    resolved_capabilities = capabilities or _default_capabilities()
+
+    card = await AgentCardBuilder(
+        agent=agent,
+        capabilities=resolved_capabilities,
+        rpc_url=rpc_url,
+        agent_version=resolved_agent_version,
+    ).build()
+
+    return await _add_v0_3_compat_interface(card)
+
+
 async def attach_a2a_routes(
     app: FastAPI,
     *,
@@ -143,18 +169,16 @@ async def attach_a2a_routes(
     ``APP_URL``). Call once per app — typically in a FastAPI ``lifespan``, since
     the card is built asynchronously; repeated calls register duplicate routes.
     """
-    resolved_app_url = app_url or os.getenv("APP_URL", "http://0.0.0.0:8000")
-    resolved_agent_version = agent_version or os.getenv(
-        "AGENT_VERSION", "0.1.0"
-    )
-    resolved_capabilities = capabilities or _default_capabilities()
+    port = os.getenv("PORT", "8080")
+    resolved_app_url = app_url or os.getenv("APP_URL", f"http://0.0.0.0:{port}")
+    rpc_url = f"{resolved_app_url}{rpc_path}"
 
-    agent_card = await AgentCardBuilder(
+    agent_card = await generate_agent_card(
         agent=agent,
-        capabilities=resolved_capabilities,
-        rpc_url=f"{resolved_app_url}{rpc_path}",
-        agent_version=resolved_agent_version,
-    ).build()
+        rpc_url=rpc_url,
+        capabilities=capabilities,
+        agent_version=agent_version,
+    )
 
     request_handler = DefaultRequestHandler(
         agent_executor=A2aAgentExecutor(runner=runner),

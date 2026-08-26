@@ -42,9 +42,10 @@ _AGENT_DIR = os.path.dirname(
 def get_session_service():
     """Process-wide session service shared across every serving surface."""
     if uri := os.environ.get("SESSION_SERVICE_URI"):
-        return create_session_service_from_options(
-            base_dir=_AGENT_DIR, session_service_uri=uri
-        )
+        if not uri.startswith("shared://"):
+            return create_session_service_from_options(
+                base_dir=_AGENT_DIR, session_service_uri=uri
+            )
     if agent_engine_id := os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
         from google.adk.sessions.vertex_ai_session_service import (
             VertexAiSessionService,

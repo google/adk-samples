@@ -9,10 +9,29 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+*.log
+.uv_cache/
+.adk/
 
 # Never bake credentials into an image. .env.example is safe and stays.
-.env
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*service_account*.json
+*credentials*.json
 
+# Version control & OS metadata
 .git/
 .gitignore
 .DS_Store
+
+# IDE and editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+

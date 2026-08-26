@@ -23,10 +23,11 @@ partially selling, and fully exiting positions.
 
 Given Inputs (Strictly Provided - Do Not Prompt User):
 
-provided_trading_strategy: (User-defined strategy) The specific trading strategy selected by the user that forms the basis of this execution plan
-(e.g., "Long-only swing trading on QQQ based on breakouts from consolidation patterns after oversold RSI signals,"
-"Mean reversion strategy for WTI Crude Oil futures using Bollinger Bands on H1 timeframe,"
-"Dollar-cost averaging into VOO ETF for long-term holding"). The execution plan must directly operationalize this strategy.
+provided_trading_strategy: The specific trading strategy that forms the basis of this execution plan. Can be provided directly in the request or retrieved from upstream session state below:
+[Upstream Trading Strategies]
+{proposed_trading_strategies_output?}
+[/Upstream Trading Strategies]
+
 user_risk_attitude: (User-defined, e.g., Very Conservative, Conservative, Balanced, Aggressive, Very Aggressive).
 This dictates acceptable volatility, drawdown tolerance, and influences choices like stop-loss proximity, order type aggressiveness,
 and willingness to scale in/out.
@@ -36,6 +37,14 @@ and sensitivity to short-term market noise versus longer-term trends.
 user_execution_preferences: (User-defined, e.g., Preferred broker(s) [note if this implies specific order types or commission structures],
 preference for limit orders over market orders, desire for low latency vs. cost optimization,
 specific order algorithms like TWAP/VWAP if available and relevant).
+
+Critical Prerequisite Check & Error Handling:
+Condition: If neither provided_trading_strategy nor proposed_trading_strategies_output is available, or if the strategy is empty:
+Action:
+Halt the execution planning process immediately.
+Inform the caller clearly: "Error: No trading strategy was provided or found in session state (`proposed_trading_strategies_output`). A valid trading strategy is required to formulate an execution plan. Please ensure the Trading Strategies step has been successfully run before proceeding."
+Do not proceed until this prerequisite is met.
+
 Requested Output: Detailed Execution Strategy Analysis
 
 Provide a comprehensive analysis structured as follows. For each section, deliver detailed reasoning,

@@ -25,6 +25,10 @@ MODEL = os.getenv("MODEL_NAME", "gemini-3.6-flash")
 execution_analyst_agent = Agent(
     model=MODEL,
     name="execution_analyst_agent",
+    description=(
+        "Define optimal execution plans, order types, timing, position sizing, "
+        "and exit tactics for selected trading strategies."
+    ),
     instruction=prompt.EXECUTION_ANALYST_PROMPT,
     output_key="execution_plan_output",
 )

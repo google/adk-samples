@@ -25,15 +25,16 @@ packaged Agent Engine.
 import inspect
 import json
 
-from agentplatform.agent_engines.templates.adk import AdkApp
+try:
+    from vertexai.preview.reasoning_engines import AdkApp
+except ImportError:
+    try:
+        from agentplatform.agent_engines.templates.adk import AdkApp
+    except ImportError:
+        AdkApp = None
 from fastapi import FastAPI, HTTPException, Request, encoders, responses
 
 from financial_advisor.app_utils import services
-
-
-def _no_op_instrumentor_builder(project_id: str) -> None:
-    """No-op so set_up() keeps the startup instrumentor and generate_content spans."""
-    return None
 
 
 def attach_reasoning_engine_routes(app: FastAPI) -> None:
@@ -45,15 +46,19 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
     def get_runtime() -> AdkApp:
         nonlocal runtime, streaming_methods, sync_methods
         if runtime is None:
-            from financial_advisor.agent import app as adk_app
+            if AdkApp is None:
+                raise RuntimeError(
+                    "AdkApp is not available. Please install "
+                    "google-cloud-aiplatform[agent-engines]."
+                )
+            from financial_advisor.agent import root_agent
 
             # Reuse the process-wide services so sessions created here are
             # visible to the adk_api and A2A paths, and vice versa (see services.py).
             runtime = AdkApp(
-                app=adk_app,
+                agent=root_agent,
                 session_service_builder=services.get_session_service,
                 artifact_service_builder=services.get_artifact_service,
-                instrumentor_builder=_no_op_instrumentor_builder,
             )
             runtime.set_up()
             operations = runtime.register_operations()
@@ -77,7 +82,23 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
 
     @app.post("/api/stream_reasoning_engine")
     async def stream_query(request: Request) -> responses.StreamingResponse:
-        body = await request.json()
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400, detail="Invalid JSON in request body"
+            ) from exc
+        if not isinstance(body, dict) or "class_method" not in body:
+            raise HTTPException(
+                status_code=400,
+                detail="Request body must be a JSON object containing 'class_method'",
+            )
+        kwargs = body.get("input") or {}
+        if not isinstance(kwargs, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="'input' must be a dictionary of keyword arguments",
+            )
         method = resolve_method(body["class_method"], streaming=True)
 
         async def generator():
@@ -89,13 +110,16 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
             # the callable, so a sync method returning an async iterable also
             # works. The sync route below draws the same distinction for the
             # `""` and `async` buckets via iscoroutinefunction.
-            stream = method(**(body.get("input") or {}))
-            if hasattr(stream, "__aiter__"):
-                async for event in stream:
-                    yield json.dumps(event) + "\n"
-            else:
-                for event in stream:
-                    yield json.dumps(event) + "\n"
+            try:
+                stream = method(**kwargs)
+                if hasattr(stream, "__aiter__"):
+                    async for event in stream:
+                        yield json.dumps(event) + "\n"
+                else:
+                    for event in stream:
+                        yield json.dumps(event) + "\n"
+            except Exception:
+                yield json.dumps({"error": "Internal streaming error"}) + "\n"
 
         return responses.StreamingResponse(
             content=generator(), media_type="application/json"
@@ -103,14 +127,42 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
 
     @app.post("/api/reasoning_engine")
     async def query(request: Request) -> responses.JSONResponse:
-        body = await request.json()
-        method = resolve_method(body["class_method"], streaming=False)
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400, detail="Invalid JSON in request body"
+            ) from exc
+        if not isinstance(body, dict) or "class_method" not in body:
+            raise HTTPException(
+                status_code=400,
+                detail="Request body must be a JSON object containing 'class_method'",
+            )
         kwargs = body.get("input") or {}
-        output = (
-            await method(**kwargs)
-            if inspect.iscoroutinefunction(method)
-            else method(**kwargs)
-        )
+        if not isinstance(kwargs, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="'input' must be a dictionary of keyword arguments",
+            )
+        method = resolve_method(body["class_method"], streaming=False)
+        try:
+            output = (
+                await method(**kwargs)
+                if inspect.iscoroutinefunction(method)
+                else method(**kwargs)
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid arguments for method {body['class_method']!r}: {exc}",
+            ) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Internal error processing reasoning engine request.",
+            ) from exc
         return responses.JSONResponse(
             content=encoders.jsonable_encoder({"output": output})
         )

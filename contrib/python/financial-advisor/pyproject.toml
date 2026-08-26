@@ -2,7 +2,7 @@
 name = "financial-advisor"
 version = "0.1.0"
 description = "Multi-agent financial advisor that analyzes tickers and proposes trading, execution, and risk plans."
-authors = [{ name = "Antonio Gulli", email = "gulli@google.com" }]
+authors = [{ name = "Google LLC" }]
 license = {text = "Apache License 2.0"}
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -16,7 +16,7 @@ dependencies = [
     "a2a-sdk[http-server]>=1.0,<2",
     "aiohttp>=3.13.4",
     "gcsfs>=2024.11.0",
-    "opentelemetry-resourcedetector-gcp<=1.12.0a0",
+    "opentelemetry-resourcedetector-gcp<=1.12.0",
 ]
 
 [dependency-groups]
