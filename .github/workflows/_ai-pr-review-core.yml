@@ -273,6 +273,25 @@ jobs:
         run: |-
           set -euo pipefail
 
+          # Fetched WITHOUT `--patch`. That flag asks for the `.patch` media
+          # type, which is a git-format-patch SERIES — one patch per commit,
+          # concatenated — not the PR's combined diff. Every later step here
+          # assumes a combined diff, and on a multi-commit PR the two disagree
+          # about what the PR even changes:
+          #
+          # #2566 has 6 commits that add a scratch recipe in commit 1 and
+          # delete it again in commit 5. Its combined diff is ONE file, 12KB.
+          # Its patch series is 42 file entries, 872KB, listing every file of
+          # that scratch recipe as added and then again as deleted. The
+          # reviewers duly reviewed a recipe the PR does not touch, and GitHub
+          # rejected every resulting comment with HTTP 422 — the anchors name
+          # paths and lines that are not in the PR's diff, because they are
+          # not in the PR. Three of the four lanes failed that way; the fourth
+          # passed only because it had nothing left to post.
+          #
+          # A review comment can only ever be anchored to the combined diff,
+          # so that is the only thing worth reviewing.
+          #
           # Track success explicitly. `set -e` cannot catch a failure here:
           # a command used as an `if` condition is a tested condition, not an
           # error, so an exhausted retry loop would fall through with an empty
@@ -280,7 +299,7 @@ jobs:
           # which the model answers by finding nothing and exiting 0.
           FETCHED='false'
           for attempt in 1 2 3; do
-            if gh pr diff "${PR_NUMBER}" --patch > pr_diff.txt; then
+            if gh pr diff "${PR_NUMBER}" > pr_diff.txt; then
               FETCHED='true'
               break
             fi
@@ -736,6 +755,12 @@ jobs:
             plus one or two either side, each prefixed with its NEW-file line number as
             computed above. **The anchored line MUST be one of these rows.** Copy the
             text verbatim from the diff.
+
+            Verbatim source goes inside a JSON string, so every double quote in it
+            MUST be escaped as `\"` — a row like `elif [ -f "yarn.lock" ]; then`
+            becomes `"  252: elif [ -f \"yarn.lock\" ]; then"`. The same applies to
+            any double quote in `body` or `verify_steps`. Unescaped, the block is
+            not JSON.
 
             This is checked mechanically, and getting it right is the single most
             useful thing you can do for a finding. A window that matches nothing in the
