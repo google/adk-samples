@@ -25,6 +25,7 @@ Every test below pins one of those.
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import post_review_comments as m
@@ -893,6 +894,11 @@ def test_one_unescaped_quote_does_not_destroy_the_whole_review():
     The reviewer emitted `"window": "  211:     assert res["success"] is True"`
     — valid but for one unescaped pair. Three good findings were thrown away
     and the job failed with a CI-fault annotation on the contributor's PR.
+
+    All three come back now. Salvage used to keep the two findings that were
+    already well-formed and drop the third; repair rebuilds the block, so the
+    malformed one is no longer a casualty either — and its window keeps the
+    quotes that broke it.
     """
     response = (FIXTURES / "malformed_findings_response.txt").read_text(
         encoding="utf-8"
@@ -901,13 +907,12 @@ def test_one_unescaped_quote_does_not_destroy_the_whole_review():
         json.loads(m.FENCED_BLOCK.findall(response)[-1])
 
     findings = m.extract_findings(response)
-    assert len(findings) == 2
+    assert len(findings) == 3
     paths = {f["path"].split("/")[-1] for f in findings}
     assert paths == {"test_routine_tool.py", "test_process_tool.py"}
-    # The malformed one is the casualty, and only it.
-    assert all(
-        "errno" in f["body"] or "duplicated" in f["body"] for f in findings
-    )
+
+    recovered = next(f for f in findings if f["line"] == 212)
+    assert 'assert res["success"] is True' in recovered["window"]
 
 
 def test_salvage_keeps_only_things_shaped_like_findings():
@@ -925,6 +930,146 @@ def test_salvage_keeps_only_things_shaped_like_findings():
 
 
 def test_a_block_that_salvages_nothing_is_still_a_ci_fault():
-    """Silence must not be mistaken for a clean review."""
+    """Silence must not be mistaken for a clean review.
+
+    Nothing here carries a finding key, so there is no value for repair to
+    delimit and nothing for salvage to keep. The fault must survive both.
+    """
     with pytest.raises(m.ReviewerOutputError):
         m.extract_findings("```json\n[{totally broken}\n```")
+
+
+def test_every_finding_malformed_still_yields_a_review():
+    """Regression: the Correctness lane on PR #2566.
+
+    Both findings quoted shell out of a workflow file, so both windows came
+    back with raw quotes and salvage — which only keeps findings that were
+    already well-formed — recovered nothing. The review died as a CI fault
+    over output that was one escape away from usable.
+    """
+    response = (FIXTURES / "unescaped_quotes_response.txt").read_text(
+        encoding="utf-8"
+    )
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(m.FENCED_BLOCK.findall(response)[-1])
+    assert (
+        m._salvage_findings(
+            m.FENCED_BLOCK.findall(response)[-1], json.JSONDecoder()
+        )
+        == []
+    )
+
+    findings = m.extract_findings(response)
+    assert len(findings) == 2
+    assert all(
+        f["path"] == ".github/workflows/typescript-tests.yml" for f in findings
+    )
+    assert '[ -f "yarn.lock" ]' in findings[0]["window"]
+    assert '[ -f "bun.lockb" ]' in findings[1]["window"]
+
+
+def test_a_bracket_after_a_stray_quote_is_not_a_value_end():
+    """The trap that rules out the cheap way of finding a value's end.
+
+    `[ -f "x.lock" ]` puts a `]` immediately after the stray quote. Ending a
+    value at the next quote followed by `,`, `]` or `}` would stop there,
+    truncating the array mid-string and losing every finding after it. Only a
+    schema boundary — the next key, or the close of the object — ends a value.
+    """
+    block = '{"window": "  1: [ -f "x.lock" ]; then", "verify_steps": "x"}'
+    start = block.index('"  1:') + 1
+
+    end = m.STRING_FIELD_END.search(block, start)
+    assert end is not None
+    assert block[start : end.start()] == '  1: [ -f "x.lock" ]; then'
+
+
+def test_repair_leaves_a_field_it_cannot_delimit_alone():
+    """An unterminated value has no schema anchor after it.
+
+    Rewriting on a guess would corrupt the one field still readable, so there
+    is no reading to accept and the existing paths decide.
+    """
+    assert (
+        m._repaired_findings('[{"path": "a.py", "body": "unterminated') is None
+    )
+
+
+def test_escaping_a_value_is_idempotent():
+    """A value already escaped must not gain a second layer of backslashes.
+
+    Repair normalises before it escapes, so re-reading a block that was only
+    partly malformed cannot double up the quotes that were already correct.
+    """
+    assert m._escape_value('says \\"hi\\" loudly') == 'says \\"hi\\" loudly'
+    assert m._escape_value('says "hi" loudly') == 'says \\"hi\\" loudly'
+
+
+def test_repair_refuses_a_window_that_quotes_findings_shaped_source():
+    """A second reading scrapes the finding's own fields out of the window.
+
+    The window quotes source that is itself a findings array — which this
+    repo's own tests contain — so one reading anchors at line 919 with the
+    body "dup", and another stops the value early and takes `line` 1 and the
+    body "real" from inside the quoted source. Both parse, so parsing cannot
+    be the test. Posting the second would put source text on a contributor's
+    PR as though it were a review, so the block is declined outright.
+    """
+    block = (
+        '[{"path": "t.py", "line": 919, "body": "dup",'
+        ' "window": "  919: [{"path": "a.py", "line": 1, "body": "real"}]"}]'
+    )
+    assert m._repaired_findings(block) is None
+
+
+def test_repair_declines_rather_than_guessing_past_its_budget():
+    """An exhausted search has not established that a reading is unique."""
+    block = (
+        '[{"path": "a.py", "line": 1, "body": "b",'
+        ' "window": "' + '", "body": "x' * 40 + '"}]'
+    )
+    assert m._repaired_findings(block) is None
+
+
+def _wide_malformed_block(findings: int) -> str:
+    """A block with far more findings than a review ever asks for, one bad."""
+    body = ",".join(
+        f'{{"path": "f{i}.py", "line": 1, "body": "b", "window": "  1: x"}}'
+        for i in range(findings)
+    )
+    return f"[{body}]".replace("  1: x", '  1: [ -f "a.lock" ]', 1)
+
+
+def test_a_runaway_block_does_not_blow_the_stack():
+    """Recursion made a wide block fatal instead of merely unreadable.
+
+    One field was one frame, so a model answering with hundreds of findings
+    raised RecursionError — and that escapes extract_findings entirely, so a
+    block salvage could have read reached the CI fault instead. The walk is
+    iterative for that reason; here it must simply decline.
+    """
+    assert m._repaired_findings(_wide_malformed_block(400)) is None
+
+
+def test_a_runaway_block_is_bounded_in_time():
+    """Charging only completed readings let a wide block run for minutes.
+
+    Every later field boundary is a candidate end for every earlier field, so
+    a 400-finding block pushed ~1600 copies of the reading per step and took
+    over two minutes. Pushes are charged to the budget, and the ends weighed
+    per field are capped, so the walk is bounded by shape as well as depth.
+    """
+    start = time.monotonic()
+    assert m._repaired_findings(_wide_malformed_block(1000)) is None
+    assert time.monotonic() - start < 5
+
+
+def test_a_runaway_block_still_reaches_salvage():
+    """Declining to repair must hand the block on, not end the review.
+
+    The findings that were well-formed are still there to be kept, and before
+    the walk was bounded they were lost with the rest.
+    """
+    findings = m.extract_findings(f"```json\n{_wide_malformed_block(400)}\n```")
+    assert len(findings) == 399
+    assert all(f["path"].endswith(".py") for f in findings)
