@@ -298,12 +298,14 @@ you do not answer ADK API questions or prepare recipes.
 
 **Belongs to another skill — name it and stop:**
 
-- Writing, scaffolding, or fixing a recipe → `prepare-python-recipe`,
-  `scaffold-python-recipe`, `generate-manifest`, `align-recipe-pyproject`,
-  `extract-python-environment-variables`, `generate-python-runnability-test`,
-  `make-python-recipe-deployable`
-- Reviewing a pull request → `github-pr-review`
+- Writing, scaffolding, or fixing a recipe → a repo skill under `.agents/skills/`
+- Reviewing a pull request → the PR-review repo skill
 - ADK APIs, agent code, deployment → the `google-agents-cli-*` skills
+
+`ls .agents/skills/` is authoritative for which skills exist, and each one's frontmatter
+`description` says what it triggers on. Resolve the name from there rather than from
+memory — skills get added, and a caller sent to one that no longer exists, or left
+unaware of the one that now does the job, is worse off than if you had just looked.
 
 **Naming the skill is the entire handoff.** Do not invoke it, do not start its first
 step, and do not ask a leading question — "want me to run it?", "say the word and I'll

@@ -232,6 +232,33 @@ broken.
 
 ---
 
+## Check 9 — governance the routing table does not cover
+
+This skill is designed to absorb most repo changes without being edited: it lists
+directories rather than their contents, so a new workflow, repo skill, policy key,
+label or recipe is found by looking, not by having been written down here.
+
+What it cannot absorb is a *new kind* of thing — a governance file in a location no
+routing row mentions. That failure is silent: the oracle answers "the repo doesn't
+specify that" while the answer sits in a file it was never pointed at.
+
+```bash
+# Top-level and .github config that a routing row should account for.
+ls -1 .github/*.yml .github/*.yaml .github/*.md 2>/dev/null
+ls -1 *.toml *.json *.yml *.yaml .golangci.yml 2>/dev/null
+ls -1 docs/ docs/recipe-handbook/
+```
+
+For each result, confirm `SKILL.md` names it, or names the directory it lives in.
+Anything unaccounted for is a routing gap — report it as a change this skill needs,
+not as a repo problem.
+
+Run this after any change to the repo's own configuration, and expect it to fire
+rarely: adding a fifth workflow of an existing kind is absorbed, adding the repo's
+first `renovate.json` is not.
+
+---
+
 ## Tracing what consumes a config key
 
 The blast-radius question. Given a key such as `deployability.min_google_adk`:
