@@ -254,7 +254,7 @@ ANCHORS = {"x.py": {10, 11}}
 
 
 def test_build_comments_emits_a_right_side_line_comment():
-    comments, skipped = m.build_comments(
+    comments, _notes, skipped = m.build_comments(
         [{"path": "x.py", "line": 10, "body": "Off by one."}], ANCHORS
     )
     assert comments == [
@@ -264,7 +264,7 @@ def test_build_comments_emits_a_right_side_line_comment():
 
 
 def test_build_comments_strips_a_stray_b_prefix():
-    comments, _ = m.build_comments(
+    comments, _notes, _skipped = m.build_comments(
         [{"path": "b/x.py", "line": 10, "body": "note"}], ANCHORS
     )
     assert comments[0]["path"] == "x.py"
@@ -277,7 +277,7 @@ def test_a_real_path_starting_with_b_slash_is_not_stripped():
     nothing, and silently drop every finding in that directory.
     """
     anchors = {"b/pkg.py": {7}}
-    comments, skipped = m.build_comments(
+    comments, _notes, skipped = m.build_comments(
         [{"path": "b/pkg.py", "line": 7, "body": "note"}], anchors
     )
     assert comments[0]["path"] == "b/pkg.py"
@@ -285,7 +285,7 @@ def test_a_real_path_starting_with_b_slash_is_not_stripped():
 
 
 def test_build_comments_accepts_a_stringified_line():
-    comments, _ = m.build_comments(
+    comments, _notes, _skipped = m.build_comments(
         [{"path": "x.py", "line": "10", "body": "note"}], ANCHORS
     )
     assert comments[0]["line"] == 10
@@ -306,14 +306,14 @@ def test_build_comments_accepts_a_stringified_line():
     ],
 )
 def test_build_comments_drops_unpostable_findings(finding):
-    comments, skipped = m.build_comments([finding], ANCHORS)
+    comments, _notes, skipped = m.build_comments([finding], ANCHORS)
     assert comments == []
     assert len(skipped) == 1
 
 
 def test_one_bad_finding_does_not_take_the_good_ones_with_it():
     """GitHub rejects the whole review for one bad position."""
-    comments, skipped = m.build_comments(
+    comments, _notes, skipped = m.build_comments(
         [
             {"path": "x.py", "line": 10, "body": "good"},
             {"path": "x.py", "line": 9999, "body": "bad anchor"},
@@ -544,3 +544,387 @@ def test_workflow_invokes_this_script_with_the_flags_it_defines():
         for opt in action.option_strings
     }
     assert {"--result", "--diff", "--label", "--out"} <= defined
+
+
+# --------------------------------------------------------------------------
+# Window verification
+#
+# The prompt's severity gate ("only critical or high") used to be the only
+# thing between a wrong finding and a contributor's PR. It has been replaced
+# by a wider one, so these checks are what keeps precision up. Each test below
+# pins one of them.
+# --------------------------------------------------------------------------
+
+WINDOW_DIFF = _diff(
+    "--- a/x.py",
+    "+++ b/x.py",
+    "@@ -1,2 +1,4 @@",
+    " def handler(req):",
+    "-    return None",
+    "+    name = req.args['n']",
+    "+    os.system(f'echo {name}')",
+    "+    return name",
+)
+
+
+def _one(finding, diff=WINDOW_DIFF, existing=None):
+    anchors, text = m.walk_right_side(diff)
+    return m.build_comments([finding], anchors, text, existing)
+
+
+def test_a_matching_window_is_kept():
+    comments, notes, skipped = _one(
+        {
+            "path": "x.py",
+            "line": 3,
+            "body": "shell injection here",
+            "window": "  2:     name = req.args['n']\n  3:     os.system(f'echo {name}')",
+        }
+    )
+    assert [c["line"] for c in comments] == [3]
+    assert (notes, skipped) == ([], [])
+
+
+def test_a_fabricated_window_is_dropped():
+    """A lane that invents a finding invents the source under it too.
+
+    This is the check that makes a wider filter safe: without it the only
+    defence against a hallucinated finding is a real line number, which a
+    model guesses correctly often enough to be no defence at all.
+    """
+    comments, _notes, skipped = _one(
+        {
+            "path": "x.py",
+            "line": 3,
+            "body": "sql injection here",
+            "window": "  3:     cursor.execute('SELECT ' + name)",
+        }
+    )
+    assert comments == []
+    assert "window says" in skipped[0]
+
+
+def test_a_window_off_by_one_corrects_the_anchor():
+    """Real finding, wrong arithmetic — repair it rather than lose it.
+
+    Counting new-file line numbers out of a unified diff by hand is the part
+    of the job a model is worst at, and dropping those findings throws away
+    correct work over an off-by-one.
+    """
+    comments, _notes, skipped = _one(
+        {
+            "path": "x.py",
+            "line": 4,
+            "body": "shell injection here",
+            "window": "  3:     name = req.args['n']\n  4:     os.system(f'echo {name}')",
+        }
+    )
+    assert [c["line"] for c in comments] == [3]
+    assert skipped == []
+
+
+def test_a_finding_with_no_window_still_needs_a_real_added_line():
+    """No window means no verification, so the old rule stands unchanged."""
+    good, _n1, _s1 = _one({"path": "x.py", "line": 3, "body": "note"})
+    bad, _n2, skipped = _one({"path": "x.py", "line": 99, "body": "note"})
+    assert len(good) == 1
+    assert bad == []
+    assert "not a line this PR adds" in skipped[0]
+
+
+def test_a_verified_finding_on_an_unchanged_line_becomes_a_note():
+    """Real, but GitHub will not take an inline comment there.
+
+    These used to go to the job log and vanish. On PR #2373 that class held
+    all three of the hard CI failures the review found.
+    """
+    comments, notes, skipped = _one(
+        {
+            "path": "x.py",
+            "line": 1,
+            "body": "no type hints on this signature",
+            "window": "  1: def handler(req):",
+        }
+    )
+    assert comments == []
+    assert notes == [
+        {"path": "x.py", "line": 1, "body": "no type hints on this signature"}
+    ]
+    assert skipped == []
+
+
+def test_an_unverified_finding_on_an_unchanged_line_is_not_promoted():
+    """An unverifiable line number is model arithmetic, not a finding.
+
+    Promoting those to the review body would surface exactly the mistakes
+    window verification exists to catch.
+    """
+    comments, notes, skipped = _one(
+        {
+            "path": "x.py",
+            "line": 1,
+            "body": "note",
+            "window": "  1: something that is not in this diff at all",
+        }
+    )
+    assert (comments, notes) == ([], [])
+    assert len(skipped) == 1
+
+
+# --------------------------------------------------------------------------
+# The cheapness gate
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        "trace the value back to its caller",
+        "assuming the input is user-controlled, read line 3",
+        "consider the case where the list is empty",
+        "grep the repo for other callers",
+    ],
+)
+def test_a_finding_that_admits_it_is_expensive_is_dropped(steps):
+    """Cost to check, not severity, is what a comment is filtered on.
+
+    Cheap and wrong costs the author five seconds; expensive and wrong costs
+    twenty minutes and the credibility of every other comment in the review.
+    """
+    comments, _notes, skipped = _one(
+        {
+            "path": "x.py",
+            "line": 3,
+            "body": "note",
+            "window": "  3:     os.system(f'echo {name}')",
+            "verify_steps": steps,
+        }
+    )
+    assert comments == []
+    assert "not cheap to verify" in skipped[0]
+
+
+def test_a_finding_settled_at_the_anchor_survives_the_gate():
+    comments, _notes, skipped = _one(
+        {
+            "path": "x.py",
+            "line": 3,
+            "body": "note",
+            "window": "  3:     os.system(f'echo {name}')",
+            "verify_steps": "read line 3 of this file",
+        }
+    )
+    assert len(comments) == 1
+    assert skipped == []
+
+
+# --------------------------------------------------------------------------
+# Duplicate suppression
+#
+# Four lanes review every push. Without this each one repeats itself on every
+# `synchronize` and repeats whatever the other three found in the overlap
+# between their remits.
+# --------------------------------------------------------------------------
+
+
+def _existing(path, line, body):
+    return [
+        {
+            "kind": "inline",
+            "path": path,
+            "line": line,
+            "original_line": line,
+            "body": body,
+        }
+    ]
+
+
+def test_a_comment_already_on_the_line_suppresses_the_finding():
+    comments, _notes, skipped = _one(
+        {"path": "x.py", "line": 3, "body": "shell injection here"},
+        existing=_existing("x.py", 3, "anything at all"),
+    )
+    assert comments == []
+    assert "already commented on this line" in skipped[0]
+
+
+def test_suppression_reaches_two_lines_either_side():
+    comments, _notes, _skipped = _one(
+        {"path": "x.py", "line": 4, "body": "note"},
+        existing=_existing("x.py", 2, "something"),
+    )
+    assert comments == []
+
+
+def test_suppression_does_not_reach_three_lines_away():
+    """Tight on purpose — widening it starts eating genuinely new findings."""
+    comments, _notes, _skipped = _one(
+        {"path": "x.py", "line": 3, "body": "note"},
+        existing=_existing("x.py", 6, "something"),
+    )
+    assert len(comments) == 1
+
+
+def test_a_similar_comment_elsewhere_suppresses_the_finding():
+    """The other three lanes phrase the same defect differently."""
+    comments, _notes, skipped = _one(
+        {
+            "path": "x.py",
+            "line": 3,
+            "body": "unsanitised filename interpolated into os.system",
+        },
+        existing=_existing(
+            "other.py",
+            99,
+            "filename is interpolated into os.system unsanitised",
+        ),
+    )
+    assert comments == []
+    assert "very similar" in skipped[0]
+
+
+def test_an_unrelated_existing_comment_does_not_suppress():
+    comments, _notes, _skipped = _one(
+        {"path": "x.py", "line": 3, "body": "shell injection in this handler"},
+        existing=_existing("x.py", 40, "please rename this fixture"),
+    )
+    assert len(comments) == 1
+
+
+# --------------------------------------------------------------------------
+# Output parsing and payload shape
+# --------------------------------------------------------------------------
+
+
+def test_the_last_fenced_block_wins():
+    """The reviewer now reasons in prose before answering.
+
+    That scan quotes diff rows and sometimes fences them, so the first block
+    in the response is no longer reliably the answer. The prompt puts the
+    findings last; this reads them from the same end.
+    """
+    response = (
+        "Working through the diff.\n\n"
+        '```json\n[{"path": "nope.py", "line": 1, "body": "an example"}]\n```\n\n'
+        "Now the real answer.\n\n"
+        '```json\n[{"path": "x.py", "line": 2, "body": "the real one"}]\n```\n'
+    )
+    assert m.extract_findings(response) == [
+        {"path": "x.py", "line": 2, "body": "the real one"}
+    ]
+
+
+def test_notes_are_listed_in_the_review_body():
+    payload = m.build_payload(
+        "Correctness",
+        [{"path": "x.py", "line": 2, "side": "RIGHT", "body": "inline"}],
+        [{"path": "y.toml", "line": 9, "body": "requires-python is 3.10"}],
+    )
+    assert "`y.toml:9` — requires-python is 3.10" in payload["body"]
+    assert len(payload["comments"]) == 1
+
+
+def test_a_review_of_notes_alone_is_still_posted(tmp_path):
+    """Nothing inline to say does not mean nothing to say."""
+    response = json.dumps(
+        [
+            {
+                "path": "x.py",
+                "line": 1,
+                "body": "no type hints here",
+                "window": "  1: def handler(req):",
+            }
+        ]
+    )
+    code, out, _ = _run(tmp_path, f"```json\n{response}\n```", WINDOW_DIFF)
+    assert code == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["comments"] == []
+    assert "no type hints here" in payload["body"]
+
+
+def test_an_anchor_outside_its_own_window_is_pulled_into_it():
+    """The window is checked against the diff; the anchor is not.
+
+    A model that quotes the right code and then names the line underneath it
+    would otherwise get a comment about a placeholder value posted on the
+    `return` statement below it — right finding, wrong line, reads as
+    carelessness.
+    """
+    comments, _notes, skipped = _one(
+        {
+            "path": "x.py",
+            "line": 4,
+            "body": "shell injection here",
+            "window": "  3:     os.system(f'echo {name}')",
+        }
+    )
+    assert [c["line"] for c in comments] == [3]
+    assert skipped == []
+
+
+def test_an_anchor_inside_its_window_is_left_alone():
+    comments, _notes, _skipped = _one(
+        {
+            "path": "x.py",
+            "line": 2,
+            "body": "note",
+            "window": "  2:     name = req.args['n']\n  3:     os.system(f'echo {name}')",
+        }
+    )
+    assert [c["line"] for c in comments] == [2]
+
+
+# --------------------------------------------------------------------------
+# Salvaging a malformed findings block
+#
+# Findings quote source verbatim in `window`, and source is full of double
+# quotes. A reviewer that forgets to escape one used to cost the whole review
+# AND turn the check red. Caught by a dry run against a real PR, not by any
+# test written beforehand — hence the recorded fixture.
+# --------------------------------------------------------------------------
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_one_unescaped_quote_does_not_destroy_the_whole_review():
+    """Regression: run 32896537749, Maintainability on PR #2545.
+
+    The reviewer emitted `"window": "  211:     assert res["success"] is True"`
+    — valid but for one unescaped pair. Three good findings were thrown away
+    and the job failed with a CI-fault annotation on the contributor's PR.
+    """
+    response = (FIXTURES / "malformed_findings_response.txt").read_text(
+        encoding="utf-8"
+    )
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(m.FENCED_BLOCK.findall(response)[-1])
+
+    findings = m.extract_findings(response)
+    assert len(findings) == 2
+    paths = {f["path"].split("/")[-1] for f in findings}
+    assert paths == {"test_routine_tool.py", "test_process_tool.py"}
+    # The malformed one is the casualty, and only it.
+    assert all(
+        "errno" in f["body"] or "duplicated" in f["body"] for f in findings
+    )
+
+
+def test_salvage_keeps_only_things_shaped_like_findings():
+    """Advancing past a bad object can land on a `{` inside a string.
+
+    Requiring path and body is what stops that debris becoming a comment.
+    """
+    block = (
+        '[{"path": "a.py", "line": 1, "body": "real", "window": "x"broken"},'
+        ' {"nested": {"not": "a finding"}},'
+        ' {"path": "b.py", "line": 2, "body": "also real"}]'
+    )
+    salvaged = m._salvage_findings(block, json.JSONDecoder())
+    assert [f["path"] for f in salvaged] == ["b.py"]
+
+
+def test_a_block_that_salvages_nothing_is_still_a_ci_fault():
+    """Silence must not be mistaken for a clean review."""
+    with pytest.raises(m.ReviewerOutputError):
+        m.extract_findings("```json\n[{totally broken}\n```")
