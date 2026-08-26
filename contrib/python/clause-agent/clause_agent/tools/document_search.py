@@ -24,6 +24,7 @@ import re
 from typing import Any
 
 from clause_agent.shared_libraries import config
+from clause_agent.shared_libraries.schemas import ClauseHit
 
 DEFAULT_SCOPE = ("body", "amendment", "renewal")
 VALID_DOC_TYPES = {"body", "amendment", "renewal", "exhibit", "appendix"}
@@ -117,18 +118,14 @@ def search_documents(
             score = _score(query_tokens, section)
             if score < MIN_HIT_SCORE:
                 continue
-            scored_hits.append(
-                (
-                    score,
-                    {
-                        "doc": doc["doc"],
-                        "section": section["section"],
-                        "doc_type": section["doc_type"],
-                        "text": section["text"],
-                        "effective_date": doc["effective_date"],
-                    },
-                )
+            hit = ClauseHit(
+                doc=doc["doc"],
+                section=section["section"],
+                doc_type=section["doc_type"],
+                text=section["text"],
+                effective_date=doc["effective_date"],
             )
+            scored_hits.append((score, hit.model_dump()))
 
     scored_hits.sort(key=lambda pair: pair[0], reverse=True)
     return {

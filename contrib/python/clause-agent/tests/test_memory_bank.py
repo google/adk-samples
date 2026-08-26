@@ -28,6 +28,22 @@ def test_ruling_write_rejected_without_approval():
     assert search_result == {"memories": []}
 
 
+def test_ruling_write_rejected_without_approved_at():
+    result = memory_bank_create(
+        scope={"customer": "Acme Corp", "clause": "payment_term"},
+        fact="60 days to pay",
+        approved_by="l.martinez@legal.acme",
+        # missing approved_at
+    )
+    assert result["status"] == "rejected"
+    assert "approved_at" in result["error"]
+
+    search_result = memory_bank_search(
+        scope={"customer": "Acme Corp", "clause": "payment_term"}
+    )
+    assert search_result == {"memories": []}
+
+
 def test_ruling_write_allowed_with_approval():
     result = memory_bank_create(
         scope={"customer": "Acme Corp", "clause": "payment_term"},

@@ -13,7 +13,8 @@ only a different `MemoryBankBackend` implementation (see `set_backend`).
 Guardrail (PRD §8): a scope that includes a "clause" key represents a
 precedence/interpretation *ruling*, which must never be written without
 Legal approval. `memory_bank_create` enforces this structurally (not just
-via prompt instructions): it refuses the write unless `approved_by` is set.
+via prompt instructions): it refuses the write unless both `approved_by` and
+`approved_at` are provided.
 """
 
 from __future__ import annotations
@@ -188,13 +189,13 @@ def memory_bank_create(
       and "error" if a Legal-approval-required write was attempted without
       approval.
     """
-    if RULING_SCOPE_KEY in scope and not approved_by:
+    if RULING_SCOPE_KEY in scope and (not approved_by or not approved_at):
         return {
             "status": "rejected",
             "error": (
                 "Refusing to write a clause-scoped ruling without Legal"
-                " approval: 'approved_by' is required. Call"
-                " request_legal_review and wait for approval first."
+                " approval: both 'approved_by' and 'approved_at' are required."
+                " Call request_legal_review and wait for approval first."
             ),
         }
     record = get_backend().create(
