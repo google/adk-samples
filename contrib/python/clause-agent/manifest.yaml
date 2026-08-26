@@ -22,7 +22,7 @@ architecture:           # (optional) omit the whole block if nothing below can b
 
 ownership:
   team: "google"
-  poc: "xiaomai"
+  poc: "xiaomai-c"
   # contributors: (optional) uncomment and add GitHub IDs of additional contributors
   #   - "github-id-1"
 
