@@ -756,6 +756,12 @@ jobs:
             computed above. **The anchored line MUST be one of these rows.** Copy the
             text verbatim from the diff.
 
+            Verbatim source goes inside a JSON string, so every double quote in it
+            MUST be escaped as `\"` — a row like `elif [ -f "yarn.lock" ]; then`
+            becomes `"  252: elif [ -f \"yarn.lock\" ]; then"`. The same applies to
+            any double quote in `body` or `verify_steps`. Unescaped, the block is
+            not JSON.
+
             This is checked mechanically, and getting it right is the single most
             useful thing you can do for a finding. A window that matches nothing in the
             diff means the finding is discarded as invented. A window that matches a
