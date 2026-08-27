@@ -56,7 +56,7 @@ This sample ships with **[Google Agents CLI](https://github.com/google/agents-cl
 
 ```bash
 git clone https://github.com/google/adk-samples.git
-cd adk-samples/python/agents/llm-auditor
+cd adk-samples/contrib/python/llm-auditor
 uv sync
 ```
 

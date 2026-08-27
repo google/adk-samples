@@ -3,7 +3,7 @@ status: "active"     # Options: [active | inactive]
 language: "python"   # Options: [python | java | go | kotlin | typescript]
 description: "The LLM Auditor evaluates LLM-generated answers, verifies actual accuracy using the web, and refines the response to ensure alignment with real-world knowledge."
 
-# deployable: true   # (optional) one-command deploy, no manual steps; omit if false (default)
+deployable: true   # (optional) one-command deploy, no manual steps; omit if false (default)
 # large: true        # (optional) opt into the relaxed size tier; see .github/policy.yml (recipe_size_limits) for the exact numbers; omit if false (default)
 
 architecture:          # (optional) omit the whole block if nothing below can be inferred from code
@@ -23,7 +23,7 @@ architecture:          # (optional) omit the whole block if nothing below can be
 ownership:
   team: "RobustAI"
   poc: "csferng"
-  contributors:        # (optional) uncomment and add GitHub IDs of additional contributors
+  contributors:
     - "cyroid-google"
     - "dualitygap"
     - "ivanku"
