@@ -76,6 +76,7 @@ export GOOGLE_GENAI_USE_VERTEXAI=true
 export GOOGLE_CLOUD_PROJECT=<your-project-id>
 export GOOGLE_CLOUD_LOCATION=<your-project-location>
 export GOOGLE_CLOUD_STORAGE_BUCKET=<your-storage-bucket>  # Agent Engine only
+export MODEL_NAME=<your-desired-model>
 ```
 
 **Gemini Developer API:** set `GOOGLE_GENAI_USE_VERTEXAI=false` and `GOOGLE_API_KEY=...` in `.env`.

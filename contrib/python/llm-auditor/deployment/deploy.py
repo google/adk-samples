@@ -29,6 +29,7 @@ flags.DEFINE_string("project_id", None, "GCP project ID.")
 flags.DEFINE_string("location", None, "GCP location.")
 flags.DEFINE_string("bucket", None, "GCP bucket.")
 flags.DEFINE_string("resource_id", None, "ReasoningEngine resource ID.")
+flags.DEFINE_string("model_name", None, "Model name for the agents.")
 
 flags.DEFINE_bool("list", False, "List all agents.")
 flags.DEFINE_bool("create", False, "Creates a new agent.")
@@ -40,17 +41,22 @@ def create() -> None:
     """Creates an agent engine for LLM Auditor."""
     adk_app = AdkApp(agent=root_agent, enable_tracing=True)
 
+    model_name = (
+        FLAGS.model_name if FLAGS.model_name else os.getenv("MODEL_NAME")
+    )
+
     remote_agent = agent_engines.create(
         adk_app,
         display_name=root_agent.name,
         requirements=[
-            "google-adk (>=0.0.2)",
-            "google-cloud-aiplatform[agent_engines] (>=1.88.0,<2.0.0)",
-            "google-genai (>=1.5.0,<2.0.0)",
+            "google-adk[gcp] (>=1.31.0,<2.0.0)",
+            "google-cloud-aiplatform[adk,agent_engines] (>=1.93.0,<2.0.0)",
+            "google-genai (>=1.9.0,<2.0.0)",
             "pydantic (>=2.10.6,<3.0.0)",
             "absl-py (>=2.2.1,<3.0.0)",
         ],
         extra_packages=["./llm_auditor"],
+        env_vars={"MODEL_NAME": model_name},
     )
     print(f"Created remote agent: {remote_agent.resource_name}")
 
