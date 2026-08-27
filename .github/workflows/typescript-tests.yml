@@ -22,6 +22,7 @@ on:
       - "core/**/yarn.lock"
       - "core/**/pnpm-lock.yaml"
       - "core/**/bun.lockb"
+      - "core/**/bun.lock"
       - "core/**/manifest.yaml"
       - "contrib/**/*.ts"
       - "contrib/**/*.tsx"
@@ -36,6 +37,7 @@ on:
       - "contrib/**/yarn.lock"
       - "contrib/**/pnpm-lock.yaml"
       - "contrib/**/bun.lockb"
+      - "contrib/**/bun.lock"
       - "contrib/**/manifest.yaml"
       - "skills/**/*.ts"
       - "skills/**/*.tsx"
@@ -50,6 +52,7 @@ on:
       - "skills/**/yarn.lock"
       - "skills/**/pnpm-lock.yaml"
       - "skills/**/bun.lockb"
+      - "skills/**/bun.lock"
       - "skills/**/manifest.yaml"
       - ".github/workflows/typescript-tests.yml"
   workflow_dispatch:
@@ -96,6 +99,8 @@ jobs:
         run: |
           set -euo pipefail
 
+          MANIFEST_FILENAME="manifest.yaml"
+
           # pipefail matters here: without it, a transient `git fetch` failure
           # would produce an empty diff → 0 recipes → skipped matrix →
           # skipped gate → branch protection sees the required check as
@@ -118,7 +123,7 @@ jobs:
                 if is_typescript_recipe "$manifest"; then
                   dirname "$manifest"
                 fi
-              done < <(find "$root" -name "manifest.yaml")
+              done < <(find "$root" -name "$MANIFEST_FILENAME")
             done
           }
 
@@ -130,7 +135,7 @@ jobs:
             local dir
             dir="$(dirname "$path")"
             while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
-              if [ -f "$dir/manifest.yaml" ]; then
+              if [ -f "$dir/$MANIFEST_FILENAME" ]; then
                 echo "$dir"
                 return
               fi
@@ -178,7 +183,7 @@ jobs:
               esac
               recipe_dir="$(find_recipe_dir "$file")"
               [ -z "$recipe_dir" ] && continue
-              if is_typescript_recipe "$recipe_dir/manifest.yaml"; then
+              if is_typescript_recipe "$recipe_dir/$MANIFEST_FILENAME"; then
                 RECIPES="${RECIPES}${recipe_dir}"$'\n'
               else
                 echo "[SKIP] $recipe_dir — not a TypeScript recipe."
