@@ -88,9 +88,15 @@ func (c *GitHubClient) flagAsSpam(ctx context.Context, number int, reason string
 	// the model emits the tool twice, the second call is a no-op so it cannot
 	// post a duplicate alert comment.
 	if !c.markFlagged(number) {
+		// Do not report success for a write that failed: the model would record
+		// an alert that was never posted.
+		if c.flagAttemptFailed(number) {
+			return errResult("flagging issue #%d already failed this run; it will be retried on the next run", number), nil
+		}
 		return actionResult{Status: "success", Message: "issue already flagged this run"}, nil
 	}
 	if err := c.FlagSpam(ctx, number, buildAlertComment(reason)); err != nil {
+		c.recordFlagFailure(number)
 		c.recordError()
 		return actionResult{}, err
 	}

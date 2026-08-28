@@ -54,7 +54,7 @@ type GitHubClient struct {
 	// flagged records the issues already flagged this run, so a model that emits
 	// the flag tool twice for the same issue cannot post a duplicate comment
 	// (the label add is idempotent server-side, but a second comment is not).
-	flagged map[int]bool
+	flagged map[int]flagOutcome
 }
 
 // NewGitHubClient builds a client authenticated with the configured token and
@@ -66,7 +66,7 @@ func NewGitHubClient(ctx context.Context, cfg *Config, log *slog.Logger) (*GitHu
 		rest:        rest,
 		cfg:         cfg,
 		log:         log,
-		flagged:     make(map[int]bool),
+		flagged:     make(map[int]flagOutcome),
 		maintainers: maintainerSet(cfg.Maintainers),
 	}
 
@@ -102,23 +102,55 @@ func (c *GitHubClient) hadError() bool {
 	return c.errored
 }
 
-// markFlagged records that the issue is being flagged this run and reports
-// whether this is the first such attempt. It returns false once an issue has
-// already been flagged, so a duplicate flag tool call (or a duplicated candidate)
-// cannot post a second alert comment. The mark is set on the first attempt and
-// not rolled back on failure: a failed flag is recorded as an error (fail-loud)
-// and retried on the next scheduled run, by which point the label guard applies.
+// flagOutcome is what happened to an issue's flag attempt this run.
+type flagOutcome int
+
+const (
+	flagUnattempted flagOutcome = iota
+	flagInFlight                // claimed, write not yet known to have succeeded
+	flagFailed                  // the write returned an error
+)
+
+// markFlagged claims the single flag attempt allowed for an issue this run, and
+// reports whether this call won the claim.
+//
+// The claim is deliberately NOT rolled back on failure: retrying inside the same
+// run risks posting the alert twice if the first write actually landed and only
+// its response was lost. A failed flag is recorded as an error (fail-loud) and
+// retried on the next scheduled run, by which point the label guard applies.
+//
+// What IS tracked is whether the attempt failed, so a second tool call after a
+// failure reports an error rather than "already flagged" — otherwise the model's
+// transcript records a success for a comment that was never posted.
 func (c *GitHubClient) markFlagged(number int) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.flagged[number] {
+	if c.flagged == nil {
+		c.flagged = make(map[int]flagOutcome)
+	}
+	if c.flagged[number] != flagUnattempted {
 		return false
 	}
-	if c.flagged == nil {
-		c.flagged = make(map[int]bool)
-	}
-	c.flagged[number] = true
+	c.flagged[number] = flagInFlight
 	return true
+}
+
+// recordFlagFailure notes that the claimed flag write failed, so a later call
+// for the same issue is told the truth instead of "already flagged".
+func (c *GitHubClient) recordFlagFailure(number int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.flagged == nil {
+		c.flagged = make(map[int]flagOutcome)
+	}
+	c.flagged[number] = flagFailed
+}
+
+// flagAttemptFailed reports whether this run already tried and failed to flag.
+func (c *GitHubClient) flagAttemptFailed(number int) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.flagged[number] == flagFailed
 }
 
 // SearchSpamCandidates returns up to IssueCount open issues (most recently
