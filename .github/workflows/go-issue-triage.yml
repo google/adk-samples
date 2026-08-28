@@ -26,10 +26,14 @@ on:
         required: false
         default: '3'
       samples_ref:
-        description: 'Ref of google/adk-samples to run the bot code from.'
+        description: >-
+          Ref of google/adk-samples to run the bot code from. Defaults to the
+          commit this workflow file itself was loaded from, so a caller pinning
+          `uses: ...@<sha>` also pins the bot code. Override only to test an
+          unmerged branch.
         type: 'string'
         required: false
-        default: 'main'
+        default: ''
     secrets:
       GEMINI_API_KEY:
         description: 'Gemini API key. Omit only if the caller configures Vertex AI.'
@@ -47,10 +51,13 @@ jobs:
       # Check out adk-samples (the bot code). A reusable workflow's default
       # checkout would fetch the CALLER repo, so we target adk-samples explicitly.
       - name: 'Checkout adk-samples'
-        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v4
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v5.0.0
         with:
           repository: 'google/adk-samples'
-          ref: '${{ inputs.samples_ref }}'
+          ref: '${{ inputs.samples_ref || job.workflow_sha }}'
+          # The bot code is executed by `go run .` in a later step. Leaving the
+          # token in .git/config would expose it to everything in that build.
+          persist-credentials: false
 
       - name: 'Set up Go'
         uses: 'actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff' # ratchet:actions/setup-go@v5
