@@ -1,4 +1,4 @@
-module spamdetection
+module github.com/google/adk-samples/go/github-bots/spam-detection
 
 go 1.25.3
 
