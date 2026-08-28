@@ -51,11 +51,32 @@ type GitHubClient struct {
 	mu          sync.Mutex
 	toolErrored bool
 
+	// claimed records the (issue, action) pairs already performed this run, so a
+	// duplicate tool emission cannot repeat a non-idempotent write. The label
+	// writes are idempotent; the comments that accompany them are not.
+	claimed map[claimKey]bool
+
 	// observed is the IssueState get_issue_state last computed for each issue,
 	// keyed by issue number. The destructive tools re-check their mechanical
 	// preconditions against it, so those preconditions hold even if the model is
 	// steered by injected text in an issue comment. Guarded by mu.
 	observed map[int]IssueState
+}
+
+// action names a destructive operation for claim bookkeeping.
+type action string
+
+const (
+	actionMarkStale   action = "marking stale"
+	actionClose       action = "closing as stale"
+	actionRemoveStale action = "removing the stale label"
+	actionAlertEdit   action = "alerting a maintainer"
+)
+
+// claimKey identifies one destructive operation on one issue.
+type claimKey struct {
+	number int
+	act    action
 }
 
 // recordObservation stores the state get_issue_state computed for an issue, so
@@ -70,12 +91,44 @@ func (c *GitHubClient) recordObservation(number int, st IssueState) {
 	c.observed[number] = st
 }
 
-// observation returns the state last computed for an issue during this run.
-func (c *GitHubClient) observation(number int) (IssueState, bool) {
+// claimAction atomically tests an issue's observed state against pred and, on
+// success, consumes the observation so no second call can pass on the same data.
+//
+// The test and the consume must share ONE critical section. A plain
+// check-then-act lets two callers — a duplicate tool emission within a turn, or
+// two audits of the same issue number — both read the same unconsumed
+// observation and both proceed. The label writes are idempotent but the comments
+// are not, so that posts the same stale warning or closing notice twice. This is
+// the per-issue claim the siblings already have: spam-detection's markFlagged,
+// issue-triage's claimType.
+//
+// The observation is not restored after a failed write. Retrying inside one run
+// risks a duplicate comment when the first write landed and only its response
+// was lost; the failure is recorded as a tool error so the run exits non-zero,
+// and the next scheduled run re-derives the state from GitHub.
+// The claim is per (issue, action), not per issue: STEP 1 legitimately removes
+// the stale label AND posts an edit alert off one get_issue_state, and STEP 3
+// marks stale AND adds the clarification label. Consuming the whole observation
+// would refuse the second, correct call.
+func (c *GitHubClient) claimAction(number int, act action, pred func(IssueState) (string, bool)) (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	st, ok := c.observed[number]
-	return st, ok
+	if !ok {
+		return fmt.Sprintf("call get_issue_state for issue #%d before acting on it", number), false
+	}
+	key := claimKey{number: number, act: act}
+	if c.claimed[key] {
+		return fmt.Sprintf("%s was already performed for issue #%d this run", act, number), false
+	}
+	if msg, ok := pred(st); !ok {
+		return msg, false
+	}
+	if c.claimed == nil {
+		c.claimed = make(map[claimKey]bool)
+	}
+	c.claimed[key] = true
+	return "", true
 }
 
 // recordToolError flags that a tool hit an infrastructure error this run.
@@ -164,6 +217,13 @@ func (c *GitHubClient) SearchOldOpenIssues(ctx context.Context) ([]int, error) {
 		Order:       "asc",
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
+	// Dedupe across pages, as the spam-detection sibling does. The result set can
+	// shift between page fetches -- an issue reopened mid-pagination re-enters the
+	// state:open set and pushes the ordering along -- so the last item of one page
+	// can reappear on the next. Auditing one number twice fans two concurrent
+	// goroutines onto the same issue, and while the label writes are idempotent
+	// the comments that accompany them are not.
+	seen := make(map[int]bool)
 	var numbers []int
 	for {
 		result, resp, err := c.rest.Search.Issues(ctx, query, opts)
@@ -174,7 +234,12 @@ func (c *GitHubClient) SearchOldOpenIssues(ctx context.Context) ([]int, error) {
 			if issue.IsPullRequest() {
 				continue
 			}
-			numbers = append(numbers, issue.GetNumber())
+			n := issue.GetNumber()
+			if seen[n] {
+				continue
+			}
+			seen[n] = true
+			numbers = append(numbers, n)
 		}
 		if resp.NextPage == 0 {
 			break

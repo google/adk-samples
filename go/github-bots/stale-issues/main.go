@@ -41,7 +41,7 @@ const (
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if err := run(context.Background(), log, os.Args[1:]); err != nil {
 		log.Error("fatal", "error", err)
 		os.Exit(1)

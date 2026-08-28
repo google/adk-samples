@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -26,7 +28,7 @@ import (
 // focused on the authority gate itself.
 func newTestClient(t *testing.T) *GitHubClient {
 	t.Helper()
-	return &GitHubClient{cfg: &Config{StaleLabel: "stale"}, nonce: "testnonce"}
+	return &GitHubClient{cfg: &Config{StaleLabel: "stale"}, nonce: "testnonce", log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 }
 
 func okState() IssueState {

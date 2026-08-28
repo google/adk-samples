@@ -40,12 +40,13 @@ const (
 type eventType string
 
 const (
-	eventCreated      eventType = "created"
-	eventCommented    eventType = "commented"
-	eventEditedDesc   eventType = "edited_description"
-	eventRenamedTitle eventType = "renamed_title"
-	eventReopened     eventType = "reopened"
-	eventUnlabeled    eventType = "unlabeled_stale"
+	eventCreated       eventType = "created"
+	eventCommented     eventType = "commented"
+	eventEditedComment eventType = "edited_comment"
+	eventEditedDesc    eventType = "edited_description"
+	eventRenamedTitle  eventType = "renamed_title"
+	eventReopened      eventType = "reopened"
+	eventUnlabeled     eventType = "unlabeled_stale"
 )
 
 // historyEvent is a single normalized, human-attributed event on the issue
@@ -168,12 +169,18 @@ func buildTimeline(raw *rawIssue, selfLogin, staleLabel string) (events []histor
 		if isIgnoredActor(actor, selfLogin) {
 			continue
 		}
-		// Prefer the edit time when a comment was later edited.
-		when := c.CreatedAt
-		if c.LastEditedAt != nil && !c.LastEditedAt.IsZero() {
-			when = *c.LastEditedAt
+		// A comment occupies its position in the conversation at the time it was
+		// POSTED. Ordering by the edit time instead let an author who tweaks an
+		// old comment jump ahead of a maintainer who replied in between, so the
+		// bot read the author as the last actor when the maintainer was.
+		//
+		// An edit is still activity, so it is recorded as its own event rather
+		// than discarded: that keeps the staleness clock honest without
+		// reordering the conversation.
+		events = append(events, historyEvent{Type: eventCommented, Actor: actor, Time: c.CreatedAt, Body: c.Body})
+		if c.LastEditedAt != nil && !c.LastEditedAt.IsZero() && c.LastEditedAt.After(c.CreatedAt) {
+			events = append(events, historyEvent{Type: eventEditedComment, Actor: actor, Time: *c.LastEditedAt, Body: c.Body})
 		}
-		events = append(events, historyEvent{Type: eventCommented, Actor: actor, Time: when, Body: c.Body})
 	}
 
 	// Description edits ("ghost edits").
@@ -250,6 +257,15 @@ func replay(events []historyEvent, maintainers map[string]bool, author string) r
 		st.LastActivity = events[0].Time
 	}
 	for _, e := range events {
+		// Editing an old comment is activity, so it advances the clock — but it
+		// does not change who spoke LAST. Attributing authorship to the editor
+		// let an author who tweaks a months-old comment displace a maintainer who
+		// replied in between, flipping last_action_role from maintainer to author
+		// and taking the issue down the wrong branch of the decision tree.
+		if e.Type == eventEditedComment {
+			st.LastActivity = e.Time
+			continue
+		}
 		st.LastActorRole = classify(e.Actor, author, maintainers)
 		st.LastActivity = e.Time
 		st.LastActionType = e.Type

@@ -113,46 +113,74 @@ func (c *GitHubClient) doGetIssueState(ctx context.Context, number int) (IssueSt
 // Splitting it this way means injected text in an issue comment can at worst
 // make the bot decline to act, never make it act outside the threshold, which
 // is the failure adk-python cited when it deleted its own triage agent.
-func (c *GitHubClient) checkStalePrecondition(number int) (string, bool) {
-	st, ok := c.observation(number)
-	if !ok {
-		return fmt.Sprintf("call get_issue_state for issue #%d before acting on it", number), false
+func stalePredicate(number int) func(IssueState) (string, bool) {
+	return func(st IssueState) (string, bool) {
+		if st.Status != "success" {
+			return fmt.Sprintf("issue #%d state was not retrieved successfully; refusing to act", number), false
+		}
+		if st.IsStale {
+			return fmt.Sprintf("issue #%d is already stale", number), false
+		}
+		if st.LastActionRole != string(roleMaintainer) {
+			return fmt.Sprintf("issue #%d was last acted on by %q, not a maintainer; only a maintainer-blocked issue can be marked stale", number, st.LastActionRole), false
+		}
+		if st.DaysSinceActivity <= st.StaleThresholdDays {
+			return fmt.Sprintf("issue #%d has been inactive %.1f days, at or below the %.1f-day stale threshold", number, st.DaysSinceActivity, st.StaleThresholdDays), false
+		}
+		return "", true
 	}
-	if st.Status != "success" {
-		return fmt.Sprintf("issue #%d state was not retrieved successfully; refusing to act", number), false
-	}
-	if st.IsStale {
-		return fmt.Sprintf("issue #%d is already stale", number), false
-	}
-	if st.LastActionRole != string(roleMaintainer) {
-		return fmt.Sprintf("issue #%d was last acted on by %q, not a maintainer; only a maintainer-blocked issue can be marked stale", number, st.LastActionRole), false
-	}
-	if st.DaysSinceActivity <= st.StaleThresholdDays {
-		return fmt.Sprintf("issue #%d has been inactive %.1f days, at or below the %.1f-day stale threshold", number, st.DaysSinceActivity, st.StaleThresholdDays), false
-	}
-	return "", true
 }
 
 // checkClosePrecondition enforces STEP 1's close branch in Go. Every condition
 // there is mechanical, so all of it is checked here.
-func (c *GitHubClient) checkClosePrecondition(number int) (string, bool) {
-	st, ok := c.observation(number)
-	if !ok {
-		return fmt.Sprintf("call get_issue_state for issue #%d before acting on it", number), false
+func closePredicate(number int) func(IssueState) (string, bool) {
+	return func(st IssueState) (string, bool) {
+		if st.Status != "success" {
+			return fmt.Sprintf("issue #%d state was not retrieved successfully; refusing to act", number), false
+		}
+		if !st.IsStale {
+			return fmt.Sprintf("issue #%d is not marked stale; it cannot be closed as stale", number), false
+		}
+		if st.LastActionRole != string(roleMaintainer) {
+			return fmt.Sprintf("issue #%d was last acted on by %q; the author or another user responded, so it must not be closed", number, st.LastActionRole), false
+		}
+		if st.DaysSinceStaleLabel <= st.CloseThresholdDays {
+			return fmt.Sprintf("issue #%d has been stale %.1f days, at or below the %.1f-day close threshold", number, st.DaysSinceStaleLabel, st.CloseThresholdDays), false
+		}
+		return "", true
 	}
-	if st.Status != "success" {
-		return fmt.Sprintf("issue #%d state was not retrieved successfully; refusing to act", number), false
+}
+
+// removeStalePredicate enforces STEP 1's "user came back" branch: the stale
+// label may be stripped only from an issue that is stale and whose last actor
+// was the author or another user, never a maintainer.
+func removeStalePredicate(number int) func(IssueState) (string, bool) {
+	return func(st IssueState) (string, bool) {
+		if st.Status != "success" {
+			return fmt.Sprintf("issue #%d state was not retrieved successfully; refusing to act", number), false
+		}
+		if !st.IsStale {
+			return fmt.Sprintf("issue #%d is not marked stale; there is no stale label to remove", number), false
+		}
+		if st.LastActionRole == string(roleMaintainer) {
+			return fmt.Sprintf("issue #%d was last acted on by a maintainer, so it is still waiting on the author; the stale label must stay", number), false
+		}
+		return "", true
 	}
-	if !st.IsStale {
-		return fmt.Sprintf("issue #%d is not marked stale; it cannot be closed as stale", number), false
+}
+
+// alertPredicate enforces that a maintainer alert is posted only when the bot
+// itself computed that an unannounced description edit needs one.
+func alertPredicate(number int) func(IssueState) (string, bool) {
+	return func(st IssueState) (string, bool) {
+		if st.Status != "success" {
+			return fmt.Sprintf("issue #%d state was not retrieved successfully; refusing to act", number), false
+		}
+		if !st.MaintainerAlertNeeded {
+			return fmt.Sprintf("issue #%d does not need a maintainer alert", number), false
+		}
+		return "", true
 	}
-	if st.LastActionRole != string(roleMaintainer) {
-		return fmt.Sprintf("issue #%d was last acted on by %q; the author or another user responded, so it must not be closed", number, st.LastActionRole), false
-	}
-	if st.DaysSinceStaleLabel <= st.CloseThresholdDays {
-		return fmt.Sprintf("issue #%d has been stale %.1f days, at or below the %.1f-day close threshold", number, st.DaysSinceStaleLabel, st.CloseThresholdDays), false
-	}
-	return "", true
 }
 
 func (c *GitHubClient) doAddLabel(ctx context.Context, number int, label string) (actionResult, error) {
@@ -176,6 +204,14 @@ func (c *GitHubClient) doRemoveLabel(ctx context.Context, number int, label stri
 	if !c.isManagedLabel(label) {
 		return errResult("label %q is not managed by this bot", label), nil
 	}
+	// Removing the stale label is destructive: it resets days_since_stale_label
+	// to zero, so an issue steered here can never reach the close branch. STEP 1
+	// permits it only when the author or another user came back.
+	if label == c.cfg.StaleLabel {
+		if msg, ok := c.claimAction(number, actionRemoveStale, removeStalePredicate(number)); !ok {
+			return errResult("%s", msg), nil
+		}
+	}
 	if err := c.RemoveLabel(ctx, number, label); err != nil {
 		c.recordToolError()
 		return actionResult{}, err
@@ -187,7 +223,7 @@ func (c *GitHubClient) doMarkStale(ctx context.Context, number int) (actionResul
 	if msg, ok := authorizeIssue(ctx, number); !ok {
 		return errResult("%s", msg), nil
 	}
-	if msg, ok := c.checkStalePrecondition(number); !ok {
+	if msg, ok := c.claimAction(number, actionMarkStale, stalePredicate(number)); !ok {
 		return errResult("%s", msg), nil
 	}
 	comment := fmt.Sprintf(
@@ -207,6 +243,11 @@ func (c *GitHubClient) doAlertEdit(ctx context.Context, number int) (actionResul
 	if msg, ok := authorizeIssue(ctx, number); !ok {
 		return errResult("%s", msg), nil
 	}
+	// The alert posts a comment, so it needs the same Go-side gate: the bot
+	// computed whether an unannounced description edit actually happened.
+	if msg, ok := c.claimAction(number, actionAlertEdit, alertPredicate(number)); !ok {
+		return errResult("%s", msg), nil
+	}
 	// The body must start with botAlertSignature so the bot recognizes its own
 	// alert on future runs and avoids spamming.
 	if err := c.Comment(ctx, number, botAlertSignature+". Maintainers, please review."); err != nil {
@@ -220,7 +261,7 @@ func (c *GitHubClient) doClose(ctx context.Context, number int) (actionResult, e
 	if msg, ok := authorizeIssue(ctx, number); !ok {
 		return errResult("%s", msg), nil
 	}
-	if msg, ok := c.checkClosePrecondition(number); !ok {
+	if msg, ok := c.claimAction(number, actionClose, closePredicate(number)); !ok {
 		return errResult("%s", msg), nil
 	}
 	comment := fmt.Sprintf(
