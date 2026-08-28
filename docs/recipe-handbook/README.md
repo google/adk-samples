@@ -1,4 +1,4 @@
-<!-- word count: 397 (target 500, cap 800) -->
+<!-- word count: 603 (target 500, cap 800) -->
 
 # Recipe Handbook
 
@@ -47,6 +47,8 @@ any new requirements automatically. Then check the
 
 - [Repo skills catalog](./skills-catalog.md) — the assistant
   helpers that do the work for you
+- [Repo oracle](./skills-catalog.md#repo-oracle) — ask how the repo
+  itself works: policy, CI, ownership, process
 - [Troubleshooting](./troubleshooting.md) — errors mapped
   directly to fixes
 - Other languages *(coming soon)*: Java · Go · TypeScript ·
@@ -89,6 +91,16 @@ reporting a failure.
 `contrib/` PRs are reviewed by the repository maintainers. If
 your PR has had no activity for more than a week, leave a comment
 on the PR to request a review.
+
+A weekly sweep labels a quiet PR `stale`, then closes it if it
+stays quiet. Any comment or push resets the clock. A close is
+housekeeping, not rejection — your commits survive, the branch
+outlives the close, and reopening takes one click. Ask a
+maintainer for `keep-open` if a PR must stay open.
+
+Issues follow the same pattern on a much longer clock, and close
+as `not planned` — a record that nobody got to it, not that it
+was fixed.
 
 ---
 

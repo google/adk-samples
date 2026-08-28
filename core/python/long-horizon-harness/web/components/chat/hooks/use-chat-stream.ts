@@ -58,9 +58,9 @@ export interface UseChatStreamArgs {
 // horizon/tools/*). Kept narrow so quiet turns don't trigger refetches; widen as
 // new FS-touching tools land.
 const FS_TOUCHING_TOOLS = new Set([
-  "terminal", // arbitrary shell — assume any invocation may touch the FS
-  "write_file",
-  "patch",
+  "bash", // arbitrary shell — assume any invocation may touch the FS
+  "write",
+  "edit",
 ]);
 
 export interface SendOptions {
