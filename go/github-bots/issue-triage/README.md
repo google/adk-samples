@@ -84,6 +84,7 @@ go run . -issue 123
 | `ISSUE_COUNT` | `3` | Max issues per scheduled sweep (newest first). |
 | `FRESHNESS_WINDOW_DAYS` | `0` (off) | Restrict the sweep to issues created within N days. |
 | `ISSUE_TIMEOUT` | `5m` | Bounds a single agent run. |
+| `SWEEP_TIMEOUT` | `15m` | Bounds the whole run, so N issues cannot multiply into N x `ISSUE_TIMEOUT` and overrun the job timeout. Must be at least `ISSUE_TIMEOUT`. |
 | `-dry-run` / `DRY_RUN` | `false` | Log intended actions without mutating. |
 | `-issue` | `0` | Triage only this issue (0 = sweep). |
 

@@ -52,17 +52,9 @@ func countingClient(t *testing.T, cfg *Config, status int, body string) (*Client
 	}, &calls
 }
 
-func TestDoListRecordsToolError(t *testing.T) {
-	// A failed list is an infrastructure error: it must propagate as a Go error
-	// AND be recorded so the run exits non-zero.
-	c, _ := countingClient(t, testConfig(), http.StatusInternalServerError, `{"message":"boom"}`)
-	if _, err := c.doList(context.Background(), 3); err == nil {
-		t.Fatal("doList() = nil error on HTTP 500, want error")
-	}
-	if !c.hadToolError() {
-		t.Error("doList() did not record the infrastructure error")
-	}
-}
+// scoped returns a context authorizing a session for exactly one issue, which
+// the mutating tools now require.
+func scoped(number int) context.Context { return withAuditedIssue(context.Background(), number) }
 
 func TestDoChangeTypeRejectsWithoutHTTP(t *testing.T) {
 	tests := []struct {
@@ -82,7 +74,7 @@ func TestDoChangeTypeRejectsWithoutHTTP(t *testing.T) {
 			if tc.authorize {
 				c.authorize(tc.number, need{typ: true})
 			}
-			res, err := c.doChangeType(context.Background(), tc.number, tc.issueType)
+			res, err := c.doChangeType(withAuditedIssue(context.Background(), tc.number), tc.number, tc.issueType)
 			if err != nil {
 				t.Fatalf("doChangeType() unexpected Go error = %v", err)
 			}
@@ -99,7 +91,7 @@ func TestDoChangeTypeRejectsWithoutHTTP(t *testing.T) {
 func TestDoChangeTypeAuthorizedSucceeds(t *testing.T) {
 	c, calls := countingClient(t, testConfig(), http.StatusOK, `{"type":{"name":"Bug"}}`)
 	c.authorize(7, need{typ: true})
-	res, err := c.doChangeType(context.Background(), 7, "Bug")
+	res, err := c.doChangeType(scoped(7), 7, "Bug")
 	if err != nil {
 		t.Fatalf("doChangeType() error = %v", err)
 	}
@@ -128,7 +120,7 @@ func TestDoAddLabelRejectsWithoutHTTP(t *testing.T) {
 			if tc.authorize {
 				c.authorize(tc.number, need{label: true})
 			}
-			res, err := c.doAddLabel(context.Background(), tc.number, tc.label)
+			res, err := c.doAddLabel(withAuditedIssue(context.Background(), tc.number), tc.number, tc.label)
 			if err != nil {
 				t.Fatalf("doAddLabel() unexpected Go error = %v", err)
 			}
@@ -150,7 +142,7 @@ func TestDoChangeTypeRESTErrorIsGoError(t *testing.T) {
 	if c.hadToolError() {
 		t.Fatal("hadToolError() should start false")
 	}
-	if _, err := c.doChangeType(context.Background(), 7, "Bug"); err == nil {
+	if _, err := c.doChangeType(scoped(7), 7, "Bug"); err == nil {
 		t.Fatal("doChangeType() expected Go error on HTTP 500, got nil")
 	}
 	if !c.hadToolError() {
@@ -201,7 +193,7 @@ func TestDoChangeTypeConcurrentSingleWrite(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res, err := c.doChangeType(context.Background(), 7, "Bug")
+			res, err := c.doChangeType(scoped(7), 7, "Bug")
 			if err != nil {
 				return
 			}
@@ -242,7 +234,7 @@ func TestDoAddLabelConcurrentSingleWrite(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res, err := c.doAddLabel(context.Background(), 7, "bug")
+			res, err := c.doAddLabel(scoped(7), 7, "bug")
 			if err != nil {
 				return
 			}
@@ -270,10 +262,10 @@ func TestDoChangeTypeConsumesNeed(t *testing.T) {
 		_, _ = io.WriteString(w, `{"type":{"name":"Bug"}}`)
 	}))
 	c.authorize(7, need{typ: true})
-	if res, err := c.doChangeType(context.Background(), 7, "Bug"); err != nil || res.Status != "success" {
+	if res, err := c.doChangeType(scoped(7), 7, "Bug"); err != nil || res.Status != "success" {
 		t.Fatalf("first doChangeType() = (%+v, %v), want success", res, err)
 	}
-	res, err := c.doChangeType(context.Background(), 7, "Feature")
+	res, err := c.doChangeType(scoped(7), 7, "Feature")
 	if err != nil {
 		t.Fatalf("second doChangeType() error = %v", err)
 	}
@@ -292,10 +284,10 @@ func TestDoAddLabelConsumesNeed(t *testing.T) {
 		_, _ = io.WriteString(w, `[{"name":"bug"}]`)
 	}))
 	c.authorize(7, need{label: true})
-	if res, err := c.doAddLabel(context.Background(), 7, "bug"); err != nil || res.Status != "success" {
+	if res, err := c.doAddLabel(scoped(7), 7, "bug"); err != nil || res.Status != "success" {
 		t.Fatalf("first doAddLabel() = (%+v, %v), want success", res, err)
 	}
-	res, err := c.doAddLabel(context.Background(), 7, "enhancement")
+	res, err := c.doAddLabel(scoped(7), 7, "enhancement")
 	if err != nil {
 		t.Fatalf("second doAddLabel() error = %v", err)
 	}
@@ -318,7 +310,7 @@ func TestDoChangeTypeCanonicalizesCasing(t *testing.T) {
 		_, _ = io.WriteString(w, `{"type":{"name":"Bug"}}`)
 	}))
 	c.authorize(7, need{typ: true})
-	res, err := c.doChangeType(context.Background(), 7, "bug")
+	res, err := c.doChangeType(scoped(7), 7, "bug")
 	if err != nil {
 		t.Fatalf("doChangeType() error = %v", err)
 	}
@@ -340,7 +332,7 @@ func TestDoAddLabelCanonicalizesCasing(t *testing.T) {
 		_, _ = io.WriteString(w, `[{"name":"bug"}]`)
 	}))
 	c.authorize(7, need{label: true})
-	res, err := c.doAddLabel(context.Background(), 7, "BUG")
+	res, err := c.doAddLabel(scoped(7), 7, "BUG")
 	if err != nil {
 		t.Fatalf("doAddLabel() error = %v", err)
 	}
@@ -352,39 +344,12 @@ func TestDoAddLabelCanonicalizesCasing(t *testing.T) {
 	}
 }
 
-func TestDoListAuthorizesReturnedIssues(t *testing.T) {
-	const body = `{"data":{"search":{"pageInfo":{"hasNextPage":false},
-		"nodes":[
-			{"number":10,"issueType":null,"labels":{"nodes":[]}},
-			{"number":11,"issueType":null,"labels":{"nodes":[]}}
-		]}}}`
-	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, body)
-	}))
-	res, err := c.doList(context.Background(), 5)
-	if err != nil {
-		t.Fatalf("doList() error = %v", err)
-	}
-	if len(res.Issues) != 2 {
-		t.Fatalf("got %d issues, want 2", len(res.Issues))
-	}
-	if _, ok := c.authorizedNeed(10); !ok {
-		t.Error("doList did not authorize issue 10")
-	}
-	if _, ok := c.authorizedNeed(11); !ok {
-		t.Error("doList did not authorize issue 11")
-	}
-	if _, ok := c.authorizedNeed(999); ok {
-		t.Error("an issue that was never listed must not be authorized")
-	}
-}
-
 func TestDoChangeTypeDoesNotOverwriteExistingField(t *testing.T) {
 	// An issue can appear in the triage set because it needs a *label* while
 	// already having a type. The type tool must refuse to overwrite it, in code.
 	c, calls := countingClient(t, testConfig(), http.StatusOK, `{}`)
 	c.authorize(7, need{label: true}) // type already set
-	res, err := c.doChangeType(context.Background(), 7, "Bug")
+	res, err := c.doChangeType(scoped(7), 7, "Bug")
 	if err != nil {
 		t.Fatalf("doChangeType() error = %v", err)
 	}
@@ -399,7 +364,7 @@ func TestDoChangeTypeDoesNotOverwriteExistingField(t *testing.T) {
 func TestDoAddLabelDoesNotOverwriteExistingField(t *testing.T) {
 	c, calls := countingClient(t, testConfig(), http.StatusOK, `[]`)
 	c.authorize(7, need{typ: true}) // label already set
-	res, err := c.doAddLabel(context.Background(), 7, "bug")
+	res, err := c.doAddLabel(scoped(7), 7, "bug")
 	if err != nil {
 		t.Fatalf("doAddLabel() error = %v", err)
 	}

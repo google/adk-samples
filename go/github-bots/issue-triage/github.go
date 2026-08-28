@@ -31,6 +31,12 @@ import (
 // GraphQL error of type NOT_FOUND; GetIssue maps both to this sentinel.
 var ErrIssueNotFound = errors.New("issue not found")
 
+// errNotApplied reports a write GitHub accepted (HTTP 200) but did not apply,
+// which happens when the token lacks push access. It is distinguishable from a
+// transport error on purpose: only this case is safe to retry, because after a
+// transport error the write may have landed and only its response was lost.
+var errNotApplied = errors.New("github did not apply the change")
+
 // maxSearchPages bounds GraphQL search pagination as a safety valve.
 const maxSearchPages = 10
 
@@ -81,15 +87,6 @@ func (c *Client) authorize(number int, n need) {
 		n.label = n.label && existing.label
 	}
 	c.authorized[number] = n
-}
-
-// authorizedNeed returns the fields an issue still needs and whether it is
-// authorized for mutation at all.
-func (c *Client) authorizedNeed(number int) (need, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	n, ok := c.authorized[number]
-	return n, ok
 }
 
 // claimType atomically reserves an issue's type need for a single mutation. It
@@ -361,7 +358,7 @@ func (c *Client) SetType(ctx context.Context, number int, issueType string) erro
 	u := fmt.Sprintf("repos/%s/%s/issues/%d", c.cfg.Owner, c.cfg.Repo, number)
 	req, err := c.rest.NewRequest("PATCH", u, map[string]any{"type": issueType})
 	if err != nil {
-		return fmt.Errorf("build set-type request: %w", err)
+		return fmt.Errorf("build set-type request (nothing was sent): %w: %w", errNotApplied, err)
 	}
 	// Setting a type requires push access; without it GitHub returns 200 with the
 	// issue unchanged, silently dropping the type. Read back the response and
@@ -376,7 +373,7 @@ func (c *Client) SetType(ctx context.Context, number int, issueType string) erro
 		return fmt.Errorf("set issue type: %w", err)
 	}
 	if updated.Type == nil || !strings.EqualFold(updated.Type.Name, issueType) {
-		return fmt.Errorf("set issue type: GitHub did not apply type %q to issue #%d (the token likely lacks push access)", issueType, number)
+		return fmt.Errorf("set issue type %q on issue #%d (the token likely lacks push access): %w", issueType, number, errNotApplied)
 	}
 	c.log.Info("set issue type", "issue", number, "type", issueType)
 	return nil
@@ -402,7 +399,7 @@ func (c *Client) AddLabel(ctx context.Context, number int, label string) error {
 		}
 	}
 	if !applied {
-		return fmt.Errorf("add label: GitHub did not apply label %q to issue #%d (the token likely lacks push access)", label, number)
+		return fmt.Errorf("add label %q to issue #%d (the token likely lacks push access): %w", label, number, errNotApplied)
 	}
 	c.log.Info("added label", "issue", number, "label", label)
 	return nil

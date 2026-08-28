@@ -29,15 +29,6 @@ import (
 // to build the JSON schema the model sees and fills — the parameter struct IS
 // the tool's input contract. The json tags name the fields the LLM produces.
 
-type listArgs struct {
-	Count int `json:"count"`
-}
-
-type listResult struct {
-	Status string  `json:"status"`
-	Issues []Issue `json:"issues"`
-}
-
 type typeArgs struct {
 	IssueNumber int    `json:"issue_number"`
 	IssueType   string `json:"issue_type"`
@@ -65,26 +56,41 @@ func errResult(format string, a ...any) actionResult {
 	return actionResult{Status: "error", Message: fmt.Sprintf(format, a...)}
 }
 
-// doList fetches untriaged issues and authorizes them for subsequent mutation.
-func (c *Client) doList(ctx context.Context, count int) (listResult, error) {
-	if count <= 0 || count > c.cfg.IssueCount {
-		count = c.cfg.IssueCount
+// auditedIssueKey scopes a session to a single issue number. The runner builds
+// the invocation context from the context passed to Run (which embeds it), so a
+// value set here is visible to every tool via ctx.Value.
+type auditedIssueKey struct{}
+
+// withAuditedIssue binds the issue this session is allowed to mutate.
+func withAuditedIssue(ctx context.Context, number int) context.Context {
+	return context.WithValue(ctx, auditedIssueKey{}, number)
+}
+
+// authorizeIssue reports whether the tool may act on the requested issue.
+//
+// The bot runs one agent session per issue, so untrusted text in issue A cannot
+// reach a session scoped to issue B. This is the same per-session scope the
+// stale-issues and spam-detection siblings use; it sits in front of the
+// need-claim gate below, which separately stops an already-set field being
+// overwritten.
+func authorizeIssue(ctx context.Context, requested int) (string, bool) {
+	audited, ok := ctx.Value(auditedIssueKey{}).(int)
+	if !ok {
+		return "no issue is authorized for this session", false
 	}
-	issues, err := c.ListUntriaged(ctx, count)
-	if err != nil {
-		c.recordToolError()
-		return listResult{}, err
+	if requested != audited {
+		return fmt.Sprintf("session is scoped to issue #%d; refusing to act on issue #%d", audited, requested), false
 	}
-	for _, iss := range issues {
-		c.authorize(iss.Number, needsTriage(iss, c.cfg.AllowedLabels))
-	}
-	return listResult{Status: "success", Issues: issues}, nil
+	return "", true
 }
 
 // doChangeType validates and applies an issue-type change. Validation and
 // authorization failures are returned as model-readable errResults (nil Go
 // error); only I/O failures return a Go error.
 func (c *Client) doChangeType(ctx context.Context, number int, issueType string) (actionResult, error) {
+	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return errResult("%s", msg), nil
+	}
 	if number <= 0 {
 		return errResult("invalid issue number %d", number), nil
 	}
@@ -102,7 +108,12 @@ func (c *Client) doChangeType(ctx context.Context, number int, issueType string)
 		return errResult("issue #%d already has a type; not overwriting", number), nil
 	}
 	if err := c.SetType(ctx, number, canonical); err != nil {
-		c.releaseType(number) // the write failed; let a later call retry
+		// Only retry a write GitHub demonstrably did not apply. After a transport
+		// error the POST may have landed, and releasing would let the model claim
+		// the need again with a different value.
+		if errors.Is(err, errNotApplied) {
+			c.releaseType(number)
+		}
 		c.recordToolError()
 		return actionResult{}, err
 	}
@@ -112,6 +123,9 @@ func (c *Client) doChangeType(ctx context.Context, number int, issueType string)
 // doAddLabel validates and applies a label addition, with the same error
 // conventions as doChangeType.
 func (c *Client) doAddLabel(ctx context.Context, number int, label string) (actionResult, error) {
+	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return errResult("%s", msg), nil
+	}
 	if number <= 0 {
 		return errResult("invalid issue number %d", number), nil
 	}
@@ -130,7 +144,10 @@ func (c *Client) doAddLabel(ctx context.Context, number int, label string) (acti
 		return errResult("issue #%d already has a categorization label; not adding another", number), nil
 	}
 	if err := c.AddLabel(ctx, number, canonical); err != nil {
-		c.releaseLabel(number) // the write failed; let a later call retry
+		// Only retry a write GitHub demonstrably did not apply; see doChangeType.
+		if errors.Is(err, errNotApplied) {
+			c.releaseLabel(number)
+		}
 		c.recordToolError()
 		return actionResult{}, err
 	}
@@ -151,14 +168,6 @@ func (c *Client) tools() ([]tool.Tool, error) {
 		}
 		tools = append(tools, t)
 	}
-
-	add(functiontool.New(functiontool.Config{
-		Name: "list_untriaged_issues",
-		Description: "Lists open issues that still need an issue type and/or a categorization label. " +
-			"Returns each issue's number, title, body, current labels, and current type.",
-	}, func(ctx agent.Context, a listArgs) (listResult, error) {
-		return c.doList(ctx, a.Count)
-	}))
 
 	add(functiontool.New(functiontool.Config{
 		Name: "change_issue_type",

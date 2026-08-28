@@ -50,8 +50,13 @@ type Config struct {
 	// FreshnessWindow optionally restricts the sweep to issues created within
 	// the window. Zero disables the restriction (full backlog).
 	FreshnessWindow time.Duration
-	// IssueTimeout bounds a single agent run.
+	// IssueTimeout bounds a single issue's agent run.
 	IssueTimeout time.Duration
+	// SweepTimeout bounds the WHOLE run, so N issues cannot multiply into
+	// N x IssueTimeout and overrun the workflow's own timeout-minutes. The job
+	// gets killed at that point regardless, and a kill mid-sweep is silent, so
+	// the process needs its own bound to stop first and report.
+	SweepTimeout time.Duration
 
 	// DryRun logs intended actions without performing any mutation.
 	DryRun bool
@@ -82,6 +87,7 @@ func loadConfig(args []string) (*Config, error) {
 		IssueCount:      envInt("ISSUE_COUNT", 3),
 		FreshnessWindow: envDays("FRESHNESS_WINDOW_DAYS", 0),
 		IssueTimeout:    envDuration("ISSUE_TIMEOUT", 5*time.Minute),
+		SweepTimeout:    envDuration("SWEEP_TIMEOUT", 15*time.Minute),
 		DryRun:          *dryRun,
 		SingleIssue:     *singleIssue,
 	}
@@ -112,6 +118,15 @@ func (c *Config) validate() error {
 		return fmt.Errorf("missing required configuration: %s", strings.Join(missing, ", "))
 	}
 
+	if c.IssueTimeout <= 0 {
+		return fmt.Errorf("ISSUE_TIMEOUT must be positive, got %s", c.IssueTimeout)
+	}
+	if c.SweepTimeout <= 0 {
+		return fmt.Errorf("SWEEP_TIMEOUT must be positive, got %s", c.SweepTimeout)
+	}
+	if c.SweepTimeout < c.IssueTimeout {
+		return fmt.Errorf("SWEEP_TIMEOUT (%s) must be at least ISSUE_TIMEOUT (%s)", c.SweepTimeout, c.IssueTimeout)
+	}
 	if c.IssueCount < 1 {
 		c.IssueCount = 1
 	}
