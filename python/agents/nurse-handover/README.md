@@ -36,7 +36,7 @@ The agent operates in a clear, multi-step process:
 4.  **Summarization with Gemini**: The `Summarizer` class in `nurse_handover/summary.py` orchestrates a series of calls to the Gemini model. It breaks down the summarization task into smaller, manageable chunks based on the ISBAR format, using specific prompts and configurations for each section (e.g., `id_and_background_template.txt`, `situation_template.txt`).
 5.  **Report Generation**: The final, structured ISBAR report is assembled from the model's responses and saved as a Markdown file.
 
-![Architecture Diagram](agent_pattern.png)
+![Architecture Diagram](agent_pattern.webp)
 
 ## Setup and Running
 

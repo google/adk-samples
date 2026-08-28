@@ -1,0 +1,122 @@
+name: '🔍 AI PR Review — Correctness'
+
+# Delegates to `_ai-pr-review-core.yml` to run an AI correctness review
+# on every PR — logic bugs, wrong return values, missing edge cases —
+# and posts findings as inline review comments.
+
+# SECURITY: `pull_request_target` runs in the BASE repo context, with the
+# base branch's workflow file, full secrets and a write-scoped token. It is
+# only safe because nothing in this workflow or its callee ever executes the
+# pull request's code: the checkout is the base repo, the diff is fetched
+# through `gh` as data, and the agent runs in an empty scratch directory.
+# Reassess if a step is ever added that runs anything out of the checkout.
+#
+# It is what lets fork PRs be reviewed at all. A fork `pull_request` gets no
+# secrets, a read-only token and no OIDC token, so Workload Identity auth and
+# comment posting cannot work there — and ~90% of contributions are forks.
+#
+# The directive has to sit ON this line, not above it: zizmor only honours an
+# ignore comment that falls inside the span the finding covers, and this
+# finding spans the whole `on:` block.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+    types:
+      - 'opened'
+      - 'reopened'
+      - 'synchronize'
+  issue_comment:
+    types:
+      - 'created'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: 'number'
+      # Defaults to true, so a manual run can never post by accident. This is
+      # how a change to the reviewer gets tested: `pull_request_target` always
+      # runs the BASE branch's copy of these files, so a test PR would be
+      # reviewed by main's reviewer rather than the one under test. Dispatching
+      # from a branch with `--ref` is the only way to exercise the version you
+      # are changing, and a dry run makes doing that against a real PR safe.
+      dry_run:
+        description: 'Build the review and upload it as an artifact instead of posting it'
+        required: false
+        default: true
+        type: 'boolean'
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}'
+  cancel-in-progress: true
+
+permissions:
+  contents: 'read'
+  id-token: 'write'
+  issues: 'write'
+  pull-requests: 'write'
+
+jobs:
+  trigger:
+    # No fork check and no author allowlist on the automatic path: the whole
+    # point is that an outside contributor's PR gets reviewed. A PR opening
+    # is not a privileged act, and the reviewer only ever reads the diff and
+    # writes comments.
+    #
+    # The comment re-invoke path DOES keep an OWNER/MEMBER/COLLABORATOR
+    # check, so an unlimited number of re-runs stays a maintainer's call.
+    if: |-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request_target' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '@ai-review') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      )
+    uses: './.github/workflows/_ai-pr-review-core.yml'
+    with:
+      review_label: 'Correctness'
+      event_name: '${{ github.event_name }}'
+      pr_number_pull_request: '${{ github.event.pull_request.number }}'
+      pr_number_issue: '${{ github.event.issue.number }}'
+      pr_number_dispatch: '${{ github.event.inputs.pr_number }}'
+      comment_body: '${{ github.event.comment.body }}'
+      app_id: '${{ vars.APP_ID }}'
+      dry_run: '${{ github.event.inputs.dry_run }}'
+      role: |-
+        You are an expert code reviewer specializing in correctness. Your sole focus is
+        finding bugs, logic errors, and runtime failures.
+      criteria: |-
+        ## Review Criteria — Correctness Only
+
+        You MUST ONLY comment on correctness issues. Do not comment on style, naming,
+        security, formatting, or documentation — three other reviewers own those, and
+        a finding of theirs reported here is a duplicate, not a bonus. Focus
+        exclusively on:
+
+        * Logic errors — incorrect conditions, wrong branching, inverted boolean logic
+        * Unhandled exceptions — missing try/except, uncaught errors, silent failures
+        * Off-by-one errors — incorrect loop bounds, wrong index arithmetic
+        * Race conditions — shared state without synchronisation, TOCTOU issues
+        * Data validation gaps — missing null/None checks, unchecked user input
+        * Wrong API usage — incorrect argument order, misused return values, deprecated APIs
+        * Type mismatches — passing wrong types, incorrect type coercions
+        * Objectively harmful algorithmic complexity — e.g. O(n²) in a clearly hot path
+      hunt_list: |-
+        * a condition that is always true, or always false, as written
+        * a loop that cannot execute, or cannot terminate, as written
+        * an off-by-one in a visible range, slice or index
+        * unreachable code after a `return`, `raise`, `break` or `continue`
+        * the wrong variable used in an otherwise-parallel line
+        * a missing `await` on a coroutine, or a coroutine passed where its result
+          was meant
+        * an empty `except` / `catch` swallowing an error, or one that catches and
+          returns nothing on a path the caller treats as success
+        * two literals in view that disagree with each other
+        * an error path that returns a different shape from the success path
+        * a `None`/null flowing into an attribute access or subscript on a visible path
+        * a mutable default argument, or a shared mutable default in a dataclass
+        * a resource opened on one line and not closed on the visible failure path
+    secrets:
+      APP_PRIVATE_KEY: '${{ secrets.APP_PRIVATE_KEY }}'
+      GITHUB_TOKEN_SECRET: '${{ secrets.GITHUB_TOKEN }}'

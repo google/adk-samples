@@ -63,6 +63,7 @@ Check out the agent samples below, organized by category:
 | [Hierarchical Workflow Automation](hierarchical-workflow-automation) | The "Hierarchical Workflow Automation" pattern is an automation process where multiple distinct tasks or transactions must be executed in a structured hierarchy across various systems to complete a full workflow | Multi-agent, Custom tool, BigQuery, Agent Tool | Workflow | Advanced | Multi Agent / Sequential Agent | Order Management / Customer Support |
 | [Plumber-Data-Engineering-Assistant](Plumber-Data-Engineering-Assistant) | A data engineering assistant agent capable of creating and deploy big data pipelines in Apache Spark, Apache Beam and dBT on GCP data stack via conversations | Big Data, Data Analytics, Streaming Analytics, Dataflow, Dataproc, Bigquery | Conversational | Hard | Multi Agent | Data & Analytics |
 | [GenMedia for Commerce](genmedia-for-commerce) | Full-stack AI agent for commerce media generation: virtual try-on (image & video), 360° product spinning, background changing, product fitting, and catalogue search. Includes MCP server, FastAPI backend, React frontend, and Terraform infra. | MCP, Multimodal, Image generation, Video generation, Virtual try-on, Catalogue search, Agent Runtime | Conversational | Advanced | Single Agent | Retail |
+| [Live API Evals & Audio Auditing](live-api-evals-and-audio-session-auditing) | A framework for real-time STT and TTS evaluations using Gemini Live and ADK. Additionally, It captures, archives, and audits bidirectional voice interactions. | Gemini Live, Audio, Evaluation, STT, TTS, Audit | Workflow | Advanced | Single Agent | Horizontal |
 | [Dynamic Workflow - Task Management](workflow-dynamic) | Collects a list of tasks from the user, gains approval, and launches a dynamic workflow that schedules subagents to explain execution plans and mark tasks as done. | ADK 2.0, Dynamic Workflows, Subagent Scheduling, NodeRunner | Workflow / Conversational | Intermediate | Multi Agent / Workflow | Horizontal |
 
 
@@ -172,7 +173,7 @@ Each agent displayed here is organized as follows:
 │   ├── deployment/                         # Deployment to Agent Engine
 │   ├── eval/                               # Folder containing the evaluation method
 │   ├── tests/                              # Folder containing unit tests for tools
-│   ├── agent_pattern.png                   # Diagram of the agent pattern
+│   ├── agent_pattern.webp                   # Diagram of the agent pattern
 │   ├── .env.example                        # Store agent specific env variables
 │   ├── pyproject.toml                      # Project configuration
 │   └── README.md                           # Provides an overview of the agent
@@ -216,7 +217,7 @@ The root of each agent resides in its own directory under `agents/`. For example
     *   Contains unit and integration tests for the agent.
     *   Test files (e.g., `test_agents.py`) are used to verify the agent's functionality.
 
-5.  **`agent_pattern.png`**
+5.  **`agent_pattern.webp`**
 
     *   A visual diagram illustrating the agent's architecture, including its sub-agents and their interactions.
 

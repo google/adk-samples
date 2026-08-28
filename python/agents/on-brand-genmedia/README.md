@@ -18,7 +18,7 @@ This diagram shows the detailed architecture of the agents and tools used to imp
 
 **Visual Key:** Rounded Boxes = **Agents** (Logic) | Dotted Ovals = **Tools** (Actions)
 
-![Agent Architecture](agent_pattern.png)
+![Agent Architecture](agent_pattern.webp)
 
 The Guidelines Driven Media Gen Agent implements a sequential workflow using specialized sub-agents:
 

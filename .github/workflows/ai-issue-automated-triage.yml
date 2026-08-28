@@ -1,0 +1,147 @@
+name: '✨ AI Automated Issue Triage'
+
+# Triages a newly opened or reopened issue (plus manual dispatch) by handing
+# it to `_ai-issue-triage-core.yml` as a batch of one. Everything about how
+# the triage is performed lives in that core; this workflow only decides
+# WHICH issue to triage, and reports failure back on the issue itself.
+
+on:
+  issues:
+    types:
+      - 'opened'
+      - 'reopened'
+  issue_comment:
+    types:
+      - 'created'
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'issue number to triage'
+        required: true
+        type: 'number'
+
+# `workflow_dispatch` provides `github.event.inputs.issue_number` but no
+# `github.event.issue.number` — without a fallback, dispatched runs share
+# the same null-suffixed group and cancel each other. `github.run_id` at
+# the end guarantees the key is never empty.
+concurrency:
+  group: '${{ github.workflow }}-${{ github.event.issue.number || github.event.inputs.issue_number || github.run_id }}'
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: 'bash'
+
+# Declared per job rather than here. At workflow level every job inherits
+# these — including any added later that only needs to read — which is what
+# zizmor's `excessive-permissions` audit flags. Same shape as go-format.yml
+# and recipe-canary.yml.
+permissions: {}
+
+jobs:
+  resolve:
+    # `issue_comment` is emitted for comments on pull requests as well as
+    # issues, and `github.event.issue.number` is then the PR number — without
+    # the `pull_request` guard, `@gemini-cli /triage` on a PR would apply
+    # issue labels to that PR. The AI PR review workflows guard this the
+    # same way.
+    if: |-
+      github.event_name == 'issues' ||
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        !github.event.issue.pull_request &&
+        contains(github.event.comment.body, '@gemini-cli /triage') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      )
+    timeout-minutes: 5
+    runs-on: 'ubuntu-latest'
+    permissions:
+      issues: 'read'
+    outputs:
+      issues: '${{ steps.resolve_issue.outputs.issues }}'
+    steps:
+      - name: 'Resolve the issue to triage'
+        id: 'resolve_issue'
+        env:
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          GH_REPO: '${{ github.repository }}'
+          ISSUE_NUMBER: '${{ github.event.issue.number || github.event.inputs.issue_number }}'
+        run: |-
+          set -euo pipefail
+
+          if [[ -z "${ISSUE_NUMBER}" ]]; then
+            echo "::error::No issue number resolved from the event or the dispatch input."
+            exit 1
+          fi
+
+          # Fetch through `gh` rather than reading the event payload, so the
+          # workflow_dispatch path (which carries no issue payload at all)
+          # and the event paths take exactly the same code path.
+          #
+          # Emitted as a one-element array so the core sees the same shape it
+          # gets from the scheduled sweep. The body is truncated for the same
+          # reason the sweep truncates it: it goes straight into the prompt.
+          ISSUES="$(gh issue view "${ISSUE_NUMBER}" --json number,title,body \
+            | jq -c '[{number, title, body: ((.body // "")[0:4000])}]')"
+
+          echo "issues=${ISSUES}" >> "${GITHUB_OUTPUT}"
+          echo "Triaging: ${ISSUES}"
+
+  triage:
+    needs: 'resolve'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      issues: 'write'
+    uses: './.github/workflows/_ai-issue-triage-core.yml'
+    with:
+      issues: '${{ needs.resolve.outputs.issues }}'
+      # Shorter than the sweep's: this is a single issue, not a batch.
+      print_timeout: '4m'
+      # A single issue the model cannot confidently classify is a legitimate
+      # outcome, not a failure — it keeps no labels and a human picks it up.
+      # Failing here would post an alarming comment on a real contributor's
+      # issue simply because their report was terse.
+      fail_when_none_applied: false
+      app_id: '${{ vars.APP_ID }}'
+    secrets:
+      APP_PRIVATE_KEY: '${{ secrets.APP_PRIVATE_KEY }}'
+
+  # Only fires for genuine breakage — a failed model call, an unparseable
+  # decision, or a rejected API write. "Could not classify" is not a failure
+  # (see `fail_when_none_applied` above) and never reaches this job.
+  notify-failure:
+    needs:
+      - 'resolve'
+      - 'triage'
+    if: |-
+      ${{ always() && contains(needs.*.result, 'failure') }}
+    timeout-minutes: 5
+    runs-on: 'ubuntu-latest'
+    permissions:
+      issues: 'write'
+    steps:
+      - name: 'Post Issue Triage Failure Comment'
+        uses: 'actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3'
+        with:
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
+          script: |-
+            // Use the github-script `context` helpers rather than splitting
+            // an interpolated ${{ github.repository }} string — cleaner and
+            // avoids leaking a template expression into the JS source.
+            // github.event.issue.number is null on workflow_dispatch, so
+            // fall back to the dispatched input in that case.
+            const issueNumber = context.payload.issue?.number
+              ?? Number(context.payload.inputs?.issue_number);
+            if (!issueNumber) {
+              core.warning('No issue number available — cannot post failure comment.');
+              return;
+            }
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: `There is a problem with the Antigravity CLI issue triaging. Please check the [action logs](${runUrl}) for details.`
+            });

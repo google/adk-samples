@@ -1,0 +1,130 @@
+name: '✨ AI Scheduled Issue Triage'
+
+# Hourly sweep that hands untriaged open issues to
+# `_ai-issue-triage-core.yml` — a safety net for anything the on-open
+# automated-triage workflow missed (an issue opened during CI downtime, a
+# failed run, a label stripped later).
+#
+# Everything about how the triage is performed lives in that core; this
+# workflow only decides WHICH issues to triage.
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Runs every hour
+  workflow_dispatch:
+
+concurrency:
+  group: '${{ github.workflow }}'
+  # Deliberately false. This is a periodic sweep, not a per-issue reaction:
+  # a newer tick does not obsolete an older one. With `true`, an overrunning
+  # sweep (or a manual dispatch landing near the hour) was killed by the next
+  # cron tick, potentially after labelling only part of its batch.
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: 'bash'
+
+# Declared per job rather than here. At workflow level every job inherits
+# these — including any added later that only needs to read — which is what
+# zizmor's `excessive-permissions` audit flags. Same shape as go-format.yml
+# and recipe-canary.yml.
+permissions: {}
+
+jobs:
+  # Split from the triage job so the "is there anything to do?" check is
+  # expressed ONCE, as that job's `if`. It also keeps this workflow cheap:
+  # an ordinary hourly run with nothing to triage makes one API call and
+  # stops — no auth, no agy install, no model call.
+  find:
+    timeout-minutes: 5
+    runs-on: 'ubuntu-latest'
+    permissions:
+      issues: 'read'
+    outputs:
+      issues: '${{ steps.find_issues.outputs.issues_to_triage }}'
+    steps:
+      - name: 'Find untriaged issues'
+        id: 'find_issues'
+        env:
+          # GITHUB_REPOSITORY and GITHUB_OUTPUT are auto-supplied by the
+          # runner — do NOT redeclare them here. A previous incarnation of
+          # this step set `GITHUB_OUTPUT: '${{ github.output }}'`, which is
+          # not a valid Actions context, resolves to an empty string, and
+          # silently broke every `>> "${GITHUB_OUTPUT}"` write.
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          GH_REPO: '${{ github.repository }}'
+        run: |-
+          set -euo pipefail
+
+          # Every issue is inlined into the prompt WITH ITS BODY, so an
+          # unbounded batch produces an enormous prompt and invites the 429s
+          # we have already seen from the model provider. The hourly cadence
+          # drains any remainder, and a small batch also limits how much is
+          # lost when one run fails partway.
+          MAX_BATCH=15
+          MAX_BODY_CHARS=4000
+
+          # Give the on-open workflow first refusal. Without a floor, an
+          # issue opened moments before the hour is still unlabelled when
+          # this sweep queries, so both workflows triage it at once and can
+          # land two different labels on it.
+          CUTOFF="$(date -u -d '20 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+
+          echo "🔍 Finding issues untriaged as of ${CUTOFF}..."
+
+          # "Untriaged" means the issue carries NO labels at all.
+          #
+          # An earlier revision defined it as "no kind/* and no priority/*
+          # label", copying the taxonomy the original prompt assumed. This
+          # repository has no such labels — its scheme is flat (`bug`,
+          # `enhancement`, `python`, ...) — so that definition matched every
+          # open issue, and the sweep would have re-triaged all of them every
+          # hour forever, never converging.
+          #
+          # Trade-off, accepted deliberately: an issue carrying only an
+          # incidental label (`good first issue`, `duplicate`) counts as
+          # triaged and is skipped. A definition that never terminates is far
+          # worse than one that occasionally skips.
+          ALL_ISSUES="$(gh issue list --state open --limit 200 \
+            --json number,title,body,labels,createdAt)"
+
+          CANDIDATES="$(echo "${ALL_ISSUES}" | jq -c \
+            --arg cutoff "${CUTOFF}" \
+            --argjson maxbody "${MAX_BODY_CHARS}" '
+              [ .[]
+                | select(.createdAt < $cutoff)
+                | select(.labels | length == 0)
+                | {number, title, body: ((.body // "")[0:$maxbody])}
+              ]')"
+
+          TOTAL="$(echo "${CANDIDATES}" | jq 'length')"
+          ISSUES="$(echo "${CANDIDATES}" | jq -c --argjson n "${MAX_BATCH}" '.[0:$n]')"
+          COUNT="$(echo "${ISSUES}" | jq 'length')"
+
+          echo "issues_to_triage=${ISSUES}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${TOTAL}" -gt "${COUNT}" ]]; then
+            echo "::notice::${TOTAL} issues need triage; taking ${COUNT} this run, the rest follow next hour."
+          fi
+          echo "✅ Triaging ${COUNT} of ${TOTAL} issues. 🎯"
+
+  triage:
+    needs: 'find'
+    if: |-
+      ${{ needs.find.outputs.issues != '[]' && needs.find.outputs.issues != '' }}
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      issues: 'write'
+    uses: './.github/workflows/_ai-issue-triage-core.yml'
+    with:
+      issues: '${{ needs.find.outputs.issues }}'
+      print_timeout: '8m'
+      # A whole batch coming back unclassifiable is the signature of a broken
+      # run, not of genuinely ambiguous issues — fail loudly rather than
+      # report a silent no-op as success.
+      fail_when_none_applied: true
+      app_id: '${{ vars.APP_ID }}'
+    secrets:
+      APP_PRIVATE_KEY: '${{ secrets.APP_PRIVATE_KEY }}'

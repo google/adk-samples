@@ -1,5 +1,0 @@
-{
-  "worker_model": "gemini-2.5-flash",
-  "critic_model": "gemini-2.5-pro",
-  "criteria": {}
-}

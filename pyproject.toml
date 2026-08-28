@@ -13,10 +13,36 @@ dependencies = [
 [project.scripts]
 validate = "validate:main"
 
+[dependency-groups]
+# Test-only dependencies for the repo tooling (tools/) and skill scripts
+# (.agents/skills/*/scripts/). Install with `uv sync --dev`.
+#
+# tomlkit, ruamel.yaml and packaging are imported directly by
+# .agents/skills/align-recipe-pyproject/scripts/align_pyproject.py, which
+# pytest imports via that skill's tests. Without them, collection of the
+# whole suite fails. They live here rather than in [project.dependencies]
+# because nothing under tools/ needs them at runtime.
+#
+# packaging is also imported by .github/scripts/check_recipe_pyproject.py,
+# but that gate injects its own deps via `uv run --with` and does not read
+# this group -- so it is declared here for the test run, not for that gate.
+dev = [
+  "pytest>=8",
+  "tomlkit>=0.13",
+  "ruamel.yaml>=0.18",
+  "packaging>=24",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+# Pin the minimum uv version so astral-sh/setup-uv reads it from here
+# instead of falling back to the GitHub API (which fails during outages).
+required-version = ">=0.5"
+
+# Use public PyPI as the default index for this project.
 [[tool.uv.index]]
 url = "https://pypi.org/simple/"
 default = true
@@ -30,6 +56,15 @@ packages = ["tools"]
 [tool.ruff]
 line-length = 80
 target-version = "py310"
+# Resolve first-party imports per recipe, so a package not named `app` is
+# still first-party to its own recipe.
+#
+# All three recipe roots sit two levels deep, but the middle segment differs:
+# it is a LANGUAGE under core/ and contrib/, and a VERTICAL under skills/
+# (skills/<vertical>/<solution>). Omitting skills/*/* made ruff treat a
+# vertical skill's own sibling modules as third-party and sort its imports
+# into the wrong block.
+src = [".", "core/*/*", "contrib/*/*", "skills/*/*"]
 
 [tool.ruff.lint]
 select = [
@@ -43,17 +78,75 @@ select = [
     "RUF" # ruff specific rules
 ]
 ignore = [
-    "E501", # Ignore line length for long LLM prompts
-    "PLR0913" # Allow agents to have many arguments if needed
+    "E501",    # Long LLM prompts and log messages need long strings
+    "PLR0913", # Agents and tools legitimately have many parameters
+    "PLR2004", # HTTP status codes (200, 422) are universally understood
+    "PLC0415", # Deferred imports in tests are valid for ADK recipe side effects
+    # Function-size family, same rationale as PLR0913; already tripped by
+    # merged recipes.
+    "PLR0917", # too-many-positional-arguments
+    "PLR0911", # too-many-return-statements
+    "PLR0912", # too-many-branches
+    "PLR0915", # too-many-statements
+    "C901",    # complex-structure
+    "PLW0603", # Module-level singletons and caches
 ]
 
 [tool.ruff.lint.per-file-ignores]
 # Global rule: ADK agents use __init__.py to expose their logic
 "**/__init__.py" = ["F401"]
 
+[tool.ruff.lint.isort]
+# Every Python recipe's package is named `app` by convention, so isort should
+# treat it as first-party across the whole repo. Hoisted here so recipe
+# pyproject.toml files no longer need their own [tool.ruff*] block (see the
+# A1 check in .github/workflows/python-validate-recipe.yml).
+#
+# `__AGENT_PACKAGE__` is the placeholder the make-python-recipe-deployable
+# skill substitutes for a recipe's agent package (`app`, `horizon`,
+# `expense_agent`, ...) when copying a serving template into a recipe. It is a
+# valid Python identifier on purpose, so the template files parse and stay
+# lint-checked in place rather than only after substitution.
+#
+# Without this entry isort reads it as third-party and demands the agent
+# imports be merged into the third-party block — the OPPOSITE of the shape
+# they need once substituted, since `src` (above) makes the real package
+# first-party inside its own recipe. Listing it keeps a template's import
+# order identical to its rendered output's.
+known-first-party = ["app", "__AGENT_PACKAGE__"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pytest.ini_options]
+# importlib mode avoids sys.path pollution and lets same-named test files
+# coexist across skills without collection collisions.
+addopts = "--import-mode=importlib"
+# Only the repo tooling, skill scripts and CI helper scripts are tested here.
+# Recipe tests under core/ and contrib/ have their own per-recipe suites (see
+# python-tests.yml).
+#
+# .github/scripts carries its own suite in .github/scripts/tests/, and those
+# scripts earn it: they gate real PRs (check_env_vars.py and
+# check_recipe_pyproject.py run in python-validate-recipe.yml) or act on the
+# repository unattended (close_orphan_dependabot_prs.py,
+# sweep_stale_branches.py, canary_issues.py). Everything there is covered
+# except load_policy.py.
+testpaths = [
+  "tools/tests",
+  ".agents/skills",
+  ".github/scripts",
+]
+# Never descend into skill template payloads or virtualenvs. The scaffold
+# skill ships template test files under resources/templates/tests/ that contain
+# unresolved <PLACEHOLDER> tokens and must NOT be collected as real tests.
+norecursedirs = [
+  "resources",
+  ".venv",
+  ".ruff_cache",
+  "*.egg-info",
+]
 
 [tool.codespell]
 ignore-words-list = "rouge"

@@ -51,7 +51,7 @@ Would you like me to continue reading the older documents?
 
 ## B. Architecture Visuals
 
-![Architecture diagram](agent_pattern.png)
+![Architecture diagram](agent_pattern.webp)
 
 *The architecture illustrates the data flow: Gemini Enterprise (Frontend) routes the request to the Agent Runtime. The ADK Agent orchestrates the tools, which authenticate via Secret Manager and fetch document batches from the External System, feeding them to the multimodal Gemini model.*
 

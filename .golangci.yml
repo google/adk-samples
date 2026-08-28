@@ -1,0 +1,95 @@
+# Go formatting and linting configuration — the single source of truth for
+# Go style in this repository, and the Go counterpart to `[tool.ruff]` in
+# the root pyproject.toml.
+#
+# .github/workflows/go-format.yml deliberately passes NO style flags on the
+# CLI (no -E/--enable, no max-len, no --default). golangci-lint discovers
+# this file by walking up from the directory it runs in, so every Go recipe
+# under core/, contrib/, and skills/ resolves to this one config. Change the
+# standard here, not in the workflow.
+#
+# IMPORTANT — path resolution: golangci-lint reports issue paths relative to
+# the directory containing THIS file. Because it lives at the repo root, the
+# workflow gets repo-root-relative paths for free and must NOT pass
+# `--path-prefix` (doing so double-prefixes every path, e.g.
+# `core/go/foo/core/go/foo/main.go`, and reviewdog then silently drops every
+# annotation because no such file exists in the PR diff).
+#
+# Requires golangci-lint v2 (the `version`, `formatters`, and
+# `linters.default` keys below are all v2-only schema).
+
+version: "2"
+
+# --------------------------------------------------------------------------
+# Formatters — run by `golangci-lint fmt` (the `ruff format` analogue).
+#
+# Go has no single ruff-equivalent, so the formatting standard is assembled
+# from three tools that run as a pipeline in the order listed:
+#   gofumpt — a stricter superset of gofmt (drops redundant blank lines,
+#             tightens declaration grouping). Canonical and non-negotiable;
+#             there is deliberately no knob to loosen it.
+#   gci     — deterministic import grouping. Without it, import order is
+#             merely "whatever gofmt tolerated", which produces noisy diffs
+#             when two contributors add imports to the same block.
+#   golines — the only tool here with a line-length knob (see below).
+#
+# `gofumpt.module-path` is deliberately unset: every recipe is its own Go
+# module, so there is no single correct value for a repo-wide config.
+# --------------------------------------------------------------------------
+formatters:
+  enable:
+    - gofumpt
+    - gci
+    - golines
+
+  settings:
+    golines:
+      # 120, not the repo's Python 80.
+      #
+      # Idiomatic Go has no line limit and gofmt never wraps, so any cap is
+      # a local choice. 120 was picked by measuring the Go code already in
+      # this repo (go/agents/, now retired): it leaves genuinely long call
+      # chains and struct literals intact while still catching runaway
+      # lines. 80 was rejected — Go's tab indentation plus multi-return
+      # signatures blow through it constantly, and golines would mangle
+      # readable code to satisfy it.
+      #
+      # golines cannot split string literals, so the long prompt strings
+      # typical of ADK agents (verified: up to 368 characters in
+      # go/agents/llm-auditor/critic/critic.go) are left untouched by this
+      # setting. It only rewraps code.
+      max-len: 120
+
+    gci:
+      # `localmodule` puts the recipe's own packages in their own group,
+      # below third-party imports.
+      #
+      # CAVEAT — this is why go-format.yml must group changed files by their
+      # owning go.mod and skip any file that has none: resolving
+      # `localmodule` reads ./go.mod from the working directory, and
+      # golangci-lint exits with a FATAL error, not a warning, when it is
+      # absent:
+      #   failed to create meta-formatter: gci: creating formatter: finding
+      #   local modules for `localModule` configuration: reading go.mod
+      # Module-less Go code is not hypothetical here — go/agents/llm-auditor
+      # ships five .go files and no go.mod. Dropping `localmodule` would
+      # make gci tolerate that, at the cost of mixing the recipe's own
+      # imports in with third-party ones.
+      sections:
+        - standard
+        - default
+        - localmodule
+      custom-order: true
+
+# --------------------------------------------------------------------------
+# Linters — run by `golangci-lint run` (the `ruff check` analogue).
+#
+# `standard` is golangci-lint's default set: errcheck, govet, ineffassign,
+# staticcheck, and unused. Starting conservative is deliberate — this is the
+# first Go CI in the repo and there are no Go recipes yet to calibrate a
+# wider set against. Widen it (`default: all` minus exclusions, or an
+# explicit `enable:` list) once real Go recipes exist and we can see what a
+# stricter set actually flags.
+# --------------------------------------------------------------------------
+linters:
+  default: standard
