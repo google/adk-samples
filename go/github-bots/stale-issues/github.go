@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -38,12 +40,42 @@ type GitHubClient struct {
 	selfLogin string
 	log       *slog.Logger
 
+	// nonce fences the one user-controlled field the model is shown,
+	// IssueState.LastCommentText. See fenceUntrusted.
+	nonce string
+
 	// toolErrored records whether any tool hit an infrastructure error during
 	// the run. Tool errors are also handed back to the model as data, so without
 	// this flag the process could exit 0 despite a failed mutation; run() checks
 	// it to fail loudly. Guarded by mu because audits run concurrently.
 	mu          sync.Mutex
 	toolErrored bool
+
+	// observed is the IssueState get_issue_state last computed for each issue,
+	// keyed by issue number. The destructive tools re-check their mechanical
+	// preconditions against it, so those preconditions hold even if the model is
+	// steered by injected text in an issue comment. Guarded by mu.
+	observed map[int]IssueState
+}
+
+// recordObservation stores the state get_issue_state computed for an issue, so
+// the destructive tools can verify their preconditions against data this
+// process derived rather than against whatever the model asserts.
+func (c *GitHubClient) recordObservation(number int, st IssueState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.observed == nil {
+		c.observed = make(map[int]IssueState)
+	}
+	c.observed[number] = st
+}
+
+// observation returns the state last computed for an issue during this run.
+func (c *GitHubClient) observation(number int) (IssueState, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	st, ok := c.observed[number]
+	return st, ok
 }
 
 // recordToolError flags that a tool hit an infrastructure error this run.
@@ -64,18 +96,54 @@ func (c *GitHubClient) hadToolError() bool {
 // resolves the bot's own login (used to ignore the bot's own activity).
 func NewGitHubClient(ctx context.Context, cfg *Config, log *slog.Logger) (*GitHubClient, error) {
 	rest := github.NewClient(nil).WithAuthToken(cfg.GitHubToken)
-	c := &GitHubClient{rest: rest, cfg: cfg, log: log}
+	nonce, err := newNonce()
+	if err != nil {
+		return nil, err
+	}
+	c := &GitHubClient{rest: rest, cfg: cfg, log: log, nonce: nonce}
 
 	// Resolve identity once. github-actions[bot] already ends in "[bot]" (so
 	// the timeline filter ignores it), but resolving the login makes the bot
-	// robust to any token identity.
-	if u, _, err := rest.Users.Get(ctx, ""); err == nil {
+	// robust to any token identity. Bound the call: without a deadline a hung
+	// request stalls startup until the workflow's own timeout kills the job.
+	idCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if u, _, err := rest.Users.Get(idCtx, ""); err == nil {
 		c.selfLogin = u.GetLogin()
 		log.Info("resolved bot identity", "login", c.selfLogin)
 	} else {
 		log.Warn("could not resolve bot identity; relying on [bot] suffix filtering", "error", err)
 	}
 	return c, nil
+}
+
+// newNonce returns an unguessable fence marker for untrusted text.
+//
+// It fails loud on a CSPRNG error rather than degrading: a predictable nonce
+// would let an attacker pre-write the matching closing marker in their comment
+// and escape the fence, so a weak nonce is worse than none. This mirrors the
+// sibling spam-detection bot.
+func newNonce() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate nonce: %w", err)
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+// fenceUntrusted wraps user-controlled text in an unguessable fence so the
+// model reads it as data.
+//
+// LastCommentText is the only field of IssueState an attacker controls: every
+// other field is computed here from API metadata. STEP 3 of the decision tree
+// asks the model to judge that comment's intent, so the text has to reach the
+// model — fencing it is what keeps an instruction inside it inert. Empty text
+// is left empty so the prompt does not see an empty fence.
+func (c *GitHubClient) fenceUntrusted(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "[UNTRUSTED:" + c.nonce + "]\n" + s + "\n[/UNTRUSTED:" + c.nonce + "]"
 }
 
 // SearchOldOpenIssues returns the numbers of open issues created before the

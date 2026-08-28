@@ -133,6 +133,21 @@ func (c *Config) validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required configuration: %s", strings.Join(missing, ", "))
 	}
+	// Reject non-positive durations rather than coercing them. A negative
+	// STALE_HOURS_THRESHOLD — a plausible sign typo, plumbed straight from a
+	// workflow input — puts the search cutoff in the future, so `created:<cutoff`
+	// matches every open issue including ones opened minutes ago, and the
+	// rendered threshold makes every comparison true. One character would turn
+	// the bot into a mass-marker, so this has to fail loudly.
+	if c.StaleAfter <= 0 {
+		return fmt.Errorf("STALE_HOURS_THRESHOLD must be positive, got %s", c.StaleAfter)
+	}
+	if c.CloseAfter <= 0 {
+		return fmt.Errorf("CLOSE_HOURS_AFTER_STALE_THRESHOLD must be positive, got %s", c.CloseAfter)
+	}
+	if c.IssueTimeout <= 0 {
+		return fmt.Errorf("ISSUE_TIMEOUT must be positive, got %s", c.IssueTimeout)
+	}
 	if c.Concurrency < 1 {
 		c.Concurrency = 1
 	}

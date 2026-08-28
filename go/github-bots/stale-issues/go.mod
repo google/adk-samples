@@ -1,4 +1,4 @@
-module staleissues
+module github.com/google/adk-samples/go/github-bots/stale-issues
 
 go 1.25.3
 

@@ -95,7 +95,64 @@ func (c *GitHubClient) doGetIssueState(ctx context.Context, number int) (IssueSt
 		c.recordToolError()
 		return IssueState{}, err
 	}
+	// Keep what we computed. The destructive tools re-check their mechanical
+	// preconditions against this, not against the model's assertion. Record the
+	// unfenced state so those checks read plain values.
+	c.recordObservation(number, st)
+	// Fence the one attacker-controlled field before it reaches the model.
+	st.LastCommentText = c.fenceUntrusted(st.LastCommentText)
 	return st, nil
+}
+
+// checkStalePrecondition enforces, in Go, the mechanical half of STEP 3 of the
+// decision tree: an issue may be marked stale only if it is not already stale,
+// a maintainer acted last, and the author has been silent past the threshold.
+//
+// The judgement half of STEP 3 — whether the maintainer's comment is actually
+// blocked on the author — genuinely requires the model and stays in the prompt.
+// Splitting it this way means injected text in an issue comment can at worst
+// make the bot decline to act, never make it act outside the threshold, which
+// is the failure adk-python cited when it deleted its own triage agent.
+func (c *GitHubClient) checkStalePrecondition(number int) (string, bool) {
+	st, ok := c.observation(number)
+	if !ok {
+		return fmt.Sprintf("call get_issue_state for issue #%d before acting on it", number), false
+	}
+	if st.Status != "success" {
+		return fmt.Sprintf("issue #%d state was not retrieved successfully; refusing to act", number), false
+	}
+	if st.IsStale {
+		return fmt.Sprintf("issue #%d is already stale", number), false
+	}
+	if st.LastActionRole != string(roleMaintainer) {
+		return fmt.Sprintf("issue #%d was last acted on by %q, not a maintainer; only a maintainer-blocked issue can be marked stale", number, st.LastActionRole), false
+	}
+	if st.DaysSinceActivity <= st.StaleThresholdDays {
+		return fmt.Sprintf("issue #%d has been inactive %.1f days, at or below the %.1f-day stale threshold", number, st.DaysSinceActivity, st.StaleThresholdDays), false
+	}
+	return "", true
+}
+
+// checkClosePrecondition enforces STEP 1's close branch in Go. Every condition
+// there is mechanical, so all of it is checked here.
+func (c *GitHubClient) checkClosePrecondition(number int) (string, bool) {
+	st, ok := c.observation(number)
+	if !ok {
+		return fmt.Sprintf("call get_issue_state for issue #%d before acting on it", number), false
+	}
+	if st.Status != "success" {
+		return fmt.Sprintf("issue #%d state was not retrieved successfully; refusing to act", number), false
+	}
+	if !st.IsStale {
+		return fmt.Sprintf("issue #%d is not marked stale; it cannot be closed as stale", number), false
+	}
+	if st.LastActionRole != string(roleMaintainer) {
+		return fmt.Sprintf("issue #%d was last acted on by %q; the author or another user responded, so it must not be closed", number, st.LastActionRole), false
+	}
+	if st.DaysSinceStaleLabel <= st.CloseThresholdDays {
+		return fmt.Sprintf("issue #%d has been stale %.1f days, at or below the %.1f-day close threshold", number, st.DaysSinceStaleLabel, st.CloseThresholdDays), false
+	}
+	return "", true
 }
 
 func (c *GitHubClient) doAddLabel(ctx context.Context, number int, label string) (actionResult, error) {
@@ -130,6 +187,9 @@ func (c *GitHubClient) doMarkStale(ctx context.Context, number int) (actionResul
 	if msg, ok := authorizeIssue(ctx, number); !ok {
 		return errResult("%s", msg), nil
 	}
+	if msg, ok := c.checkStalePrecondition(number); !ok {
+		return errResult("%s", msg), nil
+	}
 	comment := fmt.Sprintf(
 		"This issue has been automatically marked as stale because it has not had recent "+
 			"activity for %s days after a maintainer requested clarification. It will be "+
@@ -158,6 +218,9 @@ func (c *GitHubClient) doAlertEdit(ctx context.Context, number int) (actionResul
 
 func (c *GitHubClient) doClose(ctx context.Context, number int) (actionResult, error) {
 	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return errResult("%s", msg), nil
+	}
+	if msg, ok := c.checkClosePrecondition(number); !ok {
 		return errResult("%s", msg), nil
 	}
 	comment := fmt.Sprintf(

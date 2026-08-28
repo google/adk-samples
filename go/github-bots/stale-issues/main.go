@@ -241,11 +241,15 @@ func auditIssue(ctx context.Context, r *runner.Runner, ss session.Service, cfg *
 }
 
 // summarize collapses the agent's final text into a single short log line.
+//
+// The cut is by rune, not by byte: the agent's text can contain any UTF-8, and
+// slicing bytes splits a multibyte rune straddling the limit, emitting an
+// invalid-UTF-8 log line. This matches the sibling spam-detection bot.
 func summarize(s string) string {
 	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
-	const max = 200
-	if len(s) > max {
-		return s[:max] + "..."
+	const maxRunes = 200
+	if r := []rune(s); len(r) > maxRunes {
+		return string(r[:maxRunes]) + "..."
 	}
 	return s
 }

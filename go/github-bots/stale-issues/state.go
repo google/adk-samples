@@ -262,11 +262,19 @@ func replay(events []historyEvent, maintainers map[string]bool, author string) r
 	return st
 }
 
+// classify decides whose turn it is, matching logins case-insensitively.
+//
+// GitHub logins are case-insensitive and the API returns them in their
+// registered casing, so a maintainer configured as "wolo-lab" must still match
+// an actor reported as "Wolo-Lab". Comparing verbatim silently demoted that
+// maintainer to roleOther, which both suppressed STEP 3 and made STEP 1 strip
+// the stale label the maintainer's own comment should have preserved. The
+// sibling spam-detection bot already lowercases both sides; this matches it.
 func classify(actor, author string, maintainers map[string]bool) Role {
 	switch {
-	case actor == author:
+	case strings.EqualFold(actor, author):
 		return roleAuthor
-	case maintainers[actor]:
+	case maintainers[strings.ToLower(actor)]:
 		return roleMaintainer
 	default:
 		return roleOther
@@ -352,10 +360,15 @@ func actorLogin(a *rawActor) string {
 	return a.Login
 }
 
+// toSet builds the maintainer lookup set, lowercased and trimmed so classify
+// can match a GitHub login regardless of its registered casing. Blank entries
+// are dropped so a trailing comma in MAINTAINERS cannot admit the empty login.
 func toSet(xs []string) map[string]bool {
 	m := make(map[string]bool, len(xs))
 	for _, x := range xs {
-		m[x] = true
+		if x = strings.ToLower(strings.TrimSpace(x)); x != "" {
+			m[x] = true
+		}
 	}
 	return m
 }
