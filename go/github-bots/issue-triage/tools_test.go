@@ -384,7 +384,9 @@ func TestReleaseOnlyOnDemonstrableNonApplication(t *testing.T) {
 	t.Run("type, not applied: the need is released for a retry", func(t *testing.T) {
 		// 200 with no type set: GitHub accepted the mutation and dropped it.
 		c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = io.WriteString(w, `{"data":{"updateIssue":{"issue":{"issueType":null}}}}`)
+			// SetType is a REST PATCH that reads back a top-level "type";
+			// a 200 without it is GitHub accepting and dropping the change.
+			_, _ = io.WriteString(w, `{"number":7}`)
 		}))
 		c.authorize(7, need{typ: true})
 		if _, err := c.doChangeType(scoped(7), 7, "Bug"); err == nil {

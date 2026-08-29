@@ -232,3 +232,30 @@ func TestValidateBoundsSweepAgainstIssueTimeout(t *testing.T) {
 		})
 	}
 }
+
+// "never overwrite a human-set field" rests on triageOne authorizing exactly the
+// need that needsTriage computed. Replacing that argument with a fully-open need
+// opens every claim gate, and no test noticed — every other test calls authorize
+// directly with a need it chose itself.
+func TestTriageOneAuthorizesOnlyTheMissingFields(t *testing.T) {
+	c := &Client{cfg: testConfig(), log: discardLogger()}
+	// A human already set the type; only the label is missing.
+	iss := Issue{Number: 7, Title: "t", Body: "b", Type: "Bug"}
+	n := needsTriage(iss, c.cfg.AllowedLabels)
+	if n.typ {
+		t.Fatal("test precondition: needsTriage should report the type as already set")
+	}
+	c.authorize(iss.Number, n)
+
+	res, err := c.doChangeType(scoped(7), 7, "Feature")
+	if err != nil {
+		t.Fatalf("doChangeType returned a Go error: %v", err)
+	}
+	if res.Status != "error" || !strings.Contains(res.Message, "not overwriting") {
+		t.Errorf("doChangeType = %+v, want a refusal: the type was set by a human", res)
+	}
+	// The missing field must still be claimable, or the bot would do nothing.
+	if claimed, _ := c.claimLabel(7); !claimed {
+		t.Error("the label need should still be open")
+	}
+}
