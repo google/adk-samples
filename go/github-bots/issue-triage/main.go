@@ -132,7 +132,9 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 	}
 
 	if err := sweep(sweepCtx, issues, cfg.SweepTimeout, log, func(ctx context.Context, iss Issue) error {
-		return triageOne(ctx, r, sessions, client, cfg, log, iss)
+		return triageOne(ctx, client, cfg, log, iss, func(ictx context.Context, prompt string) error {
+			return runAgent(ictx, r, sessions, log.With("issue", iss.Number), prompt)
+		})
 	}); err != nil {
 		return err
 	}
@@ -177,7 +179,13 @@ func sweep(ctx context.Context, issues []Issue, budget time.Duration, log *slog.
 }
 
 // triageOne runs a single agent session scoped to one issue.
-func triageOne(ctx context.Context, r *runner.Runner, sessions session.Service, client *Client, cfg *Config, log *slog.Logger, iss Issue) error {
+// triageOne prepares one issue's session and hands it to runFn.
+//
+// It takes runFn rather than the runner so a test can drive the REAL function
+// and observe what it authorized. Re-executing these few lines in a test instead
+// asserts nothing about this one -- which is exactly the mistake that let an
+// unpinned authorize argument sit here undetected.
+func triageOne(ctx context.Context, client *Client, cfg *Config, log *slog.Logger, iss Issue, runFn func(context.Context, string) error) error {
 	n := needsTriage(iss, cfg.AllowedLabels)
 	if !n.any() {
 		log.Info("issue already triaged; skipping", "issue", iss.Number)
@@ -187,16 +195,20 @@ func triageOne(ctx context.Context, r *runner.Runner, sessions session.Service, 
 	ictx, cancel := context.WithTimeout(ctx, cfg.IssueTimeout)
 	defer cancel()
 
-	// Two independent gates: the session scope below decides WHICH issue may be
-	// touched, and authorize decides WHICH FIELDS of it are still missing.
-	ictx = withAuditedIssue(ictx, iss.Number)
-	client.authorize(iss.Number, n)
-
+	// Build the prompt BEFORE authorizing. buildIssuePrompt draws the fence
+	// markers and fails closed if the CSPRNG does; authorizing first would leave
+	// a live authorization for an issue whose session never starts.
 	prompt, err := buildIssuePrompt(iss, n)
 	if err != nil {
 		return err
 	}
-	return runAgent(ictx, r, sessions, log.With("issue", iss.Number), prompt)
+
+	// Two independent gates: the session scope decides WHICH issue may be
+	// touched, and authorize decides WHICH FIELDS of it are still missing.
+	ictx = withAuditedIssue(ictx, iss.Number)
+	client.authorize(iss.Number, n)
+
+	return runFn(ictx, prompt)
 }
 
 // selectIssues resolves the work set: the one requested issue, or the sweep
