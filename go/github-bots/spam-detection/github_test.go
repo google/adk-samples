@@ -290,14 +290,17 @@ func TestFlagSpamDryRunMakesNoCalls(t *testing.T) {
 // Every other test passes its own maintainerSet, so deleting the assignment in
 // NewGitHubClient left a nil map and the whole invariant silently off.
 func TestNewGitHubClientWiresTheMaintainerSet(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{"login":"bot"}`)
-	}))
-	t.Cleanup(srv.Close)
+	// No network: NewGitHubClient builds its own REST client, so an httptest
+	// server cannot be injected and the identity lookup would hit the real
+	// api.github.com. Cancel the context so that call fails fast -- it is
+	// best-effort by design -- and assert on the wiring, which is what this test
+	// is about.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
 	cfg := testConfig()
 	cfg.Maintainers = []string{"Wolo-Lab", "dpasiukevich"}
-	c, err := NewGitHubClient(context.Background(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c, err := NewGitHubClient(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewGitHubClient: %v", err)
 	}
