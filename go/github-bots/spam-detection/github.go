@@ -26,6 +26,15 @@ import (
 	"github.com/google/go-github/v66/github"
 )
 
+const (
+	// resolveIdentityTimeout bounds the one-off "who am I" lookup at startup, so
+	// a hung request cannot stall the run until the workflow's own timeout.
+	resolveIdentityTimeout = 10 * time.Second
+	// searchPageSize bounds one page of search results and the labels fetched
+	// per issue; the two must agree with the GraphQL query below.
+	searchPageSize = 100
+)
+
 // ErrIssueNotFound is returned when the requested issue does not exist or refers
 // to a pull request.
 var ErrIssueNotFound = errors.New("issue not found")
@@ -73,7 +82,7 @@ func NewGitHubClient(ctx context.Context, cfg *Config, log *slog.Logger) (*GitHu
 	// Resolve identity once, under a short timeout so a hanging API call can't
 	// stall startup indefinitely. Resolving the login makes the bot robust to any
 	// token identity (e.g. a PAT); on failure it falls back to suffix filtering.
-	idCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	idCtx, cancel := context.WithTimeout(ctx, resolveIdentityTimeout)
 	defer cancel()
 	if u, _, err := rest.Users.Get(idCtx, ""); err == nil {
 		c.selfLogin = u.GetLogin()
@@ -170,7 +179,7 @@ func (c *GitHubClient) SearchSpamCandidates(ctx context.Context) ([]int, error) 
 	opts := &github.SearchOptions{
 		Sort:        "updated",
 		Order:       "desc",
-		ListOptions: github.ListOptions{PerPage: 100},
+		ListOptions: github.ListOptions{PerPage: searchPageSize},
 	}
 	var numbers []int
 	seen := make(map[int]bool)

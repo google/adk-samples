@@ -82,6 +82,11 @@ type Config struct {
 // loadConfig parses configuration from flags (args) and environment variables
 // and validates required fields. args is injectable so tests can exercise flag
 // parsing.
+// defaultIssueTimeout bounds one issue's agent run. It is both the default and
+// the value a non-positive ISSUE_TIMEOUT is clamped back to, so the two must not
+// drift apart.
+const defaultIssueTimeout = 5 * time.Minute
+
 func loadConfig(args []string) (*Config, error) {
 	fs := flag.NewFlagSet("githubspambot", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", envBool("DRY_RUN", false),
@@ -106,7 +111,7 @@ func loadConfig(args []string) (*Config, error) {
 		IssueCount:      envInt("ISSUE_COUNT", 3),
 		FreshnessWindow: envDays("FRESHNESS_WINDOW_DAYS", 0),
 		Concurrency:     envInt("CONCURRENCY_LIMIT", 3),
-		IssueTimeout:    envDuration("ISSUE_TIMEOUT", 5*time.Minute),
+		IssueTimeout:    envDuration("ISSUE_TIMEOUT", defaultIssueTimeout),
 		DryRun:          *dryRun,
 		SingleIssue:     *singleIssue,
 	}
@@ -150,7 +155,7 @@ func (c *Config) validate() error {
 		c.FreshnessWindow = 0
 	}
 	if c.IssueTimeout <= 0 {
-		c.IssueTimeout = 5 * time.Minute
+		c.IssueTimeout = defaultIssueTimeout
 	}
 	return nil
 }

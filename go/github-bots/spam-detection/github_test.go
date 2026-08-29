@@ -39,6 +39,16 @@ func testConfig() *Config {
 	}
 }
 
+// respondWith builds a client whose server answers every request with one
+// canned body. Most tests only need that, and spelling out an http.HandlerFunc
+// at each call site buried the body being asserted on.
+func respondWith(t *testing.T, cfg *Config, body string) *GitHubClient {
+	t.Helper()
+	return testClient(t, cfg, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+}
+
 func testClient(t *testing.T, cfg *Config, h http.Handler) *GitHubClient {
 	t.Helper()
 	srv := httptest.NewServer(h)
@@ -62,9 +72,7 @@ func TestFetchIssueGraphQLErrorFailsLoud(t *testing.T) {
 	// as a real error (fail loud), not be masked as ErrIssueNotFound (which would
 	// silently skip the issue and exit 0).
 	const body = `{"data":{"repository":{"issue":null}},"errors":[{"message":"rate limited"}]}`
-	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, body)
-	}))
+	c := respondWith(t, testConfig(), body)
 	_, err := c.FetchIssue(context.Background(), 5)
 	if err == nil || errors.Is(err, ErrIssueNotFound) || !strings.Contains(err.Error(), "rate limited") {
 		t.Fatalf("FetchIssue() error = %v, want a graphql error (not ErrIssueNotFound)", err)
@@ -81,9 +89,7 @@ func TestFetchIssueCanonicalizesBotLogin(t *testing.T) {
 		"comments":{"nodes":[
 			{"author":{"login":"github-actions","__typename":"Bot"},"authorAssociation":"NONE","body":"beep"}
 		]}}}}}`
-	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, body)
-	}))
+	c := respondWith(t, testConfig(), body)
 	iss, err := c.FetchIssue(context.Background(), 5)
 	if err != nil {
 		t.Fatalf("FetchIssue() error = %v", err)
@@ -121,9 +127,7 @@ func TestSearchSpamCandidatesRespectsCount(t *testing.T) {
 	]}`
 	cfg := testConfig()
 	cfg.IssueCount = 1
-	c := testClient(t, cfg, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, body)
-	}))
+	c := respondWith(t, cfg, body)
 	got, err := c.SearchSpamCandidates(context.Background())
 	if err != nil {
 		t.Fatalf("SearchSpamCandidates() error = %v", err)
@@ -191,9 +195,7 @@ func TestFetchIssueFound(t *testing.T) {
 
 func TestFetchIssueNotFoundNull(t *testing.T) {
 	const body = `{"data":{"repository":{"issue":null}}}`
-	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, body)
-	}))
+	c := respondWith(t, testConfig(), body)
 	if _, err := c.FetchIssue(context.Background(), 999); !errors.Is(err, ErrIssueNotFound) {
 		t.Fatalf("FetchIssue() error = %v, want ErrIssueNotFound", err)
 	}
@@ -202,9 +204,7 @@ func TestFetchIssueNotFoundNull(t *testing.T) {
 func TestFetchIssueNotFoundError(t *testing.T) {
 	const body = `{"data":{"repository":{"issue":null}},"errors":[{"type":"NOT_FOUND",` +
 		`"message":"Could not resolve to an Issue with the number of 1005."}]}`
-	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, body)
-	}))
+	c := respondWith(t, testConfig(), body)
 	if _, err := c.FetchIssue(context.Background(), 1005); !errors.Is(err, ErrIssueNotFound) {
 		t.Fatalf("FetchIssue() error = %v, want ErrIssueNotFound", err)
 	}
@@ -216,9 +216,7 @@ func TestFetchIssueRepoNotFoundIsRealError(t *testing.T) {
 	// instead of silently skipping every issue and exiting 0.
 	const body = `{"data":{"repository":null},"errors":[{"message":` +
 		`"Could not resolve to a Repository with the name 'google/nope'."}]}`
-	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, body)
-	}))
+	c := respondWith(t, testConfig(), body)
 	_, err := c.FetchIssue(context.Background(), 1)
 	if err == nil {
 		t.Fatal("FetchIssue() on null repository expected error, got nil")
@@ -233,9 +231,7 @@ func TestFetchIssueRepoNotFoundIsRealError(t *testing.T) {
 
 func TestFetchIssueGraphQLError(t *testing.T) {
 	const body = `{"errors":[{"message":"Something went wrong"}]}`
-	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, body)
-	}))
+	c := respondWith(t, testConfig(), body)
 	_, err := c.FetchIssue(context.Background(), 1)
 	if err == nil || !strings.Contains(err.Error(), "Something went wrong") {
 		t.Fatalf("FetchIssue() error = %v, want graphql error propagated", err)
