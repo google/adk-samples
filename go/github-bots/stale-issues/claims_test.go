@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -343,5 +345,23 @@ func TestRemoveRefusesAnyLabelButStale(t *testing.T) {
 	}
 	if res.Status != "error" || !strings.Contains(res.Message, "only removes") {
 		t.Errorf("doRemoveLabel = %+v, want a refusal", res)
+	}
+}
+
+// RemoveLabel's dry-run guard was the one mutation path in this module with no
+// test: deleting shouldSkip from it left the whole suite green.
+func TestDryRunSuppressesRemoveLabel(t *testing.T) {
+	calls := 0
+	cfg := baseCfg()
+	cfg.DryRun = true
+	c := testClient(t, cfg, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	if err := c.RemoveLabel(context.Background(), 7, cfg.StaleLabel); err != nil {
+		t.Fatalf("RemoveLabel in dry-run = %v, want nil", err)
+	}
+	if calls != 0 {
+		t.Errorf("RemoveLabel made %d HTTP calls in dry-run, want 0", calls)
 	}
 }
