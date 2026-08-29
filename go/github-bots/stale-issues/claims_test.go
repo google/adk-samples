@@ -325,8 +325,11 @@ func TestAddClarificationRefusedBelowThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("doAddLabel returned a Go error: %v", err)
 	}
-	if res.Status != "error" || !strings.Contains(res.Message, "stale threshold") {
-		t.Errorf("doAddLabel = %+v, want a refusal on the threshold", res)
+	if res.Status != "error" || !strings.Contains(res.Message, "waiting on its author") {
+		t.Errorf("doAddLabel = %+v, want a refusal naming THIS action", res)
+	}
+	if !strings.Contains(res.Message, "stale threshold") {
+		t.Errorf("the refusal should still carry the underlying reason, got %q", res.Message)
 	}
 }
 

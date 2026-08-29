@@ -219,8 +219,11 @@ func (c *GitHubClient) doAddLabel(ctx context.Context, number int, label string)
 	// the same precondition rather than being writable on any in-scope issue. Its
 	// own action key keeps it from contending with the mark-stale claim taken
 	// moments earlier against the same observation.
+	// The check is shared with marking stale, but its refusal text is not: say
+	// which action was refused, or the model reads it as a report about a tool it
+	// did not call.
 	if msg, ok := c.claimAction(number, actionAddClarify, stalePredicate(number)); !ok {
-		return errResult("%s", msg), nil
+		return errResult("cannot flag issue #%d as waiting on its author: %s", number, msg), nil
 	}
 	if err := c.AddLabel(ctx, number, label); err != nil {
 		c.recordToolError()
