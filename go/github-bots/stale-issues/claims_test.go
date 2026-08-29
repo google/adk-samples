@@ -365,3 +365,70 @@ func TestDryRunSuppressesRemoveLabel(t *testing.T) {
 		t.Errorf("RemoveLabel made %d HTTP calls in dry-run, want 0", calls)
 	}
 }
+
+// doGetIssueState is the ONLY production caller of recordObservation, and every
+// other test installs observations by hand. Without this, deleting that call
+// leaves the suite green while production silently stops recording — and every
+// destructive tool then refuses, so the bot does nothing at all.
+func TestGetIssueStateRecordsTheObservation(t *testing.T) {
+	const body = `{"data":{"repository":{"issue":{
+		"author":{"login":"author"},"createdAt":"2020-01-01T00:00:00Z",
+		"labels":{"nodes":[]},"comments":{"nodes":[]},
+		"userContentEdits":{"nodes":[]},"timelineItems":{"nodes":[]}}}}}`
+	c := testClient(t, baseCfg(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	if _, err := c.doGetIssueState(withAuditedIssue(context.Background(), 7), 7); err != nil {
+		t.Fatalf("doGetIssueState: %v", err)
+	}
+	c.mu.Lock()
+	_, recorded := c.observed[7]
+	c.mu.Unlock()
+	if !recorded {
+		t.Fatal("doGetIssueState did not record the observation the destructive tools gate on")
+	}
+}
+
+// The fence marker must be drawn BEFORE the observation is recorded. Recording
+// first leaves a passing observation behind on the error path, which a later
+// destructive tool could claim against even though the model never saw the
+// state — clearing the mechanical gate while skipping the judgement the prompt
+// exists to make. That ordering is a named security invariant with no other test.
+func TestObservationIsNotRecordedWhenTheFenceCannotBeBuilt(t *testing.T) {
+	src := readSource(t, "tools.go")
+	nonceAt := strings.Index(src, "nonce, err := newNonce()")
+	recordAt := strings.Index(src, "c.recordObservation(number, st)")
+	if nonceAt < 0 || recordAt < 0 {
+		t.Fatal("could not locate the nonce draw and the observation record in tools.go")
+	}
+	if nonceAt > recordAt {
+		t.Error("recordObservation runs before newNonce: a CSPRNG failure would leave a claimable observation behind")
+	}
+}
+
+// The tool set is the bot's entire authority surface. Pin it, so a seventh tool
+// cannot be added without a deliberate decision — an ungated tool reaching a
+// gated state is exactly how the stale-label bypass happened.
+func TestToolSetIsExactlyTheSixKnownTools(t *testing.T) {
+	c := newTestClient(t)
+	tools, err := c.tools()
+	if err != nil {
+		t.Fatalf("tools() error = %v", err)
+	}
+	got := make(map[string]bool, len(tools))
+	for _, tl := range tools {
+		got[tl.Name()] = true
+	}
+	want := []string{
+		"get_issue_state", "add_label_to_issue", "remove_label_from_issue",
+		"add_stale_label_and_comment", "alert_maintainer_of_edit", "close_as_stale",
+	}
+	for _, n := range want {
+		if !got[n] {
+			t.Errorf("missing tool %q", n)
+		}
+	}
+	if len(tools) != len(want) {
+		t.Errorf("got %d tools %v, want exactly %d — a new tool needs its own Go gate", len(tools), got, len(want))
+	}
+}
