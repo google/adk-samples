@@ -41,9 +41,11 @@ var errNotApplied = errors.New("github did not apply the change")
 // GraphQL page sizes. Named so the query and its variables cannot drift apart,
 // and so the cost of widening one is visible at the call site.
 const (
-	// labelPageSize bounds the labels fetched per issue. Issues carrying more
-	// labels than this are rare, and only the categorization labels matter.
-	labelPageSize = 20
+	// labelPageSize bounds the labels fetched per issue. It must be generous:
+	// a truncated page hides an allow-listed label the issue already carries, and
+	// the bot then adds a SECOND categorization label, breaking the one-label
+	// contract. 100 is the connection maximum.
+	labelPageSize = 100
 	// searchPageSize bounds one page of search results.
 	searchPageSize = 50
 )
