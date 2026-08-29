@@ -404,6 +404,16 @@ func TestObservationIsNotRecordedWhenTheFenceCannotBeBuilt(t *testing.T) {
 	if nonceAt > recordAt {
 		t.Error("recordObservation runs before newNonce: a CSPRNG failure would leave a claimable observation behind")
 	}
+	// Order alone is not enough: the failure must also ABORT. Log-and-continue
+	// with a fallback marker keeps the order and reintroduces the harm, now with
+	// a predictable nonce.
+	between := src[nonceAt:recordAt]
+	if !strings.Contains(between, "return IssueState{}, err") {
+		t.Error("a nonce failure must return before recordObservation, not fall through to it")
+	}
+	if strings.Count(src, "nonce, err := newNonce()") != 1 {
+		t.Error("more than one newNonce draw: the order check above matches the first, which may not be the one that guards the record")
+	}
 }
 
 // The tool set is the bot's entire authority surface. Pin it, so a seventh tool
