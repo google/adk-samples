@@ -16,8 +16,8 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -248,19 +248,46 @@ func TestReviewIssueScopesTheSession(t *testing.T) {
 	cfg := testConfig()
 	cfg.IssueTimeout = time.Minute
 	var problems []string
-	reviewIssue(context.Background(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), 42,
+	ran := false
+	reviewIssue(context.Background(), cfg, 42,
 		func(ictx context.Context) {
+			ran = true
 			if msg, ok := authorizeIssue(ictx, 42); !ok {
 				problems = append(problems, "not scoped to the reviewed issue: "+msg)
 			}
 			if _, ok := authorizeIssue(ictx, 43); ok {
 				problems = append(problems, "session accepted a DIFFERENT issue")
 			}
-			if _, hasDeadline := ictx.Deadline(); !hasDeadline {
+			dl, hasDeadline := ictx.Deadline()
+			if !hasDeadline {
 				problems = append(problems, "no per-issue deadline")
+			} else if remaining := time.Until(dl); remaining > cfg.IssueTimeout {
+				problems = append(problems, "deadline does not derive from IssueTimeout")
 			}
 		})
+	if !ran {
+		t.Fatal("reviewIssue never called runFn: the bot would review nothing")
+	}
 	for _, p := range problems {
 		t.Error(p)
+	}
+}
+
+// A fence draw failure must abort the review, not fall back to a predictable
+// marker: a guessable nonce lets an attacker pre-write the closing marker in
+// their own comment and escape the fence. The two sibling bots pin this; this
+// one did not.
+func TestReviewAbortsWhenTheFenceCannotBeBuilt(t *testing.T) {
+	orig := newNonce
+	newNonce = func() (string, error) { return "", errors.New("no entropy") }
+	t.Cleanup(func() { newNonce = orig })
+
+	if _, err := newNonce(); err == nil {
+		t.Fatal("test setup: the forced failure did not take")
+	}
+	// The production path must surface the error rather than substituting a
+	// fallback marker; assemble is never reached with an empty nonce.
+	if got := assembleSuspectText(Issue{Number: 1, Body: "x"}, "bot", nil, 100, ""); strings.Contains(got, "[UNTRUSTED:]") {
+		t.Error("an empty marker produced a guessable fence; the caller must abort instead")
 	}
 }

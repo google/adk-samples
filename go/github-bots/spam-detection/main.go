@@ -173,7 +173,7 @@ func reviewAll(ctx context.Context, r *runner.Runner, ss session.Service, gh *Gi
 	g.SetLimit(cfg.Concurrency)
 	for _, n := range issues {
 		g.Go(func() error {
-			reviewIssue(ctx, cfg, log, n, func(ictx context.Context) {
+			reviewIssue(ctx, cfg, n, func(ictx context.Context) {
 				runReviewFor(ictx, r, ss, gh, cfg, log, n)
 			})
 			return nil
@@ -195,7 +195,7 @@ func reviewAll(ctx context.Context, r *runner.Runner, ss session.Service, gh *Gi
 // actually scoped. Deleting the withAuditedIssue line -- this bot's entire
 // cross-issue defence -- previously left the suite green, because every test
 // built its own scoped context instead of observing this one.
-func reviewIssue(ctx context.Context, cfg *Config, log *slog.Logger, number int, runFn func(context.Context)) {
+func reviewIssue(ctx context.Context, cfg *Config, number int, runFn func(context.Context)) {
 	ictx, cancel := context.WithTimeout(ctx, cfg.IssueTimeout)
 	defer cancel()
 	// Scope this session to the reviewed issue so injected instructions in the
@@ -204,6 +204,9 @@ func reviewIssue(ctx context.Context, cfg *Config, log *slog.Logger, number int,
 	runFn(ictx)
 }
 
+// runReviewFor does all the deterministic work for one already-scoped issue:
+// fetch, idempotency check, maintainer/bot filtering, fenced assembly, and the
+// agent run.
 func runReviewFor(ictx context.Context, r *runner.Runner, ss session.Service, gh *GitHubClient, cfg *Config, log *slog.Logger, number int) {
 	l := log.With("issue", number)
 
@@ -312,7 +315,10 @@ func runReview(ctx context.Context, r *runner.Runner, ss session.Service, gh *Gi
 // It fails loud on a CSPRNG error rather than degrading: a predictable nonce
 // (e.g. all-zero) would let an attacker pre-write the matching closing marker in
 // their content and escape the fence, so a weak nonce is worse than none.
-func newNonce() (string, error) {
+// newNonce is a variable so a test can force the failure path. A predictable
+// nonce lets an attacker pre-write the closing marker and escape the fence, so a
+// draw failure must abort rather than substitute a fallback.
+var newNonce = func() (string, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("generate nonce: %w", err)
