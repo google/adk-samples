@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -255,15 +254,4 @@ func TestCloseAsStaleSetsNotPlanned(t *testing.T) {
 	if gotState != "closed" || gotReason != "not_planned" {
 		t.Errorf("PATCH state=%q reason=%q, want closed/not_planned", gotState, gotReason)
 	}
-}
-
-// readSource reads a file from the package under test, for the few invariants
-// that are about the ORDER of two statements rather than an observable result.
-func readSource(t *testing.T, name string) string {
-	t.Helper()
-	b, err := os.ReadFile(name)
-	if err != nil {
-		t.Fatalf("read %s: %v", name, err)
-	}
-	return string(b)
 }

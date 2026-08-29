@@ -169,7 +169,10 @@ func NewGitHubClient(ctx context.Context, cfg *Config, log *slog.Logger) (*GitHu
 // would let an attacker pre-write the matching closing marker in their comment
 // and escape the fence, so a weak nonce is worse than none. This mirrors the
 // sibling spam-detection bot.
-func newNonce() (string, error) {
+// newNonce is a variable so a test can force the failure path. A predictable
+// nonce lets an attacker pre-write the closing marker and escape the fence, so
+// every caller must treat an error as fatal rather than substituting a fallback.
+var newNonce = func() (string, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("generate nonce: %w", err)

@@ -168,7 +168,9 @@ func auditAll(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Co
 	g.SetLimit(cfg.Concurrency)
 	for _, n := range issues {
 		g.Go(func() error {
-			return auditIssue(ctx, r, ss, cfg, log, n)
+			return auditIssue(ctx, cfg, log, n, func(ictx context.Context) error {
+				return runAudit(ictx, r, ss, log, n)
+			})
 		})
 	}
 	err := g.Wait()
@@ -180,12 +182,22 @@ func auditAll(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Co
 // per-issue session isolates each audit's conversation (its tool calls and the
 // model's reasoning) so issues never bleed into each other's context, which also
 // lets the bounded-concurrency workers in auditAll run safely in parallel.
-func auditIssue(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Config, log *slog.Logger, number int) error {
+// auditIssue scopes a session to one issue and hands it to runFn.
+//
+// It takes runFn so a test can drive the real function and assert the session is
+// actually scoped. Reconstructing the scoping in a test instead would assert
+// nothing about this function -- and deleting the withAuditedIssue line here,
+// which is the whole cross-issue defence, left the suite green.
+func auditIssue(ctx context.Context, cfg *Config, log *slog.Logger, number int, runFn func(context.Context) error) error {
 	ictx, cancel := context.WithTimeout(ctx, cfg.IssueTimeout)
 	defer cancel()
 	// Scope this session to the audited issue so injected instructions in the
 	// issue's (untrusted) content cannot make a tool mutate a different issue.
 	ictx = withAuditedIssue(ictx, number)
+	return runFn(ictx)
+}
+
+func runAudit(ictx context.Context, r *runner.Runner, ss session.Service, log *slog.Logger, number int) error {
 	start := time.Now()
 	l := log.With("issue", number)
 

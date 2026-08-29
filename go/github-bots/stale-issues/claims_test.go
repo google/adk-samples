@@ -16,7 +16,10 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -389,30 +392,44 @@ func TestGetIssueStateRecordsTheObservation(t *testing.T) {
 	}
 }
 
-// The fence marker must be drawn BEFORE the observation is recorded. Recording
-// first leaves a passing observation behind on the error path, which a later
-// destructive tool could claim against even though the model never saw the
-// state — clearing the mechanical gate while skipping the judgement the prompt
-// exists to make. That ordering is a named security invariant with no other test.
+// A fence failure must abort BEFORE the observation is recorded. Recording first
+// leaves a passing observation behind that a later destructive tool can claim
+// against even though the model never saw the state -- clearing the mechanical
+// gate while skipping the judgement the prompt exists to make.
+//
+// Tested behaviorally by forcing the draw to fail. An earlier version asserted on
+// source text, which a correct refactor would have broken and which could not
+// tell an abort from a log-and-continue.
 func TestObservationIsNotRecordedWhenTheFenceCannotBeBuilt(t *testing.T) {
-	src := readSource(t, "tools.go")
-	nonceAt := strings.Index(src, "nonce, err := newNonce()")
-	recordAt := strings.Index(src, "c.recordObservation(number, st)")
-	if nonceAt < 0 || recordAt < 0 {
-		t.Fatal("could not locate the nonce draw and the observation record in tools.go")
+	orig := newNonce
+	newNonce = func() (string, error) { return "", errors.New("no entropy") }
+	t.Cleanup(func() { newNonce = orig })
+
+	const body = `{"data":{"repository":{"issue":{
+		"author":{"login":"author"},"createdAt":"2020-01-01T00:00:00Z",
+		"labels":{"nodes":[]},"comments":{"nodes":[]},
+		"userContentEdits":{"nodes":[]},"timelineItems":{"nodes":[]}}}}}`
+	c := testClient(t, baseCfg(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	ctx := withAuditedIssue(context.Background(), 7)
+
+	if _, err := c.doGetIssueState(ctx, 7); err == nil {
+		t.Fatal("doGetIssueState = nil error, want the fence failure surfaced")
 	}
-	if nonceAt > recordAt {
-		t.Error("recordObservation runs before newNonce: a CSPRNG failure would leave a claimable observation behind")
+	c.mu.Lock()
+	_, recorded := c.observed[7]
+	c.mu.Unlock()
+	if recorded {
+		t.Fatal("an observation was recorded despite the fence failing; a destructive tool could claim against it")
 	}
-	// Order alone is not enough: the failure must also ABORT. Log-and-continue
-	// with a fallback marker keeps the order and reintroduces the harm, now with
-	// a predictable nonce.
-	between := src[nonceAt:recordAt]
-	if !strings.Contains(between, "return IssueState{}, err") {
-		t.Error("a nonce failure must return before recordObservation, not fall through to it")
+	// And prove the consequence: the destructive tools must refuse.
+	res, err := c.doClose(ctx, 7)
+	if err != nil {
+		t.Fatalf("doClose returned a Go error: %v", err)
 	}
-	if strings.Count(src, "nonce, err := newNonce()") != 1 {
-		t.Error("more than one newNonce draw: the order check above matches the first, which may not be the one that guards the record")
+	if res.Status != "error" {
+		t.Errorf("doClose = %+v, want a refusal with no observation recorded", res)
 	}
 }
 
@@ -440,5 +457,32 @@ func TestToolSetIsExactlyTheSixKnownTools(t *testing.T) {
 	}
 	if len(tools) != len(want) {
 		t.Errorf("got %d tools %v, want exactly %d — a new tool needs its own Go gate", len(tools), got, len(want))
+	}
+}
+
+// Drives the real auditIssue. Deleting its withAuditedIssue line -- the whole
+// cross-issue defence -- previously left the suite green, because every other
+// test built its own scoped context instead of observing this one.
+func TestAuditIssueScopesTheSession(t *testing.T) {
+	cfg := baseCfg()
+	cfg.IssueTimeout = time.Minute
+	var seen error
+	err := auditIssue(context.Background(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), 42, func(ictx context.Context) error {
+		if msg, ok := authorizeIssue(ictx, 42); !ok {
+			seen = fmt.Errorf("session not scoped to the audited issue: %s", msg)
+		}
+		if _, ok := authorizeIssue(ictx, 43); ok {
+			seen = errors.New("session accepted a DIFFERENT issue")
+		}
+		if _, hasDeadline := ictx.Deadline(); !hasDeadline {
+			seen = errors.New("session carries no per-issue deadline")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("auditIssue: %v", err)
+	}
+	if seen != nil {
+		t.Error(seen)
 	}
 }
