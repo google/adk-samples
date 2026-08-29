@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -203,5 +204,38 @@ func TestAuthorizeIssue(t *testing.T) {
 	}
 	if _, ok := authorizeIssue(context.Background(), 7); ok {
 		t.Error("authorizeIssue on unscoped session = ok, want not ok")
+	}
+}
+
+// After a failed flag write, a second call must report the failure rather than
+// "already flagged" -- otherwise the model's transcript records an alert comment
+// that was never posted. Neither the failure path nor the reporting had a test.
+func TestSecondFlagAfterFailureReportsTheFailure(t *testing.T) {
+	c := &GitHubClient{cfg: &Config{}, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	if !c.markFlagged(5) {
+		t.Fatal("the first markFlagged must win the claim")
+	}
+	if c.flagAttemptFailed(5) {
+		t.Error("an in-flight claim must not report as failed")
+	}
+	if c.markFlagged(5) {
+		t.Error("a second markFlagged must not win the claim")
+	}
+
+	c.recordFlagFailure(5)
+	if !c.flagAttemptFailed(5) {
+		t.Error("after recordFlagFailure the attempt must report as failed")
+	}
+
+	res, err := c.flagAsSpam(withAuditedIssue(context.Background(), 5), 5, "spam")
+	if err != nil {
+		t.Fatalf("flagAsSpam returned a Go error: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("flagAsSpam after a failed attempt = %+v, want an error, not a false success", res)
+	}
+	if !strings.Contains(res.Message, "already failed") {
+		t.Errorf("message should say the attempt failed, got %q", res.Message)
 	}
 }
