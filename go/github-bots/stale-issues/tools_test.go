@@ -84,6 +84,12 @@ func TestDoAddLabelRecordsToolError(t *testing.T) {
 		_, _ = io.WriteString(w, `{"message":"boom"}`)
 	}))
 	ctx := withAuditedIssue(context.Background(), 7)
+	// Adding the clarification label is gated on the same precondition as marking
+	// stale, so the tool needs an observation to get as far as the API call.
+	c.recordObservation(7, IssueState{
+		Status: "success", LastActionRole: string(roleMaintainer),
+		DaysSinceActivity: 30, StaleThresholdDays: 14, CloseThresholdDays: 7,
+	})
 	if c.hadToolError() {
 		t.Fatal("hadToolError() should start false")
 	}

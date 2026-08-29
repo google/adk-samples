@@ -206,11 +206,13 @@ func TestAddLabelCannotApplyTheStaleLabel(t *testing.T) {
 	// on get_issue_state having run first.
 }
 
-// The tool must still work for the label it is actually for.
+// The tool must still work for the label it is actually for, on an issue that
+// satisfies the same precondition marking it stale would.
 func TestAddLabelStillAppliesTheClarificationLabel(t *testing.T) {
 	c := newTestClient(t)
 	c.cfg.DryRun = true
 	c.cfg.RequestClarificationLabel = "request clarification"
+	c.recordObservation(7, staleReady())
 	res, err := c.doAddLabel(withAuditedIssue(context.Background(), 7), 7, "request clarification")
 	if err != nil || res.Status != "success" {
 		t.Fatalf("doAddLabel = (%+v, %v), want success", res, err)
@@ -290,5 +292,53 @@ func TestValidateRejectsCollidingLabelNames(t *testing.T) {
 	cfg.RequestClarificationLabel = "request clarification"
 	if err := cfg.validate(); err != nil {
 		t.Errorf("distinct label names must pass: %v", err)
+	}
+}
+
+// STEP 3 marks stale and then adds the clarification label off ONE
+// get_issue_state. Separate action keys are what let the second call through.
+func TestMarkStaleThenAddClarificationBothSucceed(t *testing.T) {
+	c := newTestClient(t)
+	c.cfg.DryRun = true
+	c.cfg.RequestClarificationLabel = "request clarification"
+	c.recordObservation(7, staleReady())
+	ctx := withAuditedIssue(context.Background(), 7)
+
+	if res, err := c.doMarkStale(ctx, 7); err != nil || res.Status != "success" {
+		t.Fatalf("doMarkStale = (%+v, %v), want success", res, err)
+	}
+	if res, err := c.doAddLabel(ctx, 7, "request clarification"); err != nil || res.Status != "success" {
+		t.Fatalf("follow-up doAddLabel = (%+v, %v), want success", res, err)
+	}
+}
+
+// The clarification label is added on a threshold-satisfying issue only, so an
+// issue nobody is waiting on cannot be flagged as waiting on its author.
+func TestAddClarificationRefusedBelowThreshold(t *testing.T) {
+	c := newTestClient(t)
+	c.cfg.RequestClarificationLabel = "request clarification"
+	st := staleReady()
+	st.DaysSinceActivity = 1 // well inside the threshold
+	c.recordObservation(7, st)
+
+	res, err := c.doAddLabel(withAuditedIssue(context.Background(), 7), 7, "request clarification")
+	if err != nil {
+		t.Fatalf("doAddLabel returned a Go error: %v", err)
+	}
+	if res.Status != "error" || !strings.Contains(res.Message, "stale threshold") {
+		t.Errorf("doAddLabel = %+v, want a refusal on the threshold", res)
+	}
+}
+
+// The decision tree removes only the stale label.
+func TestRemoveRefusesAnyLabelButStale(t *testing.T) {
+	c := newTestClient(t)
+	c.cfg.RequestClarificationLabel = "request clarification"
+	res, err := c.doRemoveLabel(withAuditedIssue(context.Background(), 7), 7, "request clarification")
+	if err != nil {
+		t.Fatalf("doRemoveLabel returned a Go error: %v", err)
+	}
+	if res.Status != "error" || !strings.Contains(res.Message, "only removes") {
+		t.Errorf("doRemoveLabel = %+v, want a refusal", res)
 	}
 }

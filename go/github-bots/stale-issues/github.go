@@ -67,6 +67,7 @@ const (
 	actionClose       action = "closing as stale"
 	actionRemoveStale action = "removing the stale label"
 	actionAlertEdit   action = "alerting a maintainer"
+	actionAddClarify  action = "adding the clarification label"
 )
 
 // claimKey identifies one destructive operation on one issue.
@@ -265,7 +266,7 @@ query($owner: String!, $name: String!, $number: Int!, $commentLimit: Int!, $edit
     issue(number: $number) {
       author { login __typename }
       createdAt
-      labels(first: 20) { nodes { name } }
+      labels(first: 100) { nodes { name } }
       comments(last: $commentLimit) {
         nodes { author { login __typename } body createdAt lastEditedAt }
       }
@@ -328,7 +329,15 @@ func (c *GitHubClient) GetIssueState(ctx context.Context, number int) (IssueStat
 	if err != nil {
 		return IssueState{}, err
 	}
-	return computeIssueState(raw, c.selfLogin, c.cfg.Maintainers, c.cfg.StaleLabel, c.cfg.StaleAfter, c.cfg.CloseAfter, time.Now().UTC()), nil
+	st := computeIssueState(raw, c.selfLogin, c.cfg.Maintainers, c.cfg.StaleLabel, c.cfg.StaleAfter, c.cfg.CloseAfter, time.Now().UTC())
+	if st.DaysSinceStaleLabel < 0 {
+		// The labelling event is outside the history window, so the close is
+		// refused and this issue can never close while that stays true. Say so:
+		// otherwise it silently lingers and nobody knows why.
+		c.log.Warn("stale label age unknown (labelling event outside the history window); this issue cannot be closed until it re-enters",
+			"issue", number)
+	}
+	return st, nil
 }
 
 // --- Mutations (all honor dry-run) ------------------------------------------

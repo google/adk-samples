@@ -215,6 +215,13 @@ func (c *GitHubClient) doAddLabel(ctx context.Context, number int, label string)
 	if strings.EqualFold(label, c.cfg.StaleLabel) {
 		return errResult("use add_stale_label_and_comment to mark issue #%d stale; %q cannot be applied with this tool", number, label), nil
 	}
+	// The clarification label is STEP 3's follow-up to marking stale, so it earns
+	// the same precondition rather than being writable on any in-scope issue. Its
+	// own action key keeps it from contending with the mark-stale claim taken
+	// moments earlier against the same observation.
+	if msg, ok := c.claimAction(number, actionAddClarify, stalePredicate(number)); !ok {
+		return errResult("%s", msg), nil
+	}
 	if err := c.AddLabel(ctx, number, label); err != nil {
 		c.recordToolError()
 		return actionResult{}, err
@@ -236,6 +243,11 @@ func (c *GitHubClient) doRemoveLabel(ctx context.Context, number int, label stri
 		if msg, ok := c.claimAction(number, actionRemoveStale, removeStalePredicate(number)); !ok {
 			return errResult("%s", msg), nil
 		}
+	} else {
+		// The decision tree removes only the stale label. Refusing anything else
+		// keeps the code's authority and the prompt's instructions in step: if a
+		// future revision needs this, both change together.
+		return errResult("this bot only removes %q; %q must be removed by a maintainer", c.cfg.StaleLabel, label), nil
 	}
 	if err := c.RemoveLabel(ctx, number, label); err != nil {
 		c.recordToolError()
