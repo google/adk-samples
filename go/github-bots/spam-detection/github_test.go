@@ -285,3 +285,25 @@ func TestFlagSpamDryRunMakesNoCalls(t *testing.T) {
 		t.Errorf("dry-run made %d HTTP calls, want 0", calls)
 	}
 }
+
+// "never review a maintainer's comment" rests entirely on this one wiring line.
+// Every other test passes its own maintainerSet, so deleting the assignment in
+// NewGitHubClient left a nil map and the whole invariant silently off.
+func TestNewGitHubClientWiresTheMaintainerSet(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"login":"bot"}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := testConfig()
+	cfg.Maintainers = []string{"Wolo-Lab", "dpasiukevich"}
+	c, err := NewGitHubClient(context.Background(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewGitHubClient: %v", err)
+	}
+	for _, login := range []string{"wolo-lab", "WOLO-LAB", "dpasiukevich"} {
+		if !c.maintainers[strings.ToLower(login)] {
+			t.Errorf("maintainer %q is not in the set; their comments would be reviewed as spam", login)
+		}
+	}
+}
