@@ -148,6 +148,9 @@ func (c *Config) validate() error {
 	if c.IssueTimeout <= 0 {
 		return fmt.Errorf("ISSUE_TIMEOUT must be positive, got %s", c.IssueTimeout)
 	}
+	if c.StaleLabel != "" && strings.EqualFold(c.StaleLabel, c.RequestClarificationLabel) {
+		return fmt.Errorf("STALE_LABEL_NAME (%q) and REQUEST_CLARIFICATION_LABEL (%q) must differ; GitHub label names are case-insensitively unique, so a collision would route clarification-label writes through the staleness gate", c.StaleLabel, c.RequestClarificationLabel)
+	}
 	if c.Concurrency < 1 {
 		c.Concurrency = 1
 	}

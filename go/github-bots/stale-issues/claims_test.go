@@ -254,3 +254,41 @@ func TestFenceMarkerIsPerIssue(t *testing.T) {
 		t.Errorf("fenceUntrusted used the wrong marker: %q", got)
 	}
 }
+
+// GitHub label names are case-insensitively unique, so an exact-match refusal
+// let "Stale" through while landing the real stale label -- reopening the
+// ungated route this bot closed. Both the tool check and config validation must
+// compare case-insensitively.
+func TestStaleLabelRefusalIsCaseInsensitive(t *testing.T) {
+	c := newTestClient(t)
+	c.cfg.StaleLabel = "stale"
+	c.cfg.RequestClarificationLabel = "Stale" // the colliding misconfiguration
+	ctx := withAuditedIssue(context.Background(), 7)
+
+	res, err := c.doAddLabel(ctx, 7, "Stale")
+	if err != nil {
+		t.Fatalf("doAddLabel returned a Go error: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("doAddLabel(7, \"Stale\") = %+v, want a refusal", res)
+	}
+}
+
+func TestValidateRejectsCollidingLabelNames(t *testing.T) {
+	cfg := &Config{
+		GitHubToken: "t", GeminiAPIKey: "k", Owner: "o", Repo: "r",
+		StaleAfter: 336, CloseAfter: 168, IssueTimeout: 1, Concurrency: 1,
+		StaleLabel: "stale", RequestClarificationLabel: "Stale",
+	}
+	err := cfg.validate()
+	if err == nil {
+		t.Fatal("validate() = nil, want an error on colliding label names")
+	}
+	if !strings.Contains(err.Error(), "must differ") {
+		t.Errorf("validate() = %v, want it to name the collision", err)
+	}
+	cfg.RequestClarificationLabel = "request clarification"
+	if err := cfg.validate(); err != nil {
+		t.Errorf("distinct label names must pass: %v", err)
+	}
+}

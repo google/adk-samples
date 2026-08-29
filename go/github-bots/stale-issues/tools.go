@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
@@ -95,17 +96,22 @@ func (c *GitHubClient) doGetIssueState(ctx context.Context, number int) (IssueSt
 		c.recordToolError()
 		return IssueState{}, err
 	}
-	// Keep what we computed. The destructive tools re-check their mechanical
-	// preconditions against this, not against the model's assertion. Record the
-	// unfenced state so those checks read plain values.
-	c.recordObservation(number, st)
-	// Fence the one attacker-controlled field before it reaches the model, under
-	// a marker drawn for this issue alone.
+	// Draw the fence marker BEFORE recording the observation. Recording first
+	// would leave a passing observation behind on the error path, which a later
+	// destructive tool could claim against even though the model never saw the
+	// state -- passing the mechanical gate while skipping the judgement the
+	// prompt is there to make.
 	nonce, err := newNonce()
 	if err != nil {
 		c.recordToolError()
 		return IssueState{}, err
 	}
+	// Keep the unfenced state: the destructive tools re-check their mechanical
+	// preconditions against this, not against the model's assertion, so those
+	// checks must read plain values.
+	c.recordObservation(number, st)
+	// Fence the one attacker-controlled field before it reaches the model, under
+	// a marker drawn for this issue alone.
 	st.LastCommentText = fenceUntrusted(st.LastCommentText, nonce)
 	return st, nil
 }
@@ -206,7 +212,7 @@ func (c *GitHubClient) doAddLabel(ctx context.Context, number int, label string)
 	// already running, so a later run could close it after CloseAfter days
 	// instead of StaleAfter + CloseAfter, with the author never warned. The
 	// legitimate path calls AddLabel directly from MarkStale, not through here.
-	if label == c.cfg.StaleLabel {
+	if strings.EqualFold(label, c.cfg.StaleLabel) {
 		return errResult("use add_stale_label_and_comment to mark issue #%d stale; %q cannot be applied with this tool", number, label), nil
 	}
 	if err := c.AddLabel(ctx, number, label); err != nil {
@@ -226,7 +232,7 @@ func (c *GitHubClient) doRemoveLabel(ctx context.Context, number int, label stri
 	// Removing the stale label is destructive: it resets days_since_stale_label
 	// to zero, so an issue steered here can never reach the close branch. STEP 1
 	// permits it only when the author or another user came back.
-	if label == c.cfg.StaleLabel {
+	if strings.EqualFold(label, c.cfg.StaleLabel) {
 		if msg, ok := c.claimAction(number, actionRemoveStale, removeStalePredicate(number)); !ok {
 			return errResult("%s", msg), nil
 		}

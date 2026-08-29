@@ -88,7 +88,7 @@ func (c *GitHubClient) recordObservation(number int, st IssueState) {
 }
 
 // claimAction atomically tests an issue's observed state against pred and, on
-// success, consumes the observation so no second call can pass on the same data.
+// success, records the (issue, action) pair so no second call can repeat it.
 //
 // The test and the consume must share ONE critical section. A plain
 // check-then-act lets two callers — a duplicate tool emission within a turn, or

@@ -40,6 +40,9 @@ STEP 1 — ALREADY STALE?  (`is_stale` == true)
     - If `maintainer_alert_needed` is true, also call `alert_maintainer_of_edit`.
     - Report: "Analysis for Issue #[number]: ACTIVE. User responded. Removed stale label."
 - If `last_action_role` is 'maintainer':
+    - If `days_since_stale_label` is NEGATIVE, its age is unknown (the labelling
+      event is outside the history window). Take NO action and report:
+      "Analysis for Issue #[number]: STALE. Label age unknown. No action."
     - If `days_since_stale_label` > {close_threshold_days}:
         - Call `close_as_stale`.
         - Report: "Analysis for Issue #[number]: STALE. Close threshold met. Closing."
