@@ -173,7 +173,9 @@ func reviewAll(ctx context.Context, r *runner.Runner, ss session.Service, gh *Gi
 	g.SetLimit(cfg.Concurrency)
 	for _, n := range issues {
 		g.Go(func() error {
-			reviewIssue(ctx, r, ss, gh, cfg, log, n)
+			reviewIssue(ctx, cfg, log, n, func(ictx context.Context) {
+				runReviewFor(ictx, r, ss, gh, cfg, log, n)
+			})
 			return nil
 		})
 	}
@@ -187,12 +189,22 @@ func reviewAll(ctx context.Context, r *runner.Runner, ss session.Service, gh *Gi
 // when there is reviewable content left. A per-issue session isolates each
 // review so issues never bleed into each other's context, which also lets the
 // bounded-concurrency workers run safely in parallel.
-func reviewIssue(ctx context.Context, r *runner.Runner, ss session.Service, gh *GitHubClient, cfg *Config, log *slog.Logger, number int) {
+// reviewIssue scopes a session to one issue and hands it to runFn.
+//
+// It takes runFn so a test can drive the real function and assert the session is
+// actually scoped. Deleting the withAuditedIssue line -- this bot's entire
+// cross-issue defence -- previously left the suite green, because every test
+// built its own scoped context instead of observing this one.
+func reviewIssue(ctx context.Context, cfg *Config, log *slog.Logger, number int, runFn func(context.Context)) {
 	ictx, cancel := context.WithTimeout(ctx, cfg.IssueTimeout)
 	defer cancel()
 	// Scope this session to the reviewed issue so injected instructions in the
 	// issue's (untrusted) content cannot make the tool flag a different issue.
 	ictx = withAuditedIssue(ictx, number)
+	runFn(ictx)
+}
+
+func runReviewFor(ictx context.Context, r *runner.Runner, ss session.Service, gh *GitHubClient, cfg *Config, log *slog.Logger, number int) {
 	l := log.With("issue", number)
 
 	iss, err := gh.FetchIssue(ictx, number)

@@ -17,11 +17,13 @@ package main
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // countingHandler writes a fixed body for every request and counts the calls.
@@ -237,5 +239,28 @@ func TestSecondFlagAfterFailureReportsTheFailure(t *testing.T) {
 	}
 	if !strings.Contains(res.Message, "already failed") {
 		t.Errorf("message should say the attempt failed, got %q", res.Message)
+	}
+}
+
+// Drives the real reviewIssue. Deleting its withAuditedIssue line -- this bot's
+// entire cross-issue defence -- previously left the suite green.
+func TestReviewIssueScopesTheSession(t *testing.T) {
+	cfg := testConfig()
+	cfg.IssueTimeout = time.Minute
+	var problems []string
+	reviewIssue(context.Background(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), 42,
+		func(ictx context.Context) {
+			if msg, ok := authorizeIssue(ictx, 42); !ok {
+				problems = append(problems, "not scoped to the reviewed issue: "+msg)
+			}
+			if _, ok := authorizeIssue(ictx, 43); ok {
+				problems = append(problems, "session accepted a DIFFERENT issue")
+			}
+			if _, hasDeadline := ictx.Deadline(); !hasDeadline {
+				problems = append(problems, "no per-issue deadline")
+			}
+		})
+	for _, p := range problems {
+		t.Error(p)
 	}
 }
