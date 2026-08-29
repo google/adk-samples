@@ -48,10 +48,6 @@ func okResult(format string, a ...any) actionResult {
 	return actionResult{Status: "success", Message: fmt.Sprintf(format, a...)}
 }
 
-// errResult is a *model-readable* failure: the tool call succeeded as a Go
-// call, but the requested action was rejected (e.g. a disallowed label). It is
-// returned with a nil Go error so the model receives it as data and can correct
-// itself. Reserve real Go errors for infrastructure failures (network, API).
 // checkIssueArg runs the two checks every mutating tool shares: the session must
 // be scoped to this issue, and the number must be a plausible issue number.
 func checkIssueArg(ctx context.Context, number int) (string, bool) {
@@ -64,6 +60,10 @@ func checkIssueArg(ctx context.Context, number int) (string, bool) {
 	return "", true
 }
 
+// errResult is a *model-readable* failure: the tool call succeeded as a Go
+// call, but the requested action was rejected (e.g. a disallowed label). It is
+// returned with a nil Go error so the model receives it as data and can correct
+// itself. Reserve real Go errors for infrastructure failures (network, API).
 func errResult(format string, a ...any) actionResult {
 	return actionResult{Status: "error", Message: fmt.Sprintf(format, a...)}
 }

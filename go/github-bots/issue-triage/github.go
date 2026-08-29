@@ -299,6 +299,11 @@ func (c *Client) ListUntriaged(ctx context.Context, count int) ([]Issue, error) 
 		out   []Issue
 		after string
 	)
+	// Dedupe across pages, as both siblings do. An issue whose position shifts
+	// between cursor fetches can appear on two pages, and each copy would get its
+	// own agent session -- a wasted model call, and one fewer distinct issue
+	// triaged than `count` promises.
+	seen := make(map[int]bool)
 	for page := 0; page < maxSearchPages && len(out) < count; page++ {
 		vars := map[string]any{"q": q, "first": searchPageSize}
 		if after != "" {
@@ -316,7 +321,11 @@ func (c *Client) ListUntriaged(ctx context.Context, count int) ([]Issue, error) 
 			if iss.Number == 0 {
 				continue // not an Issue node
 			}
+			if seen[iss.Number] {
+				continue
+			}
 			if needsTriage(iss, c.cfg.AllowedLabels).any() {
+				seen[iss.Number] = true
 				out = append(out, iss)
 				if len(out) >= count {
 					break
