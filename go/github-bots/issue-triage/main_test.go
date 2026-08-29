@@ -284,3 +284,29 @@ func TestTriageOneSkipsAnAlreadyTriagedIssue(t *testing.T) {
 		t.Error("triageOne started a session for an issue that needs nothing")
 	}
 }
+
+// The prompt must be built BEFORE the issue is authorized. Authorizing first
+// leaves a live authorization for a session that never starts, and the fence
+// draw is exactly the step that can fail. Tested behaviorally by forcing the
+// draw to fail and asserting nothing was authorized.
+func TestTriageOneDoesNotAuthorizeWhenTheFenceCannotBeBuilt(t *testing.T) {
+	orig := newNonce
+	newNonce = func() (string, error) { return "", errors.New("no entropy") }
+	t.Cleanup(func() { newNonce = orig })
+
+	c := &Client{cfg: testConfig(), log: discardLogger()}
+	called := false
+	err := triageOne(context.Background(), c, c.cfg, discardLogger(),
+		Issue{Number: 7, Title: "t", Body: "b"},
+		func(context.Context, string) error { called = true; return nil })
+
+	if err == nil {
+		t.Fatal("triageOne = nil, want the fence failure surfaced")
+	}
+	if called {
+		t.Error("the session started despite the fence failing")
+	}
+	if _, authorized := c.claimType(7); authorized {
+		t.Error("the issue was authorized even though its session never started")
+	}
+}

@@ -178,7 +178,6 @@ func sweep(ctx context.Context, issues []Issue, budget time.Duration, log *slog.
 	return errors.Join(errs...)
 }
 
-// triageOne runs a single agent session scoped to one issue.
 // triageOne prepares one issue's session and hands it to runFn.
 //
 // It takes runFn rather than the runner so a test can drive the REAL function
@@ -279,7 +278,10 @@ func buildIssuePrompt(iss Issue, n need) (string, error) {
 
 // newNonce returns an unguessable fence marker for untrusted text. It fails
 // loud on a CSPRNG error rather than degrading to a predictable value.
-func newNonce() (string, error) {
+// newNonce is a variable so a test can force the failure path. A predictable
+// nonce lets an attacker pre-write the closing marker and escape the fence, so
+// every caller must treat an error as fatal rather than substituting a fallback.
+var newNonce = func() (string, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("generate nonce: %w", err)
