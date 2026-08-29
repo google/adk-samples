@@ -30,8 +30,8 @@ const (
 	// resolveIdentityTimeout bounds the one-off "who am I" lookup at startup, so
 	// a hung request cannot stall the run until the workflow's own timeout.
 	resolveIdentityTimeout = 10 * time.Second
-	// searchPageSize bounds one page of search results and the labels fetched
-	// per issue; the two must agree with the GraphQL query below.
+	// searchPageSize bounds one page of REST search results. The GraphQL query
+	// below carries its own literal limits; they are not derived from this.
 	searchPageSize = 100
 )
 
