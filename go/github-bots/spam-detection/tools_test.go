@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -209,31 +208,32 @@ func TestAuthorizeIssue(t *testing.T) {
 
 // After a failed flag write, a second call must report the failure rather than
 // "already flagged" -- otherwise the model's transcript records an alert comment
-// that was never posted. Neither the failure path nor the reporting had a test.
+// that was never posted.
+//
+// The failure is PRODUCED by a failing write, not installed by hand: an earlier
+// version of this test called recordFlagFailure directly, which left the
+// recording half unpinned and made half the assertions a setter/getter
+// tautology.
 func TestSecondFlagAfterFailureReportsTheFailure(t *testing.T) {
-	c := &GitHubClient{cfg: &Config{}, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, `{"message":"boom"}`)
+	}))
+	ctx := withAuditedIssue(context.Background(), 5)
 
-	if !c.markFlagged(5) {
-		t.Fatal("the first markFlagged must win the claim")
+	if _, err := c.flagAsSpam(ctx, 5, "spam"); err == nil {
+		t.Fatal("the first flagAsSpam must surface the write failure")
 	}
-	if c.flagAttemptFailed(5) {
-		t.Error("an in-flight claim must not report as failed")
-	}
-	if c.markFlagged(5) {
-		t.Error("a second markFlagged must not win the claim")
-	}
-
-	c.recordFlagFailure(5)
-	if !c.flagAttemptFailed(5) {
-		t.Error("after recordFlagFailure the attempt must report as failed")
+	if !c.hadError() {
+		t.Error("a failed write must be recorded so the run exits non-zero")
 	}
 
-	res, err := c.flagAsSpam(withAuditedIssue(context.Background(), 5), 5, "spam")
+	res, err := c.flagAsSpam(ctx, 5, "spam")
 	if err != nil {
-		t.Fatalf("flagAsSpam returned a Go error: %v", err)
+		t.Fatalf("the second flagAsSpam returned a Go error: %v", err)
 	}
 	if res.Status != "error" {
-		t.Fatalf("flagAsSpam after a failed attempt = %+v, want an error, not a false success", res)
+		t.Fatalf("second flagAsSpam = %+v, want an error rather than a false success", res)
 	}
 	if !strings.Contains(res.Message, "already failed") {
 		t.Errorf("message should say the attempt failed, got %q", res.Message)
