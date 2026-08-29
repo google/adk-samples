@@ -52,6 +52,18 @@ func okResult(format string, a ...any) actionResult {
 // call, but the requested action was rejected (e.g. a disallowed label). It is
 // returned with a nil Go error so the model receives it as data and can correct
 // itself. Reserve real Go errors for infrastructure failures (network, API).
+// checkIssueArg runs the two checks every mutating tool shares: the session must
+// be scoped to this issue, and the number must be a plausible issue number.
+func checkIssueArg(ctx context.Context, number int) (string, bool) {
+	if msg, ok := authorizeIssue(ctx, number); !ok {
+		return msg, false
+	}
+	if number <= 0 {
+		return fmt.Sprintf("invalid issue number %d", number), false
+	}
+	return "", true
+}
+
 func errResult(format string, a ...any) actionResult {
 	return actionResult{Status: "error", Message: fmt.Sprintf(format, a...)}
 }
@@ -88,11 +100,8 @@ func authorizeIssue(ctx context.Context, requested int) (string, bool) {
 // authorization failures are returned as model-readable errResults (nil Go
 // error); only I/O failures return a Go error.
 func (c *Client) doChangeType(ctx context.Context, number int, issueType string) (actionResult, error) {
-	if msg, ok := authorizeIssue(ctx, number); !ok {
+	if msg, ok := checkIssueArg(ctx, number); !ok {
 		return errResult("%s", msg), nil
-	}
-	if number <= 0 {
-		return errResult("invalid issue number %d", number), nil
 	}
 	canonical, ok := canonicalType(issueType)
 	if !ok {
@@ -123,11 +132,8 @@ func (c *Client) doChangeType(ctx context.Context, number int, issueType string)
 // doAddLabel validates and applies a label addition, with the same error
 // conventions as doChangeType.
 func (c *Client) doAddLabel(ctx context.Context, number int, label string) (actionResult, error) {
-	if msg, ok := authorizeIssue(ctx, number); !ok {
+	if msg, ok := checkIssueArg(ctx, number); !ok {
 		return errResult("%s", msg), nil
-	}
-	if number <= 0 {
-		return errResult("invalid issue number %d", number), nil
 	}
 	canonical, ok := canonicalLabel(label, c.cfg.AllowedLabels)
 	if !ok {

@@ -182,7 +182,7 @@ func triageOne(ctx context.Context, r *runner.Runner, sessions session.Service, 
 	if err != nil {
 		return err
 	}
-	return runAgent(ictx, r, sessions, cfg, log.With("issue", iss.Number), prompt)
+	return runAgent(ictx, r, sessions, log.With("issue", iss.Number), prompt)
 }
 
 // selectIssues resolves the work set: the one requested issue, or the sweep
@@ -263,7 +263,7 @@ func newNonce() (string, error) {
 
 // runAgent runs one agent turn headlessly, logs the final summary, and returns a
 // non-nil error if the run produced any error so callers (e.g. CI) fail loudly.
-func runAgent(ctx context.Context, r *runner.Runner, sessions session.Service, cfg *Config, log *slog.Logger, prompt string) error {
+func runAgent(ctx context.Context, r *runner.Runner, sessions session.Service, log *slog.Logger, prompt string) error {
 	created, err := sessions.Create(ctx, &session.CreateRequest{AppName: appName, UserID: userID})
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)

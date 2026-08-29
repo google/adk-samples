@@ -38,6 +38,16 @@ var ErrIssueNotFound = errors.New("issue not found")
 var errNotApplied = errors.New("github did not apply the change")
 
 // maxSearchPages bounds GraphQL search pagination as a safety valve.
+// GraphQL page sizes. Named so the query and its variables cannot drift apart,
+// and so the cost of widening one is visible at the call site.
+const (
+	// labelPageSize bounds the labels fetched per issue. Issues carrying more
+	// labels than this are rare, and only the categorization labels matter.
+	labelPageSize = 20
+	// searchPageSize bounds one page of search results.
+	searchPageSize = 50
+)
+
 const maxSearchPages = 10
 
 // Client wraps the GitHub REST and GraphQL APIs. All mutations route through
@@ -174,12 +184,12 @@ func (c *Client) shouldSkip(number int, format string, args ...any) bool {
 
 // --- GraphQL plumbing ---
 
-const issueFields = `
+var issueFields = fmt.Sprintf(`
 		number
 		title
 		body
 		issueType { name }
-		labels(first: 20) { nodes { name } }`
+		labels(first: %d) { nodes { name } }`, labelPageSize)
 
 var issueSearchQuery = `query($q: String!, $first: Int!, $after: String) {
 	search(query: $q, type: ISSUE, first: $first, after: $after) {
@@ -290,7 +300,7 @@ func (c *Client) ListUntriaged(ctx context.Context, count int) ([]Issue, error) 
 		after string
 	)
 	for page := 0; page < maxSearchPages && len(out) < count; page++ {
-		vars := map[string]any{"q": q, "first": 50}
+		vars := map[string]any{"q": q, "first": searchPageSize}
 		if after != "" {
 			vars["after"] = after
 		}
