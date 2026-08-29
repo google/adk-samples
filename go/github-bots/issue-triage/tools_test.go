@@ -375,3 +375,38 @@ func TestDoAddLabelDoesNotOverwriteExistingField(t *testing.T) {
 		t.Errorf("made %d HTTP calls, want 0", *calls)
 	}
 }
+
+// A need is released only when GitHub demonstrably did not apply the write.
+// After an ambiguous transport failure the write may have landed, so releasing
+// would let the model claim the need again with a DIFFERENT value and land two
+// labels. Neither branch had a test.
+func TestReleaseOnlyOnDemonstrableNonApplication(t *testing.T) {
+	t.Run("not applied: the need is released for a retry", func(t *testing.T) {
+		// 200 with a label set that does not contain ours: GitHub accepted the
+		// call and dropped the change (no push access).
+		c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, `[]`)
+		}))
+		c.authorize(7, need{label: true})
+		if _, err := c.doAddLabel(scoped(7), 7, "bug"); err == nil {
+			t.Fatal("doAddLabel = nil error, want the not-applied failure")
+		}
+		if claimed, _ := c.claimLabel(7); !claimed {
+			t.Error("the need was not released after a demonstrable non-application")
+		}
+	})
+
+	t.Run("transport failure: the need stays consumed", func(t *testing.T) {
+		c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"message":"boom"}`)
+		}))
+		c.authorize(7, need{label: true})
+		if _, err := c.doAddLabel(scoped(7), 7, "bug"); err == nil {
+			t.Fatal("doAddLabel = nil error, want the transport failure")
+		}
+		if claimed, _ := c.claimLabel(7); claimed {
+			t.Error("the need was released after an AMBIGUOUS failure; a retry could land a second label")
+		}
+	})
+}

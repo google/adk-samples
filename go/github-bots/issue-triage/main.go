@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"google.golang.org/genai"
@@ -130,27 +131,10 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 		return nil
 	}
 
-	// One issue's failure must not cancel the rest: the sessions are independent
-	// by construction, and aborting would let a single issue the model chokes on
-	// deny triage to every issue behind it. Both siblings aggregate the same way.
-	var errs []error
-	for i, iss := range issues {
-		// Stop cleanly when the sweep budget is spent, naming what was left, so
-		// an exhausted run is distinguishable from one that triaged everything.
-		if err := sweepCtx.Err(); err != nil {
-			log.Error("sweep budget exhausted; issues left untriaged",
-				"remaining", len(issues)-i, "budget", cfg.SweepTimeout)
-			errs = append(errs, fmt.Errorf("sweep budget %s exhausted with %d of %d issues untriaged: %w",
-				cfg.SweepTimeout, len(issues)-i, len(issues), err))
-			break
-		}
-		if err := triageOne(sweepCtx, r, sessions, client, cfg, log, iss); err != nil {
-			log.Error("triage failed for issue; continuing", "issue", iss.Number, "error", err)
-			errs = append(errs, fmt.Errorf("issue #%d: %w", iss.Number, err))
-		}
-	}
-	if len(errs) > 0 {
-		return errors.Join(errs...)
+	if err := sweep(sweepCtx, issues, cfg.SweepTimeout, log, func(ctx context.Context, iss Issue) error {
+		return triageOne(ctx, r, sessions, client, cfg, log, iss)
+	}); err != nil {
+		return err
 	}
 
 	// Tool errors are handed back to the model as data (so it can react), which
@@ -160,6 +144,36 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 		return errors.New("one or more tool calls failed; see logs above")
 	}
 	return nil
+}
+
+// sweep runs triageFn over every issue, continuing past a failure and stopping
+// cleanly when the budget is spent.
+//
+// One issue's failure must not cancel the rest: the sessions are independent by
+// construction, and aborting would let a single issue the model chokes on deny
+// triage to every issue behind it. Both sibling bots aggregate the same way.
+//
+// It takes triageFn rather than doing the work inline so the continue-on-error
+// and budget-exhaustion behaviour is testable without a live model. Testing a
+// copy of this loop instead would assert nothing about the real one.
+func sweep(ctx context.Context, issues []Issue, budget time.Duration, log *slog.Logger, triageFn func(context.Context, Issue) error) error {
+	var errs []error
+	for i, iss := range issues {
+		// Report what was left rather than stopping silently, so an exhausted run
+		// is distinguishable from one that triaged everything.
+		if err := ctx.Err(); err != nil {
+			log.Error("sweep budget exhausted; issues left untriaged",
+				"remaining", len(issues)-i, "budget", budget)
+			errs = append(errs, fmt.Errorf("sweep budget %s exhausted with %d of %d issues untriaged: %w",
+				budget, len(issues)-i, len(issues), err))
+			break
+		}
+		if err := triageFn(ctx, iss); err != nil {
+			log.Error("triage failed for issue; continuing", "issue", iss.Number, "error", err)
+			errs = append(errs, fmt.Errorf("issue #%d: %w", iss.Number, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // triageOne runs a single agent session scoped to one issue.

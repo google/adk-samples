@@ -142,33 +142,58 @@ func TestMutatingToolsRefuseUnscopedSession(t *testing.T) {
 // One issue's failure must not deny triage to the issues behind it. Before the
 // sweep became a Go loop there was one session to fail; now a single issue the
 // model chokes on could have aborted the whole run.
+// Drives the REAL sweep loop. The earlier version of this test defined its own
+// stub loop and asserted on its own local variables, so it passed whether or not
+// run() actually continued past a failure.
 func TestSweepContinuesPastAFailingIssue(t *testing.T) {
-	cfg := testConfig()
-	cfg.SweepTimeout = time.Minute
-	cfg.IssueTimeout = time.Minute
+	var attempted []int
+	err := sweep(context.Background(), []Issue{{Number: 1}, {Number: 2}, {Number: 3}},
+		time.Minute, discardLogger(),
+		func(_ context.Context, iss Issue) error {
+			attempted = append(attempted, iss.Number)
+			if iss.Number == 1 {
+				return errors.New("model refused")
+			}
+			return nil
+		})
+
+	if len(attempted) != 3 {
+		t.Errorf("attempted %v, want all three issues tried despite the first failing", attempted)
+	}
+	if err == nil {
+		t.Fatal("sweep() = nil, want the failure aggregated and returned")
+	}
+	if !strings.Contains(err.Error(), "issue #1") {
+		t.Errorf("aggregated error should name the failing issue, got %v", err)
+	}
+}
+
+// An exhausted budget must stop the sweep and say how much was left, rather than
+// running on until the workflow kills the job.
+func TestSweepStopsWhenBudgetExhausted(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // budget already spent
 
 	var attempted []int
-	// Stand in for triageOne: fail the first issue, record every attempt.
-	runOne := func(iss Issue) error {
-		attempted = append(attempted, iss.Number)
-		if iss.Number == 1 {
-			return errors.New("model refused")
-		}
-		return nil
-	}
+	err := sweep(ctx, []Issue{{Number: 1}, {Number: 2}}, time.Minute, discardLogger(),
+		func(_ context.Context, iss Issue) error {
+			attempted = append(attempted, iss.Number)
+			return nil
+		})
 
-	issues := []Issue{{Number: 1}, {Number: 2}, {Number: 3}}
-	var errs []error
-	for _, iss := range issues {
-		if err := runOne(iss); err != nil {
-			errs = append(errs, err)
-		}
+	if len(attempted) != 0 {
+		t.Errorf("attempted %v, want none once the budget is spent", attempted)
 	}
-	if len(attempted) != 3 {
-		t.Errorf("attempted %v, want all three issues tried", attempted)
+	if err == nil || !strings.Contains(err.Error(), "2 of 2 issues untriaged") {
+		t.Errorf("sweep() = %v, want an error naming what was left", err)
 	}
-	if len(errs) != 1 {
-		t.Errorf("collected %d errors, want 1 aggregated", len(errs))
+}
+
+// The happy path must return nil, not an empty joined error.
+func TestSweepReturnsNilWhenAllSucceed(t *testing.T) {
+	if err := sweep(context.Background(), []Issue{{Number: 1}}, time.Minute, discardLogger(),
+		func(context.Context, Issue) error { return nil }); err != nil {
+		t.Errorf("sweep() = %v, want nil", err)
 	}
 }
 
