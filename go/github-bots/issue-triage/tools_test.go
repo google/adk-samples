@@ -381,7 +381,35 @@ func TestDoAddLabelDoesNotOverwriteExistingField(t *testing.T) {
 // would let the model claim the need again with a DIFFERENT value and land two
 // labels. Neither branch had a test.
 func TestReleaseOnlyOnDemonstrableNonApplication(t *testing.T) {
-	t.Run("not applied: the need is released for a retry", func(t *testing.T) {
+	t.Run("type, not applied: the need is released for a retry", func(t *testing.T) {
+		// 200 with no type set: GitHub accepted the mutation and dropped it.
+		c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, `{"data":{"updateIssue":{"issue":{"issueType":null}}}}`)
+		}))
+		c.authorize(7, need{typ: true})
+		if _, err := c.doChangeType(scoped(7), 7, "Bug"); err == nil {
+			t.Fatal("doChangeType = nil error, want the not-applied failure")
+		}
+		if claimed, _ := c.claimType(7); !claimed {
+			t.Error("the type need was not released after a demonstrable non-application")
+		}
+	})
+
+	t.Run("type, transport failure: the need stays consumed", func(t *testing.T) {
+		c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"message":"boom"}`)
+		}))
+		c.authorize(7, need{typ: true})
+		if _, err := c.doChangeType(scoped(7), 7, "Bug"); err == nil {
+			t.Fatal("doChangeType = nil error, want the transport failure")
+		}
+		if claimed, _ := c.claimType(7); claimed {
+			t.Error("the type need was released after an AMBIGUOUS failure; a retry could set a different type")
+		}
+	})
+
+	t.Run("label, not applied: the need is released for a retry", func(t *testing.T) {
 		// 200 with a label set that does not contain ours: GitHub accepted the
 		// call and dropped the change (no push access).
 		c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -396,7 +424,7 @@ func TestReleaseOnlyOnDemonstrableNonApplication(t *testing.T) {
 		}
 	})
 
-	t.Run("transport failure: the need stays consumed", func(t *testing.T) {
+	t.Run("label, transport failure: the need stays consumed", func(t *testing.T) {
 		c := testClient(t, testConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = io.WriteString(w, `{"message":"boom"}`)
