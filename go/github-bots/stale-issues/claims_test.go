@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -467,20 +466,28 @@ func TestAuditIssueScopesTheSession(t *testing.T) {
 	cfg := baseCfg()
 	cfg.IssueTimeout = time.Minute
 	var seen error
-	err := auditIssue(context.Background(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), 42, func(ictx context.Context) error {
+	ran := false
+	err := auditIssue(context.Background(), cfg, 42, func(ictx context.Context) error {
+		ran = true
 		if msg, ok := authorizeIssue(ictx, 42); !ok {
 			seen = fmt.Errorf("session not scoped to the audited issue: %s", msg)
 		}
 		if _, ok := authorizeIssue(ictx, 43); ok {
 			seen = errors.New("session accepted a DIFFERENT issue")
 		}
-		if _, hasDeadline := ictx.Deadline(); !hasDeadline {
+		dl, hasDeadline := ictx.Deadline()
+		if !hasDeadline {
 			seen = errors.New("session carries no per-issue deadline")
+		} else if remaining := time.Until(dl); remaining > cfg.IssueTimeout {
+			seen = fmt.Errorf("deadline is %s away, more than IssueTimeout %s: it does not derive from the config", remaining, cfg.IssueTimeout)
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("auditIssue: %v", err)
+	}
+	if !ran {
+		t.Fatal("auditIssue never called runFn: the bot would audit nothing")
 	}
 	if seen != nil {
 		t.Error(seen)

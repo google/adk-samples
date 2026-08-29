@@ -168,7 +168,7 @@ func auditAll(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Co
 	g.SetLimit(cfg.Concurrency)
 	for _, n := range issues {
 		g.Go(func() error {
-			return auditIssue(ctx, cfg, log, n, func(ictx context.Context) error {
+			return auditIssue(ctx, cfg, n, func(ictx context.Context) error {
 				return runAudit(ictx, r, ss, log, n)
 			})
 		})
@@ -178,17 +178,13 @@ func auditAll(ctx context.Context, r *runner.Runner, ss session.Service, cfg *Co
 	return err
 }
 
-// auditIssue runs the agent against a single issue in its own fresh session. A
-// per-issue session isolates each audit's conversation (its tool calls and the
-// model's reasoning) so issues never bleed into each other's context, which also
-// lets the bounded-concurrency workers in auditAll run safely in parallel.
 // auditIssue scopes a session to one issue and hands it to runFn.
 //
 // It takes runFn so a test can drive the real function and assert the session is
 // actually scoped. Reconstructing the scoping in a test instead would assert
 // nothing about this function -- and deleting the withAuditedIssue line here,
 // which is the whole cross-issue defence, left the suite green.
-func auditIssue(ctx context.Context, cfg *Config, log *slog.Logger, number int, runFn func(context.Context) error) error {
+func auditIssue(ctx context.Context, cfg *Config, number int, runFn func(context.Context) error) error {
 	ictx, cancel := context.WithTimeout(ctx, cfg.IssueTimeout)
 	defer cancel()
 	// Scope this session to the audited issue so injected instructions in the
@@ -197,6 +193,7 @@ func auditIssue(ctx context.Context, cfg *Config, log *slog.Logger, number int, 
 	return runFn(ictx)
 }
 
+// runAudit runs the agent against one already-scoped issue and logs its decision.
 func runAudit(ictx context.Context, r *runner.Runner, ss session.Service, log *slog.Logger, number int) error {
 	start := time.Now()
 	l := log.With("issue", number)
