@@ -180,3 +180,77 @@ func TestEditedCommentKeepsAuthorWhenTheySpokeLast(t *testing.T) {
 		t.Errorf("LastActivity = %v, want the edit time", st.LastActivity)
 	}
 }
+
+// add_label_to_issue is not threshold-gated, so allowing it to apply the stale
+// label would be a way around add_stale_label_and_comment. An issue would become
+// is_stale with no warning comment and its close clock already running, letting a
+// later run close it after CloseAfter days instead of StaleAfter + CloseAfter --
+// with the author never warned. This is reachable by steering the model, which is
+// the whole threat these bots operate under.
+func TestAddLabelCannotApplyTheStaleLabel(t *testing.T) {
+	c := newTestClient(t)
+	c.cfg.RequestClarificationLabel = "request clarification"
+	ctx := withAuditedIssue(context.Background(), 7)
+
+	res, err := c.doAddLabel(ctx, 7, c.cfg.StaleLabel)
+	if err != nil {
+		t.Fatalf("doAddLabel returned a Go error: %v", err)
+	}
+	if res.Status != "error" {
+		t.Fatalf("doAddLabel(7, %q) = %+v, want a refusal", c.cfg.StaleLabel, res)
+	}
+	if !strings.Contains(res.Message, "add_stale_label_and_comment") {
+		t.Errorf("refusal should point at the gated tool, got %q", res.Message)
+	}
+	// Nothing was ever recorded for issue 7, so the refusal also does not depend
+	// on get_issue_state having run first.
+}
+
+// The tool must still work for the label it is actually for.
+func TestAddLabelStillAppliesTheClarificationLabel(t *testing.T) {
+	c := newTestClient(t)
+	c.cfg.DryRun = true
+	c.cfg.RequestClarificationLabel = "request clarification"
+	res, err := c.doAddLabel(withAuditedIssue(context.Background(), 7), 7, "request clarification")
+	if err != nil || res.Status != "success" {
+		t.Fatalf("doAddLabel = (%+v, %v), want success", res, err)
+	}
+}
+
+// An unknown stale-label age must not be closed on. Substituting time since
+// activity biased every such issue toward an early close, and the issue author
+// can force that branch by padding the timeline window with renames and reopens.
+func TestCloseRefusedWhenStaleLabelAgeIsUnknown(t *testing.T) {
+	c := newTestClient(t)
+	st := staleReady()
+	st.IsStale = true
+	st.DaysSinceStaleLabel = -1 // the LabeledEvent fell outside the window
+	c.recordObservation(7, st)
+
+	res, err := c.doClose(withAuditedIssue(context.Background(), 7), 7)
+	if err != nil {
+		t.Fatalf("doClose returned a Go error: %v", err)
+	}
+	if res.Status != "error" || !strings.Contains(res.Message, "unknown length of time") {
+		t.Errorf("doClose = %+v, want a refusal on unknown label age", res)
+	}
+}
+
+// Each issue must get its own fence marker, so a marker disclosed once cannot be
+// used to close the fence on a later issue in the same run.
+func TestFenceMarkerIsPerIssue(t *testing.T) {
+	a, err := newNonce()
+	if err != nil {
+		t.Fatalf("newNonce: %v", err)
+	}
+	b, err := newNonce()
+	if err != nil {
+		t.Fatalf("newNonce: %v", err)
+	}
+	if a == b {
+		t.Fatal("two draws produced the same marker")
+	}
+	if got := fenceUntrusted("text", a); !strings.Contains(got, a) || strings.Contains(got, b) {
+		t.Errorf("fenceUntrusted used the wrong marker: %q", got)
+	}
+}

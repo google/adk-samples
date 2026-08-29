@@ -87,7 +87,7 @@ func TestDoAddLabelRecordsToolError(t *testing.T) {
 	if c.hadToolError() {
 		t.Fatal("hadToolError() should start false")
 	}
-	if _, err := c.doAddLabel(ctx, 7, "stale"); err == nil {
+	if _, err := c.doAddLabel(ctx, 7, "request clarification"); err == nil {
 		t.Fatal("doAddLabel(7) on HTTP 500 = nil error, want error")
 	}
 	if !c.hadToolError() {

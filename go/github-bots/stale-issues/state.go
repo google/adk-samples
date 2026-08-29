@@ -318,11 +318,15 @@ func computeIssueState(raw *rawIssue, selfLogin string, maintainers []string, st
 		if len(staleLabelTimes) > 0 {
 			daysSinceStaleLabel = now.Sub(latest(staleLabelTimes)).Hours() / 24
 		} else {
-			// The stale LabeledEvent can scroll out of the bounded timeline
-			// window on very active issues. Fall back to time since the last
-			// activity so a stale, inactive issue can still be closed rather
-			// than lingering open forever.
-			daysSinceStaleLabel = daysSinceActivity
+			// The stale LabeledEvent scrolled out of the bounded timeline window,
+			// so the label's true age is unknown. Substituting time-since-activity
+			// was systematically biased toward closing early: the label is applied
+			// AFTER the last activity, so that value is always >= the real age,
+			// and the issue author can pad the window with title renames and
+			// reopens to force this branch. Report -1 for "unknown"; the close
+			// predicate refuses on it, so the issue waits for a run whose window
+			// does contain the event rather than being closed on a guess.
+			daysSinceStaleLabel = -1
 		}
 	}
 

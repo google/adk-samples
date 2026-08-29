@@ -53,11 +53,12 @@ func testClient(t *testing.T, cfg *Config, handler http.Handler) *GitHubClient {
 
 func baseCfg() *Config {
 	return &Config{
-		Owner:      "o",
-		Repo:       "r",
-		StaleLabel: "stale",
-		StaleAfter: 168 * time.Hour,
-		CloseAfter: 168 * time.Hour,
+		Owner:                     "o",
+		Repo:                      "r",
+		StaleLabel:                "stale",
+		RequestClarificationLabel: "request clarification",
+		StaleAfter:                168 * time.Hour,
+		CloseAfter:                168 * time.Hour,
 	}
 }
 

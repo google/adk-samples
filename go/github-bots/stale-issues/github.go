@@ -40,10 +40,6 @@ type GitHubClient struct {
 	selfLogin string
 	log       *slog.Logger
 
-	// nonce fences the one user-controlled field the model is shown,
-	// IssueState.LastCommentText. See fenceUntrusted.
-	nonce string
-
 	// toolErrored records whether any tool hit an infrastructure error during
 	// the run. Tool errors are also handed back to the model as data, so without
 	// this flag the process could exit 0 despite a failed mutation; run() checks
@@ -149,11 +145,7 @@ func (c *GitHubClient) hadToolError() bool {
 // resolves the bot's own login (used to ignore the bot's own activity).
 func NewGitHubClient(ctx context.Context, cfg *Config, log *slog.Logger) (*GitHubClient, error) {
 	rest := github.NewClient(nil).WithAuthToken(cfg.GitHubToken)
-	nonce, err := newNonce()
-	if err != nil {
-		return nil, err
-	}
-	c := &GitHubClient{rest: rest, cfg: cfg, log: log, nonce: nonce}
+	c := &GitHubClient{rest: rest, cfg: cfg, log: log}
 
 	// Resolve identity once. github-actions[bot] already ends in "[bot]" (so
 	// the timeline filter ignores it), but resolving the login makes the bot
@@ -192,11 +184,16 @@ func newNonce() (string, error) {
 // asks the model to judge that comment's intent, so the text has to reach the
 // model — fencing it is what keeps an instruction inside it inert. Empty text
 // is left empty so the prompt does not see an empty fence.
-func (c *GitHubClient) fenceUntrusted(s string) string {
+// The marker is drawn per issue, not per run. A run-scoped marker is shared by
+// every audit in the sweep, so one disclosure -- the model echoing it into its
+// final text, which is logged, and Actions logs on a public repo are readable
+// live -- would let an attacker close the fence on a later issue in the same
+// run. Per issue, a leaked marker is already spent. This matches both siblings.
+func fenceUntrusted(s, nonce string) string {
 	if s == "" {
 		return ""
 	}
-	return "[UNTRUSTED:" + c.nonce + "]\n" + s + "\n[/UNTRUSTED:" + c.nonce + "]"
+	return "[UNTRUSTED:" + nonce + "]\n" + s + "\n[/UNTRUSTED:" + nonce + "]"
 }
 
 // SearchOldOpenIssues returns the numbers of open issues created before the

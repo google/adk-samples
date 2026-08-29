@@ -302,10 +302,19 @@ func TestComputeIssueState_LastCommentAttributedToLastActor(t *testing.T) {
 }
 
 // A stale issue whose stale LabeledEvent has scrolled out of the bounded
-// timeline window must still be closable: DaysSinceStaleLabel should fall back
-// to time since last activity instead of reporting 0 (which never exceeds the
-// close threshold).
-func TestComputeIssueState_ClosableWhenStaleLabelEventOutOfWindow(t *testing.T) {
+// timeline window reports an UNKNOWN label age (-1), and closePredicate refuses
+// on it.
+//
+// This reverses an earlier deliberate choice to fall back to time-since-activity
+// so such an issue could still be closed. That fallback was biased toward
+// closing early in every case -- the label is always applied after the last
+// activity, so the substitute is always at least the real age -- and the issue
+// author can force the branch by padding the window with title renames and
+// reopens, both of which they can generate at will. Leaving an issue open is the
+// safe failure; closing someone's issue early on a guess is not. An issue with
+// more than a window's worth of events after the label is also, by that fact,
+// active enough that auto-closing it as stale is questionable.
+func TestComputeIssueState_UnknownStaleLabelAgeWhenEventOutOfWindow(t *testing.T) {
 	raw := &rawIssue{
 		Author:    actor(testAuthor),
 		CreatedAt: daysAgo(60),
@@ -319,9 +328,9 @@ func TestComputeIssueState_ClosableWhenStaleLabelEventOutOfWindow(t *testing.T) 
 	if !got.IsStale {
 		t.Fatal("IsStale = false, want true")
 	}
-	if got.DaysSinceStaleLabel < got.CloseThresholdDays {
-		t.Errorf("DaysSinceStaleLabel = %.2f, want >= close threshold %.2f so the issue can be closed",
-			got.DaysSinceStaleLabel, got.CloseThresholdDays)
+	if got.DaysSinceStaleLabel != -1 {
+		t.Errorf("DaysSinceStaleLabel = %.2f, want -1 (unknown) so the close is refused rather than guessed",
+			got.DaysSinceStaleLabel)
 	}
 }
 

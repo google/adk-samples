@@ -99,8 +99,14 @@ func (c *GitHubClient) doGetIssueState(ctx context.Context, number int) (IssueSt
 	// preconditions against this, not against the model's assertion. Record the
 	// unfenced state so those checks read plain values.
 	c.recordObservation(number, st)
-	// Fence the one attacker-controlled field before it reaches the model.
-	st.LastCommentText = c.fenceUntrusted(st.LastCommentText)
+	// Fence the one attacker-controlled field before it reaches the model, under
+	// a marker drawn for this issue alone.
+	nonce, err := newNonce()
+	if err != nil {
+		c.recordToolError()
+		return IssueState{}, err
+	}
+	st.LastCommentText = fenceUntrusted(st.LastCommentText, nonce)
 	return st, nil
 }
 
@@ -143,6 +149,9 @@ func closePredicate(number int) func(IssueState) (string, bool) {
 		}
 		if st.LastActionRole != string(roleMaintainer) {
 			return fmt.Sprintf("issue #%d was last acted on by %q; the author or another user responded, so it must not be closed", number, st.LastActionRole), false
+		}
+		if st.DaysSinceStaleLabel < 0 {
+			return fmt.Sprintf("issue #%d has been stale for an unknown length of time (the label event is outside the timeline window); refusing to close on a guess", number), false
 		}
 		if st.DaysSinceStaleLabel <= st.CloseThresholdDays {
 			return fmt.Sprintf("issue #%d has been stale %.1f days, at or below the %.1f-day close threshold", number, st.DaysSinceStaleLabel, st.CloseThresholdDays), false
@@ -189,6 +198,16 @@ func (c *GitHubClient) doAddLabel(ctx context.Context, number int, label string)
 	}
 	if !c.isManagedLabel(label) {
 		return errResult("label %q is not managed by this bot", label), nil
+	}
+	// The stale label must never be applied through this tool. Marking an issue
+	// stale is gated on the thresholds via add_stale_label_and_comment, and this
+	// tool is not, so allowing it here would be a way around that gate: an issue
+	// would become is_stale with no warning comment posted and its close clock
+	// already running, so a later run could close it after CloseAfter days
+	// instead of StaleAfter + CloseAfter, with the author never warned. The
+	// legitimate path calls AddLabel directly from MarkStale, not through here.
+	if label == c.cfg.StaleLabel {
+		return errResult("use add_stale_label_and_comment to mark issue #%d stale; %q cannot be applied with this tool", number, label), nil
 	}
 	if err := c.AddLabel(ctx, number, label); err != nil {
 		c.recordToolError()
