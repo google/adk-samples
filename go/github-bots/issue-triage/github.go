@@ -37,7 +37,6 @@ var ErrIssueNotFound = errors.New("issue not found")
 // transport error the write may have landed and only its response was lost.
 var errNotApplied = errors.New("github did not apply the change")
 
-// maxSearchPages bounds GraphQL search pagination as a safety valve.
 // GraphQL page sizes. Named so the query and its variables cannot drift apart,
 // and so the cost of widening one is visible at the call site.
 const (
@@ -50,6 +49,9 @@ const (
 	searchPageSize = 50
 )
 
+// maxSearchPages bounds GraphQL search pagination as a safety valve: at
+// searchPageSize results per page it caps one sweep's reads regardless of how
+// large the backlog is.
 const maxSearchPages = 10
 
 // Client wraps the GitHub REST and GraphQL APIs. All mutations route through
