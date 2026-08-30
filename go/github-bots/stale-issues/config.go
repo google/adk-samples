@@ -95,11 +95,11 @@ func loadConfig(args []string) (*Config, error) {
 		Repo:                      os.Getenv("REPO"),
 		GitHubToken:               os.Getenv("GITHUB_TOKEN"),
 		GeminiAPIKey:              firstNonEmpty(os.Getenv("GEMINI_API_KEY"), os.Getenv("GOOGLE_API_KEY")),
-		Model:                     getenv("LLM_MODEL_NAME", "gemini-flash-latest"),
+		Model:                     envString("LLM_MODEL_NAME", "gemini-flash-latest"),
 		StaleAfter:                envHours("STALE_HOURS_THRESHOLD", 14*24*time.Hour),
 		CloseAfter:                envHours("CLOSE_HOURS_AFTER_STALE_THRESHOLD", 7*24*time.Hour),
-		StaleLabel:                getenv("STALE_LABEL_NAME", "stale"),
-		RequestClarificationLabel: getenv("REQUEST_CLARIFICATION_LABEL", "request clarification"),
+		StaleLabel:                envString("STALE_LABEL_NAME", "stale"),
+		RequestClarificationLabel: envString("REQUEST_CLARIFICATION_LABEL", "request clarification"),
 		Maintainers:               splitList(os.Getenv("MAINTAINERS")),
 		Concurrency:               envInt("CONCURRENCY_LIMIT", 3),
 		IssueTimeout:              envDuration("ISSUE_TIMEOUT", 5*time.Minute),
@@ -157,7 +157,7 @@ func (c *Config) validate() error {
 	return nil
 }
 
-func getenv(key, def string) string {
+func envString(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
