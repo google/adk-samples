@@ -35,6 +35,11 @@ const (
 	searchPageSize = 100
 )
 
+// botSuffix is what the REST API appends to a GitHub App's login. GraphQL
+// returns the bare name, so bot logins are canonicalized to this form before the
+// ignore and self filters compare against it.
+const botSuffix = "[bot]"
+
 // ErrIssueNotFound is returned when the requested issue does not exist or refers
 // to a pull request.
 var ErrIssueNotFound = errors.New("issue not found")
@@ -88,7 +93,7 @@ func NewGitHubClient(ctx context.Context, cfg *Config, log *slog.Logger) (*GitHu
 		c.selfLogin = u.GetLogin()
 		log.Info("resolved bot identity", "login", c.selfLogin)
 	} else {
-		// Fall back to "[bot]" suffix filtering. This is fine for the default
+		// Fall back to botSuffix suffix filtering. This is fine for the default
 		// github-actions[bot] token; with a non-[bot] PAT the bot can no longer
 		// recognize its own past alert comments, so cross-run dedup then rests
 		// solely on the spam label (still the primary guard).
@@ -222,7 +227,7 @@ type ghActor struct {
 	Login string `json:"login"`
 	// Typename is the GraphQL __typename ("Bot" for bot accounts). GitHub's
 	// GraphQL API returns a bare bot login (e.g. "github-actions") without the
-	// "[bot]" suffix that REST appends, so the type is the reliable bot signal.
+	// botSuffix suffix that REST appends, so the type is the reliable bot signal.
 	Typename string `json:"__typename"`
 }
 
@@ -252,13 +257,13 @@ func login(a *ghActor) string {
 	if a == nil {
 		return ""
 	}
-	// Canonicalize a bot login to the REST "[bot]" form. GraphQL returns the bare
+	// Canonicalize a bot login to the REST botSuffix form. GraphQL returns the bare
 	// login (e.g. "github-actions"), but selfLogin is resolved via REST
-	// ("github-actions[bot]") and the ignore filter matches on the "[bot]"
+	// ("github-actions[bot]") and the ignore filter matches on the botSuffix
 	// suffix; without this, bot content would slip through to the model and the
 	// bot could fail to recognize its own alert comments.
-	if a.Typename == "Bot" && !strings.HasSuffix(a.Login, "[bot]") {
-		return a.Login + "[bot]"
+	if a.Typename == "Bot" && !strings.HasSuffix(a.Login, botSuffix) {
+		return a.Login + botSuffix
 	}
 	return a.Login
 }

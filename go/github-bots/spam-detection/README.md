@@ -64,7 +64,7 @@ loudly.
 
 ## Running locally
 
-Requires **Go 1.25+** (see `go.mod`). Copy `.env.example` to `.env` and fill it
+Requires **Go 1.26+** (see `go.mod`). Copy `.env.example` to `.env` and fill it
 in (or export the variables), then:
 
 ```bash

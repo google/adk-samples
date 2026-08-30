@@ -68,10 +68,10 @@ func maintainerSet(logins []string) map[string]bool {
 }
 
 // isIgnoredAuthor reports whether content from this login should be skipped when
-// looking for spam: empty authors, any "[bot]" account, the bot's own identity,
+// looking for spam: empty authors, any botSuffix account, the bot's own identity,
 // and trusted maintainers. Their text is never sent to the model.
 func isIgnoredAuthor(login, selfLogin string, maintainers map[string]bool) bool {
-	if login == "" || strings.HasSuffix(login, "[bot]") {
+	if login == "" || strings.HasSuffix(login, botSuffix) {
 		return true
 	}
 	if isSelfAuthor(login, selfLogin) {
@@ -84,8 +84,8 @@ func isIgnoredAuthor(login, selfLogin string, maintainers map[string]bool) bool 
 // isSelfAuthor reports whether a login is the bot's own resolved identity
 // (case-insensitive). Used to authenticate the bot's own alert comments.
 //
-// It deliberately does NOT trust the generic "[bot]" suffix: anyone can create a
-// GitHub App whose login ends in "[bot]", so trusting the suffix would let an
+// It deliberately does NOT trust the generic botSuffix suffix: anyone can create a
+// GitHub App whose login ends in botSuffix, so trusting the suffix would let an
 // attacker post a comment carrying botAlertSignature to make hasBotAlert treat
 // the issue as already handled and suppress moderation. When the identity could
 // not be resolved (selfLogin == ""), this returns false and idempotency falls

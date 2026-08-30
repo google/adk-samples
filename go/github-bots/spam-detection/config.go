@@ -105,8 +105,8 @@ func loadConfig(args []string) (*Config, error) {
 		Repo:            os.Getenv("REPO"),
 		GitHubToken:     os.Getenv("GITHUB_TOKEN"),
 		GeminiAPIKey:    firstNonEmpty(os.Getenv("GEMINI_API_KEY"), os.Getenv("GOOGLE_API_KEY")),
-		Model:           getenv("LLM_MODEL_NAME", "gemini-flash-latest"),
-		SpamLabel:       getenv("SPAM_LABEL_NAME", "spam"),
+		Model:           envString("LLM_MODEL_NAME", "gemini-flash-latest"),
+		SpamLabel:       envString("SPAM_LABEL_NAME", "spam"),
 		Maintainers:     splitList(os.Getenv("MAINTAINERS")),
 		IssueCount:      envInt("ISSUE_COUNT", 3),
 		FreshnessWindow: envDays("FRESHNESS_WINDOW_DAYS", 0),
@@ -162,7 +162,7 @@ func (c *Config) validate() error {
 
 // Environment helpers.
 
-func getenv(key, def string) string {
+func envString(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
