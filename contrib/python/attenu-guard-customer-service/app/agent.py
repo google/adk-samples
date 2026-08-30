@@ -123,5 +123,5 @@ def require_guard(application: App) -> None:
 # recipe out. For anything where one caller's decisions should not be
 # another's evidence, call `build_app()` per run — which is what `demo.py`
 # and the tests do.
-app, root_guard, guard_plugin = build_app(os.getenv("MODEL_NAME", ""))
+app, root_guard, guard_plugin = build_app(os.getenv("MODEL_NAME"))
 root_agent = app.root_agent

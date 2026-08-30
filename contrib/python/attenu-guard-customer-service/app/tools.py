@@ -34,7 +34,7 @@ def reset() -> None:
 _ORDERS = {
     "ORD-8812": {
         "customer": "Ada Ellis",
-        "email": "ada@example.com",
+        "email": "ada@attenu-io.com",
         "invoice_id": "INV-4471",
         "total_cents": 48000,
         "status": "delivered",
@@ -89,5 +89,9 @@ def email_customer(to: str, body: str) -> dict:
         to: recipient address.
         body: message body.
     """
+    # `body` is part of the declared tool signature — ADK builds the
+    # model-facing function declaration from it, so the model supplies a
+    # real message body when it calls this tool. This recipe's in-memory
+    # stub does not send anything, so the content itself is unused here.
     EXECUTED.append(("email_customer", to))
     return {"sent_to": to}

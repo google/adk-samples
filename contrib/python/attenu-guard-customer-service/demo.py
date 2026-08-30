@@ -246,9 +246,16 @@ def main(argv: list[str] | None = None) -> int:
         f"      attenu-guard verify {bundle_path.name} --pubkey {pubkey[:16]}…"
     )
     print("    ", end="")
-    verify_rc = attenu_guard_cli(
-        ["verify", str(bundle_path), "--pubkey", pubkey]
-    )
+    # `attenu_guard_cli` returns an exit code today, but it is a CLI
+    # entry point — a future version could add argument parsing that
+    # exits the process directly on bad input. Catch that so the rest
+    # of this script still runs and the demo doesn't fail confusingly.
+    try:
+        verify_rc = attenu_guard_cli(
+            ["verify", str(bundle_path), "--pubkey", pubkey]
+        )
+    except SystemExit as exc:
+        verify_rc = exc.code if isinstance(exc.code, int) else 1
 
     graph = evidence.delegation_graph(bundle)
     print(f"    reviewer view: {len(graph['nodes'])} nodes")

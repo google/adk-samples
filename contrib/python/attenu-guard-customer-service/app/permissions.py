@@ -32,6 +32,21 @@ from attenu_guard import Authority, EgressRank, RowLimit
 from attenu_guard.adapters.google_adk import ToolAuthority
 
 # --------------------------------------------------------------------
+# Row-limit and TTL constants, named so the numbers below read as
+# decisions rather than magic numbers.
+# --------------------------------------------------------------------
+COORDINATOR_MAX_ROWS = 10_000
+COORDINATOR_TTL_SECONDS = 3600  # 1 hour
+
+BILLING_MAX_ROWS = 500
+BILLING_TTL_SECONDS = 900  # 15 minutes
+
+# Deliberately absurd, so GREEDY_REQUEST (below) cannot be satisfied by
+# accident.
+GREEDY_MAX_ROWS = 1_000_000
+GREEDY_TTL_SECONDS = 999_999
+
+# --------------------------------------------------------------------
 # 1. What the coordinator holds.
 #
 # It can read orders, do anything in billing (including refunds), email
@@ -39,8 +54,8 @@ from attenu_guard.adapters.google_adk import ToolAuthority
 # --------------------------------------------------------------------
 COORDINATOR = Authority(
     scopes={"orders.read", "billing.*", "mail.send", "agent.delegate.*"},
-    ceilings=[RowLimit(10_000), EgressRank("any")],
-    ttl=3600,
+    ceilings=[RowLimit(COORDINATOR_MAX_ROWS), EgressRank("any")],
+    ttl=COORDINATOR_TTL_SECONDS,
 )
 
 # --------------------------------------------------------------------
@@ -52,8 +67,8 @@ COORDINATOR = Authority(
 DELEGATIONS = {
     "billing_agent": Authority(
         scopes={"billing.read"},
-        ceilings=[RowLimit(500), EgressRank("none")],
-        ttl=900,
+        ceilings=[RowLimit(BILLING_MAX_ROWS), EgressRank("none")],
+        ttl=BILLING_TTL_SECONDS,
     ),
 }
 
@@ -62,8 +77,8 @@ DELEGATIONS = {
 # agent tree.
 GREEDY_REQUEST = Authority(
     scopes={"billing.*", "admin.root"},
-    ceilings=[RowLimit(1_000_000), EgressRank("any")],
-    ttl=999_999,
+    ceilings=[RowLimit(GREEDY_MAX_ROWS), EgressRank("any")],
+    ttl=GREEDY_TTL_SECONDS,
 )
 
 # --------------------------------------------------------------------
