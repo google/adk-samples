@@ -11,7 +11,7 @@ An issue is considered **untriaged** when it has no issue type and/or none of
 the allowlisted categorization labels. Several invariants are enforced **in Go**,
 not merely requested in the prompt: the type and label must be in the allowlist;
 the agent may only mutate issues it legitimately targeted (the single `-issue`,
-or those returned by `list_untriaged_issues`); and it may only fill a field that
+or those the sweep selected); and it may only fill a field that
 was actually missing, so an already-set type or label is never overwritten.
 
 ## What it demonstrates

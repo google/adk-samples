@@ -82,8 +82,8 @@ func loadConfig(args []string) (*Config, error) {
 		Repo:            os.Getenv("REPO"),
 		GitHubToken:     os.Getenv("GITHUB_TOKEN"),
 		GeminiAPIKey:    firstNonEmpty(os.Getenv("GEMINI_API_KEY"), os.Getenv("GOOGLE_API_KEY")),
-		Model:           getenv("LLM_MODEL_NAME", "gemini-flash-latest"),
-		AllowedLabels:   splitList(getenv("ALLOWED_LABELS", strings.Join(defaultAllowedLabels, ","))),
+		Model:           envString("LLM_MODEL_NAME", "gemini-flash-latest"),
+		AllowedLabels:   splitList(envString("ALLOWED_LABELS", strings.Join(defaultAllowedLabels, ","))),
 		IssueCount:      envInt("ISSUE_COUNT", 3),
 		FreshnessWindow: envDays("FRESHNESS_WINDOW_DAYS", 0),
 		IssueTimeout:    envDuration("ISSUE_TIMEOUT", 5*time.Minute),
@@ -138,7 +138,7 @@ func (c *Config) validate() error {
 
 // Environment helpers.
 
-func getenv(key, def string) string {
+func envString(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}

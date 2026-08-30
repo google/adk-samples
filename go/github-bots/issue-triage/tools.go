@@ -64,6 +64,20 @@ func checkIssueArg(ctx context.Context, number int) (string, bool) {
 // call, but the requested action was rejected (e.g. a disallowed label). It is
 // returned with a nil Go error so the model receives it as data and can correct
 // itself. Reserve real Go errors for infrastructure failures (network, API).
+// writeFailed handles a failed mutation for both tools.
+//
+// The need is released only for a write GitHub demonstrably did not apply. After
+// a transport error the request may have landed and only its response been lost,
+// and releasing would let the model claim the need again with a DIFFERENT value
+// — two labels, or a second type write.
+func (c *Client) writeFailed(err error, number int, release func(int)) (actionResult, error) {
+	if errors.Is(err, errNotApplied) {
+		release(number)
+	}
+	c.recordToolError()
+	return actionResult{}, err
+}
+
 func errResult(format string, a ...any) actionResult {
 	return actionResult{Status: "error", Message: fmt.Sprintf(format, a...)}
 }
@@ -117,14 +131,7 @@ func (c *Client) doChangeType(ctx context.Context, number int, issueType string)
 		return errResult("issue #%d already has a type; not overwriting", number), nil
 	}
 	if err := c.SetType(ctx, number, canonical); err != nil {
-		// Only retry a write GitHub demonstrably did not apply. After a transport
-		// error the POST may have landed, and releasing would let the model claim
-		// the need again with a different value.
-		if errors.Is(err, errNotApplied) {
-			c.releaseType(number)
-		}
-		c.recordToolError()
-		return actionResult{}, err
+		return c.writeFailed(err, number, c.releaseType)
 	}
 	return okResult("set issue #%d type to %s", number, canonical), nil
 }
@@ -150,12 +157,7 @@ func (c *Client) doAddLabel(ctx context.Context, number int, label string) (acti
 		return errResult("issue #%d already has a categorization label; not adding another", number), nil
 	}
 	if err := c.AddLabel(ctx, number, canonical); err != nil {
-		// Only retry a write GitHub demonstrably did not apply; see doChangeType.
-		if errors.Is(err, errNotApplied) {
-			c.releaseLabel(number)
-		}
-		c.recordToolError()
-		return actionResult{}, err
+		return c.writeFailed(err, number, c.releaseLabel)
 	}
 	return okResult("added label %q to issue #%d", canonical, number), nil
 }

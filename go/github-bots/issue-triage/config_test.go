@@ -33,7 +33,7 @@ func setRequired(t *testing.T) {
 	t.Setenv("GOOGLE_GENAI_USE_VERTEXAI", "")
 	for _, k := range []string{
 		"LLM_MODEL_NAME", "ALLOWED_LABELS",
-		"ISSUE_COUNT", "FRESHNESS_WINDOW_DAYS", "ISSUE_TIMEOUT", "DRY_RUN",
+		"ISSUE_COUNT", "FRESHNESS_WINDOW_DAYS", "ISSUE_TIMEOUT", "SWEEP_TIMEOUT", "DRY_RUN",
 	} {
 		t.Setenv(k, "")
 	}
