@@ -27,9 +27,8 @@ def test_agent_runnability() -> None:
 
 def test_app_carries_the_guard() -> None:
     """The App the ADK CLI loads has the plugin attached."""
-    assert any(
-        isinstance(p, DelegationGuardPlugin) for p in app.agent.app.plugins
-    )
+    plugins = getattr(app.agent.app, "plugins", None) or []
+    assert any(isinstance(p, DelegationGuardPlugin) for p in plugins)
 
 
 def test_sub_agent_is_reachable_by_transfer() -> None:

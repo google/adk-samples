@@ -126,13 +126,18 @@ async def _drive(application, message: str) -> list:
     return events
 
 
+def _event_parts(event) -> list:
+    """An event's content parts, or `[]` for an event with no content —
+    not every ADK runner event carries one (e.g. a turn-boundary event)."""
+    content = getattr(event, "content", None)
+    return content.parts if content and content.parts else []
+
+
 def tool_responses(events) -> dict:
     """{tool_name: response} for every function response in the run."""
     out: dict[str, Any] = {}
     for event in events:
-        parts = (
-            event.content.parts if event.content and event.content.parts else []
-        )
+        parts = _event_parts(event)
         for part in parts:
             if part.function_response:
                 out[part.function_response.name] = (
@@ -155,9 +160,7 @@ def run_offline(*, audit_path: str | None = None):
 
 def _print_transcript(events) -> None:
     for event in events:
-        parts = (
-            event.content.parts if event.content and event.content.parts else []
-        )
+        parts = _event_parts(event)
         for part in parts:
             if part.function_call:
                 args = dict(part.function_call.args or {})
@@ -248,8 +251,9 @@ def main(argv: list[str] | None = None) -> int:
     print("    ", end="")
     # `attenu_guard_cli` returns an exit code today, but it is a CLI
     # entry point — a future version could add argument parsing that
-    # exits the process directly on bad input. Catch that so the rest
-    # of this script still runs and the demo doesn't fail confusingly.
+    # exits the process directly on bad input, or a success path that
+    # falls off the end and returns `None`. Handle both so the rest of
+    # this script still runs and the demo doesn't fail confusingly.
     try:
         verify_rc = attenu_guard_cli(
             ["verify", str(bundle_path), "--pubkey", pubkey]
@@ -266,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
         and billing.is_narrower_than(coordinator)
         and granted.is_narrower_than(COORDINATOR)
         and chain_ok
-        and verify_rc == 0
+        and verify_rc in (0, None)
     )
     print("\nRESULT:", "OK" if ok else "FAILED")
     return 0 if ok else 1

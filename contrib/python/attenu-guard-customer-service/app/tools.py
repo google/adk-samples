@@ -18,6 +18,16 @@ Every tool appends to `EXECUTED` as its first statement. That list is
 how the demo and the tests show that a refused call was refused *before*
 its body ran, rather than run and then reported. Nothing else in the
 recipe depends on it; delete it when you adapt this to your own tools.
+
+Two layers, not one: `attenu-guard` decides whether an agent may call a
+tool at all, and under which ceilings (`app/permissions.py`) — that
+check runs at the ADK callback, before a tool body is ever entered. It
+does not, and should not, know what a valid `amount_cents` is or which
+address is the right one for a given invoice; that is ordinary
+input validation, and it belongs here, inside the tool body, the same
+as it would in a tool with no delegation guard at all. Every value
+below is something the model chose, so every one of them is untrusted
+whether or not the caller was authorized to place the call.
 """
 
 from typing import Any
@@ -76,22 +86,47 @@ def issue_refund(invoice_id: str, amount_cents: int) -> dict:
 
     Args:
         invoice_id: the invoice to refund.
-        amount_cents: how much to refund, in cents.
+        amount_cents: how much to refund, in cents. Must be a positive
+            integer no greater than the invoice's own total — the model
+            names an amount, but this body is what holds it to a real
+            one, not attenu-guard (see the module docstring).
     """
     EXECUTED.append(("issue_refund", (invoice_id, amount_cents)))
+    invoice = _INVOICES.get(invoice_id)
+    if invoice is None:
+        return {"error": "unknown invoice", "invoice_id": invoice_id}
+    if not isinstance(amount_cents, int) or amount_cents <= 0:
+        return {"error": "invalid amount", "invoice_id": invoice_id}
+    if amount_cents > invoice["total_cents"]:
+        return {
+            "error": "amount exceeds invoice total",
+            "invoice_id": invoice_id,
+            "invoice_total_cents": invoice["total_cents"],
+        }
     return {"refunded": amount_cents, "invoice_id": invoice_id}
 
 
-def email_customer(to: str, body: str) -> dict:
-    """Send an email to the customer.
+def email_customer(invoice_id: str, body: str) -> dict:
+    """Notify the customer on an invoice.
+
+    The recipient is not a model argument: it is looked up from the
+    invoice's order record, so the model cannot redirect the
+    notification to an address of its own choosing.
 
     Args:
-        to: recipient address.
+        invoice_id: the invoice whose customer to notify.
         body: message body.
     """
-    # `body` is part of the declared tool signature — ADK builds the
-    # model-facing function declaration from it, so the model supplies a
-    # real message body when it calls this tool. This recipe's in-memory
-    # stub does not send anything, so the content itself is unused here.
-    EXECUTED.append(("email_customer", to))
-    return {"sent_to": to}
+    # `body` is read into EXECUTED below rather than only accepted —
+    # it is part of the declared tool signature (ADK builds the
+    # model-facing function declaration from it), and this in-memory
+    # stub does not send anything, so recording it is what stands in
+    # for using it.
+    EXECUTED.append(("email_customer", (invoice_id, body)))
+    invoice = _INVOICES.get(invoice_id)
+    if invoice is None:
+        return {"error": "unknown invoice", "invoice_id": invoice_id}
+    order = _ORDERS.get(invoice["order_id"])
+    if order is None:
+        return {"error": "unknown order", "invoice_id": invoice_id}
+    return {"sent_to": order["email"]}
