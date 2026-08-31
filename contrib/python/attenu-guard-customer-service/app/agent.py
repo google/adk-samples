@@ -45,7 +45,6 @@ from .tools import email_customer, get_invoice, issue_refund, lookup_order
 APP_NAME = "attenu-guard-customer-service"
 ROOT_AGENT_NAME = "coordinator"
 BILLING_AGENT_NAME = "billing_agent"
-DEFAULT_MODEL_NAME = "gemini-3.5-flash"
 
 
 def build_root_agent(model: Any) -> LlmAgent:
@@ -122,11 +121,34 @@ def require_guard(application: App) -> None:
 # check for `app` first and fall back to `root_agent`, so exposing the App
 # is what carries the plugin into a CLI-driven run.
 #
-# One caveat worth knowing: these are built once, at import, so every
-# session `adk web` serves shares this root Guard and this ledger, and the
-# time-to-live starts counting at import. That is fine for trying the
+# They are built lazily (PEP 562): only a CLI-driven run touches these
+# names, and that run requires MODEL_NAME (see `.env.example`) — there is
+# deliberately no in-code default. `demo.py` and the tests never read
+# them; they call `build_app()` with their own model, so importing this
+# module stays side-effect-free for them.
+#
+# One caveat worth knowing: a CLI run builds once, on first access, so
+# every session `adk web` serves shares that root Guard and its ledger,
+# and the time-to-live starts counting then. That is fine for trying the
 # recipe out. For anything where one caller's decisions should not be
-# another's evidence, call `build_app()` per run — which is what `demo.py`
-# and the tests do.
-app, root_guard, guard_plugin = build_app(os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME))
-root_agent = app.root_agent
+# another's evidence, call `build_app()` per run.
+_cli_singletons: dict[str, Any] = {}
+
+
+def __getattr__(name: str) -> Any:
+    if name not in ("app", "root_agent", "root_guard", "guard_plugin"):
+        raise AttributeError(name)
+    if not _cli_singletons:
+        model = os.getenv("MODEL_NAME")
+        if not model:
+            raise RuntimeError(
+                "MODEL_NAME is not set - a CLI-driven run (`adk run app`, "
+                "`adk web`) needs it; see .env.example. The offline demo "
+                "(`python demo.py`) does not use it."
+            )
+        application, guard, plugin = build_app(model)
+        _cli_singletons.update(
+            app=application, root_agent=application.root_agent,
+            root_guard=guard, guard_plugin=plugin,
+        )
+    return _cli_singletons[name]

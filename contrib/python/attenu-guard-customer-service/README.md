@@ -69,8 +69,8 @@ Tests:
 uv run pytest
 ```
 
-Live, against a real model. Set your credentials in `.env` first;
-`MODEL_NAME` is optional and defaults to `gemini-3.5-flash`.
+Live, against a real model. Set `MODEL_NAME` and your credentials in
+`.env` first (required for live runs; the offline demo never reads them).
 
 ```bash
 uv run python demo.py --live
