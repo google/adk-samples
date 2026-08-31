@@ -1,7 +1,5 @@
 # RAG Agent — Agent Platform Vector Search
 
-> ℹ️ **Moving:** this sample is relocating to [`core/python/rag-vector-search`](../python/rag-vector-search/). This copy stays temporarily and will be removed after the transition — please use the new location.
-
 A starter RAG agent that answers questions grounded on documents indexed in
 **Agent Platform Vector Search** (Vector Search 2.0). A Kubeflow Pipelines (KFP)
 ingestion pipeline loads, chunks, and imports your documents into a Vector
@@ -32,7 +30,14 @@ configured embedding model.
 2. Provision the Collection: edit `infra/terraform/vars/env.tfvars`, then
    `make setup-infra`.
 3. Ingest documents into the Collection: `make data-ingestion`.
-4. `make install && make playground`, then select the `app` folder.
+
+## Run
+
+```bash
+make install && make playground
+```
+
+Select the `app` folder.
 
 ## Test
 `make test` runs the integration test. The retriever is mocked

@@ -5,7 +5,6 @@
   "type": "object",
   "required": [
     "type",
-    "deployable",
     "status",
     "language",
     "description",
@@ -29,7 +28,7 @@
     "large": {
       "type": "boolean",
       "default": false,
-      "description": "Whether the recipe is considered large in size. false (default): under 1MB, 50 files max. true: under 10MB, 200 files max."
+      "description": "Whether the recipe opts into the relaxed size tier. false (default): the standard tier applies. true: the recipe may exceed the default limits, up to the tier's relaxed cap. Exact numeric limits depend on whether the recipe lives under core/ or contrib/ and are defined in .github/policy.yml (see recipe_size_limits)."
     },
     "status": {
       "type": "string",
@@ -125,8 +124,21 @@
           "type": "string",
           "minLength": 1,
           "description": "GitHub user ID of the primary point of contact accountable for this recipe."
+        },
+        "contributors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Optional list of GitHub user IDs of additional contributors to this recipe."
         }
       }
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SPDX license identifier for the recipe (e.g. 'Apache-2.0', 'MIT', 'BSD-3-Clause'). See https://spdx.org/licenses/"
     },
     "tags": {
       "type": "array",

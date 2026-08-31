@@ -1,0 +1,131 @@
+name: 🧪 Tooling & Skill Tests
+
+# Unit tests for repo tooling (tools/), skill scripts
+# (.agents/skills/*/scripts/), and CI helper scripts (.github/scripts/).
+# Recipe tests under core/ and contrib/ are handled separately by
+# python-tests.yml.
+on:
+  pull_request:
+    paths:
+      - "tools/**"
+      - ".agents/**"
+      - ".github/scripts/**"
+      # The .github entries below are not cosmetic. Several tests load the
+      # REAL repo config rather than a fixture, so editing one of these files
+      # can break the suite even though nothing under tools/ changed:
+      #   .github/policy.yml
+      #     tools/tests/test_check_frozen_paths.py::
+      #       test_real_policy_file_declares_the_retired_roots calls
+      #       load_frozen_paths() with no argument, which falls back to
+      #       POLICY_PATH (tools/check_frozen_paths.py:38).
+      #   .github/schemas/manifest-schema.json
+      #     test_validate_manifest.py and test_validate_structure.py call
+      #     load_schema(), which hardcodes SCHEMA_PATH and takes no override
+      #     parameter (tools/validate_manifest.py:40,113).
+      #   .github/dependabot.yml
+      #     .github/scripts/tests/test_dependabot_config.py loads it from
+      #     CONFIG_PATH to check every recipe ecosystem is still configured
+      #     purely to suppress updates, and that whatever can still open a
+      #     PR stays inside the repo's PR budget. That file is hand-edited,
+      #     so a dependabot.yml-only PR is exactly the case that must run
+      #     these tests.
+      #   */**/manifest.yaml
+      #     test_recipe_canary_matrix.py walks the real recipe tree and
+      #     checks the canary's recipe set against a second, independent
+      #     read of every manifest.yaml — a real YAML parser, versus the
+      #     regex the canary itself uses so it can run with no dependencies.
+      #     A PR that ADDS or DELETES a recipe is precisely the PR that can
+      #     make the two disagree, so it has to run these tests.
+      #
+      #     This costs a recipe contributor nothing. Both sides are derived
+      #     from the tree, so a well-formed recipe moves them together and
+      #     the check passes untouched. It fails only where the two readings
+      #     genuinely differ — in practice a `language:` line the parser
+      #     reads as Python and the canary's matcher does not, which is a
+      #     defect in the contributor's own manifest.yaml and is fixed
+      #     there. Adding a recipe never requires an edit under .github/.
+      #
+      #     Scoped to manifest.yaml rather than all of core/**: the recipe
+      #     set is a function of which manifests exist AND of the `language:`
+      #     line inside them, and nothing else under a recipe can change it.
+      #   .github/workflows/_ai-pr-review-core.yml
+      #     test_post_review_comments.py::
+      #     test_workflow_invokes_this_script_with_the_flags_it_defines parses
+      #     that workflow and pins the command line it uses to call
+      #     post_review_comments.py. The script is invoked from a shell block,
+      #     so a renamed flag or a moved file is invisible to ruff and pytest
+      #     alike — and a PR editing only the workflow is exactly the PR that
+      #     breaks the contract, so without this entry the pin cannot fire on
+      #     the change it exists to catch.
+      # Without these entries such a PR merges green and the failure only
+      # surfaces later, on an unrelated PR that happens to touch tools/.
+      - ".github/policy.yml"
+      - ".github/schemas/**"
+      - ".github/dependabot.yml"
+      - ".github/workflows/_ai-pr-review-core.yml"
+      - "core/**/manifest.yaml"
+      - "contrib/**/manifest.yaml"
+      - "skills/**/manifest.yaml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/tools-tests.yml"
+  push:
+    branches:
+      - main
+    paths:
+      # Keep in sync with the pull_request list above (GitHub Actions does
+      # not support YAML anchors, so the duplication is unavoidable). See
+      # that block for why the .github/ entries are required.
+      - "tools/**"
+      - ".agents/**"
+      - ".github/scripts/**"
+      - ".github/policy.yml"
+      - ".github/schemas/**"
+      - ".github/workflows/_ai-pr-review-core.yml"
+      - ".github/dependabot.yml"
+      - "core/**/manifest.yaml"
+      - "contrib/**/manifest.yaml"
+      - "skills/**/manifest.yaml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/tools-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same PR (or ref for push/dispatch) so a rapid
+# series of pushes doesn't queue up redundant runs of the same suite.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (tools + skills + CI scripts)
+    runs-on: ubuntu-latest
+    # Tooling + skills tests are lightweight (pytest plus a few pure-Python
+    # parsing libs in the dev group); 15 min leaves headroom for cold
+    # uv-sync while still protecting against a stuck job riding the default
+    # 6-hour timeout.
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # ratchet:astral-sh/setup-uv@v9.0.0
+        with:
+          # Test against the minimum supported Python version.
+          python-version: "3.11"
+
+      - name: Install dependencies (incl. dev group)
+        # --locked keeps this job hermetic: install exactly what uv.lock
+        # pins, never silently re-resolve. Lockfile-drift ENFORCEMENT is not
+        # this workflow's job — python-dependency-policy.yml (Check 5, `uv
+        # lock --check`) owns that and emits a far more actionable message.
+        run: uv sync --locked --dev
+
+      - name: Run pytest
+        run: uv run pytest

@@ -1,0 +1,21 @@
+# Read by `gcloud beta run deploy --source .` when packaging the build
+# context. Inheriting .gitignore avoids drift between the two files —
+# anything we already don't commit (.adk/, .venv, node_modules, *.db, etc.)
+# is automatically not uploaded either.
+#!include:.gitignore
+
+# Always-strip — .git itself is not useful inside the image.
+.git
+
+# Tracked in git, but not needed by the Cloud Run image:
+**/.ruff_cache/
+**/tests/
+**/e2e/
+**/terraform/
+**/docs/
+**/scripts/
+
+# Web build outputs — the Dockerfile's Node stage regenerates these from
+# source inside the container, so any local copy is dead weight on upload.
+**/dist/
+**/out/

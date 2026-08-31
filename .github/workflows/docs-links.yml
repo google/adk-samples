@@ -1,0 +1,131 @@
+name: Validate Docs Links
+
+# Runs on every PR that touches docs/ or one of the entry-point READMEs.
+# Verifies that every internal and external link in them resolves, so a
+# renamed file or a moved heading fails CI instead of silently breaking
+# navigation.
+#
+# The entry-point READMEs are in scope because they are the first thing a
+# new contributor reads, and they link into docs/. A docs/-only scope let
+# a dead link in contrib/README.md sit undetected.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'contrib/README.md'
+      - 'core/README.md'
+      - '.github/workflows/docs-links.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'contrib/README.md'
+      - 'core/README.md'
+      - '.github/workflows/docs-links.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same PR (or on the same ref for push /
+# workflow_dispatch) — without this a rapid series of doc pushes stacks
+# up redundant lychee scans (each of which can walk many external URLs).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-docs-links:
+    name: Check every link in docs/ resolves
+    runs-on: ubuntu-latest
+    # lychee's default retry/backoff plus the whole external-link universe
+    # can drag a scan out; 10 minutes is a safe ceiling for the current
+    # scope and prevents a stuck job from riding the default 6-hour timeout.
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+
+      - name: Check links
+        id: lychee
+        # Lychee: covers relative filesystem links, anchor links, and
+        # external HTTP(S) URLs. --no-progress keeps CI logs clean.
+        # --exclude on '^https?://github.com/google/adk-samples/(issues|pulls)'
+        # avoids rate-limiting on unauthenticated GitHub API calls when
+        # docs link to the repo's own issues page.
+        #
+        # `fail: false` + an explicit failure step below. Letting the action
+        # fail on its own produced a red X and nothing else: a genuinely
+        # dead link and a transient upstream 503 were indistinguishable,
+        # and neither told the contributor which file to open. --format
+        # markdown writes a readable report we can put in the job summary
+        # and echo.
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # ratchet:lycheeverse/lychee-action@v2.9.0
+        env:
+          # Authenticate GitHub link checks with the workflow token so
+          # docs that link to any github.com URL (users, other repos,
+          # gists) are checked via authenticated requests and do not hit
+          # the 60-req/hr unauthenticated rate limit. Lychee reads this
+          # env var natively.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >-
+            --no-progress
+            --exclude '^https?://github\.com/google/adk-samples/(issues|pulls)'
+            'docs/**/*.md'
+            'README.md'
+            'CONTRIBUTING.md'
+            'contrib/README.md'
+            'core/README.md'
+          output: lychee-report.md
+          format: markdown
+          fail: false
+
+      - name: Report broken links
+        env:
+          EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EXIT_CODE" = "0" ]; then
+            echo "[PASS] Every documentation link resolves."
+            exit 0
+          fi
+
+          echo "::group::lychee report"
+          cat lychee-report.md 2>/dev/null || echo "(no report file was produced)"
+          echo "::endgroup::"
+
+          # Surface the report on the run summary page too, so a reviewer
+          # does not have to open the raw log to see which link broke.
+          if [ -f lychee-report.md ]; then
+            cat lychee-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "  ACTION REQUIRED: broken documentation link(s)"
+          echo "========================================"
+          echo ""
+          echo "The report above lists each failing link with the file it"
+          echo "appears in and the status it returned."
+          echo ""
+          echo "  - 404 / ENOTFOUND on a relative path: the target file was"
+          echo "    renamed, moved or deleted. Fix the path."
+          echo "  - 404 on an anchor (#some-heading): the heading was renamed."
+          echo "    Anchors are lowercase, spaces become hyphens, punctuation"
+          echo "    is dropped."
+          echo "  - 429 / 503 / timeout on an external URL: usually transient."
+          echo "    Re-run the job before changing anything. If the host is"
+          echo "    permanently rate-limiting us, add it to --exclude in"
+          echo "    .github/workflows/docs-links.yml."
+          echo ""
+          echo "::error::Broken documentation link(s) found — see the lychee report in this job's log and summary."
+          exit 1

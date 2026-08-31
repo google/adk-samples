@@ -1,0 +1,540 @@
+name: Python Dependency Policy
+
+# For every changed `uv.lock` / `pyproject.toml` (repo root and each
+# recipe): runs `uv lock --check` to enforce lockfile-pyproject sync,
+# plus hash-integrity checks on the resolved wheels.
+
+on:
+  pull_request:
+    paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - 'core/**/uv.lock'
+      - 'core/**/pyproject.toml'
+      - 'contrib/**/uv.lock'
+      - 'contrib/**/pyproject.toml'
+      - 'skills/**/uv.lock'
+      - 'skills/**/pyproject.toml'
+      - '.github/workflows/python-dependency-policy.yml'
+      - '.github/scripts/check_lockfile_hashes.py'
+  push:
+    branches:
+      - main
+    paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - 'core/**/uv.lock'
+      - 'core/**/pyproject.toml'
+      - 'contrib/**/uv.lock'
+      - 'contrib/**/pyproject.toml'
+      - 'skills/**/uv.lock'
+      - 'skills/**/pyproject.toml'
+      - '.github/workflows/python-dependency-policy.yml'
+      - '.github/scripts/check_lockfile_hashes.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same PR (or ref for push/dispatch) to avoid
+# stacking up redundant lockfile validation runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-dependency-policy:
+    name: Check uv.lock files for policy violations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Single source of truth for the recipe roots this workflow scans.
+    # Mirrors tools/validate_manifest.py:RECIPE_ROOTS and the lists in
+    # python-tests.yml:85 / python-validate-recipe.yml:129. Both matcher
+    # forms used below (the `grep -E` alternation and the `find` argument
+    # list) are derived from this one value.
+    #
+    # Deriving rather than duplicating is deliberate: this list was
+    # previously hardcoded at six separate sites, and when skills/ was
+    # added to `on.paths` above, those six were missed. The result was a
+    # workflow that triggered on skills/ lockfiles and then validated
+    # nothing while still reporting success.
+    env:
+      RECIPE_ROOTS: "core contrib skills"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        # SHA-pinned for consistency with actions/checkout above; both actions
+        # touch the checkout / interpreter setup and are worth pinning together.
+        # python-version is set here so that `python3` in the hash-check step
+        # (which uses stdlib tomllib, available since 3.11) always resolves to
+        # a known-good interpreter.
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # ratchet:astral-sh/setup-uv@v9.0.0
+        with:
+          python-version: "3.11"
+
+      # ---------------------------------------------------------------------------
+      # Resolve which uv.lock files to validate.
+      #
+      # On pull_request: only lockfiles that were added/modified in this PR, plus
+      #   the sibling uv.lock for any pyproject.toml that was changed. The root
+      #   uv.lock is included if the root uv.lock or pyproject.toml was touched.
+      # On push to main or workflow_dispatch: all uv.lock files under the
+      #   recipe roots, plus the root uv.lock (full scan as a safety net).
+      #
+      # Recipes live exclusively under the recipe roots (see RECIPE_ROOTS on
+      # the job above). The root uv.lock is treated separately as repo-level
+      # infrastructure.
+      #
+      # The resolved list is written to $LOCKFILES_FILE (one path per line) so
+      # that subsequent steps can iterate with `while IFS= read -r` and avoid
+      # shell word-splitting on paths that contain spaces.
+      # ---------------------------------------------------------------------------
+      - name: Resolve lockfiles to validate
+        id: lockfiles
+        env:
+          # Pass dynamic values through env vars rather than interpolating GitHub
+          # expressions directly into the shell script body (security hardening —
+          # see GitHub Actions security hardening guide).
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          LOCKFILES_FILE="${RUNNER_TEMP}/lockfiles.txt"
+
+          # Derive both matcher forms from the single RECIPE_ROOTS value.
+          ROOTS_RE="${RECIPE_ROOTS// /|}"      # core|contrib|skills
+          read -ra ROOTS <<< "$RECIPE_ROOTS"
+
+          # Only hand `find` roots that actually exist. find errors on a
+          # missing starting-point, and that error would otherwise have to be
+          # suppressed with 2>/dev/null — which silently turns "this root is
+          # missing" into "this root has no lockfiles", a false-clean result.
+          # Filtering up front means the suppression is unnecessary and a
+          # genuine find failure stays visible.
+          EXISTING_ROOTS=()
+          for root in "${ROOTS[@]}"; do
+            [ -d "$root" ] && EXISTING_ROOTS+=("$root")
+          done
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$BASE_REF"
+            # --diff-filter=d: exclude deleted files; downstream [ -f ] guards
+            # are kept as defence-in-depth but the filter makes intent explicit.
+            CHANGED=$(git diff --name-only --diff-filter=d "origin/$BASE_REF"...HEAD)
+
+            # Collect directly changed uv.lock files under any recipe root
+            LOCKS=$(echo "$CHANGED" | grep -E "^(${ROOTS_RE})/.*uv\.lock$" || true)
+
+            # For any changed pyproject.toml under a recipe root, add its sibling uv.lock
+            while IFS= read -r pyproject; do
+              [ -z "$pyproject" ] && continue
+              sibling="$(dirname "$pyproject")/uv.lock"
+              if [ -f "$sibling" ]; then
+                LOCKS=$(printf "%s\n%s" "$LOCKS" "$sibling")
+              fi
+            done <<< "$(echo "$CHANGED" | grep -E "^(${ROOTS_RE})/.*pyproject\.toml$" || true)"
+
+            # Include the root uv.lock if the root uv.lock or pyproject.toml was touched
+            ROOT_CHANGED=$(echo "$CHANGED" | grep -E "^(uv\.lock|pyproject\.toml)$" || true)
+            if [ -n "$ROOT_CHANGED" ] && [ -f "uv.lock" ]; then
+              LOCKS=$(printf "%s\n%s" "$LOCKS" "uv.lock")
+            fi
+
+            # Also re-validate everything if the workflow or its helper script changed.
+            # Both files are in the path filter, so the workflow runs when either changes;
+            # but without this check, only the lockfiles touched in the PR would be
+            # revalidated — meaning a stricter check in the script wouldn't catch
+            # pre-existing violations in untouched lockfiles.
+            INFRA_CHANGED=$(echo "$CHANGED" | grep -E "^(\.github/workflows/python-dependency-policy\.yml|\.github/scripts/check_lockfile_hashes\.py)$" || true)
+            if [ -n "$INFRA_CHANGED" ]; then
+              echo "Workflow or script changed — falling back to full scan."
+              # Use { } group rather than `find uv.lock <roots> …` to avoid
+              # passing a potentially-absent root FILE as a find starting-point.
+              # EXISTING_ROOTS (built above) covers the same hazard for the
+              # root DIRECTORIES, so no 2>/dev/null suppression is needed here.
+              LOCKS=$({ [ -f uv.lock ] && echo uv.lock; [ ${#EXISTING_ROOTS[@]} -gt 0 ] && find "${EXISTING_ROOTS[@]}" -name "uv.lock"; } || true)
+            fi
+
+            # Deduplicate and filter to only existing files
+            echo "$LOCKS" | sort -u | grep -v '^$' | while IFS= read -r f; do
+              [ -f "$f" ] && echo "$f"
+            done > "$LOCKFILES_FILE" || true
+          else
+            # push to main or workflow_dispatch — scan everything
+            { [ -f uv.lock ] && echo uv.lock; [ ${#EXISTING_ROOTS[@]} -gt 0 ] && find "${EXISTING_ROOTS[@]}" -name "uv.lock"; } > "$LOCKFILES_FILE" || true
+          fi
+
+          if [ ! -s "$LOCKFILES_FILE" ]; then
+            echo "No uv.lock files to validate."
+            echo "lockfiles_file=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Lockfiles to validate:"
+            sed 's/^/  /' "$LOCKFILES_FILE"
+            echo "lockfiles_file=$LOCKFILES_FILE" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ---------------------------------------------------------------------------
+      # Check 1: Only public PyPI URLs allowed.
+      # Lockfiles must reference only pypi.org (simple index) and
+      # files.pythonhosted.org (the wheel/sdist CDN). Using an allowlist rather
+      # than a denylist catches any non-public host — internal registries, GitHub
+      # Packages, Artifactory, etc. — without having to enumerate every bad host.
+      # ---------------------------------------------------------------------------
+      - name: Check for non-PyPI registry URLs
+        if: steps.lockfiles.outputs.lockfiles_file != ''
+        env:
+          LOCKFILES_FILE: ${{ steps.lockfiles.outputs.lockfiles_file }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+          ALLOW_PATTERN='pypi\.org|files\.pythonhosted\.org'
+
+          while IFS= read -r lockfile; do
+            # Two-stage grep: first find all url/registry lines with an HTTPS URL,
+            # then reject lines that match the allowlist.
+            MATCHES=$(grep -En "(url|registry)\s*=" "$lockfile" | \
+              grep -E "https?://" | \
+              grep -Ev "($ALLOW_PATTERN)" || true)
+            if [ -n "$MATCHES" ]; then
+              echo "[FAIL] $lockfile contains non-PyPI registry URLs:"
+              echo "$MATCHES" | sed 's/^/  /'
+              FAILED=1
+            fi
+          done < "$LOCKFILES_FILE"
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "Lockfiles must only reference public PyPI (pypi.org / files.pythonhosted.org)."
+            echo "Re-run 'uv lock' with only public PyPI configured, or unset any internal"
+            echo "registry configuration before locking."
+            exit 1
+          fi
+
+          echo "[PASS] No non-PyPI registry URLs found."
+
+      # ---------------------------------------------------------------------------
+      # Check 2: No git/VCS dependencies
+      # In uv.lock, git dependencies are represented as source = { git = "..." }.
+      # These are non-reproducible when the ref is a branch name, and bypass
+      # registry trust entirely.
+      # ---------------------------------------------------------------------------
+      - name: Check for VCS (git) dependencies
+        if: steps.lockfiles.outputs.lockfiles_file != ''
+        env:
+          LOCKFILES_FILE: ${{ steps.lockfiles.outputs.lockfiles_file }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+
+          while IFS= read -r lockfile; do
+            # \b word boundaries match `git =` correctly in the real uv.lock
+            # inline-table format: source = { git = "..." } (space after {).
+            # The previous [{,\s] character class was broken: \s inside [...] is
+            # literal backslash+s in GNU ERE, not a whitespace class, so the
+            # pattern silently missed the standard uv.lock rendering.
+            MATCHES=$(grep -En 'source\s*=.*\bgit\s*=' "$lockfile" || true)
+            if [ -n "$MATCHES" ]; then
+              echo "[FAIL] $lockfile contains git/VCS dependencies:"
+              echo "$MATCHES" | sed 's/^/  /'
+              FAILED=1
+            fi
+          done < "$LOCKFILES_FILE"
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "VCS dependencies are not allowed in lockfiles — they are non-reproducible"
+            echo "and bypass registry-level trust. Pin to a released version on PyPI instead."
+            exit 1
+          fi
+
+          echo "[PASS] No VCS dependencies found."
+
+      # ---------------------------------------------------------------------------
+      # Check 3: No local path or editable dependencies
+      # In uv.lock, path/editable/directory sources use unquoted keys in inline
+      # tables: source = { path = "..." } or source = { editable = "..." }.
+      # These only exist on the committer's machine and break all other environments.
+      #
+      # Exception: source = { editable = "." } is the standard uv self-install
+      # entry that every `uv sync` writes for the workspace root package itself.
+      # It refers to the current directory — the recipe being installed — not a
+      # foreign machine-specific path, so it must not be flagged.
+      # ---------------------------------------------------------------------------
+      - name: Check for local path dependencies
+        if: steps.lockfiles.outputs.lockfiles_file != ''
+        env:
+          LOCKFILES_FILE: ${{ steps.lockfiles.outputs.lockfiles_file }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+
+          while IFS= read -r lockfile; do
+            # Step 1: find all lines with a path/editable/directory source key.
+            # Step 2: drop the self-referential editable = "." (the project's own
+            #         workspace entry — always present, never a foreign path).
+            MATCHES=$(grep -En 'source\s*=.*\b(path|editable|directory)\s*=' "$lockfile" | \
+              grep -Ev '\b(editable|path|directory)\s*=\s*"\."' || true)
+            if [ -n "$MATCHES" ]; then
+              echo "[FAIL] $lockfile contains local path dependencies:"
+              echo "$MATCHES" | sed 's/^/  /'
+              FAILED=1
+            fi
+          done < "$LOCKFILES_FILE"
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "Local path dependencies cannot be reproduced outside the committer's machine."
+            echo "Publish the package to PyPI or use a workspace dependency instead."
+            exit 1
+          fi
+
+          echo "[PASS] No local path dependencies found."
+
+      # ---------------------------------------------------------------------------
+      # Check 4: All packages must have hashes
+      # Missing hashes mean the lockfile cannot verify supply chain integrity.
+      # uv generates sha256 hashes for all registry packages by default; their
+      # absence indicates the lockfile was tampered with or generated incorrectly.
+      # The check logic lives in .github/scripts/check_lockfile_hashes.py to
+      # avoid embedding Python at column 0 inside this YAML file, which breaks
+      # the zizmor security scanner's YAML parser.
+      # ---------------------------------------------------------------------------
+      - name: Check that all packages have hashes
+        if: steps.lockfiles.outputs.lockfiles_file != ''
+        env:
+          LOCKFILES_FILE: ${{ steps.lockfiles.outputs.lockfiles_file }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+          CI_FAULT=0
+
+          while IFS= read -r lockfile; do
+            # --no-project: skip project discovery so uv does NOT walk up, find
+            # the root pyproject.toml, and sync its environment before running
+            # the script. The script only uses stdlib (tomllib, sys, re) so no
+            # project environment is needed. Using `uv run` (vs bare python3)
+            # still gives us uv's managed Python rather than whatever happens to
+            # be on the runner's PATH.
+            #
+            # Exit status carries whose fault it is: 1 = missing hashes the
+            # contributor must regenerate, 2 = the checker itself could not
+            # parse the lockfile. Previously ANY failure printed the
+            # "re-generate with uv lock" advice below, so a crash produced a
+            # confident diagnosis that happened to be wrong.
+            set +e
+            uv run --no-project python3 .github/scripts/check_lockfile_hashes.py "$lockfile"
+            hash_exit=$?
+            set -e
+            case "$hash_exit" in
+              0) ;;
+              1) FAILED=1 ;;
+              2) CI_FAULT=1 ;;
+              *)
+                echo "::error::check_lockfile_hashes.py exited with an undefined status ($hash_exit). This is a CI tooling bug, not a problem with your recipe."
+                CI_FAULT=1
+                ;;
+            esac
+          done < "$LOCKFILES_FILE"
+
+          if [ "$CI_FAULT" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  CI TOOLING FAILURE — not your changes"
+            echo "========================================"
+            echo ""
+            echo "The hash checker could not read a lockfile, so we do not"
+            echo "know whether the hashes are present. Re-run the job; if it"
+            echo "fails again, open an issue with the detail above."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+            exit 1
+          fi
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  ACTION REQUIRED: lockfile missing hashes"
+            echo "========================================"
+            echo ""
+            echo "Every distribution needs a sha256 hash for supply-chain"
+            echo "integrity. uv writes them by default, so an entry without"
+            echo "one usually means the lockfile was hand-edited or produced"
+            echo "by a different tool. Regenerate it:"
+            echo ""
+            echo "  uv lock --project <recipe-dir>"
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#missing-package-hash-in-uvlock"
+            exit 1
+          fi
+
+          echo "[PASS] All distributions have hashes."
+
+      # ---------------------------------------------------------------------------
+      # Check 5: Lockfiles are up-to-date with their pyproject.toml
+      # Catches the "forgot to re-run uv lock after editing pyproject.toml" mistake.
+      # ---------------------------------------------------------------------------
+      - name: Check lockfiles are up-to-date
+        if: steps.lockfiles.outputs.lockfiles_file != ''
+        env:
+          LOCKFILES_FILE: ${{ steps.lockfiles.outputs.lockfiles_file }}
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+          CI_FAULT=0
+          FAILED_DIRS=""
+
+          while IFS= read -r lockfile; do
+            lockdir=$(dirname "$lockfile")
+            if [ ! -f "$lockdir/pyproject.toml" ]; then
+              continue
+            fi
+
+            # stderr is NOT suppressed: if uv fails for a reason other than
+            # staleness (transient registry error, malformed pyproject.toml,
+            # unresolvable dep) the real error is visible rather than being
+            # silently mis-reported as "stale lockfile".
+            #
+            # Visible was not enough on its own, though. The old message
+            # asserted "is out of date — run: uv lock" for ANY non-zero
+            # exit, so a network blip told the contributor to run a command
+            # that could not possibly fix it, against a file that was
+            # already correct. Distinguish the two by inspecting what uv
+            # actually said.
+            set +e
+            lock_output=$(uv lock --check --project "$lockdir" 2>&1)
+            lock_exit=$?
+            set -e
+            printf '%s\n' "$lock_output"
+
+            [ "$lock_exit" -eq 0 ] && continue
+
+            if printf '%s' "$lock_output" | grep -qiE "not up-to-date|out of date|would be (updated|added|removed)|needs to be updated|lockfile is outdated"; then
+              echo "::error file=$lockfile::$lockfile is out of date with $lockdir/pyproject.toml. Fix: run 'uv lock --project $lockdir' and commit the updated lockfile. Docs: docs/recipe-handbook/troubleshooting.md#uvlock-out-of-sync"
+              echo "[FAIL] $lockfile is out of date with $lockdir/pyproject.toml"
+              FAILED_DIRS="${FAILED_DIRS}  uv lock --project ${lockdir}"$'\n'
+              FAILED=1
+            else
+              echo "::error::uv could not check $lockfile (exit $lock_exit) and the cause is NOT a stale lockfile — see the uv output above. This is usually a transient registry or network failure. Re-run the job; if it persists it needs a repo maintainer, not a change to your PR. Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+              echo "[CI FAULT] 'uv lock --check' failed on $lockdir for a reason other than staleness (exit $lock_exit)."
+              CI_FAULT=1
+            fi
+          done < "$LOCKFILES_FILE"
+
+          if [ "$CI_FAULT" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  CI TOOLING FAILURE — not your changes"
+            echo "========================================"
+            echo ""
+            echo "uv could not complete a lockfile check for a reason other"
+            echo "than staleness. Do not run 'uv lock' to work around this —"
+            echo "it will produce an unrelated diff."
+            echo ""
+            echo "Re-run the job. If it fails again, open an issue with the"
+            echo "uv output above and a link to this run."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+            exit 1
+          fi
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  ACTION REQUIRED: stale lockfile(s)"
+            echo "========================================"
+            echo ""
+            echo "Run the following command(s) locally, then commit the updated uv.lock file(s):"
+            echo ""
+            echo "$FAILED_DIRS"
+            echo "If you recently edited a pyproject.toml, make sure to run 'uv lock' in the"
+            echo "same directory before pushing."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#uvlock-out-of-sync"
+            echo ""
+            exit 1
+          fi
+
+          echo "[PASS] All lockfiles are up-to-date."
+
+      # ---------------------------------------------------------------------------
+      # Check 6: Every pyproject.toml (the root one, plus any under a recipe
+      # root — see RECIPE_ROOTS on the job) must have a sibling uv.lock. Only
+      # checked for pyproject.toml files touched in this PR (or all of them on
+      # push/dispatch). Skips config-only pyproject.toml files that have no
+      # [project] table and no [tool.uv] section.
+      # ---------------------------------------------------------------------------
+      - name: Check every pyproject.toml has a lockfile
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          # Same derivation as the Resolve step above: shell variables do not
+          # carry across steps, but the RECIPE_ROOTS value they derive from is
+          # job-level, so the root list is still defined in exactly one place.
+          ROOTS_RE="${RECIPE_ROOTS// /|}"
+          read -ra ROOTS <<< "$RECIPE_ROOTS"
+
+          EXISTING_ROOTS=()
+          for root in "${ROOTS[@]}"; do
+            [ -d "$root" ] && EXISTING_ROOTS+=("$root")
+          done
+
+          # On pull_request the base ref was already fetched in the Resolve step;
+          # no second git fetch needed.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            CHANGED=$(git diff --name-only --diff-filter=d "origin/$BASE_REF"...HEAD)
+            # Include the root pyproject.toml and any under a recipe root
+            PYPROJECTS=$(echo "$CHANGED" | grep -E "^(pyproject\.toml|(${ROOTS_RE})/.*pyproject\.toml)$" || true)
+          else
+            # { } group avoids passing a potentially-absent root pyproject.toml as
+            # a find starting-point (find would error). EXISTING_ROOTS covers the
+            # same hazard for the root directories, so no 2>/dev/null is needed.
+            PYPROJECTS=$({ [ -f pyproject.toml ] && echo pyproject.toml; [ ${#EXISTING_ROOTS[@]} -gt 0 ] && find "${EXISTING_ROOTS[@]}" -name "pyproject.toml"; } || true)
+          fi
+
+          if [ -z "$PYPROJECTS" ]; then
+            echo "[SKIP] No pyproject.toml files in scope."
+            exit 0
+          fi
+
+          FAILED=0
+
+          while IFS= read -r pyproject; do
+            [ -z "$pyproject" ] && continue
+            [ -f "$pyproject" ] || continue  # may have been deleted in the PR
+
+            HAS_PROJECT=$(grep -c '^\[project\]' "$pyproject" || true)
+            # Tightened pattern: match [tool.uv] and [tool.uv.<sub>] but NOT
+            # [tool.uv-something] (a different tool whose name starts with "uv").
+            HAS_UV=$(grep -cE '^\[tool\.uv([.]|\])' "$pyproject" || true)
+            if [ "$HAS_PROJECT" -eq 0 ] && [ "$HAS_UV" -eq 0 ]; then
+              continue  # config-only, no lockfile expected
+            fi
+
+            dir=$(dirname "$pyproject")
+            if [ ! -f "$dir/uv.lock" ]; then
+              echo "::error file=$pyproject::$pyproject has no sibling uv.lock. Run 'uv lock' in $dir to generate it."
+              echo "[FAIL] $pyproject has no sibling uv.lock — run 'uv lock' in $dir"
+              FAILED=1
+            fi
+          done <<< "$PYPROJECTS"
+
+          if [ "$FAILED" -eq 1 ]; then
+            exit 1
+          fi
+
+          echo "[PASS] All in-scope pyproject.toml files have a sibling uv.lock."

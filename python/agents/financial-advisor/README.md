@@ -42,7 +42,7 @@ The key features of the Financial Advisor include:
 
 This diagram shows the detailed architecture of the agents and tools used
 to implement this workflow.
-<img src="financial-advisor.png" alt="Financial Advisor" width="800"/>
+<img src="financial-advisor.webp" alt="Financial Advisor" width="800"/>
 
 ## Setup and Installation
 
