@@ -16,7 +16,27 @@
 
 from attenu_guard.adapters.google_adk import DelegationGuardPlugin
 
+import pytest
+
 import app.agent
+
+
+@pytest.fixture(autouse=True)
+def _cli_model_env(monkeypatch):
+    """The CLI-facing module attributes are built lazily and require
+    MODEL_NAME (there is deliberately no in-code default): provide one for
+    these tests and reset the singleton cache around each."""
+    monkeypatch.setenv("MODEL_NAME", "test-model")
+    app.agent._cli_singletons.clear()
+    yield
+    app.agent._cli_singletons.clear()
+
+
+def test_cli_objects_require_model_name(monkeypatch):
+    monkeypatch.delenv("MODEL_NAME", raising=False)
+    app.agent._cli_singletons.clear()
+    with pytest.raises(RuntimeError, match="MODEL_NAME"):
+        app.agent.app
 
 
 def test_agent_runnability() -> None:
