@@ -1,0 +1,134 @@
+name: '🧹 AI PR Review — Maintainability'
+
+# Delegates to `_ai-pr-review-core.yml` to run an AI maintainability
+# review on every PR — naming, structure, readability, dead code —
+# and posts findings as inline review comments.
+
+# SECURITY: `pull_request_target` runs in the BASE repo context, with the
+# base branch's workflow file, full secrets and a write-scoped token. It is
+# only safe because nothing in this workflow or its callee ever executes the
+# pull request's code: the checkout is the base repo, the diff is fetched
+# through `gh` as data, and the agent runs in an empty scratch directory.
+# Reassess if a step is ever added that runs anything out of the checkout.
+#
+# It is what lets fork PRs be reviewed at all. A fork `pull_request` gets no
+# secrets, a read-only token and no OIDC token, so Workload Identity auth and
+# comment posting cannot work there — and ~90% of contributions are forks.
+#
+# The directive has to sit ON this line, not above it: zizmor only honours an
+# ignore comment that falls inside the span the finding covers, and this
+# finding spans the whole `on:` block.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+    types:
+      - 'opened'
+      - 'reopened'
+      - 'synchronize'
+  issue_comment:
+    types:
+      - 'created'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: 'number'
+      # Defaults to true, so a manual run can never post by accident. This is
+      # how a change to the reviewer gets tested: `pull_request_target` always
+      # runs the BASE branch's copy of these files, so a test PR would be
+      # reviewed by main's reviewer rather than the one under test. Dispatching
+      # from a branch with `--ref` is the only way to exercise the version you
+      # are changing, and a dry run makes doing that against a real PR safe.
+      dry_run:
+        description: 'Build the review and upload it as an artifact instead of posting it'
+        required: false
+        default: true
+        type: 'boolean'
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}'
+  cancel-in-progress: true
+
+permissions:
+  contents: 'read'
+  id-token: 'write'
+  issues: 'write'
+  pull-requests: 'write'
+
+jobs:
+  trigger:
+    # No fork check and no author allowlist on the automatic path: the whole
+    # point is that an outside contributor's PR gets reviewed. A PR opening
+    # is not a privileged act, and the reviewer only ever reads the diff and
+    # writes comments.
+    #
+    # The comment re-invoke path DOES keep an OWNER/MEMBER/COLLABORATOR
+    # check, so an unlimited number of re-runs stays a maintainer's call.
+    if: |-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request_target' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '@ai-review') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      )
+    uses: './.github/workflows/_ai-pr-review-core.yml'
+    with:
+      review_label: 'Maintainability'
+      event_name: '${{ github.event_name }}'
+      pr_number_pull_request: '${{ github.event.pull_request.number }}'
+      pr_number_issue: '${{ github.event.issue.number }}'
+      pr_number_dispatch: '${{ github.event.inputs.pr_number }}'
+      comment_body: '${{ github.event.comment.body }}'
+      app_id: '${{ vars.APP_ID }}'
+      dry_run: '${{ github.event.inputs.dry_run }}'
+      role: |-
+        You are an expert code reviewer specializing in maintainability. Your sole focus is
+        identifying objective, concrete issues that make code harder to read, understand, or
+        modify over time.
+      criteria: |-
+        ## Review Criteria — Maintainability Only
+
+        You MUST ONLY comment on concrete, objective maintainability issues. Do not
+        comment on correctness, security, formatting (handled by the linter), or the
+        proofreading defects the hygiene reviewer owns — typos, unused imports,
+        leftover debug prints, stale placeholder values. Focus exclusively on:
+
+        * Poor naming — variable, function, or class names that are misleading, cryptic,
+          or inconsistent with the surrounding codebase (e.g. single-letter names outside
+          loop counters, names that contradict what the code does)
+        * Magic numbers — hardcoded numeric or string literals that should be named constants
+          (e.g. `if status == 42` instead of `if status == MAX_RETRIES`)
+        * Obvious code duplication — identical or near-identical logic copy-pasted in the
+          same diff that should be extracted into a shared function or constant
+        * Values hardcoded where the surrounding code reads configuration for the same
+          kind of thing
+
+        Do NOT comment on:
+        - Formatting or indentation (the linter handles this)
+        - Missing or insufficient documentation/docstrings
+        - Subjective complexity ("this function is too long")
+        - Anything that is a matter of taste rather than an objective problem
+      hunt_list: |-
+        * a name that contradicts what the line beneath it does
+        * a name inconsistent with the convention the rest of the same file follows —
+          `userId` among `user_id`, `getFoo` among `fetch_foo`
+        * a bare numeric or string literal used as a threshold, limit, retry count,
+          timeout, port or status code
+        * the same literal value repeated in three or more places in this diff
+        * a block of two or more lines duplicated near-verbatim elsewhere in the diff,
+          where one copy differs only in a value
+        * a model id, endpoint, bucket, region or path pinned inline where a sibling
+          line in the same file reads the equivalent from configuration
+        * a parameter that is accepted and then ignored
+        * a function whose name says it returns something and whose visible body does
+          not return on every path
+
+        A short name is worth a comment only when it is genuinely ambiguous where it
+        is used. `rt`, `ts` and `fn` sitting next to their own assignment are clear
+        enough, and a review that spends its budget renaming those has spent it
+        badly — most of all in test code.
+    secrets:
+      APP_PRIVATE_KEY: '${{ secrets.APP_PRIVATE_KEY }}'
+      GITHUB_TOKEN_SECRET: '${{ secrets.GITHUB_TOKEN }}'

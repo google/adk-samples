@@ -49,7 +49,7 @@ The agent operates as a coordinated pipeline, mimicking the workflow of a human 
 5. **Output:** Uploads the final `.pptx` to Google Cloud Storage as a secure artifact,also available for direct download within the Gemini Enterprise interface.
 
 ### High-Level Architecture
-![Architecture Diagram](./docs/agent_pattern.png)
+![Architecture Diagram](./docs/agent_pattern.webp)
 
 ---
 

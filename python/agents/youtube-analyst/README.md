@@ -42,7 +42,7 @@ This agent assists marketers, content creators, and researchers in understanding
 
 ### Architecture
 
-![YouTube Analyst Architecture](architecture.png)
+![YouTube Analyst Architecture](architecture.webp)
 
 ## Agent Details
 

@@ -17,7 +17,7 @@ This sample agent enables users to generate images from text descriptions while 
 
 This diagram shows the detailed architecture of the agents and tools used to implement this workflow.
 
-<img src="image_scoring_architecture.png" alt="Image Scoring Architecture" width="800"/>
+<img src="image_scoring_architecture.webp" alt="Image Scoring Architecture" width="800"/>
 
 ## Agent Details
 
