@@ -45,6 +45,7 @@ from .tools import email_customer, get_invoice, issue_refund, lookup_order
 APP_NAME = "attenu-guard-customer-service"
 ROOT_AGENT_NAME = "coordinator"
 BILLING_AGENT_NAME = "billing_agent"
+DEFAULT_MODEL_NAME = "gemini-3.5-flash"
 
 
 def build_root_agent(model: Any) -> LlmAgent:
@@ -127,5 +128,5 @@ def require_guard(application: App) -> None:
 # recipe out. For anything where one caller's decisions should not be
 # another's evidence, call `build_app()` per run — which is what `demo.py`
 # and the tests do.
-app, root_guard, guard_plugin = build_app(os.getenv("MODEL_NAME", "gemini-3.5-flash"))
+app, root_guard, guard_plugin = build_app(os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME))
 root_agent = app.root_agent

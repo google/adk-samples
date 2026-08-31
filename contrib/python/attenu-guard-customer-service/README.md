@@ -69,8 +69,8 @@ Tests:
 uv run pytest
 ```
 
-Live, against a real model. Set `MODEL_NAME` and your credentials in
-`.env` first.
+Live, against a real model. Set your credentials in `.env` first;
+`MODEL_NAME` is optional and defaults to `gemini-3.5-flash`.
 
 ```bash
 uv run python demo.py --live
@@ -94,10 +94,11 @@ Abridged; the run prints the full transcript.
     [coordinator] calls transfer_to_agent({'agent_name': 'billing_agent'})
     [billing_agent] calls get_invoice({'invoice_id': 'INV-4471'})
     [billing_agent] <- DENIED issue_refund
+    (ok responses elided)
 
 2. what each agent holds
-    coordinator : scopes=['agent.delegate.*', 'billing.*', 'mail.send', 'orders.read']
-    billing     : scopes=['billing.read']
+    coordinator : Authority(scopes=['agent.delegate.*', 'billing.*', 'mail.send', 'orders.read'], ceilings=[...], ttl=3600)
+    billing     : Authority(scopes=['billing.read'], ceilings=[...], ttl=900)
     billing is narrower than coordinator: True
 
 3. the refusal
@@ -111,11 +112,13 @@ Abridged; the run prints the full transcript.
 
 5. the ledger, checked without this process
     7 events, hash chain: True
-    integrity=True monotonicity=True containment=True anchor=verified
-    OK
+    integrity=True monotonicity=True containment=True anchor=verified nodes=2 actions_checked=3
+OK
 
 RESULT: OK
 ```
+
+An offline run prints a few ADK advisory warnings before section 1; they are expected.
 
 `issue_refund` is absent from the list of tool bodies that ran.
 
