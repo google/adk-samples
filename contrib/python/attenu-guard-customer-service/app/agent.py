@@ -1,4 +1,4 @@
-# Copyright 2026 Attenu
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,13 +44,14 @@ from .tools import email_customer, get_invoice, issue_refund, lookup_order
 
 APP_NAME = "attenu-guard-customer-service"
 ROOT_AGENT_NAME = "coordinator"
+BILLING_AGENT_NAME = "billing_agent"
 
 
 def build_root_agent(model: Any) -> LlmAgent:
     """The agent tree. `model` is a model name or a `BaseLlm` instance,
     so the offline demo can pass a scripted model in its place."""
     billing_agent = LlmAgent(
-        name="billing_agent",
+        name=BILLING_AGENT_NAME,
         model=model,
         description="Reads invoices and explains billing questions.",
         instruction=BILLING_PROMPT,
@@ -123,5 +124,5 @@ def require_guard(application: App) -> None:
 # recipe out. For anything where one caller's decisions should not be
 # another's evidence, call `build_app()` per run — which is what `demo.py`
 # and the tests do.
-app, root_guard, guard_plugin = build_app(os.getenv("MODEL_NAME"))
+app, root_guard, guard_plugin = build_app(os.getenv("MODEL_NAME", "gemini-3.5-flash"))
 root_agent = app.root_agent
