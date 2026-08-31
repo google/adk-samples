@@ -101,8 +101,13 @@ Abridged; the run prints the full transcript.
     billing is narrower than coordinator: True
 
 3. the refusal
-    tool bodies that ran: [('lookup_order', ...), ('get_invoice', ...)]
-    reasons: ['scope_not_granted', 'ceiling_exceeded']
+    tool bodies that ran: [('lookup_order', 'ORD-8812'), ('get_invoice', 'INV-4471')]
+    issue_refund response: {'error': 'authority_denied', ... 'reasons': ['scope_not_granted', 'ceiling_exceeded'], ...}
+
+4. asking for more does not produce more
+    requested: Authority(scopes=['admin.root', 'billing.*'], ...)
+    granted  : Authority(scopes=['billing.*'], ...)
+    granted is narrower than coordinator: True
 
 5. the ledger, checked without this process
     7 events, hash chain: True
@@ -151,9 +156,9 @@ says.
 | `demo.py` | The scripted-model run, the evidence export, the offline verification |
 | `tests/` | Runnability plus the enforcement assertions |
 
-Versions this was checked against: `google-adk` 2.8.0, `attenu-guard`
-0.8.0, Python 3.11.
+Versions this was checked against: `google-adk` 2.7.1, `attenu-guard`
+0.10.0, Python 3.11.
 
-## Licence
+## License
 
 Apache-2.0, matching this repository and the library.

@@ -9,7 +9,8 @@ requires-python = ">=3.11"
 dependencies = [
     "google-adk>=2.7",
     "google-genai>=1.9.0",
-    "attenu-guard[google-adk,crypto]>=0.8,<0.9",
+    "attenu-guard[google-adk,crypto]>=0.10,<0.11",
+    "pydantic>=2",
     "python-dotenv>=1.0.1",
 ]
 

@@ -103,8 +103,11 @@ def build_app(
 def require_guard(application: App) -> None:
     """Refuse to run an App that lost its guard.
 
-    Cheap, and it turns "somebody removed the plugin" from a silent
-    downgrade into a startup failure.
+    Exported for callers that assemble their own `App` rather than using
+    `build_app` — call it once after construction. Inside `build_app` it
+    cannot fail today, deliberately: it is a tripwire so a future edit
+    that drops the plugin turns into a startup failure instead of a
+    silent downgrade.
     """
     plugins = getattr(application, "plugins", None) or []
     if not any(isinstance(p, DelegationGuardPlugin) for p in plugins):
