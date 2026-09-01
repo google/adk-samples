@@ -63,7 +63,7 @@ def submit_correction(
         root_cause=root_cause,
         proposed_rule=proposed_rule,
         reported_by=reported_by,
-        timestamp=datetime.now(UTC).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
     audit_log.append_event("correction", correction.model_dump())
     return {"status": "logged", "correction_id": correction.correction_id}

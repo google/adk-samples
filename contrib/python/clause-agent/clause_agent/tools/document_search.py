@@ -28,6 +28,7 @@ from clause_agent.shared_libraries.schemas import ClauseHit
 
 DEFAULT_SCOPE = ("body", "amendment", "renewal")
 VALID_DOC_TYPES = {"body", "amendment", "renewal", "exhibit", "appendix"}
+MAX_SEARCH_HITS = 5
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
@@ -129,6 +130,6 @@ def search_documents(
 
     scored_hits.sort(key=lambda pair: pair[0], reverse=True)
     return {
-        "hits": [hit for _, hit in scored_hits[:5]],
+        "hits": [hit for _, hit in scored_hits[:MAX_SEARCH_HITS]],
         "scope_searched": sorted(effective_scope),
     }

@@ -69,7 +69,7 @@ class Correction(BaseModel):
     root_cause: str
     proposed_rule: str | None = None
     reported_by: str
-    timestamp: str
+    created_at: str
 
 
 class LegalReviewTask(BaseModel):
