@@ -27,32 +27,34 @@ import com.google.adk.kt.types.Part
  * After-model callback that strips the "---END-OF-EDIT---" marker and any
  * content after it from the reviser's response.
  */
-private val removeEndOfEditMark = AfterModelCallback { _, response ->
-    val content = response.content ?: return@AfterModelCallback response
-    val parts = content.parts
+private val removeEndOfEditMark =
+    AfterModelCallback { _, response ->
+        val content = response.content ?: return@AfterModelCallback response
+        val parts = content.parts
 
-    val trimmedParts = mutableListOf<Part>()
-    for (part in parts) {
-        val text = part.text
-        if (text != null && text.contains(END_MARK)) {
-            trimmedParts.add(part.copy(text = text.substringBefore(END_MARK).trimEnd()))
-            break
+        val trimmedParts = mutableListOf<Part>()
+        for (part in parts) {
+            val text = part.text
+            if (text != null && text.contains(END_MARK)) {
+                trimmedParts.add(part.copy(text = text.substringBefore(END_MARK).trimEnd()))
+                break
+            }
+            trimmedParts.add(part)
         }
-        trimmedParts.add(part)
-    }
 
-    response.copy(content = content.copy(parts = trimmedParts))
-}
+        response.copy(content = content.copy(parts = trimmedParts))
+    }
 
 /**
  * Creates the reviser sub-agent that rewrites inaccurate answers based on the
  * critic's findings. It minimally edits the original text to correct errors
  * while preserving structure and style.
  */
-fun createReviserAgent(model: Gemini): LlmAgent = LlmAgent(
-    name = "reviser_agent",
-    description = "Revises answers based on the critic's fact-check findings.",
-    model = model,
-    instruction = Instruction(REVISER_PROMPT),
-    afterModelCallbacks = listOf(removeEndOfEditMark),
-)
+fun createReviserAgent(model: Gemini): LlmAgent =
+    LlmAgent(
+        name = "reviser_agent",
+        description = "Revises answers based on the critic's fact-check findings.",
+        model = model,
+        instruction = Instruction(REVISER_PROMPT),
+        afterModelCallbacks = listOf(removeEndOfEditMark),
+    )

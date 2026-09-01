@@ -32,13 +32,16 @@ object LlmAuditorAgent {
     private val model = Gemini(name = "gemini-flash-latest")
 
     @JvmField
-    val rootAgent = SequentialAgent(
-        name = "llm_auditor",
-        description = "Evaluates and corrects LLM-generated answers by "
-            + "fact-checking claims and revising inaccuracies.",
-        subAgents = listOf(
-            createCriticAgent(model),
-            createReviserAgent(model),
-        ),
-    )
+    val rootAgent =
+        SequentialAgent(
+            name = "llm_auditor",
+            description =
+                "Evaluates and corrects LLM-generated answers by " +
+                    "fact-checking claims and revising inaccuracies.",
+            subAgents =
+                listOf(
+                    createCriticAgent(model),
+                    createReviserAgent(model),
+                ),
+        )
 }

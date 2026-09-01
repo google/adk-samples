@@ -26,10 +26,11 @@ import com.google.adk.kt.tools.GoogleSearchTool
  * Search. It identifies claims, verifies them against external sources, and
  * produces a structured audit report with verdicts for each claim.
  */
-fun createCriticAgent(model: Gemini): LlmAgent = LlmAgent(
-    name = "critic_agent",
-    description = "Fact-checks claims in an answer using Google Search.",
-    model = model,
-    instruction = Instruction(CRITIC_PROMPT),
-    tools = listOf(GoogleSearchTool()),
-)
+fun createCriticAgent(model: Gemini): LlmAgent =
+    LlmAgent(
+        name = "critic_agent",
+        description = "Fact-checks claims in an answer using Google Search.",
+        model = model,
+        instruction = Instruction(CRITIC_PROMPT),
+        tools = listOf(GoogleSearchTool()),
+    )

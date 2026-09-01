@@ -52,9 +52,12 @@ llm-auditor/
         ReviserAgent.kt       # Reviser sub-agent (after-model callback)
         ReviserPrompt.kt      # Reviser system prompt
         Main.kt               # CLI entry point (ReplRunner)
-        WebMain.kt            # Web UI entry point (AdkWebServer)
+        WebMain.kt            # Web UI entry point (AdkDevServer)
     build.gradle.kts
     settings.gradle.kts
+    manifest.yaml
+    AGENTS.md                 # maintainer notes for coding agents
+    llm_auditor_architecture.webp
     README.md
 ```
 
@@ -71,7 +74,7 @@ llm-auditor/
 1.  Clone the repository and navigate to the agent directory:
 
     ```bash
-    cd kotlin/agents/llm-auditor
+    cd core/kotlin/llm-auditor
     ```
 
 2.  Set your Gemini API key as an environment variable:
@@ -105,6 +108,11 @@ gradle run -PmainClass=com.google.adk.samples.agents.llmauditor.WebMainKt
 ```
 
 Then open http://localhost:8080 in your browser.
+
+`AdkDevServer` binds `127.0.0.1`, because its endpoints are unauthenticated. To
+reach it from another machine, widen that in `WebMain.kt` — the config is a data
+class, so `AdkServerConfig.inMemory(...).copy(host = ...)` — and put your own
+authentication in front of it. Bind the narrowest interface that works.
 
 ## Example Interaction
 
