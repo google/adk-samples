@@ -41,6 +41,7 @@ sub-agent that is waiting on a pending Legal review stays active by design
 until that review resolves; do not expect a transfer back until then.
 """
 
+
 def get_hierarchy_resolver_instruction() -> str:
     """Builds the instruction for hierarchy_resolver with the runtime confidence threshold."""
     threshold = config.get_confidence_threshold()

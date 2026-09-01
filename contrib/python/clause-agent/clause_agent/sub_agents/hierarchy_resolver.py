@@ -12,7 +12,6 @@ from google.adk.models.base_llm import BaseLlm
 from google.adk.tools.long_running_tool import LongRunningFunctionTool
 
 from clause_agent.prompt import (
-    HIERARCHY_RESOLVER_INSTRUCTION,
     get_hierarchy_resolver_instruction,
 )
 from clause_agent.shared_libraries import config
