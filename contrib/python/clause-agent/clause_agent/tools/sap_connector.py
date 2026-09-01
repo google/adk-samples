@@ -35,7 +35,8 @@ def check_sap_invoice_status(customer: str) -> dict[str, Any]:
       dict describing the blocked invoice, or {"status": "NOT_FOUND"} if
       this customer has no blocked invoice in the mock data.
     """
-    record = _MOCK_BLOCKED_INVOICES.get(customer.strip().lower())
-    if record is None:
-        return {"status": "NOT_FOUND", "customer": customer}
-    return record
+    query = customer.strip().lower()
+    for key, record in _MOCK_BLOCKED_INVOICES.items():
+        if query in key or key in query:
+            return record
+    return {"status": "NOT_FOUND", "customer": customer}

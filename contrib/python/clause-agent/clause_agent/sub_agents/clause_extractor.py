@@ -47,6 +47,3 @@ def build_clause_extractor(model: str | BaseLlm | None = None) -> LlmAgent:
             memory_bank_create,
         ],
     )
-
-
-clause_extractor = build_clause_extractor()

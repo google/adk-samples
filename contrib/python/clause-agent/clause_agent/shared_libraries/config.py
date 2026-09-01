@@ -66,4 +66,8 @@ def get_confidence_threshold() -> float:
 
 def get_default_model() -> str:
     """Default Gemini model for all agents (root inherits to sub-agents)."""
-    return os.environ.get("CLAUSE_AGENT_MODEL", "gemini-3.5-flash")
+    return (
+        os.environ.get("MODEL_NAME")
+        or os.environ.get("CLAUSE_AGENT_MODEL")
+        or "gemini-3.5-flash"
+    )

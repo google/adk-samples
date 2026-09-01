@@ -49,6 +49,3 @@ def build_hierarchy_resolver(model: str | BaseLlm | None = None) -> LlmAgent:
             memory_bank_create,
         ],
     )
-
-
-hierarchy_resolver = build_hierarchy_resolver()
