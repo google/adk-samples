@@ -5,12 +5,6 @@ extracts billing-relevant clauses with citations, and treats human
 corrections (Legal + Billing) as durable, scoped memory instead of one-off
 answers.
 
-Built from: the PRD ("Clause_Agent One-Pager" + its "Simulated Session"
-trace), the `adk-agent-builder`/`adk-architecture`/etc. skills under
-`.agents/skills` in a local `adk-python` checkout, and real reference code
-in a local `adk-samples` checkout -- see `docs` links in code comments for
-which specific reference informed which design decision.
-
 ## Architecture
 
 - `root_agent` (Orchestrator) -- routes each question to a sub-agent via
@@ -51,10 +45,10 @@ cp .env.example .env  # fill in GOOGLE_API_KEY (or Vertex project config)
 
 ## Running the Agent
 
-Start the agent using the ADK CLI:
+Start the agent using the ADK CLI from the recipe root directory:
 
 ```bash
-adk web clause_agent   # or: adk run clause_agent
+uv run adk web .   # or: uv run adk run .
 ```
 
 ### Resolving a pending Legal review

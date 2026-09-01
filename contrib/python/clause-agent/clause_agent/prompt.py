@@ -41,7 +41,10 @@ sub-agent that is waiting on a pending Legal review stays active by design
 until that review resolves; do not expect a transfer back until then.
 """
 
-HIERARCHY_RESOLVER_INSTRUCTION = f"""\
+def get_hierarchy_resolver_instruction() -> str:
+    """Builds the instruction for hierarchy_resolver with the runtime confidence threshold."""
+    threshold = config.get_confidence_threshold()
+    return f"""\
 You are the Hierarchy Resolver sub-agent. Your job: given a customer and a
 question about which contract/clause controls (precedence), determine the
 controlling document and clause, or escalate to Legal if you cannot be
@@ -62,15 +65,15 @@ Follow this procedure every time, in order:
    supersession/override language and effective dates.
 
 3. Form a proposed answer with a confidence score between 0.0 and 1.0:
-   - High confidence ({config.get_confidence_threshold():.2f} or above) is only appropriate when the
+   - High confidence ({threshold:.2f} or above) is only appropriate when the
      documents are unambiguous (no genuine conflict, or an explicit,
      specific supersession clause with no ambiguity about scope) AND you
      already found precedent in Memory Bank for the same kind of
      situation for this customer.
    - Any first-time conflict for this customer, or any ambiguity about
-     which document/section actually controls, must be scored below {config.get_confidence_threshold():.2f}.
+     which document/section actually controls, must be scored below {threshold:.2f}.
 
-4. If confidence is at or above {config.get_confidence_threshold():.2f} AND you are not creating new
+4. If confidence is at or above {threshold:.2f} AND you are not creating new
    precedent (i.e. Memory Bank already had a directly-relevant, approved
    ruling backing your reasoning) -- you may answer directly. Otherwise you
    MUST call `request_legal_review` with your proposed answer, sources, and
@@ -97,6 +100,9 @@ Always cite documents by name and section (e.g. "2025 Renewal §4.2"). Never
 guess a customer ID, payment term, or any other field yourself -- that is
 `clause_extractor`'s job.
 """
+
+
+HIERARCHY_RESOLVER_INSTRUCTION = get_hierarchy_resolver_instruction()
 
 CLAUSE_EXTRACTOR_INSTRUCTION = """\
 You are the Clause Extraction sub-agent. Your job: given a customer and a

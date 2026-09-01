@@ -11,7 +11,10 @@ from google.adk.agents import LlmAgent
 from google.adk.models.base_llm import BaseLlm
 from google.adk.tools.long_running_tool import LongRunningFunctionTool
 
-from clause_agent.prompt import HIERARCHY_RESOLVER_INSTRUCTION
+from clause_agent.prompt import (
+    HIERARCHY_RESOLVER_INSTRUCTION,
+    get_hierarchy_resolver_instruction,
+)
 from clause_agent.shared_libraries import config
 from clause_agent.tools.document_search import search_documents
 from clause_agent.tools.legal_review import request_legal_review
@@ -39,7 +42,7 @@ def build_hierarchy_resolver(model: str | BaseLlm | None = None) -> LlmAgent:
             " guessing. Does NOT extract specific field values on its own"
             " -- that is clause_extractor."
         ),
-        instruction=HIERARCHY_RESOLVER_INSTRUCTION,
+        instruction=get_hierarchy_resolver_instruction(),
         tools=[
             memory_bank_search,
             search_documents,

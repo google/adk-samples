@@ -8,7 +8,7 @@ description: "ClauseIQ: an ADK agent that resolves contract hierarchy/precedence
 
 architecture:           # (optional) omit the whole block if nothing below can be inferred from code
   agent: "multi"        # Options: [single | multi]
-  stateful: false       # Options: [true | false]
+  stateful: true        # Options: [true | false]
   datasources:          # Options: [hardcoded | local | external]
     - "local"
 

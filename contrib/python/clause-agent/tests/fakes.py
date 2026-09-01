@@ -52,7 +52,7 @@ class ScriptedModel(BaseLlm):
             )
         parts = self._responses[self._index]
         self._index += 1
-        yield LlmResponse(content=types.ModelContent(parts=parts))
+        yield LlmResponse(content=types.Content(parts=parts, role="model"))
 
 
 def text(t: str) -> list[types.Part]:

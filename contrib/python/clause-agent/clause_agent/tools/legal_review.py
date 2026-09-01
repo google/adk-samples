@@ -1,6 +1,7 @@
 """Legal Review tool: blocking human-in-the-loop gate for precedence rulings.
 
-Wrapped as a `LongRunningFunctionTool` in `clause_agent/agent.py`
+Wrapped as a `LongRunningFunctionTool` in
+`clause_agent/sub_agents/hierarchy_resolver.py`
 (`google.adk.tools.long_running_tool.LongRunningFunctionTool`). Per ADK's
 HITL pattern for long-running tools:
 
@@ -10,8 +11,8 @@ HITL pattern for long-running tools:
   2. Later, a human resolves the task out-of-band (here: via
      `resolve_legal_review`, called by `scripts/legal_review_cli.py` or a
      test harness). That does NOT call back into the agent by itself.
-  3. The host application (see `clause_agent/runtime.py`) is responsible
-     for noticing the pending long-running call, and -- once
+  3. The host application or runner (see `tests/test_end_to_end_trace.py`)
+     is responsible for noticing the pending long-running call, and -- once
      `resolve_legal_review` has recorded a decision -- sending a new
      `types.Content` containing a `function_response` for that same call
      id back through `Runner.run_async(...)` to resume the paused turn.
@@ -101,19 +102,21 @@ def request_legal_review(
 
 def get_task(task_id: str, path: Path | None = None) -> LegalReviewTask | None:
     """Looks up a Legal-review task by id. Used by CLI/tests, not the agent."""
-    for record in _read_all(path):
-        if record.get("task_id") == task_id:
-            return LegalReviewTask(**record)
+    with _lock:
+        for record in _read_all(path):
+            if record.get("task_id") == task_id:
+                return LegalReviewTask(**record)
     return None
 
 
 def list_pending(path: Path | None = None) -> list[LegalReviewTask]:
     """Lists all pending Legal-review tasks. Used by the mock reviewer CLI."""
-    return [
-        LegalReviewTask(**r)
-        for r in _read_all(path)
-        if r.get("status") == "pending"
-    ]
+    with _lock:
+        return [
+            LegalReviewTask(**r)
+            for r in _read_all(path)
+            if r.get("status") == "pending"
+        ]
 
 
 def resolve_legal_review(
@@ -129,7 +132,7 @@ def resolve_legal_review(
     This is called by the *human-facing* surface (CLI script or test
     harness) -- never by the agent itself. It only updates the local queue
     and the audit log; resuming the paused agent turn is a separate step
-    (see `clause_agent/runtime.py`).
+    (see `tests/test_end_to_end_trace.py`).
 
     Args:
       task_id: The task to resolve, e.g. "LR-a1b2c".
@@ -144,10 +147,13 @@ def resolve_legal_review(
       The updated `LegalReviewTask`.
 
     Raises:
-      ValueError: If `task_id` does not exist or `decision` is invalid.
+      ValueError: If `task_id` does not exist, `decision` is invalid, or
+        `decision` is "edited" without providing `final_answer`.
     """
     if decision not in {"approved", "edited", "rejected"}:
         raise ValueError(f"Invalid decision: {decision!r}")
+    if decision == "edited" and not final_answer:
+        raise ValueError("final_answer is required when decision is 'edited'")
 
     with _lock:
         records = _read_all(path)

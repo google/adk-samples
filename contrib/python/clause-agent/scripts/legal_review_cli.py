@@ -74,9 +74,14 @@ def main() -> None:
 
     subparsers.add_parser("list", help="List pending Legal-review tasks.")
 
+    decision_past = {
+        "approve": "approved",
+        "edit": "edited",
+        "reject": "rejected",
+    }
     for decision in ("approve", "edit", "reject"):
         sub = subparsers.add_parser(
-            decision, help=f"Mark a task as {decision}d."
+            decision, help=f"Mark a task as {decision_past[decision]}."
         )
         sub.add_argument("task_id")
         sub.add_argument("--approver", required=True)
