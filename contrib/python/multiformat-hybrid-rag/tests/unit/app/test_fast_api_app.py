@@ -1,8 +1,16 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 from pydantic import ValidationError
 
-from app.config import MAX_TOP_K
-from app.fast_api_app import SearchRequest
+# Importing app.fast_api_app builds the ADK app at module scope, and
+# get_fast_api_app(otel_to_cloud=True) calls google.auth.default() while
+# doing so. That is ADK's behaviour, not the recipe's, but it means this
+# module cannot be imported without credentials -- which CI does not have.
+# Patch ADC for the duration of the import only.
+with patch("google.auth.default", return_value=(MagicMock(), "test-project")):
+    from app.config import MAX_TOP_K
+    from app.fast_api_app import SearchRequest
 
 
 class TestSearchRequestValidation:
