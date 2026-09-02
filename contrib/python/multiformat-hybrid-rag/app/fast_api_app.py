@@ -96,23 +96,13 @@ def search(req: SearchRequest) -> dict:
 # Passing it would double-prefix the SSE messages URL to /mcp/mcp/messages/...
 app.mount("/mcp", mcp_server.sse_app())
 
-# Advertise the mounted MCP path for anything that resolves the transport
-# after import. Use the same port as the running server (8080 on Cloud Run).
-#
-# setdefault() is not enough on its own: .env.example declares MCP_SERVER_URL
-# as an empty string, so the key already exists and setdefault would never
-# fire. Test for a *truthy* value instead.
-#
-# Note this cannot retro-fit the agent's own choice of transport. app/agent.py
-# reads MCP_SERVER_URL at import, and it is imported via app/__init__.py while
-# line 20 of this module is still executing -- long before this point. The
-# served deployment therefore gets the URL injected as a real Cloud Run
-# environment variable (see infra/terraform/dev/service.tf); locally the
-# variable stays empty and the agent falls back to a stdio subprocess, which
-# is what `adk web` wants anyway.
-_server_port = os.getenv("PORT") or "8080"
-if not os.getenv("MCP_SERVER_URL"):
-    os.environ["MCP_SERVER_URL"] = f"http://localhost:{_server_port}/mcp/sse"
+# No MCP_SERVER_URL default is set here. app/agent.py reads that variable at
+# import time and is imported via app/__init__.py before this module finishes
+# executing, so any write at this point would have no reader -- the agent has
+# already chosen its transport. The deployed service gets the URL injected as
+# a real Cloud Run environment variable (infra/terraform/dev/service.tf);
+# locally it stays empty and the agent falls back to a stdio subprocess,
+# which is what `adk web` wants anyway.
 
 # Main execution
 if __name__ == "__main__":

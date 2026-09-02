@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
+import asyncio
 import logging
 import os
 import re
@@ -128,8 +129,17 @@ async def ask_knowledge_base(
     Returns:
         A direct answer or raw document content from the knowledge base.
     """
+    # search_knowledge_base and _generate_answer are both synchronous and
+    # both block for seconds -- a gRPC round trip to Vector Search and a
+    # Gemini generate_content call. This coroutine runs on the same event
+    # loop as the FastAPI app that mounts the MCP server (see
+    # app/fast_api_app.py), so calling them inline would stall every other
+    # request on the instance. FastMCP does not offload sync tools to a
+    # worker thread -- it awaits async ones and calls sync ones directly --
+    # so the hand-off has to happen here.
     try:
-        context = search_knowledge_base(
+        context = await asyncio.to_thread(
+            search_knowledge_base,
             query=question,
             top_k=top_k,
             generative_answer=generative_answer,
@@ -151,7 +161,9 @@ async def ask_knowledge_base(
         return context
 
     try:
-        return _generate_answer(context, conversation_summary, question)
+        return await asyncio.to_thread(
+            _generate_answer, context, conversation_summary, question
+        )
     except Exception:
         logger.exception("Answer generation failed")
         return (

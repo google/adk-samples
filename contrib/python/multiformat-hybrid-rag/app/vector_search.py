@@ -24,6 +24,12 @@ from app.config import (
 )
 from src.utils import vs_utils
 
+# Each retriever is asked for more candidates than the caller wants. The
+# semantic and text result sets overlap heavily, so fetching exactly top_k
+# from each would leave fewer than top_k unique documents once RRF fusion
+# and the per-file dedup below have run.
+CANDIDATE_MULTIPLIER = 2
+
 # Cached at module load: the FastAPI process serves many /api/search
 # requests, so reusing the gRPC channel across them avoids per-request
 # client construction overhead.
@@ -120,7 +126,7 @@ def search_collection(
                     search_text=query,
                     search_field="text_embedding",
                     task_type="RETRIEVAL_QUERY",
-                    top_k=top_k * 2,
+                    top_k=top_k * CANDIDATE_MULTIPLIER,
                     output_fields=output_fields,
                 ),
             ),
@@ -128,7 +134,7 @@ def search_collection(
                 text_search=vectorsearch_v1beta.TextSearch(
                     search_text=query,
                     data_field_names=["chunk_text"],
-                    top_k=top_k * 2,
+                    top_k=top_k * CANDIDATE_MULTIPLIER,
                     output_fields=output_fields,
                 ),
             ),
