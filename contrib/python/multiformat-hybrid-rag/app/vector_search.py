@@ -15,7 +15,13 @@ import os
 
 from google.cloud import vectorsearch_v1beta
 
-from app.config import env_or
+from app.config import (
+    CONTEXT_WINDOW,
+    SEMANTIC_WEIGHT,
+    env_or,
+    get_collection_path,
+    get_documents_collection_path,
+)
 from src.utils import vs_utils
 
 # Cached at module load: the FastAPI process serves many /api/search
@@ -209,3 +215,30 @@ def search_collection(
         )
 
     return "## Context provided:\n" + "\n".join(formatted_parts)
+
+
+def search_knowledge_base(
+    query: str,
+    top_k: int = 10,
+    generative_answer: bool = True,
+) -> str:
+    """search_collection bound to this recipe's configured collections.
+
+    The collection paths, semantic weight and context window are identical
+    for every caller; only the query and paging differ. Both entry points --
+    the MCP tool in app/mcp_server.py and the REST endpoint in
+    app/fast_api_app.py -- go through here so that wiring lives in one place.
+
+    Error handling deliberately stays with the caller: the MCP tool returns
+    a message string, while the REST endpoint raises an HTTPException. Those
+    are different contracts and folding them together would lose the
+    distinction.
+    """
+    return search_collection(
+        query=query,
+        collection_path=get_collection_path(),
+        documents_collection_path=get_documents_collection_path(),
+        top_k=top_k,
+        semantic_weight=SEMANTIC_WEIGHT,
+        context_window=CONTEXT_WINDOW if generative_answer else None,
+    )

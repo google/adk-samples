@@ -14,19 +14,13 @@
 import logging
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel
 
-from app.config import (
-    CONTEXT_WINDOW,
-    SEMANTIC_WEIGHT,
-    get_collection_path,
-    get_documents_collection_path,
-)
 from app.mcp_server import _generate_answer
 from app.mcp_server import server as mcp_server
-from app.vector_search import search_collection
+from app.vector_search import search_knowledge_base
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +66,10 @@ def search(req: SearchRequest) -> dict:
     With generative_answer=False, returns raw retrieved documents.
     """
     try:
-        context = search_collection(
+        context = search_knowledge_base(
             query=req.query,
-            collection_path=get_collection_path(),
-            documents_collection_path=get_documents_collection_path(),
             top_k=req.top_k,
-            semantic_weight=SEMANTIC_WEIGHT,
-            context_window=CONTEXT_WINDOW if req.generative_answer else None,
+            generative_answer=req.generative_answer,
         )
         if not req.generative_answer:
             return {"result": context}
@@ -95,7 +86,8 @@ def search(req: SearchRequest) -> dict:
         # failure as HTTP 200.
         logger.exception("search request failed")
         raise HTTPException(
-            status_code=500, detail="Search failed. See server logs."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Search failed. See server logs.",
         ) from None
 
 

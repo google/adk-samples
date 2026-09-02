@@ -22,16 +22,12 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from app.config import (
-    CONTEXT_WINDOW,
     MCP_TOOL_MODEL,
     MODEL_LOCATION,
-    SEMANTIC_WEIGHT,
-    get_collection_path,
-    get_documents_collection_path,
     get_project_id,
     init_vertex,
 )
-from app.vector_search import search_collection
+from app.vector_search import search_knowledge_base
 
 logger = logging.getLogger(__name__)
 
@@ -133,13 +129,10 @@ async def ask_knowledge_base(
         A direct answer or raw document content from the knowledge base.
     """
     try:
-        context = search_collection(
+        context = search_knowledge_base(
             query=question,
-            collection_path=get_collection_path(),
-            documents_collection_path=get_documents_collection_path(),
             top_k=top_k,
-            semantic_weight=SEMANTIC_WEIGHT,
-            context_window=CONTEXT_WINDOW if generative_answer else None,
+            generative_answer=generative_answer,
         )
     except Exception:
         # Detail stays in the server log. The return value crosses the MCP
