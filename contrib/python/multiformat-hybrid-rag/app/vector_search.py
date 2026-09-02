@@ -43,8 +43,16 @@ def _extract_window(
     chunk_index comes from the chunk_id ({file_id}__{index}). The position
     is approximate (splitter may break at different points) but accurate
     enough for a multi-thousand-char window.
+
+    estimated_start is clamped to the document length: a chunk_id can
+    outrun its stored document if the document was re-ingested shorter
+    than the indexed version. Unclamped, start would exceed end and the
+    slice would silently return "" instead of context. Clamping degrades
+    to the tail of the document instead.
     """
-    estimated_start = chunk_index * (chunk_size - chunk_overlap)
+    estimated_start = min(
+        chunk_index * (chunk_size - chunk_overlap), len(full_text)
+    )
     start = max(0, estimated_start - window_chars)
     end = min(len(full_text), estimated_start + chunk_size + window_chars)
     return full_text[start:end]

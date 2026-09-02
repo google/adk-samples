@@ -16,16 +16,23 @@ FROM python:3.11-slim
 
 RUN pip install --no-cache-dir uv==0.8.13
 
+# Run as an unprivileged user. Switched before `uv sync` so the virtualenv
+# and uv's cache are owned by the runtime user: `uv run` re-validates the
+# environment at container start and needs write access to both.
+RUN useradd --create-home --uid 1000 appuser
+
 WORKDIR /code
+RUN chown appuser:appuser /code
+USER appuser
 
-COPY ./pyproject.toml ./README.md ./uv.lock* ./
+COPY --chown=appuser:appuser ./pyproject.toml ./README.md ./uv.lock* ./
 
-COPY ./app ./app
-COPY ./src ./src
+COPY --chown=appuser:appuser ./app ./app
+COPY --chown=appuser:appuser ./src ./src
 # .env.example, not .env: .env is gitignored and absent from the Cloud Build
 # context. It supplies non-secret defaults; real values arrive as Cloud Run
 # environment variables, which win because every loader uses override=False.
-COPY ./.env.example ./.env.example
+COPY --chown=appuser:appuser ./.env.example ./.env.example
 
 RUN uv sync --frozen
 

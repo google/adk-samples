@@ -30,27 +30,27 @@ GCS bucket ──► BQ Object Table (live metadata mirror)
                           SERVING
                           =======
 
-                    ┌─────────────────────────┐
-                    │  Cloud Run: app service  │
-                    │  FastAPI (port 8000)     │
-                    ├─────────────────────────┤
-                    │  ┌───────────────────┐  │
-  User ──► agent   ─┤  │  ADK Agent        │  │
-           or REST  │  │  (Gemini 2.5)     │  │
-                    │  └────────┬──────────┘  │
-                    │           │ MCP          │
-                    │  ┌────────▼──────────┐  │
-                    │  │  MCP Server       │  │
-                    │  │  (port 8081)      │  │
-                    │  │  retrieve_docs()  │  │
-                    │  └────────┬──────────┘  │
-                    └───────────┼──────────────┘
-                                │
-                    ┌───────────▼──────────────┐
-                    │   Vector Search 2.0      │
-                    │   chunks + documents     │
-                    │   (hybrid search + RRF)  │
-                    └──────────────────────────┘
+                    ┌───────────────────────────┐
+                    │  Cloud Run: app service   │
+                    │  FastAPI (port 8000)      │
+                    ├───────────────────────────┤
+                    │  ┌─────────────────────┐  │
+  User ──► agent   ─┤  │  ADK Agent          │  │
+           or REST  │  │  (Gemini 3)         │  │
+                    │  └──────────┬──────────┘  │
+                    │             │ MCP         │
+                    │  ┌──────────▼──────────┐  │
+                    │  │  MCP Server         │  │
+                    │  │  (port 8081)        │  │
+                    │  │  ask_knowledge_base │  │
+                    │  └──────────┬──────────┘  │
+                    └─────────────┼─────────────┘
+                                  │
+                    ┌─────────────▼─────────────┐
+                    │   Vector Search 2.0       │
+                    │   chunks + documents      │
+                    │   (hybrid search + RRF)   │
+                    └───────────────────────────┘
 ```
 
 ---
@@ -314,7 +314,7 @@ The serving side is a single Cloud Run service that runs everything in one conta
 
 ### The agent
 
-The agent is built with Google's Agent Development Kit (ADK). It uses Gemini 2.5 Flash and has a single tool: `retrieve_docs`, exposed through MCP.
+The agent is built with Google's Agent Development Kit (ADK). It uses Gemini 3 Flash and has a single tool: `ask_knowledge_base`, exposed through MCP.
 
 The agent's instruction tells it to:
 - Always search the knowledge base before answering (never rely on its own training data for domain-specific info)
@@ -325,7 +325,7 @@ The agent's instruction tells it to:
 
 ### The search tool
 
-The `retrieve_docs` tool performs a two-stage hybrid search:
+The `ask_knowledge_base` tool performs a two-stage hybrid search:
 
 **Stage 1 — Hybrid search on chunks:**
 - Runs two searches in parallel against the chunks collection:
@@ -428,7 +428,7 @@ python -m app.mcp_server --transport stdio
 
 #### 3. Agent chat (SSE streaming)
 
-Send a message to the ADK agent, which calls `retrieve_docs` internally and answers based on the retrieved documents:
+Send a message to the ADK agent, which calls `ask_knowledge_base` internally and answers based on the retrieved documents:
 
 ```bash
 curl -X POST ${SERVICE_URL}/run_sse \
@@ -445,7 +445,7 @@ curl -X POST ${SERVICE_URL}/run_sse \
   }'
 ```
 
-Response: Server-Sent Events stream. Each event contains a chunk of the agent's response. The agent internally calls `retrieve_docs`, uses the returned documents as context, and generates an answer grounded in the knowledge base.
+Response: Server-Sent Events stream. Each event contains a chunk of the agent's response. The agent internally calls `ask_knowledge_base`, uses the returned documents as context, and generates an answer grounded in the knowledge base.
 
 ### How the pieces connect at runtime
 
@@ -454,7 +454,7 @@ When the Cloud Run container starts:
 1. FastAPI starts on port 8080 (ADK endpoints + REST search + feedback + MCP)
 2. The MCP server is mounted at `/mcp` as a Starlette sub-application (same process, same port)
 3. The environment variable `MCP_SERVER_URL` is set to `http://localhost:8080/mcp/sse`
-4. When the ADK agent needs to search, it calls `retrieve_docs` via MCP (SSE connection to the mounted path)
+4. When the ADK agent needs to search, it calls `ask_knowledge_base` via MCP (SSE connection to the mounted path)
 5. The MCP server calls `search_collection()` which queries VS2
 
 External clients have three entry points on the same URL:
@@ -516,7 +516,7 @@ All configuration lives in `.env`. Key groups:
 app/
   agent.py              — ADK agent definition (Gemini + MCP tool)
   fast_api_app.py        — FastAPI server (REST search, feedback, ADK endpoints, MCP startup)
-  mcp_server.py          — MCP server exposing retrieve_docs tool
+  mcp_server.py          — MCP server exposing ask_knowledge_base tool
   vector_search.py       — Hybrid search logic (semantic + text + RRF + document resolution)
   app_utils/
     telemetry.py         — OpenTelemetry + Cloud Logging setup

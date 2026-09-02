@@ -141,9 +141,15 @@ async def ask_knowledge_base(
             semantic_weight=SEMANTIC_WEIGHT,
             context_window=CONTEXT_WINDOW if generative_answer else None,
         )
-    except Exception as e:
-        logger.error("Search failed: %s", e)
-        return f"Search error: {type(e).__name__}: {e}"
+    except Exception:
+        # Detail stays in the server log. The return value crosses the MCP
+        # boundary to the caller, and backend exceptions here carry full
+        # Vector Search resource paths and project IDs.
+        logger.exception("Knowledge base search failed")
+        return (
+            "The knowledge base search failed. Please try again; if the "
+            "problem persists, contact the administrator."
+        )
 
     if context.startswith("No relevant documents"):
         return "I couldn't find any relevant documents in the knowledge base to answer this question."
@@ -153,9 +159,13 @@ async def ask_knowledge_base(
 
     try:
         return _generate_answer(context, conversation_summary, question)
-    except Exception as e:
-        logger.error("Answer generation failed: %s", e)
-        return f"I found relevant documents but failed to generate an answer: {type(e).__name__}: {e}"
+    except Exception:
+        logger.exception("Answer generation failed")
+        return (
+            "I found relevant documents but could not generate an answer. "
+            "Please try again; if the problem persists, contact the "
+            "administrator."
+        )
 
 
 if __name__ == "__main__":

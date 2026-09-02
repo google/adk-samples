@@ -34,6 +34,11 @@ LLM = AGENT_MODEL
 LLM_LOCATION = MODEL_LOCATION
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL")
 
+# Seconds to wait for the MCP server to become reachable. Generous because
+# the stdio transport pays a cold Python-subprocess start, and the SSE
+# transport can hit a Cloud Run scale-from-zero.
+MCP_CONNECTION_TIMEOUT = 120
+
 # In-process environment defaults for the GenAI SDK. These are plain dict
 # writes — no credential discovery, no network, no client construction — so
 # importing this module stays side-effect-free in the sense the recipe
@@ -45,14 +50,16 @@ os.environ["GOOGLE_CLOUD_LOCATION"] = LLM_LOCATION
 
 # MCP connection: SSE if MCP_SERVER_URL is set, otherwise stdio (subprocess)
 if MCP_SERVER_URL:
-    mcp_connection = SseConnectionParams(url=MCP_SERVER_URL, timeout=120)
+    mcp_connection = SseConnectionParams(
+        url=MCP_SERVER_URL, timeout=MCP_CONNECTION_TIMEOUT
+    )
 else:
     mcp_connection = StdioConnectionParams(
         server_params=StdioServerParameters(
             command=sys.executable,
             args=["-m", "app.mcp_server"],
         ),
-        timeout=120,
+        timeout=MCP_CONNECTION_TIMEOUT,
     )
 
 instruction = """\

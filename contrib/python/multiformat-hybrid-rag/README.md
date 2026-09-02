@@ -33,7 +33,7 @@ For a detailed walkthrough of every component, edge case, and design decision, s
 | **Interaction Type** | Conversational / API |
 | **Complexity** | Intermediate |
 | **Agent Type** | RAG (Retrieval-Augmented Generation) |
-| **Components** | Gemini 2.5, Vector Search 2.0, BigQuery, Cloud Run, Vertex AI Pipelines |
+| **Components** | Gemini 3, Vector Search 2.0, BigQuery, Cloud Run, Vertex AI Pipelines |
 | **Vertical** | Any (document Q&A) |
 
 ## Getting Started
@@ -140,7 +140,7 @@ make playground
 
 **Serving** — a single Cloud Run service exposes three interfaces:
 
-- **Agent chat** (`POST /run_sse`) — Gemini 2.5 agent that searches the knowledge base via MCP before answering
+- **Agent chat** (`POST /run_sse`) — Gemini 3 agent that searches the knowledge base via MCP before answering
 - **REST search** (`POST /api/search`) — direct hybrid search (semantic + BM25 with Reciprocal Rank Fusion)
 - **MCP server** (`GET /mcp/sse`) — the `ask_knowledge_base` tool, connectable from any MCP client
 
