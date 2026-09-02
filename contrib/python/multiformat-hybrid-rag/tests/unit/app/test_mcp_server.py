@@ -123,3 +123,26 @@ async def test_generation_failure_returns_generic_message(monkeypatch):
     assert "secret-proj" not in result
     assert "RuntimeError" not in result
     assert "could not generate an answer" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_top_k_upper_bound_is_advertised_and_enforced():
+    """top_k fans out into Vector Search and then into the Gemini prompt,
+    and the MCP server is externally reachable, so the bound must be real
+    and not merely documented.
+    """
+    from app.config import MAX_TOP_K
+
+    tools = await mcp_server.server.list_tools()
+    tool = next(t for t in tools if t.name == "ask_knowledge_base")
+    schema = tool.inputSchema["properties"]["top_k"]
+
+    assert schema["maximum"] == MAX_TOP_K
+    assert schema["minimum"] == 1
+
+    with pytest.raises(Exception) as excinfo:
+        await mcp_server.server.call_tool(
+            "ask_knowledge_base",
+            {"conversation_summary": "", "question": "q", "top_k": 10**9},
+        )
+    assert "validation error" in str(excinfo.value).lower()

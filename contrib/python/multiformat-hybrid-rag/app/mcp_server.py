@@ -16,13 +16,16 @@ import asyncio
 import logging
 import os
 import re
+from typing import Annotated
 
 from google import genai
 from google.genai import types
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import Field
 
 from app.config import (
+    MAX_TOP_K,
     MCP_TOOL_MODEL,
     MODEL_LOCATION,
     get_project_id,
@@ -110,7 +113,7 @@ def _generate_answer(
 async def ask_knowledge_base(
     conversation_summary: str,
     question: str,
-    top_k: int = 10,
+    top_k: Annotated[int, Field(ge=1, le=MAX_TOP_K)] = 10,
     generative_answer: bool = True,
 ) -> str:
     """Ask the knowledge base a question.

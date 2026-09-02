@@ -111,3 +111,10 @@ MCP_TOOL_MODEL = env_or("MODEL_NAME_MCP_TOOL", "gemini-3.5-flash-lite")
 
 # --- Answer generation ---------------------------------------------------
 CONTEXT_WINDOW = int(env_or("MCP_CONTEXT_WINDOW", "10000"))
+
+# Upper bound on the documents a single request may ask for. Both entry
+# points are externally reachable -- the REST endpoint and the MCP server
+# mounted at /mcp -- and top_k fans out into a Vector Search request per
+# retriever and then into the Gemini prompt, so an unbounded value lets a
+# caller exhaust backend resources.
+MAX_TOP_K = 100

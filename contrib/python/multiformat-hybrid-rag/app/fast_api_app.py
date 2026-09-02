@@ -16,8 +16,9 @@ import os
 
 from fastapi import FastAPI, HTTPException, status
 from google.adk.cli.fast_api import get_fast_api_app
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from app.config import MAX_TOP_K
 from app.mcp_server import _generate_answer
 from app.mcp_server import server as mcp_server
 from app.vector_search import search_knowledge_base
@@ -53,7 +54,7 @@ app.description = "API for interacting with the Agent multiformat-hybrid-rag"
 
 class SearchRequest(BaseModel):
     query: str
-    top_k: int = 10
+    top_k: int = Field(default=10, ge=1, le=MAX_TOP_K)
     conversation_summary: str = ""
     generative_answer: bool = True
 
