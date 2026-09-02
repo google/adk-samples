@@ -50,9 +50,22 @@ on:
           a multi-issue sweep, where "nothing was classifiable" is the
           signature of a broken run. WRONG for a single issue, where it is
           simply an issue too vague to classify — see the caller notes.
+          Only takes effect for batches of at least `none_applied_min_batch`.
         required: false
         type: 'boolean'
         default: true
+      none_applied_min_batch:
+        description: >-
+          Smallest batch for which `fail_when_none_applied` is allowed to
+          fail the run. "The model classified nothing" is an aggregate
+          signal: across a dozen issues it means the run is broken, but for
+          one or two it is the ordinary case of an issue too vague to label,
+          which the prompt explicitly asks the model to answer with an empty
+          list. Below this floor an all-empty decision is reported as a
+          notice and the issues are left for a human.
+        required: false
+        type: 'number'
+        default: 3
     secrets:
       APP_PRIVATE_KEY:
         required: false
@@ -289,6 +302,7 @@ jobs:
           ISSUES_TO_TRIAGE: '${{ inputs.issues }}'
           DECISION: '${{ steps.decide.outputs.decision }}'
           FAIL_WHEN_NONE_APPLIED: '${{ inputs.fail_when_none_applied }}'
+          NONE_APPLIED_MIN_BATCH: '${{ inputs.none_applied_min_batch }}'
         run: |-
           set -euo pipefail
 
@@ -338,12 +352,24 @@ jobs:
 
           BATCH_SIZE="$(echo "${ISSUES_TO_TRIAGE}" | jq 'length')"
           if [[ "${APPLIED}" -eq 0 && "${BATCH_SIZE}" -gt 0 ]]; then
-            if [[ "${FAIL_WHEN_NONE_APPLIED}" == 'true' ]]; then
-              # A whole batch coming back unclassifiable is the signature of
-              # a broken run (a denied tool call, a truncated response)
-              # rather than a batch that genuinely defied classification.
-              echo "::error::agy returned a decision but not one of the ${BATCH_SIZE} issues could be labelled."
-              exit 1
+            # "Nothing was classifiable" only means "the run is broken" in
+            # aggregate. A genuinely broken run is already caught upstream —
+            # a non-zero agy exit, a status other than SUCCESS, or a
+            # response with no parseable decision all fail the Decide step.
+            # What reaches here is a well-formed decision that happened to
+            # label nothing, and for a small batch that is the ordinary
+            # case: the prompt explicitly instructs the model to return an
+            # empty list rather than guess, so a single vague issue produces
+            # exactly this. Failing on it turned an intended outcome into a
+            # red run every hour, for as long as that issue stayed open.
+            if [[ "${BATCH_SIZE}" -ge "${NONE_APPLIED_MIN_BATCH}" ]]; then
+              # Big enough for the aggregate signal to mean something.
+              if [[ "${FAIL_WHEN_NONE_APPLIED}" == 'true' ]]; then
+                echo "::error::agy returned a decision but not one of the ${BATCH_SIZE} issues could be labelled."
+                exit 1
+              fi
+              echo "::warning::None of the ${BATCH_SIZE} issues in this batch could be labelled; leaving them for human triage."
+            else
+              echo "::notice::No applicable labels were identified for the ${BATCH_SIZE} issue(s) in this batch; leaving them for human triage."
             fi
-            echo "::warning::No applicable labels were identified; leaving the issue(s) for human triage."
           fi
