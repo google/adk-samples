@@ -1,0 +1,36 @@
+[project]
+name = "brand-search-optimization"
+version = "0.1.0"
+description = "Brand Search Optimization agent using Gemini Computer Use to analyze live search rankings and optimize retail product titles."
+license = {text = "Apache License 2.0"}
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "google-adk>=1.0.0",
+    "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",
+    "google-cloud-bigquery>=3.20.0",
+    "google-genai>=1.9.0",
+    "pillow>=10.0.0",
+    "playwright>=1.40.0",
+    "pydantic>=2.7.0",
+    "python-dotenv>=1.0.1",
+]
+
+[dependency-groups]
+dev = [
+    "google-adk[eval]>=1.0.0",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.26.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["brand_search_optimization"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true

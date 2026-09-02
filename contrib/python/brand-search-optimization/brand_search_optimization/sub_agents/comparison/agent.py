@@ -12,27 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Defines comparison agent."""
+
+import os
+
 from google.adk.agents.llm_agent import Agent
 
-from ...shared_libraries import constants
 from . import prompt
 
+model_name = os.getenv("MODEL_NAME", "gemini-3.7-flash")
+
 comparison_generator_agent = Agent(
-    model=constants.MODEL,
+    model=model_name,
     name="comparison_generator_agent",
     description="A helpful agent to generate comparison.",
     instruction=prompt.COMPARISON_AGENT_PROMPT,
 )
 
 comparsion_critic_agent = Agent(
-    model=constants.MODEL,
+    model=model_name,
     name="comparison_critic_agent",
     description="A helpful agent to critique comparison.",
     instruction=prompt.COMPARISON_CRITIC_AGENT_PROMPT,
 )
 
 comparison_root_agent = Agent(
-    model=constants.MODEL,
+    model=model_name,
     name="comparison_root_agent",
     description="A helpful agent to compare titles",
     instruction=prompt.COMPARISON_ROOT_AGENT_PROMPT,

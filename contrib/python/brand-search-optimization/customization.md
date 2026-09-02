@@ -62,5 +62,7 @@ table.iam_policy = policy
 
 table = client.update_table(table)  # Updates the table's IAM policy
 
-print(f"Granted role '{ROLE}' to user '{USER_EMAIL}' on table '{table.full_table_id}'.")
+print(
+    f"Granted role '{ROLE}' to user '{USER_EMAIL}' on table '{table.full_table_id}'."
+)
 ```

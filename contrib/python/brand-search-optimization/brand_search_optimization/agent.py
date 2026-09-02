@@ -12,20 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Defines keyword finding agent."""
+"""Defines Brand Search Optimization Agent."""
+
+import os
 
 from google.adk.agents.llm_agent import Agent
 
-from ...shared_libraries import constants
-from ...tools import bq_connector
 from . import prompt
+from .sub_agents.comparison.agent import comparison_root_agent
+from .sub_agents.keyword_finding.agent import keyword_finding_agent
+from .sub_agents.search_results.agent import search_results_agent
 
-keyword_finding_agent = Agent(
-    model=constants.MODEL,
-    name="keyword_finding_agent",
-    description="A helpful agent to find keywords",
-    instruction=prompt.KEYWORD_FINDING_AGENT_PROMPT,
-    tools=[
-        bq_connector.get_product_details_for_brand,
+root_agent = Agent(
+    model=os.getenv("MODEL_NAME", "gemini-3.7-flash"),
+    name="brand_search_optimization",
+    description="A helpful assistant for brand search optimization using Computer Use.",
+    instruction=prompt.ROOT_PROMPT,
+    sub_agents=[
+        keyword_finding_agent,
+        search_results_agent,
+        comparison_root_agent,
     ],
 )
