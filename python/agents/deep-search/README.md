@@ -123,36 +123,7 @@ Then run `make install && make dev` to start the agent.
 
 ## Cloud Deployment
 
-> **Note:** Cloud deployment applies only to projects created with **google-agents-cli**.
-
-**Prerequisites:**
-```bash
-gcloud components update
-gcloud config set project YOUR_PROJECT_ID
-```
-
-#### Option 1: Deploy with ADK Web UI (Default)
-
-For a quick deployment using the built-in [adk-web](https://github.com/google/adk-web) interface:
-
-```bash
-make deploy IAP=true
-```
-
-#### Option 2: Deploy with Custom UI (React Frontend)
-
-This agent includes a custom React frontend. To deploy it:
-
-1. **Configure the Dockerfile** - See the [Deploy UI Guide](https://github.com/google/agents-cli) for the required Dockerfile changes.
-
-2. **Deploy with the frontend port:**
-```bash
-make deploy IAP=true PORT=5173
-```
-
-#### After Deployment
-
-Once deployed, grant users access to your IAP-protected service by following the [Manage User Access](https://cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run#manage_user_or_group_access) documentation.
+> **Note:** Cloud deployment applies only to projects created with **google-agents-cli**. For this sample repo, please follow the [Local development](#alternative-local-development-run-from-this-sample-repo) instructions above.
 
 For production deployments with CI/CD, see the [Google Agents CLI Development Guide](https://github.com/google/agents-cli).
 

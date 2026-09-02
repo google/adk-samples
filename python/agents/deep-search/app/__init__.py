@@ -16,11 +16,11 @@
 
 import os
 
-import google.auth
+# import google.auth
 
-_, project_id = google.auth.default()
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+# _, project_id = google.auth.default()
+# os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
+# os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+# os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
 from app.agent import root_agent
