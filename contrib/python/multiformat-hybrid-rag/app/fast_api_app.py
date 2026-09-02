@@ -19,7 +19,7 @@ from google.adk.cli.fast_api import get_fast_api_app
 from pydantic import BaseModel, Field
 
 from app.config import MAX_TOP_K
-from app.mcp_server import _generate_answer
+from app.mcp_server import generate_answer
 from app.mcp_server import server as mcp_server
 from app.vector_search import search_knowledge_base
 
@@ -78,7 +78,7 @@ def search(req: SearchRequest) -> dict:
         if context.startswith("No relevant documents"):
             return {"result": context}
 
-        answer = _generate_answer(context, req.conversation_summary, req.query)
+        answer = generate_answer(context, req.conversation_summary, req.query)
         return {"result": answer}
     except Exception:
         # Log the detail server-side; return something generic. The previous

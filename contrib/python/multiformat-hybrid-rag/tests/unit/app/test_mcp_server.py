@@ -21,7 +21,7 @@ class TestAskKnowledgeBaseDoesNotBlockTheEventLoop:
 
         monkeypatch.setattr(mcp_server, "search_knowledge_base", slow_search)
         monkeypatch.setattr(
-            mcp_server, "_generate_answer", lambda *_a, **_k: "answer"
+            mcp_server, "generate_answer", lambda *_a, **_k: "answer"
         )
 
         ticks = 0
@@ -60,7 +60,7 @@ class TestAskKnowledgeBaseDoesNotBlockTheEventLoop:
             time.sleep(block_for)
             return "answer"
 
-        monkeypatch.setattr(mcp_server, "_generate_answer", slow_generate)
+        monkeypatch.setattr(mcp_server, "generate_answer", slow_generate)
 
         ticks = 0
 
@@ -114,7 +114,7 @@ async def test_generation_failure_returns_generic_message(monkeypatch):
     def boom(*_args, **_kwargs):
         raise RuntimeError("backend detail projects/secret-proj/foo")
 
-    monkeypatch.setattr(mcp_server, "_generate_answer", boom)
+    monkeypatch.setattr(mcp_server, "generate_answer", boom)
 
     result = await mcp_server.ask_knowledge_base(
         conversation_summary="", question="q"

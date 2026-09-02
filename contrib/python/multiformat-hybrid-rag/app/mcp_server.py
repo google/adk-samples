@@ -93,9 +93,19 @@ def _normalize_whitespace(text: str) -> str:
     return text.strip()
 
 
-def _generate_answer(
+def generate_answer(
     context: str, conversation_summary: str, question: str
 ) -> str:
+    """Generate an answer grounded in the retrieved context.
+
+    Public because both entry points use it: the ask_knowledge_base tool
+    below and the /api/search endpoint in app/fast_api_app.py. It stays in
+    this module because it shares the lazily constructed GenAI client and
+    the system prompt with the tool.
+
+    Blocking -- callers on an event loop must offload it (see
+    ask_knowledge_base).
+    """
     context = _normalize_whitespace(context)
     resp = _get_genai_client().models.generate_content(
         model=MCP_TOOL_MODEL,
@@ -132,7 +142,7 @@ async def ask_knowledge_base(
     Returns:
         A direct answer or raw document content from the knowledge base.
     """
-    # search_knowledge_base and _generate_answer are both synchronous and
+    # search_knowledge_base and generate_answer are both synchronous and
     # both block for seconds -- a gRPC round trip to Vector Search and a
     # Gemini generate_content call. This coroutine runs on the same event
     # loop as the FastAPI app that mounts the MCP server (see
@@ -165,7 +175,7 @@ async def ask_knowledge_base(
 
     try:
         return await asyncio.to_thread(
-            _generate_answer, context, conversation_summary, question
+            generate_answer, context, conversation_summary, question
         )
     except Exception:
         logger.exception("Answer generation failed")
