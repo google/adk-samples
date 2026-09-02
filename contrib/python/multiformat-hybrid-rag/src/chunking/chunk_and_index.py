@@ -50,7 +50,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from google.cloud import bigquery, run_v2
 
-from src.utils import bq_utils, vs_utils
+from src.utils import CHUNK_ID_SEPARATOR, bq_utils, vs_utils
 from src.utils.auth import get_id_token
 from src.utils.config import config as pipeline_config
 from src.utils.http_utils import post_with_retry
@@ -281,7 +281,9 @@ def _build_chunk_rows(file_row: dict, reply: dict) -> list[dict]:
     for chunk in reply.get("chunks", []):
         rows.append(
             {
-                "chunk_id": f"{file_id}__{chunk['chunk_index']}",
+                "chunk_id": (
+                    f"{file_id}{CHUNK_ID_SEPARATOR}{chunk['chunk_index']}"
+                ),
                 "file_id": file_id,
                 "gcs_uri": gcs_uri,
                 "chunk_index": chunk["chunk_index"],

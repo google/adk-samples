@@ -25,6 +25,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
 
 from app.config import (
+    DEFAULT_TOP_K,
     MAX_TOP_K,
     MCP_TOOL_MODEL,
     MODEL_LOCATION,
@@ -60,6 +61,10 @@ def _get_genai_client() -> genai.Client:
         )
     return _genai_client
 
+
+# Low but not zero: answers must stay faithful to the retrieved documents,
+# while leaving enough freedom to phrase them naturally.
+ANSWER_TEMPERATURE = 0.2
 
 _SYSTEM_PROMPT = """\
 You are a knowledge base assistant. Answer questions based exclusively on the \
@@ -114,7 +119,10 @@ def generate_answer(
             f"## Conversation so far:\n{conversation_summary}\n\n"
             f"## Question:\n{question}"
         ),
-        config={"temperature": 0.2, "system_instruction": _SYSTEM_PROMPT},
+        config={
+            "temperature": ANSWER_TEMPERATURE,
+            "system_instruction": _SYSTEM_PROMPT,
+        },
     )
     return resp.text or ""
 
@@ -123,7 +131,7 @@ def generate_answer(
 async def ask_knowledge_base(
     conversation_summary: str,
     question: str,
-    top_k: Annotated[int, Field(ge=1, le=MAX_TOP_K)] = 10,
+    top_k: Annotated[int, Field(ge=1, le=MAX_TOP_K)] = DEFAULT_TOP_K,
     generative_answer: bool = True,
 ) -> str:
     """Ask the knowledge base a question.

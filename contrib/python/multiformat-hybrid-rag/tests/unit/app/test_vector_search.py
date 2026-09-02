@@ -72,3 +72,29 @@ class TestExtractWindow:
                 window_chars=50,
             )
             assert window != "", f"empty window at chunk_index={chunk_index}"
+
+
+class TestChunkIdContract:
+    """chunk_id format is a contract between three separately deployed
+    pieces, so the separator must come from one shared definition.
+    """
+
+    def test_minted_id_parses_back_to_its_index(self):
+        from src.utils import CHUNK_ID_SEPARATOR
+
+        file_id, chunk_index = "abc123", 7
+        chunk_id = f"{file_id}{CHUNK_ID_SEPARATOR}{chunk_index}"
+
+        parsed = int(chunk_id.rsplit(CHUNK_ID_SEPARATOR, 1)[1])
+
+        assert parsed == chunk_index
+
+    def test_file_ids_containing_the_separator_still_parse(self):
+        from src.utils import CHUNK_ID_SEPARATOR
+
+        # rsplit, not split: only the final segment is the index.
+        file_id = f"weird{CHUNK_ID_SEPARATOR}name"
+        chunk_id = f"{file_id}{CHUNK_ID_SEPARATOR}12"
+
+        assert int(chunk_id.rsplit(CHUNK_ID_SEPARATOR, 1)[1]) == 12
+        assert chunk_id.rsplit(CHUNK_ID_SEPARATOR, 1)[0] == file_id

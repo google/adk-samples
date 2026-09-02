@@ -8,7 +8,7 @@
 #
 # Build from project root (context must be repo root):
 #   gcloud builds submit \
-#     --config=data_ingestion/chunk_index_service/cloudbuild.yaml \
+#     --config=data_ingestion_pipeline/chunk_index_service/cloudbuild.yaml \
 #     --substitutions=_IMAGE="$CHUNK_INDEX_SERVICE_IMAGE" \
 #     --project="$GOOGLE_CLOUD_PROJECT" .
 

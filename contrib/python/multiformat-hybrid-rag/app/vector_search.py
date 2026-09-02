@@ -17,12 +17,13 @@ from google.cloud import vectorsearch_v1beta
 
 from app.config import (
     CONTEXT_WINDOW,
+    DEFAULT_TOP_K,
     SEMANTIC_WEIGHT,
     env_or,
     get_collection_path,
     get_documents_collection_path,
 )
-from src.utils import vs_utils
+from src.utils import CHUNK_ID_SEPARATOR, vs_utils
 
 # Each retriever is asked for more candidates than the caller wants. The
 # semantic and text result sets overlap heavily, so fetching exactly top_k
@@ -74,7 +75,7 @@ def search_collection(
     query: str,
     collection_path: str,
     documents_collection_path: str,
-    top_k: int = 10,
+    top_k: int = DEFAULT_TOP_K,
     semantic_weight: float = 0.7,
     context_window: int | None = None,
 ) -> str:
@@ -204,7 +205,7 @@ def search_collection(
         if context_window and doc and doc.get("content"):
             chunk_id = chunk_id_by_file.get(file_id, "")
             try:
-                chunk_index = int(chunk_id.rsplit("__", 1)[1])
+                chunk_index = int(chunk_id.rsplit(CHUNK_ID_SEPARATOR, 1)[1])
             except (ValueError, IndexError):
                 chunk_index = 0
             document_text = _extract_window(
@@ -225,7 +226,7 @@ def search_collection(
 
 def search_knowledge_base(
     query: str,
-    top_k: int = 10,
+    top_k: int = DEFAULT_TOP_K,
     generative_answer: bool = True,
 ) -> str:
     """search_collection bound to this recipe's configured collections.

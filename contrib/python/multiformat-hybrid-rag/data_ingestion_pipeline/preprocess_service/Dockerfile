@@ -13,12 +13,12 @@
 #   - Text/Markdown: read as UTF-8 directly
 #
 # Build from project root (context must be repo root for COPY paths):
-#   docker build -f data_ingestion/preprocess_service/Dockerfile \
+#   docker build -f data_ingestion_pipeline/preprocess_service/Dockerfile \
 #     -t preprocess-service:latest .
 #
 # Or via Cloud Build:
 #   gcloud builds submit \
-#     --config=data_ingestion/preprocess_service/cloudbuild.yaml \
+#     --config=data_ingestion_pipeline/preprocess_service/cloudbuild.yaml \
 #     --substitutions=_IMAGE="$PREPROCESS_SERVICE_IMAGE" \
 #     --project="$GOOGLE_CLOUD_PROJECT" .
 

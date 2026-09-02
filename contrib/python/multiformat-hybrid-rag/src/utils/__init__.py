@@ -12,3 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Separator in a chunk_id: "{file_id}__{chunk_index}".
+#
+# Defined here rather than next to either user because the format is a
+# contract between three separately deployed pieces: src/chunking mints the
+# ids, the chunk-index Cloud Run service writes them to Vector Search, and
+# app/vector_search parses the index back out to locate a context window.
+# This package is dependency-free, so all three can import it -- the two
+# service images copy src/ for exactly this kind of shared definition.
+CHUNK_ID_SEPARATOR = "__"

@@ -44,6 +44,8 @@ from google.cloud import vectorsearch_v1beta
 from google.genai import types as genai_types
 from langchain_text_splitters import MarkdownTextSplitter
 
+from src.utils import CHUNK_ID_SEPARATOR
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -288,11 +290,15 @@ def _push_chunks_to_vs2(file_id: str, gcs_uri: str, chunks: list[dict]) -> None:
     """Push enriched chunks to the VS2 chunks collection in batches."""
     payload = [
         {
-            "data_object_id": f"{file_id}__{c['chunk_index']}",
+            "data_object_id": (
+                f"{file_id}{CHUNK_ID_SEPARATOR}{c['chunk_index']}"
+            ),
             "data_object": {
                 "data": {
                     "file_id": file_id,
-                    "chunk_id": f"{file_id}__{c['chunk_index']}",
+                    "chunk_id": (
+                        f"{file_id}{CHUNK_ID_SEPARATOR}{c['chunk_index']}"
+                    ),
                     "chunk_text": (
                         f"{c['context']}\n\n{c['chunk_text']}"
                         if c["context"].strip()
