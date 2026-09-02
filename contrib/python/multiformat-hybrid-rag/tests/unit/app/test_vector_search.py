@@ -1,3 +1,6 @@
+import logging
+
+from app import vector_search
 from app.vector_search import _extract_window
 
 
@@ -98,3 +101,28 @@ class TestChunkIdContract:
 
         assert int(chunk_id.rsplit(CHUNK_ID_SEPARATOR, 1)[1]) == 12
         assert chunk_id.rsplit(CHUNK_ID_SEPARATOR, 1)[0] == file_id
+
+
+class TestIntegrationStubSeam:
+    """The stub exists because the e2e test starts the app as a subprocess.
+    It must never be reachable from a deployed service.
+    """
+
+    def test_disabled_by_default(self, monkeypatch):
+        monkeypatch.delenv("INTEGRATION_TEST", raising=False)
+        assert vector_search._stub_enabled() is False
+
+    def test_enabled_for_the_integration_test(self, monkeypatch):
+        monkeypatch.setenv("INTEGRATION_TEST", "TRUE")
+        assert vector_search._stub_enabled() is True
+
+    def test_warns_loudly_whenever_it_fires(self, monkeypatch, caplog):
+        monkeypatch.setenv("INTEGRATION_TEST", "TRUE")
+        with caplog.at_level(logging.WARNING):
+            vector_search._stub_enabled()
+        assert "Vector Search is NOT being queried" in caplog.text
+
+    def test_any_other_value_does_not_enable_it(self, monkeypatch):
+        for value in ("true", "1", "yes", ""):
+            monkeypatch.setenv("INTEGRATION_TEST", value)
+            assert vector_search._stub_enabled() is False

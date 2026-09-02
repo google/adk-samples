@@ -85,13 +85,23 @@ VS_DOCUMENTS_COLLECTION_ID = env_or(
 )
 
 
+def _collection_path(collection_id: str) -> str:
+    """Build a Vector Search collection resource path.
+
+    Not cached itself -- the two callers below are, and they are the only
+    ones. get_project_id() is where the expensive part lives.
+    """
+    return (
+        f"projects/{get_project_id()}/locations/{LOCATION}"
+        f"/collections/{collection_id}"
+    )
+
+
 @functools.cache
 def get_collection_path() -> str:
     """Full resource path of the chunks collection."""
     return env_or(
-        "VECTOR_SEARCH_COLLECTION",
-        f"projects/{get_project_id()}/locations/{LOCATION}"
-        f"/collections/{VS_COLLECTION_ID}",
+        "VECTOR_SEARCH_COLLECTION", _collection_path(VS_COLLECTION_ID)
     )
 
 
@@ -100,8 +110,7 @@ def get_documents_collection_path() -> str:
     """Full resource path of the documents-by-file_id KV collection."""
     return env_or(
         "VECTOR_SEARCH_DOCUMENTS_COLLECTION",
-        f"projects/{get_project_id()}/locations/{LOCATION}"
-        f"/collections/{VS_DOCUMENTS_COLLECTION_ID}",
+        _collection_path(VS_DOCUMENTS_COLLECTION_ID),
     )
 
 

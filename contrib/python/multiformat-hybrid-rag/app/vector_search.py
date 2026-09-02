@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import os
 
 from google.cloud import vectorsearch_v1beta
@@ -25,6 +26,8 @@ from app.config import (
 )
 from src.utils import CHUNK_ID_SEPARATOR, vs_utils
 
+logger = logging.getLogger(__name__)
+
 # Each retriever is asked for more candidates than the caller wants. The
 # semantic and text result sets overlap heavily, so fetching exactly top_k
 # from each would leave fewer than top_k unique documents once RRF fusion
@@ -35,6 +38,32 @@ CANDIDATE_MULTIPLIER = 2
 # requests, so reusing the gRPC channel across them avoids per-request
 # client construction overhead.
 _search_client: vectorsearch_v1beta.DataObjectSearchServiceClient | None = None
+
+
+# Test seam. tests/integration/test_server_e2e.py starts this app as a
+# uvicorn *subprocess*, so there is no in-process object for a fixture to
+# monkeypatch and the switch has to cross the process boundary as an
+# environment variable.
+#
+# Confined to this one predicate, and it warns every time it fires: the
+# hazard is not the branch itself but a flag leaking into a real
+# deployment and silently substituting canned text for retrieval. If that
+# ever happens the logs say so on every request.
+_STUB_RESULT = (
+    "## Context provided:\n<Document 0>\n"
+    "Mock vector search result for testing purposes.\n</Document 0>"
+)
+
+
+def _stub_enabled() -> bool:
+    if os.getenv("INTEGRATION_TEST") != "TRUE":
+        return False
+    logger.warning(
+        "INTEGRATION_TEST=TRUE: returning a canned search result. "
+        "Vector Search is NOT being queried. This must never be set "
+        "outside the integration tests."
+    )
+    return True
 
 
 def _get_search_client() -> vectorsearch_v1beta.DataObjectSearchServiceClient:
@@ -106,8 +135,8 @@ def search_collection(
     Returns:
         Formatted string containing relevant document content.
     """
-    if os.getenv("INTEGRATION_TEST") == "TRUE":
-        return "## Context provided:\n<Document 0>\nMock vector search result for testing purposes.\n</Document 0>"
+    if _stub_enabled():
+        return _STUB_RESULT
 
     client = _get_search_client()
 
