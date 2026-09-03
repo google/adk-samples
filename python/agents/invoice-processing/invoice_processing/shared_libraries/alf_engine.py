@@ -177,7 +177,7 @@ def _get_llm_project_id():
     )
     if not project:
         try:
-            import google.auth  # noqa: PLC0415
+            import google.auth
 
             _, project = google.auth.default()
         except Exception:
@@ -943,8 +943,8 @@ class LLMActionExecutor:
         """Lazy-initialize the Vertex AI GenerativeModel."""
         if cls._model is None:
             try:
-                from google.cloud import aiplatform  # noqa: PLC0415
-                from vertexai.generative_models import (  # noqa: PLC0415
+                from google.cloud import aiplatform
+                from vertexai.generative_models import (
                     GenerationConfig,
                     GenerativeModel,
                 )

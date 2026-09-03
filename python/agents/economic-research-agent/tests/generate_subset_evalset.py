@@ -3,6 +3,7 @@
 
 import json
 
+
 def generate_subset():
     with open("tests/eval/evalsets/wow_stress_test.evalset.json") as f:
         full = json.load(f)
