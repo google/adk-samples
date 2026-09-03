@@ -153,11 +153,25 @@ jobs:
           curl -fsSL https://antigravity.google/cli/install.sh | bash
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
-      # The agent needs NO tools: everything it must see is inlined into the
-      # prompt, and it returns a decision rather than performing an action.
-      # `echo` and `cat` are harmless absorbers for stray improvisation,
-      # which in headless mode would otherwise be auto-denied and truncate
-      # the response.
+      # SECURITY: the allowlist is EMPTY, and it stays that way. The agent
+      # needs no tool — everything it must see is inlined into the prompt, and
+      # it returns a decision rather than performing an action — while its
+      # input is issue titles and bodies, which anyone on the internet can
+      # write.
+      #
+      # `command(cat)` used to be here, described as a harmless absorber for
+      # stray improvisation. It was not harmless: $GOOGLE_APPLICATION_CREDENTIALS
+      # is an absolute path outside the workspace, and the file at it embeds
+      # ACTIONS_ID_TOKEN_REQUEST_TOKEN, so one `cat` yields enough to
+      # impersonate the service account. This workflow gives a compromised
+      # agent no way to publish that — the response is parsed for label names
+      # and everything else is discarded — but the sibling PR reviewer, which
+      # posts model text to a public pull request, did. See b/555419958, filed
+      # against that one. The tool grant is the part both shared, so it goes
+      # from both.
+      #
+      # The improvisation this was absorbing fails loudly rather than
+      # silently: an unparseable decision is caught below and fails the job.
       #
       # Deliberately absent: `command(gh)` — see the DESIGN note at the top.
       - name: 'Configure agy (tool permissions)'
@@ -170,10 +184,7 @@ jobs:
           {
             "enableTelemetry": false,
             "permissions": {
-              "allow": [
-                "command(echo)",
-                "command(cat)"
-              ]
+              "allow": []
             }
           }
           SETTINGS_EOF
@@ -267,7 +278,21 @@ jobs:
           AGY_EXIT=$?
           set -e
 
-          echo "--- agy stdout ---"; cat agy_result.json || true
+          # SECURITY: print the envelope, never the response. The response is
+          # model text derived from issue bodies, which are untrusted, and a
+          # workflow log on a public repository is world-readable. Log masking
+          # is not a backstop here: it covers registered secrets, and the
+          # material worth exfiltrating from this runner — the contents of
+          # $GOOGLE_APPLICATION_CREDENTIALS — is not one. The empty allowlist
+          # above is what makes reaching it hard; not printing whatever came
+          # back is what keeps the log from being a way out. See b/555419958.
+          #
+          # The response is still available where it is needed: the failure
+          # branches below quote agy's own error, and the decision is parsed
+          # and validated a few lines down.
+          echo "--- agy envelope ---"
+          jq -r '{status, error} | tostring' agy_result.json 2>/dev/null \
+            || echo 'agy_result.json is not JSON'
           echo "--- agy stderr ---"; cat agy_stderr.log || true
           echo "------------------"
 
@@ -281,8 +306,11 @@ jobs:
           DECISION="$(jq -r '.response // ""' agy_result.json \
             | sed -e 's/^[[:space:]]*```json[[:space:]]*$//' -e 's/^[[:space:]]*```[[:space:]]*$//')"
 
+          # The raw response is deliberately NOT echoed here — see the envelope
+          # note above. Its shape is enough to tell a truncated reply from a
+          # fenced one without putting untrusted model text in a public log.
           if ! echo "${DECISION}" | jq -e 'has("issues")' >/dev/null 2>&1; then
-            echo "::error::agy returned no parseable decision. Raw response above."
+            echo "::error::agy returned no parseable decision (${#DECISION} chars, status=${STATUS})."
             exit 1
           fi
 
