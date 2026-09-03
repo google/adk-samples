@@ -1,66 +1,43 @@
 # Agent Development Kit (ADK) Kotlin Samples
 
 > [!IMPORTANT]
-> **This folder is retired.** `kotlin/agents/` no longer accepts new
-> recipes, or changes to the recipes already here. Recipes now live in
-> **`contrib/kotlin/`**.
+> **This folder is retired.** `kotlin/agents/` is now empty. Recipes live in
+> **[`core/kotlin/`](../core/kotlin/)**, curated by the ADK team, and
+> **[`contrib/kotlin/`](../contrib/kotlin/)**, contributed by the community.
 >
-> - **Contributing a new recipe?** Start with the
->   [recipe checklist](../docs/recipe-checklist.md).
-> - **Already have a recipe here?** Move it to `contrib/kotlin/<name>` and
->   follow the same checklist. See the
+> - **Contributing a new recipe?** It belongs in `contrib/kotlin/`. Start with
+>   the [recipe checklist](../docs/recipe-checklist.md) and the
+>   [Kotlin guidance](../docs/recipe-handbook/languages/kotlin.md). See also the
 >   [contributor guide](../docs/README.md).
+> - **Looking for the LLM Auditor?** It now lives at
+>   [`core/kotlin/llm-auditor/`](../core/kotlin/llm-auditor/).
 >
 > Pull requests that add or modify files under `kotlin/agents/` fail CI.
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../LICENSE)
 
 <img src="https://github.com/google/adk-docs/blob/main/docs/assets/agent-development-kit.png" alt="Agent Development Kit Logo" width="150">
 
-This collection provides ready-to-use sample agents built on top of [ADK
-Kotlin](https://github.com/google/adk-kotlin). These agents cover a range of
-common use cases and complexities, from simple conversational bots to complex
-multi-agent workflows.
+[`core/kotlin/`](../core/kotlin/) and [`contrib/kotlin/`](../contrib/kotlin/)
+provide ready-to-use sample agents built on top of
+[ADK Kotlin](https://github.com/google/adk-kotlin). These agents cover a range
+of common use cases and complexities, from simple conversational bots to
+complex multi-agent workflows.
 
-> **Building for Android?** See the [android/](../android/) samples and the
+> **Building for Android?** See the
 > [Build ADK agents for Android](https://developer.android.com/ai/adk) guide.
 
-## Getting Started with Kotlin Samples
+## Getting Started
 
-Follow these steps to set up and run the sample agents:
+Install and configure ADK Kotlin by following the
+[Kotlin Quickstart](https://adk.dev/get-started/kotlin/). You will need **Java 17
+or later** and **Gradle 8.0 or later**, plus a `GOOGLE_API_KEY` environment
+variable for the Gemini API — create a key in Google AI Studio on the
+[API Keys](https://aistudio.google.com/app/apikey) page.
 
-1.  **Prerequisites:**
-    *   **Install ADK Kotlin:** Ensure you have ADK
-        Kotlin installed and configured. Follow the
-        [Kotlin Quickstart](https://adk.dev/get-started/kotlin/)
-        for setup instructions.
-    *   **Java 17 or later** and **Gradle 8.0 or later** installed.
-    *   **Set Up Environment Variables:** Each agent example requires a
-        `GOOGLE_API_KEY` environment variable for the Gemini API. You can create
-        a key in Google AI Studio on the
-        [API Keys](https://aistudio.google.com/app/apikey) page.
-
-2.  **Clone this repository:**
-
-    To start working with the ADK Kotlin samples, first clone the public
-    `adk-samples` repository:
-    ```bash
-    git clone https://github.com/google/adk-samples.git
-    cd adk-samples/kotlin
-    ```
-
-3.  **Explore the Agents:**
-
-    *   Navigate to the `agents/` directory.
-    *   Browse the subdirectories. Each contains a specific sample agent with
-        its own `README.md`.
-
-4.  **Run an Agent:**
-    *   Choose an agent from the `agents/` directory.
-    *   Navigate into that agent's specific directory (e.g.,
-        `cd agents/fun-facts`).
-    *   Follow the instructions in *that agent's* `README.md` file for specific
-        setup and running the agent.
+Then pick an agent under [`core/kotlin/`](../core/kotlin/) or
+[`contrib/kotlin/`](../contrib/kotlin/) and follow the instructions in *that
+agent's* `README.md`.
 
 **Notes:**
 
@@ -69,16 +46,3 @@ These agents have been built and tested using
 You can test these samples with other models as well. Please refer to
 [ADK Tutorials](https://adk.dev/tutorials/) to use other
 models for these samples.
-
-## Repository Structure
-```bash
-.
-├── kotlin                      # Contains all the Kotlin sample code
-│   ├── agents                  # Contains individual agent samples
-│   │   ├── agent1              # Specific agent directory
-│   │   │   └── README.md       # Agent-specific instructions
-│   │   ├── agent2
-│   │   │   └── README.md
-│   │   ├── ...
-│   └── README.md               # This file (Repository overview)
-```
