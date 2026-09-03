@@ -488,12 +488,25 @@ jobs:
       # entirely by the PR author, including from a fork, and the prompt is not
       # a boundary: "Do NOT call any tool" below is an instruction to a model,
       # so any tool granted here is a tool an attacker-authored diff can ask
-      # for. What that reaches is not hypothetical. $GOOGLE_APPLICATION_CREDENTIALS
-      # is an absolute path outside the workspace, and the file at it embeds
-      # ACTIONS_ID_TOKEN_REQUEST_TOKEN, so it is on its own enough to impersonate
-      # the service account; `cat` alone was sufficient. $GITHUB_ENV and
-      # $GITHUB_PATH are in this step's environment and are honoured by every
-      # later step in the job. See b/555419958.
+      # for. $GOOGLE_APPLICATION_CREDENTIALS is an absolute path outside the
+      # workspace, and the file at it embeds ACTIONS_ID_TOKEN_REQUEST_TOKEN, so
+      # it is on its own enough to impersonate the service account. $GITHUB_ENV
+      # and $GITHUB_PATH are in this step's environment and are honoured by
+      # every later step in the job. See b/555419958.
+      #
+      # None of that is theory. Tested directly against agy while fixing this:
+      #   - with the old list, `read_file` on an absolute path OUTSIDE the
+      #     agent's working directory returned the file's contents in the
+      #     response — the response this workflow publishes to a public PR;
+      #   - `write_file` is likewise NOT confined to that directory, which is
+      #     what makes the reported code-execution half real rather than open;
+      #   - with the list empty the same read is auto-denied, and agy's own log
+      #     shows it parsed the setting as `permissions=&{Allow:[] Deny:[] ...}`;
+      #   - and the reviewer still finds every planted defect with no tools at
+      #     all, because the diff is inlined into the prompt.
+      # So the cost of an empty list is measured at nothing. Do not reopen this
+      # on the theory that a read-only tool is harmless: `cat` alone was the
+      # whole vulnerability.
       #
       # This list used to carry echo, cat, head, tail, grep, wc, read_file(*)
       # and write_file(*), for a reason that has since expired: an unlisted

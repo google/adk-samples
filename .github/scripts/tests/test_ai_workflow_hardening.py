@@ -32,6 +32,7 @@ ordinary edits to these workflows do not trip them.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -213,8 +214,10 @@ def test_the_job_that_can_write_takes_no_checkout():
 
     The report's code-execution half turned on the agent writing to
     `.github/scripts/post_review_comments.py`, which the next step executed.
-    A posting job with no checkout cannot be attacked that way whatever agy's
-    `write_file` sandbox turns out to do.
+    That half was real: `write_file` was tested against this agy build and is
+    NOT confined to the agent's working directory — it wrote to an absolute
+    path outside it. A posting job with no checkout is what makes the vector
+    structurally unavailable rather than merely denied.
     """
     assert not [
         s
@@ -240,6 +243,187 @@ def test_the_model_and_the_posting_step_are_in_different_jobs():
     assert runs_agy, "no job runs agy — has the invocation been renamed?"
     assert posts, "no job posts a review — has the endpoint changed?"
     assert runs_agy.isdisjoint(posts)
+
+
+# --------------------------------------------------------------------------
+# The job graph
+#
+# Splitting one job into three is the largest behavioural change here, and its
+# correctness lives entirely in `needs:` and two `if:` expressions. Nothing
+# else in the suite touches them, and the failure they produce is silent: a
+# review that is built and then never posted looks exactly like a clean PR.
+# These pin the wiring, not the wording.
+# --------------------------------------------------------------------------
+
+
+def _needs(job: str) -> set[str]:
+    n = _load(PR_REVIEW)["jobs"][job].get("needs") or []
+    return {n} if isinstance(n, str) else set(n)
+
+
+def test_the_jobs_are_wired_in_order():
+    assert _needs("review") == set(), "review starts the chain"
+    assert _needs("post") == {"review"}
+    assert _needs("notify") == {"review", "post"}
+
+
+def test_post_runs_for_both_reasons_it_exists_and_no_others():
+    """Oversize PRs and real findings. A clean PR must not spin a runner.
+
+    Both operands matter. Dropping `skip` silently stops the too-large-to-diff
+    comment ever being posted, since the job that works that out holds a
+    read-only token and cannot say it.
+    """
+    cond = " ".join(_load(PR_REVIEW)["jobs"]["post"]["if"].split())
+    assert "needs.review.outputs.skip == 'true'" in cond
+    assert "needs.review.outputs.has_payload == 'true'" in cond
+    assert "||" in cond, "the two reasons are alternatives, not both required"
+
+
+def test_notify_fires_on_either_job_failing():
+    """`always()` plus explicit results, not a bare `failure()`.
+
+    When `review` fails, `post` is SKIPPED rather than failed. A condition
+    written only against `post` would stay silent on exactly the failure the
+    contributor most needs told about.
+    """
+    cond = " ".join(_load(PR_REVIEW)["jobs"]["notify"]["if"].split())
+    assert "always()" in cond
+    assert "needs.review.result == 'failure'" in cond
+    assert "needs.post.result == 'failure'" in cond
+
+
+def test_every_output_post_and_notify_consume_is_actually_produced():
+    """A typo in an output name is an empty string, not an error.
+
+    `needs.review.outputs.has_paylod` would evaluate to '' forever, `post`
+    would never run, and every review would vanish with all checks green.
+    """
+    doc = _load(PR_REVIEW)
+    produced = set(doc["jobs"]["review"].get("outputs") or {})
+
+    # Walked, not serialised. `yaml.dump` wraps at 80 columns, so a long
+    # enough expression would be folded mid-token and the regex would quietly
+    # stop seeing a consumed output — this test would then pass by failing to
+    # look, which is the exact failure it exists to prevent elsewhere.
+    consumed: set[str] = set()
+
+    def walk(node) -> None:
+        if isinstance(node, str):
+            consumed.update(
+                re.findall(r"needs\.review\.outputs\.([A-Za-z0-9_]+)", node)
+            )
+        elif isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    for job in ("post", "notify"):
+        walk(doc["jobs"][job])
+
+    assert consumed, (
+        "no job reads the review job's outputs — is it still split?"
+    )
+    assert consumed <= produced, (
+        f"consumed but never produced: {consumed - produced}"
+    )
+
+
+def test_the_payload_artifact_name_matches_between_upload_and_download():
+    """Different names fail at download time, on every single review.
+
+    Paired against the upload that carries the PAYLOAD specifically, not
+    against every upload in the job. `review` also uploads a dry-run bundle,
+    and a download pointed at that would still be a name that exists — so a
+    subset check alone would wave through a swap that breaks every real run.
+    The payload upload is identified by its gate, which is the same
+    `has_payload` condition the download uses.
+    """
+
+    def gated_on_payload(step):
+        return "has_payload" in str(step.get("if", ""))
+
+    uploads = {
+        s["with"]["name"]
+        for s in _steps(PR_REVIEW, "review")
+        if "actions/upload-artifact" in s.get("uses", "")
+        and gated_on_payload(s)
+    }
+    downloads = {
+        s["with"]["name"]
+        for s in _steps(PR_REVIEW, "post")
+        if "actions/download-artifact" in s.get("uses", "")
+    }
+
+    assert len(uploads) == 1, f"expected one payload upload, got {uploads}"
+    assert downloads == uploads, (
+        f"post downloads {downloads}, review uploads {uploads}"
+    )
+
+
+# --------------------------------------------------------------------------
+# Caller/callee permission ceiling
+# --------------------------------------------------------------------------
+
+# GitHub's ordering for a permission scope. A caller must grant at least what
+# the called workflow asks for; a reusable workflow can narrow, never widen.
+LEVELS = {"none": 0, "read": 1, "write": 2}
+
+
+def _effective(workflow: dict, job: dict) -> dict:
+    """What a calling job actually holds: its own block, else the file's."""
+    perms = job.get("permissions")
+    if perms is None:
+        perms = workflow.get("permissions")
+    return perms if isinstance(perms, dict) else {}
+
+
+def test_no_job_asks_for_more_than_every_caller_grants():
+    """A reusable workflow cannot widen its caller's grant.
+
+    Ask for a scope the caller withheld and the run dies before any step,
+    with "The workflow is requesting 'x: write', but is only allowed
+    'x: none'" — on every pull request, in all four lanes at once. Nothing
+    else catches this: actionlint validates each file alone, and the two
+    sides live in six different files.
+
+    This is not hypothetical bookkeeping. While splitting these jobs I
+    considered giving `post` an extra scope for `download-artifact` before
+    establishing it needed none; had it been one the lanes do not grant, it
+    would have taken the whole reviewer down.
+    """
+    callers: dict[str, list[tuple[str, dict]]] = {}
+    for path in WORKFLOWS.glob("*.yml"):
+        doc = _load(path)
+        for job_name, job in (doc.get("jobs") or {}).items():
+            uses = str(job.get("uses") or "")
+            if uses.startswith("./.github/workflows/"):
+                callee = uses.rsplit("/", maxsplit=1)[-1]
+                callers.setdefault(callee, []).append(
+                    (f"{path.name}:{job_name}", _effective(doc, job))
+                )
+
+    for callee_name in (PR_REVIEW.name, ISSUE_TRIAGE.name):
+        assert callers.get(callee_name), f"no caller found for {callee_name}"
+        callee = _load(WORKFLOWS / callee_name)
+
+        for job_name, job in callee["jobs"].items():
+            # A job with no block of its own inherits the callee file's
+            # workflow-level grant, and that inherited set is what the caller
+            # has to cover. Skipping such a job would leave the issue-triage
+            # core — whose single job declares nothing — entirely unguarded.
+            requested = _effective(callee, job)
+            for scope, level in requested.items():
+                for caller_id, granted in callers[callee_name]:
+                    have = LEVELS.get(str(granted.get(scope, "none")), 0)
+                    want = LEVELS.get(str(level), 0)
+                    assert have >= want, (
+                        f"{callee_name}:{job_name} asks for {scope}:{level}, "
+                        f"but {caller_id} grants {scope}:"
+                        f"{granted.get(scope, 'none')}"
+                    )
 
 
 # --------------------------------------------------------------------------
@@ -296,12 +480,23 @@ def test_a_response_carrying_the_credential_fails_the_job():
 
 
 def test_the_diff_is_marked_untrusted_in_the_prompt():
+    """The section itself, not a mention of it.
+
+    A substring check for "## Untrusted input" passes on the cross-reference
+    inside the PR Context header — `(ALL UNTRUSTED — see "## Untrusted
+    input")` — so deleting the actual section would leave it green. Matching
+    a whole line is what distinguishes the heading from the pointer to it.
+    """
     script = next(
         s["run"]
         for s in _steps(PR_REVIEW, "review")
         if isinstance(s.get("run"), str) and "## PR Context" in s["run"]
     )
-    assert "## Untrusted input" in script
+    headings = {line.strip() for line in script.splitlines()}
+    assert "## Untrusted input" in headings, (
+        "the prompt's untrusted-input section is gone (a reference to it in "
+        "another line does not count)"
+    )
 
     diff_header = next(
         line for line in script.splitlines() if "Complete unified diff" in line
