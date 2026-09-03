@@ -1,34 +1,64 @@
-name: ☕ Java Tests
+name: 🟦 TypeScript Tests
 
-# Runs tests for each Java recipe affected by a PR (or every recipe
+# Runs tests for each TypeScript recipe affected by a PR (or every recipe
 # on `workflow_dispatch --run-all`). Uses a matrix job so one recipe
 # failing doesn't cancel the others.
 
 on:
   pull_request:
     paths:
-      # Only file types that can meaningfully affect Java test results.
+      # Only file types that can meaningfully affect TypeScript test results.
       # Doc-only PRs (README changes etc.) intentionally skip this workflow.
-      - "core/**/*.java"
-      - "core/**/pom.xml"
-      - "core/**/build.gradle"
-      - "core/**/build.gradle.kts"
+      - "core/**/*.ts"
+      - "core/**/*.tsx"
+      - "core/**/*.js"
+      - "core/**/*.jsx"
+      - "core/**/*.mjs"
+      - "core/**/*.cjs"
+      - "core/**/*.mts"
+      - "core/**/*.cts"
+      - "core/**/package.json"
+      - "core/**/package-lock.json"
+      - "core/**/yarn.lock"
+      - "core/**/pnpm-lock.yaml"
+      - "core/**/bun.lockb"
+      - "core/**/bun.lock"
       - "core/**/manifest.yaml"
-      - "contrib/**/*.java"
-      - "contrib/**/pom.xml"
-      - "contrib/**/build.gradle"
-      - "contrib/**/build.gradle.kts"
+      - "contrib/**/*.ts"
+      - "contrib/**/*.tsx"
+      - "contrib/**/*.js"
+      - "contrib/**/*.jsx"
+      - "contrib/**/*.mjs"
+      - "contrib/**/*.cjs"
+      - "contrib/**/*.mts"
+      - "contrib/**/*.cts"
+      - "contrib/**/package.json"
+      - "contrib/**/package-lock.json"
+      - "contrib/**/yarn.lock"
+      - "contrib/**/pnpm-lock.yaml"
+      - "contrib/**/bun.lockb"
+      - "contrib/**/bun.lock"
       - "contrib/**/manifest.yaml"
-      - "skills/**/*.java"
-      - "skills/**/pom.xml"
-      - "skills/**/build.gradle"
-      - "skills/**/build.gradle.kts"
+      - "skills/**/*.ts"
+      - "skills/**/*.tsx"
+      - "skills/**/*.js"
+      - "skills/**/*.jsx"
+      - "skills/**/*.mjs"
+      - "skills/**/*.cjs"
+      - "skills/**/*.mts"
+      - "skills/**/*.cts"
+      - "skills/**/package.json"
+      - "skills/**/package-lock.json"
+      - "skills/**/yarn.lock"
+      - "skills/**/pnpm-lock.yaml"
+      - "skills/**/bun.lockb"
+      - "skills/**/bun.lock"
       - "skills/**/manifest.yaml"
-      - ".github/workflows/java-tests.yml"
+      - ".github/workflows/typescript-tests.yml"
   workflow_dispatch:
     inputs:
       run_all:
-        description: "Run tests for all Java recipes (ignore diff)"
+        description: "Run tests for all TypeScript recipes (ignore diff)"
         type: boolean
         default: true
 
@@ -44,9 +74,9 @@ concurrency:
 
 jobs:
   detect-recipes:
-    name: Detect affected Java recipes
+    name: Detect affected TypeScript recipes
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       recipes: ${{ steps.detect.outputs.recipes }}
       count: ${{ steps.detect.outputs.count }}
@@ -57,7 +87,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect Java recipes to test
+      - name: Detect TypeScript recipes to test
         id: detect
         env:
           # Pass user-controlled and dynamic values through env vars rather
@@ -69,29 +99,31 @@ jobs:
         run: |
           set -euo pipefail
 
+          MANIFEST_FILENAME="manifest.yaml"
+
           # pipefail matters here: without it, a transient `git fetch` failure
           # would produce an empty diff → 0 recipes → skipped matrix →
           # skipped gate → branch protection sees the required check as
           # passing without ever running a test.
 
-          # Robust "is this a Java recipe" check: tolerates single/double/no
+          # Robust "is this a TypeScript recipe" check: tolerates single/double/no
           # quotes around the value, case-insensitive on the value, and a
           # trailing YAML comment.
-          is_java_recipe() {
-            grep -qiE "^[[:space:]]*language:[[:space:]]*[\"']?java[\"']?[[:space:]]*(#.*)?$" "$1"
+          is_typescript_recipe() {
+            grep -qiE "^[[:space:]]*language:[[:space:]]*[\"']?typescript[\"']?[[:space:]]*(#.*)?$" "$1"
           }
 
-          # Helper: collect all Java recipe dirs under core/, contrib/, and skills/.
+          # Helper: collect all TypeScript recipe dirs under core/, contrib/, and skills/.
           # A recipe dir is any directory that contains a manifest.yaml
-          # declaring language: java.
-          all_java_recipes() {
+          # declaring language: typescript.
+          all_typescript_recipes() {
             for root in core contrib skills; do
               [ -d "$root" ] || continue
               while IFS= read -r manifest; do
-                if is_java_recipe "$manifest"; then
+                if is_typescript_recipe "$manifest"; then
                   dirname "$manifest"
                 fi
-              done < <(find "$root" -name "manifest.yaml")
+              done < <(find "$root" -name "$MANIFEST_FILENAME")
             done
           }
 
@@ -103,7 +135,7 @@ jobs:
             local dir
             dir="$(dirname "$path")"
             while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
-              if [ -f "$dir/manifest.yaml" ]; then
+              if [ -f "$dir/$MANIFEST_FILENAME" ]; then
                 echo "$dir"
                 return
               fi
@@ -126,8 +158,8 @@ jobs:
               echo "::error::workflow_dispatch requires run_all=true. PR-diff mode is only available on pull_request events."
               exit 1
             fi
-            echo "workflow_dispatch with run_all=true — testing all Java recipes."
-            RECIPES=$(all_java_recipes)
+            echo "workflow_dispatch with run_all=true — testing all TypeScript recipes."
+            RECIPES=$(all_typescript_recipes)
           else
             # PR mode: diff against the base branch.
             if [ -z "$BASE_REF" ]; then
@@ -141,7 +173,7 @@ jobs:
             echo "$CHANGED_FILES"
 
             # Map each changed file to its recipe dir (nearest ancestor with
-            # manifest.yaml) and keep only unique Java recipe dirs.
+            # manifest.yaml) and keep only unique TypeScript recipe dirs.
             RECIPES=""
             while IFS= read -r file; do
               [ -z "$file" ] && continue
@@ -151,10 +183,10 @@ jobs:
               esac
               recipe_dir="$(find_recipe_dir "$file")"
               [ -z "$recipe_dir" ] && continue
-              if is_java_recipe "$recipe_dir/manifest.yaml"; then
+              if is_typescript_recipe "$recipe_dir/$MANIFEST_FILENAME"; then
                 RECIPES="${RECIPES}${recipe_dir}"$'\n'
               else
-                echo "[SKIP] $recipe_dir — not a Java recipe."
+                echo "[SKIP] $recipe_dir — not a TypeScript recipe."
               fi
             done <<< "$CHANGED_FILES"
 
@@ -163,13 +195,13 @@ jobs:
           fi
 
           if [ -z "$RECIPES" ]; then
-            echo "No Java recipes to test."
+            echo "No TypeScript recipes to test."
             echo "recipes=[]" >> "$GITHUB_OUTPUT"
             echo "count=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "Java recipes to test:"
+          echo "TypeScript recipes to test:"
           echo "$RECIPES"
 
           # Emit as a JSON array for the matrix
@@ -194,11 +226,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # ratchet:actions/setup-java@v6.0.0
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # ratchet:actions/setup-node@v7.0.0
         with:
-          distribution: temurin
-          java-version: "17"
+          node-version: "22"
 
       - name: Set up .env for tests
         working-directory: ${{ matrix.recipe }}
@@ -209,29 +240,31 @@ jobs:
             echo "Copied .env.example to .env"
           fi
 
-      - name: Run Java tests
+      - name: Run TypeScript tests
         working-directory: ${{ matrix.recipe }}
         env:
           RECIPE: ${{ matrix.recipe }}
         run: |
           set -euo pipefail
 
-          if [ -f "pom.xml" ]; then
-            if [ -f "./mvnw" ]; then
-              chmod +x ./mvnw
-              ./mvnw test -B
-            else
-              mvn test -B
-            fi
-          elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ] || [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
-            if [ -f "./gradlew" ]; then
-              chmod +x ./gradlew
-              ./gradlew test
-            else
-              gradle test
-            fi
+          if [ -f "package-lock.json" ]; then
+            npm ci || npm install
+            npm test
+          elif [ -f "pnpm-lock.yaml" ]; then
+            corepack enable
+            pnpm install --frozen-lockfile || pnpm install
+            pnpm test
+          elif [ -f "yarn.lock" ]; then
+            yarn install --frozen-lockfile || yarn install
+            yarn test
+          elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
+            npx bun install --frozen-lockfile || npx bun install
+            npx bun test
+          elif [ -f "package.json" ]; then
+            npm install
+            npm test
           else
-            echo "::error file=${RECIPE}::No supported Java build system (Maven or Gradle) found in ${RECIPE}."
+            echo "::error file=${RECIPE}::No package.json found in ${RECIPE}."
             exit 1
           fi
 
@@ -244,9 +277,9 @@ jobs:
   #   - detect-recipes did not succeed (crash, cancellation, ...)
   #   - run-tests ended in any state other than success or skipped
   # `skipped` on run-tests is OK because it means detect-recipes legitimately
-  # found zero Java recipes to test.
+  # found zero TypeScript recipes to test.
   test-results:
-    name: Java test results
+    name: TypeScript test results
     needs: [detect-recipes, run-tests]
     if: always()
     runs-on: ubuntu-latest
@@ -265,19 +298,19 @@ jobs:
           # Say that outright and point at the matrix legs, rather than
           # leaving a bare "did not succeed" that reads like a CI glitch.
           if [ "$DETECT_RESULT" != "success" ]; then
-            echo "::error::Could not work out which Java recipes this PR affects (detect-recipes: $DETECT_RESULT), so no tests ran. This is a CI tooling failure, not a problem with your changes — re-run the job. Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+            echo "::error::Could not work out which TypeScript recipes this PR affects (detect-recipes: $DETECT_RESULT), so no tests ran. This is a CI tooling failure, not a problem with your changes — re-run the job. Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
             exit 1
           fi
 
           case "$RUN_RESULT" in
             success)
-              echo "All Java recipe tests passed."
+              echo "All TypeScript recipe tests passed."
               ;;
             skipped)
-              echo "No Java recipes to test — gate passes."
+              echo "No TypeScript recipes to test — gate passes."
               ;;
             *)
-              echo "::error::One or more Java recipe test jobs did not pass (run-tests: $RUN_RESULT). This gate reports the aggregate — open the 'test — <recipe>' job for the recipe that failed to see the actual test output. Docs: docs/recipe-handbook/troubleshooting.md"
+              echo "::error::One or more TypeScript recipe test jobs did not pass (run-tests: $RUN_RESULT). This gate reports the aggregate — open the 'test — <recipe>' job for the recipe that failed to see the actual test output. Docs: docs/recipe-handbook/troubleshooting.md"
               echo ""
               echo "This job is a gate, not a test run. The failure is in one"
               echo "of the matrix legs above, each named 'test — <recipe>'."
