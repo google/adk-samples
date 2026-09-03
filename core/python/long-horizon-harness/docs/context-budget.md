@@ -48,11 +48,12 @@ Config is `ContextCacheConfig` in `agent.py`. `min_tokens` there matches
 
 Never put per-turn content in `system_instruction`.
 `_generate_cache_fingerprint` hashes the entire string, so one varying line
-invalidates the whole prefix on every turn. ADK's stock `PreloadMemoryTool`
-writes `<PAST_CONVERSATIONS>` there, which kept the cache from ever forming
-until `memory/preload.py`'s `HorizonPreloadMemoryTool` moved that block to the
-cache-excluded contents tail. Per-turn steering (iteration count, last error,
-date, todos) rides the same tail, as trailing `<system-reminder>` content from
+invalidates the whole prefix on every turn. `PreloadMemoryTool`'s
+`<PAST_CONVERSATIONS>` block is the case to watch: it is rebuilt per turn from a
+similarity search, so it only stays out of the fingerprint because ADK inserts
+it through `LlmRequest._insert_transient_user_content`, which the cache window
+excludes. Per-turn steering (iteration count, last error, date, todos) rides the
+same region, as trailing `<system-reminder>` content from
 `conversation/reminders.py`.
 
 ## What bounds growth during a session
