@@ -23,7 +23,6 @@ import uuid
 from collections import defaultdict
 
 from a2a.server.agent_execution import RequestContext
-from a2a.server.tasks.task_updater import TaskUpdater
 from google.adk.a2a import _compat as a2a_compat
 from google.adk.a2a.converters import part_converter
 from google.adk.a2a.executor.a2a_agent_executor import (
@@ -354,15 +353,6 @@ class _TaskTrackingExecutor(A2aAgentExecutor):
         self._session_locks: dict[tuple[str, str, str], asyncio.Lock] = (
             defaultdict(asyncio.Lock)
         )
-
-    async def cancel(self, context: RequestContext, event_queue) -> None:
-        # ADK's A2aAgentExecutor.cancel raises NotImplementedError, which aborts
-        # a2a's on_cancel_task before it cancels the producer task. Emit a
-        # terminal `canceled` status so on_cancel_task proceeds; it then cancels
-        # the producer, raising CancelledError into our running execute() —
-        # already handled, and the shielded _mark_task_done clears the flag.
-        updater = TaskUpdater(event_queue, context.task_id, context.context_id)
-        await updater.cancel()
 
     async def execute(self, context: RequestContext, event_queue):
         runner = await self._resolve_runner()
