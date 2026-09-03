@@ -71,13 +71,19 @@ def _code(script: str) -> str:
 
 
 def _run_blocks(path: Path, job: str | None = None) -> str:
-    """Every `run:` script in the workflow (or one job), comments stripped."""
+    """Every `run:` script in the workflow (or one job), comments stripped.
+
+    `steps` is read defensively because a job that calls a reusable workflow
+    has `uses:` and no steps at all. Such a job contributes no shell, and it
+    should not turn an invariant check into a KeyError that says nothing
+    about the invariant.
+    """
     doc = _load(path)
     jobs = [doc["jobs"][job]] if job else list(doc["jobs"].values())
     return "\n".join(
         _code(step["run"])
         for j in jobs
-        for step in j["steps"]
+        for step in j.get("steps") or []
         if isinstance(step.get("run"), str)
     )
 
@@ -93,7 +99,7 @@ def _agy_settings(path: Path) -> dict:
     script = next(
         step["run"]
         for job in _load(path)["jobs"].values()
-        for step in job["steps"]
+        for step in job.get("steps") or []
         if "antigravity-cli/settings.json" in str(step.get("run", ""))
     )
     body = script.split("<<'SETTINGS_EOF'", 1)[1].split("SETTINGS_EOF", 1)[0]
