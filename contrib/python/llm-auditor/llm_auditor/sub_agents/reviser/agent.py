@@ -14,6 +14,8 @@
 
 """Reviser agent for correcting inaccuracies based on verified findings."""
 
+import os
+
 from google.adk import Agent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.models import LlmResponse
@@ -38,7 +40,7 @@ def _remove_end_of_edit_mark(
 
 
 reviser_agent = Agent(
-    model="gemini-2.5-flash",
+    model=os.getenv("MODEL_NAME"),
     name="reviser_agent",
     instruction=prompt.REVISER_PROMPT,
     after_model_callback=_remove_end_of_edit_mark,

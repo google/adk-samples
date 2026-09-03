@@ -47,7 +47,7 @@ This sample ships with **[Google Agents CLI](https://github.com/google/agents-cl
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Google Cloud project (Vertex AI) **or** a [Gemini API key](https://ai.google.dev/gemini-api/docs/quickstart?lang=python#make-first-request)
 - [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) when using Vertex / Application Default Credentials (ADC)
@@ -56,7 +56,7 @@ This sample ships with **[Google Agents CLI](https://github.com/google/agents-cl
 
 ```bash
 git clone https://github.com/google/adk-samples.git
-cd adk-samples/python/agents/llm-auditor
+cd adk-samples/contrib/python/llm-auditor
 uv sync
 ```
 
@@ -76,6 +76,7 @@ export GOOGLE_GENAI_USE_VERTEXAI=true
 export GOOGLE_CLOUD_PROJECT=<your-project-id>
 export GOOGLE_CLOUD_LOCATION=<your-project-location>
 export GOOGLE_CLOUD_STORAGE_BUCKET=<your-storage-bucket>  # Agent Engine only
+export MODEL_NAME=<your-desired-model>
 ```
 
 **Gemini Developer API:** set `GOOGLE_GENAI_USE_VERTEXAI=false` and `GOOGLE_API_KEY=...` in `.env`.
