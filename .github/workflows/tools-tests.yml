@@ -57,12 +57,20 @@ on:
       #     alike — and a PR editing only the workflow is exactly the PR that
       #     breaks the contract, so without this entry the pin cannot fire on
       #     the change it exists to catch.
+      #   .github/workflows/_ai-issue-triage-core.yml
+      #     Same reasoning, for the security invariants in
+      #     .github/scripts/tests/test_ai_workflow_hardening.py. Both agy
+      #     workflows are pinned there — an empty tool allowlist above all —
+      #     and the PR that would undo one of them is a PR that touches only
+      #     that workflow. b/555419958 is what those pins exist for; leaving
+      #     this entry out would make half of them unable to fire.
       # Without these entries such a PR merges green and the failure only
       # surfaces later, on an unrelated PR that happens to touch tools/.
       - ".github/policy.yml"
       - ".github/schemas/**"
       - ".github/dependabot.yml"
       - ".github/workflows/_ai-pr-review-core.yml"
+      - ".github/workflows/_ai-issue-triage-core.yml"
       - "core/**/manifest.yaml"
       - "contrib/**/manifest.yaml"
       - "skills/**/manifest.yaml"
@@ -82,6 +90,7 @@ on:
       - ".github/policy.yml"
       - ".github/schemas/**"
       - ".github/workflows/_ai-pr-review-core.yml"
+      - ".github/workflows/_ai-issue-triage-core.yml"
       - ".github/dependabot.yml"
       - "core/**/manifest.yaml"
       - "contrib/**/manifest.yaml"

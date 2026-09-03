@@ -145,6 +145,39 @@ NOT_CHEAP_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
+# SECURITY (b/555419958). A finding's `body` is written by a model whose only
+# input is the PR diff, and on a fork PR every byte of that diff is chosen by
+# its author. The body is then posted verbatim to a public pull request through
+# the API, where GitHub's log masking does not reach. So the body is an
+# attacker-influenced string on a public channel, and something has to say what
+# shape it is allowed to be.
+#
+# These two limits say it. They are NOT the boundary — the empty agy tool
+# allowlist in the workflow is, and the credential scan there is the precise
+# check. What they do is make the channel too narrow to carry a credential
+# without the model first chopping it up, which is the difference between an
+# exfiltration that works on the first try and one that has to be engineered.
+# Treat them as a speed bump with a second job, not as a proof.
+#
+# The second job is the honest one: the prompt asks for "1-2 plain sentences"
+# and nothing enforced it. A model that returns an essay is misbehaving whether
+# or not anyone is attacking, and a review comment nobody will read is not
+# worth posting either.
+#
+# 600 characters is roughly 100 words — four or five sentences, well clear of
+# the two the prompt asks for, and clear too of a grouped finding that has to
+# say how many instances it covers.
+MAX_BODY_CHARS = 600
+
+# The longest unbroken non-whitespace run a body may contain. Calibrated
+# against real data, not guessed: the longest path in this repository is 123
+# characters (java/agents/time-series-forecasting/...ForecastingAgent.java),
+# and quoting a path is exactly what a legitimate finding does. So the cap has
+# to clear that with room, or the check costs real reviews. 160 does, while
+# still refusing a credential pasted in one piece — the ADC file this runner
+# holds is ~1KB and its embedded token alone runs past 200.
+MAX_UNBROKEN_RUN = 160
+
 # How far an anchor may be wrong before a window match stops being believable.
 MAX_DRIFT = 3
 
@@ -629,6 +662,32 @@ def _snap_to_window(line: int, rows: list[tuple[int, str]], offset: int) -> int:
     )
 
 
+def implausible_body(body: str) -> str | None:
+    """Why this body is not shaped like a review comment, or None if it is.
+
+    See MAX_BODY_CHARS. Deliberately says nothing about what a body may
+    CONTAIN: a keyword deny-list ("external_account", "Bearer", ...) reads as
+    security and is not, because the thing being filtered is written by a model
+    that the same input can instruct to reword, encode or spell out whatever
+    the list names. Shape is the property an attacker cannot negotiate away —
+    a credential is long, or it is chopped into pieces small enough that
+    reassembling it is its own problem.
+    """
+    if len(body) > MAX_BODY_CHARS:
+        return (
+            f"body is {len(body)} chars, over the {MAX_BODY_CHARS}-char limit"
+        )
+
+    longest = max((len(run) for run in body.split()), default=0)
+    if longest > MAX_UNBROKEN_RUN:
+        return (
+            f"body contains a {longest}-char unbroken run, over the "
+            f"{MAX_UNBROKEN_RUN}-char limit"
+        )
+
+    return None
+
+
 def check_window(
     finding: dict, line: int, lines: dict[int, str]
 ) -> tuple[bool, int, str]:
@@ -828,6 +887,13 @@ def build_comments(
             continue
         if not path or not body:
             skipped.append(f"{path or '<no path>'}:{line}: empty path or body")
+            continue
+
+        # Before anything that could promote this body onto the PR — inline or
+        # as a note in the review body, both of which are public.
+        malformed = implausible_body(body)
+        if malformed:
+            skipped.append(f"{path}:{line}: {malformed}")
             continue
 
         steps = str(finding.get("verify_steps") or "")
