@@ -781,6 +781,14 @@ deployability:
     # Cloud Run runs amd64. Building for the target rather than for the
     # runner keeps an arm64 host from producing an image the target cannot
     # run — a no-op on x86, and the whole ballgame elsewhere.
+    #
+    # ADDING A SECOND PLATFORM IS NOT A ONE-LINE CHANGE. The classic docker
+    # builder rejects more than one outright, and under buildx a multi-
+    # platform build cannot be loaded into the local daemon — it has to go
+    # straight to a registry with `--push`. So a second entry here obliges
+    # the build workflow to switch to buildx and to give up anything that
+    # needs the image locally, such as probing it before publishing. Change
+    # the workflow first, this list second.
     platforms:
       - linux/amd64
 

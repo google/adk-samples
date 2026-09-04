@@ -107,7 +107,16 @@ PUBLISHABLE_ROOTS = ("core/", "contrib/")
 # than the registry strictly requires — these names are public and permanent
 # in practice, so the uppercase and slash-bearing forms a registry would
 # tolerate are refused rather than debated later.
+#
+# The tightness is also load-bearing downstream. These names are pasted into
+# an image reference in the build workflow, so a name containing whitespace,
+# a quote or a shell metacharacter would be an injection point. The character
+# class here makes every emitted name shell-safe by construction, which is
+# cheaper and more reliable than quoting correctly at each use site.
 IMAGE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+# `os/arch`, optionally `os/arch/variant` — linux/amd64, linux/arm64/v8.
+PLATFORM_RE = re.compile(r"^[a-z0-9]+/[a-z0-9]+(?:/[a-z0-9]+)?$")
 
 REQUIRED_KEYS = frozenset(
     {"recipe", "dockerfile", "context", "image", "serves_http"}
@@ -139,6 +148,12 @@ def load_publish_block(repo_root: Path) -> dict[str, Any]:
             data = yaml.safe_load(handle)
     except FileNotFoundError as exc:
         raise PublishMatrixError(f"{path} not found") from exc
+    except OSError as exc:
+        # Permission denied, a directory where the file should be, an I/O
+        # error. Reported as a policy failure rather than a traceback: the
+        # caller is a workflow, and a stack trace in its log says nothing a
+        # reader can act on.
+        raise PublishMatrixError(f"cannot read {path}: {exc}") from exc
     except yaml.YAMLError as exc:
         raise PublishMatrixError(f"{path} is not valid YAML: {exc}") from exc
 
@@ -165,6 +180,18 @@ def _platforms(publish: dict[str, Any]) -> str:
 
     Carried on every matrix entry rather than fetched separately by the
     workflow. One lookup, one shape, and no way for the two to disagree.
+
+    MORE THAN ONE PLATFORM IS NOT FREE. `docker build --platform a,b` is
+    rejected by the classic builder outright, and under buildx a multi-
+    platform build cannot be loaded into the local daemon — it has to go
+    straight to a registry with `--push` (or to `--output`). So a second
+    entry here is not a one-line change: it obliges the consuming workflow
+    to use buildx and to stop doing anything that needs the image locally,
+    such as probing it before publishing.
+
+    Validated rather than trusted because the failure is remote and late: a
+    typo'd `linux/amd46` costs a runner slot and a confusing docker error,
+    when it can be caught here for nothing.
     """
     raw = publish.get("platforms")
     if raw is None:
@@ -177,13 +204,32 @@ def _platforms(publish: dict[str, Any]) -> str:
         raise PublishMatrixError(
             "`deployability.publish.platforms` must be a non-empty list"
         )
+
+    cleaned: list[str] = []
     for item in raw:
-        if not isinstance(item, str) or not item.strip():
+        if not isinstance(item, str):
             raise PublishMatrixError(
                 f"`deployability.publish.platforms` contains a non-string "
                 f"entry: {item!r}"
             )
-    return ",".join(raw)
+        # Stripped before use: a stray space survives the join and reaches
+        # `docker build --platform " linux/amd64"`, which docker rejects.
+        # An entry that is ONLY whitespace falls through to the shape check
+        # below, which names the real problem — calling it "non-string" when
+        # it is a string sends the reader looking for the wrong mistake.
+        value = item.strip()
+        if not PLATFORM_RE.match(value):
+            raise PublishMatrixError(
+                f"`deployability.publish.platforms` entry {item!r} is not a "
+                f"platform. Expected os/arch, optionally with a variant — "
+                f"for example linux/amd64 or linux/arm64/v8."
+            )
+        if value in cleaned:
+            raise PublishMatrixError(
+                f"`deployability.publish.platforms` lists {value!r} twice"
+            )
+        cleaned.append(value)
+    return ",".join(cleaned)
 
 
 def _check_relative(value: str, field: str, image: str) -> None:
@@ -327,9 +373,15 @@ def build_matrix(
     platforms = _platforms(publish)
 
     images = publish.get("images")
+    if images is None:
+        raise PublishMatrixError(
+            "`deployability.publish.images` is missing. Declare the images "
+            "to publish, or remove the `publish` block entirely."
+        )
     if not isinstance(images, list):
         raise PublishMatrixError(
-            "`deployability.publish.images` must be a list"
+            f"`deployability.publish.images` must be a list, got "
+            f"{type(images).__name__}"
         )
 
     entries: list[dict[str, Any]] = []

@@ -27,6 +27,9 @@ moving or deleting a declared Dockerfile fails here — on every PR, through
 tools-tests.yml — instead of minutes into a build on a runner.
 """
 
+import json
+import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -213,6 +216,20 @@ def test_invalid_yaml(tmp_path: Path):
         m.build_matrix(repo_root=tmp_path)
 
 
+def test_unreadable_policy_reports_cleanly(tmp_path: Path):
+    """An I/O failure must not surface as a traceback in a workflow log.
+
+    A directory where policy.yml should be stands in for the whole OSError
+    family (permission denied, I/O error): it is the one case reproducible
+    without depending on the test process's privileges, since a root-owned
+    CI runner can read a chmod 000 file anyway.
+    """
+    (tmp_path / ".github" / "policy.yml").mkdir(parents=True)
+
+    with pytest.raises(m.PublishMatrixError, match="cannot read"):
+        m.build_matrix(repo_root=tmp_path)
+
+
 def test_missing_deployability_section(tmp_path: Path):
     _write_policy(tmp_path, [], omit_deployability=True)
 
@@ -233,6 +250,21 @@ def test_images_must_be_a_list(tmp_path: Path):
     _write_policy(tmp_path, {"not": "a list"})
 
     with pytest.raises(m.PublishMatrixError, match="must be a list"):
+        m.build_matrix(repo_root=tmp_path)
+
+
+def test_images_key_absent(tmp_path: Path):
+    """Distinguished from a wrong type, because the fix differs."""
+    github = tmp_path / ".github"
+    github.mkdir()
+    (github / "policy.yml").write_text(
+        yaml.safe_dump(
+            {"deployability": {"publish": {"platforms": ["linux/amd64"]}}}
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(m.PublishMatrixError, match="images` is missing"):
         m.build_matrix(repo_root=tmp_path)
 
 
@@ -267,14 +299,60 @@ def test_platforms_non_string_entry_is_refused(tmp_path: Path):
 
 
 def test_multiple_platforms_are_comma_joined(tmp_path: Path):
+    """Supported, but see _platforms(): it obliges the workflow to use
+    buildx and to push straight to the registry, because a multi-platform
+    build cannot be loaded into the local daemon."""
     _scaffold(tmp_path)
     _write_policy(
-        tmp_path, [_entry()], platforms=["linux/amd64", "linux/arm64"]
+        tmp_path, [_entry()], platforms=["linux/amd64", "linux/arm64/v8"]
     )
 
     (entry,) = m.build_matrix(repo_root=tmp_path)
 
-    assert entry["platforms"] == "linux/amd64,linux/arm64"
+    assert entry["platforms"] == "linux/amd64,linux/arm64/v8"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "linux/amd46/extra/parts",
+        "linux",
+        "/amd64",
+        "linux/",
+        "Linux/AMD64",
+        "linux amd64",
+        "   ",
+        "",
+    ],
+)
+def test_malformed_platform_is_refused(tmp_path: Path, value: str):
+    """A typo here costs a runner slot and an opaque docker error."""
+    _scaffold(tmp_path)
+    _write_policy(tmp_path, [_entry()], platforms=[value])
+
+    with pytest.raises(m.PublishMatrixError, match="is not a platform"):
+        m.build_matrix(repo_root=tmp_path)
+
+
+def test_platform_whitespace_is_stripped(tmp_path: Path):
+    """A stray space survives the join into `--platform`, which docker
+    rejects."""
+    _scaffold(tmp_path)
+    _write_policy(tmp_path, [_entry()], platforms=["  linux/amd64  "])
+
+    (entry,) = m.build_matrix(repo_root=tmp_path)
+
+    assert entry["platforms"] == "linux/amd64"
+
+
+def test_duplicate_platform_is_refused(tmp_path: Path):
+    _scaffold(tmp_path)
+    _write_policy(
+        tmp_path, [_entry()], platforms=["linux/amd64", "linux/amd64"]
+    )
+
+    with pytest.raises(m.PublishMatrixError, match="twice"):
+        m.build_matrix(repo_root=tmp_path)
 
 
 # --------------------------------------------------------------------------
@@ -477,15 +555,50 @@ def test_unknown_image_filter_is_an_error_not_an_empty_matrix(tmp_path: Path):
         m.build_matrix(repo_root=tmp_path, only="typo")
 
 
-def test_main_emits_json(tmp_path, monkeypatch, capsys):
+def test_main_emits_strict_json(tmp_path, monkeypatch, capsys):
+    """stdout must be JSON, parsed with a JSON parser — not a YAML one.
+
+    The consumer is `fromJson()` in a GitHub Actions workflow, which accepts
+    strict JSON and nothing else. Asserting with yaml.safe_load would pass on
+    output `fromJson` rejects, since YAML is a superset of JSON: it happily
+    reads `[{image: demo, serves_http: True}]`, which json.loads refuses.
+    That would leave this script's entire contract with the workflow untested.
+    """
     _scaffold(tmp_path)
     _write_policy(tmp_path, [_entry()])
     monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
 
     assert m.main([]) == 0
 
-    payload = yaml.safe_load(capsys.readouterr().out)
-    assert payload[0]["image"] == "demo"
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload == [
+        {
+            "recipe": "core/python/demo",
+            "image": "demo",
+            "dockerfile": "core/python/demo/Dockerfile",
+            "context": "core/python/demo",
+            "serves_http": True,
+            "platforms": "linux/amd64",
+        }
+    ]
+
+
+def test_emitted_matrix_is_json_serialisable_scalars_only(tmp_path):
+    """Every value must survive the round trip a matrix makes.
+
+    GitHub expands matrix entries into the job context, so a nested object or
+    a non-JSON scalar would arrive at the workflow as something it cannot
+    interpolate.
+    """
+    _scaffold(tmp_path)
+    _write_policy(tmp_path, [_entry()])
+
+    for entry in m.build_matrix(repo_root=tmp_path):
+        for key, value in entry.items():
+            assert isinstance(value, (str, bool)), (
+                f"{key} is {type(value).__name__}, which a matrix cannot carry"
+            )
 
 
 def test_main_validate_prints_summary_and_no_json(
@@ -538,6 +651,89 @@ def test_real_policy_declaration_is_valid():
     for entry in matrix:
         assert (REPO_ROOT / entry["dockerfile"]).is_file()
         assert (REPO_ROOT / entry["context"]).is_dir()
+
+
+def _copy_sources(dockerfile: Path) -> list[str]:
+    """The context-relative COPY sources in a Dockerfile.
+
+    Deliberately conservative — it returns only what can be resolved with
+    certainty, because a false failure here blocks a legitimate declaration:
+
+      * `COPY --from=<stage>` reads from an earlier build stage, not the
+        context, so it is not a context question at all.
+      * a source containing `$` is substituted from an ARG or ENV at build
+        time and cannot be resolved by reading the file.
+      * the JSON-array form, `COPY ["src", "dest"]`, which shlex would split
+        into `['["src",', '"dest"]']` — quoted fragments that resolve to
+        nothing and would be reported as missing files. Valid Dockerfile
+        syntax, unused by any image declared today, and a false failure is
+        exactly what this parser must not produce.
+    """
+    text = re.sub(r"\\\s*\n", " ", dockerfile.read_text(encoding="utf-8"))
+    sources: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not re.match(r"(?i)^copy\s", stripped):
+            continue
+        try:
+            parts = shlex.split(stripped)[1:]
+        except ValueError:
+            # Unbalanced quoting. The Dockerfile would not build either way,
+            # and guessing at its intent here helps nobody.
+            continue
+        if not parts or parts[0].startswith("["):
+            continue
+        if any(p.startswith("--from=") for p in parts):
+            continue
+        args = [p for p in parts if not p.startswith("--")]
+        # The last argument is the destination inside the image.
+        sources.extend(s for s in args[:-1] if "$" not in s)
+    return sources
+
+
+def test_real_policy_copy_sources_resolve_in_context():
+    """Every COPY source must exist inside the context declared for it.
+
+    This is the one claim the declaration makes that nothing else can check.
+    A wrong `context` satisfies every validation rule in publish_matrix.py —
+    the directory exists, the Dockerfile is inside it — and then fails deep
+    in `docker build` with a COPY error that names a path the reader cannot
+    find in policy.yml. Checking it here turns that into a failing test on
+    the PR that mis-declares it.
+
+    Lives in the tests rather than in publish_matrix.py on purpose. Dockerfile
+    parsing has enough edge cases that a false positive is a real risk, and a
+    false positive in a test is an afternoon's annoyance while a false
+    positive in the validator blocks publishing outright.
+    """
+    for entry in m.build_matrix(repo_root=REPO_ROOT):
+        context = REPO_ROOT / entry["context"]
+        for src in _copy_sources(REPO_ROOT / entry["dockerfile"]):
+            if src.endswith("*"):
+                # The `uv.lock*` idiom: a glob that deliberately tolerates
+                # matching nothing, so absence is not an error.
+                continue
+            assert (context / src).exists(), (
+                f"{entry['image']}: the Dockerfile COPYs {src!r}, which does "
+                f"not exist in its declared context {entry['context']!r}"
+            )
+
+
+def test_copy_source_parser_skips_what_it_cannot_resolve(tmp_path: Path):
+    """The parser's exclusions are load-bearing; pin them."""
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        "FROM scratch AS build\n"
+        "COPY --chown=1000:1000 ./app ./app\n"
+        "COPY --from=build /out /out\n"
+        "COPY ${BUILD_DIR}/thing /thing\n"
+        'COPY ["json form.txt", "/dest/"]\n'
+        'COPY "unbalanced /dest/\n'
+        "COPY a.txt \\\n    b.txt /dest/\n",
+        encoding="utf-8",
+    )
+
+    assert _copy_sources(dockerfile) == ["./app", "a.txt", "b.txt"]
 
 
 def test_real_policy_image_names_follow_the_convention():
