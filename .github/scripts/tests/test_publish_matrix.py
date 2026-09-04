@@ -649,6 +649,182 @@ def test_same_dockerfile_twice_is_refused(tmp_path: Path):
 
 
 # --------------------------------------------------------------------------
+# Change detection
+# --------------------------------------------------------------------------
+
+
+def _two_images(tmp_path: Path) -> list[dict[str, Any]]:
+    _scaffold(tmp_path)
+    _scaffold(tmp_path, recipe="contrib/python/other")
+    _write_policy(
+        tmp_path,
+        [_entry(), _entry(recipe="contrib/python/other", image="other")],
+    )
+    return m.build_matrix(repo_root=tmp_path)
+
+
+def test_affected_by_selects_only_the_touched_recipe(tmp_path: Path):
+    entries = _two_images(tmp_path)
+
+    affected = m.affected_by(entries, ["core/python/demo/agent.py"])
+
+    assert [e["image"] for e in affected] == ["demo"]
+
+
+def test_affected_by_ignores_unrelated_changes(tmp_path: Path):
+    entries = _two_images(tmp_path)
+
+    assert m.affected_by(entries, ["README.md", "docs/thing.md"]) == []
+
+
+@pytest.mark.parametrize("path", m.GLOBAL_REBUILD_PATHS)
+def test_global_paths_rebuild_everything(tmp_path: Path, path: str):
+    """The declaration and its tooling can change any image."""
+    entries = _two_images(tmp_path)
+
+    affected = m.affected_by(entries, [path])
+
+    assert [e["image"] for e in affected] == ["demo", "other"]
+
+
+def test_affected_by_preserves_declaration_order(tmp_path: Path):
+    """Job names stay stable between runs, which matters when reading a
+    matrix in the Actions UI."""
+    entries = _two_images(tmp_path)
+
+    affected = m.affected_by(
+        entries, ["contrib/python/other/x.py", "core/python/demo/y.py"]
+    )
+
+    assert [e["image"] for e in affected] == ["demo", "other"]
+
+
+def test_affected_by_tolerates_leading_dot_slash_and_blanks(tmp_path: Path):
+    entries = _two_images(tmp_path)
+
+    affected = m.affected_by(
+        entries, ["./core/python/demo/agent.py", "", "   "]
+    )
+
+    assert [e["image"] for e in affected] == ["demo"]
+
+
+def test_a_prefix_match_is_not_a_recipe_match(tmp_path: Path):
+    """`core/python/demo-extra` must not count as a change to `demo`.
+
+    Matching the bare recipe string rather than `recipe + "/"` would make
+    every sibling whose name starts the same way look affected.
+    """
+    entries = _two_images(tmp_path)
+
+    assert m.affected_by(entries, ["core/python/demo-extra/agent.py"]) == []
+
+
+def test_the_recipe_directory_itself_is_not_a_change(tmp_path: Path):
+    entries = _two_images(tmp_path)
+
+    assert m.affected_by(entries, ["core/python/demo"]) == []
+
+
+def test_changed_from_file_filters_the_matrix(tmp_path, monkeypatch, capsys):
+    _two_images(tmp_path)
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    changed = tmp_path / "changed.txt"
+    changed.write_text("core/python/demo/agent.py\n", encoding="utf-8")
+
+    assert m.main(["--changed-from", str(changed)]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert [e["image"] for e in payload] == ["demo"]
+
+
+def test_changed_from_empty_result_is_success_not_an_error(
+    tmp_path, monkeypatch, capsys
+):
+    """Nothing affected is the normal outcome for most pull requests.
+
+    It must stay distinguishable from "nothing declared", which is a broken
+    repository — the two are told apart by the exit code.
+    """
+    _two_images(tmp_path)
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    changed = tmp_path / "changed.txt"
+    changed.write_text("README.md\n", encoding="utf-8")
+
+    assert m.main(["--changed-from", str(changed)]) == 0
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == []
+    assert "0 image(s) affected" in captured.err
+
+
+def test_changed_from_still_validates_untouched_entries(
+    tmp_path, monkeypatch, capsys
+):
+    """A broken entry fails the run even when the diff does not touch it.
+
+    policy.yml is either valid or it is not. Letting an unrelated PR sail
+    past a broken entry leaves it for whoever next touches that recipe.
+    """
+    _scaffold(tmp_path)
+    _write_policy(
+        tmp_path,
+        [_entry(), _entry(recipe="contrib/python/ghost", image="ghost")],
+    )
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    changed = tmp_path / "changed.txt"
+    changed.write_text("README.md\n", encoding="utf-8")
+
+    assert m.main(["--changed-from", str(changed)]) == 1
+    assert "does not exist" in capsys.readouterr().err
+
+
+def test_changed_from_missing_file_is_an_error(tmp_path, monkeypatch, capsys):
+    _two_images(tmp_path)
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+
+    assert m.main(["--changed-from", str(tmp_path / "nope.txt")]) == 1
+    assert "cannot read" in capsys.readouterr().err
+
+
+def test_c_quoted_paths_warn_loudly_instead_of_being_skipped_silently(
+    tmp_path: Path, capsys
+):
+    """Git C-quotes non-ASCII paths unless core.quotePath=false is set.
+
+    Such a path matches no recipe prefix. If the workflow ever loses that
+    flag, this warning is what turns an invisible missed rebuild into
+    something a reader can see in the log.
+    """
+    entries = _two_images(tmp_path)
+
+    affected = m.affected_by(entries, ['"core/python/demo/caf\\303\\251.md"'])
+
+    assert affected == []
+    err = capsys.readouterr().err
+    assert "C-quoted" in err
+    assert "core.quotePath=false" in err
+
+
+def test_ordinary_paths_produce_no_quoting_warning(tmp_path: Path, capsys):
+    entries = _two_images(tmp_path)
+
+    m.affected_by(entries, ["core/python/demo/agent.py"])
+
+    assert "C-quoted" not in capsys.readouterr().err
+
+
+def test_global_rebuild_paths_exist_in_the_repo():
+    """A stale entry here would silently stop triggering rebuilds.
+
+    Each path is compared literally against `git diff` output, so a renamed
+    file leaves a rule that can never match — and nothing else would notice.
+    """
+    for path in m.GLOBAL_REBUILD_PATHS:
+        assert (REPO_ROOT / path).is_file(), f"{path} no longer exists"
+
+
+# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 

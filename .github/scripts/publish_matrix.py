@@ -118,6 +118,21 @@ IMAGE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 # `os/arch`, optionally `os/arch/variant` — linux/amd64, linux/arm64/v8.
 PLATFORM_RE = re.compile(r"^[a-z0-9]+/[a-z0-9]+(?:/[a-z0-9]+)?$")
 
+# A change to any of these rebuilds EVERY declared image, not just one.
+#
+# The declaration and the code that reads it decide what gets built and how,
+# so a change to either can alter an image without touching the recipe it
+# comes from. The workflow file is here for the same reason: it owns the
+# build arguments. Rebuilding everything is the cheap, obviously-correct
+# answer for a handful of images, and the alternative — reasoning about
+# which policy edit affects which entry — is the kind of cleverness that
+# quietly stops rebuilding something.
+GLOBAL_REBUILD_PATHS = (
+    ".github/policy.yml",
+    ".github/scripts/publish_matrix.py",
+    ".github/workflows/recipe-images.yml",
+)
+
 # The characters a recipe, Dockerfile or context path may contain.
 #
 # Same reasoning as IMAGE_NAME_RE above, and for the same reason: these
@@ -429,6 +444,55 @@ def _validate_entry(
     }
 
 
+def affected_by(
+    entries: list[dict[str, Any]], changed: list[str]
+) -> list[dict[str, Any]]:
+    """The subset of `entries` a set of changed files could have altered.
+
+    An image is affected when a changed file lies inside its recipe. The
+    build context is always inside the recipe (the validator enforces it), so
+    recipe containment is the whole test — no separate context check is
+    needed, and adding one would only invite the two to disagree.
+
+    A change to anything in GLOBAL_REBUILD_PATHS affects every image.
+
+    Order is preserved from the declaration so job names stay stable between
+    runs, which matters for reading a matrix in the Actions UI.
+    """
+    # removeprefix, NOT lstrip("./"): lstrip strips a SET of characters, so
+    # it would turn `.github/policy.yml` into `github/policy.yml` and quietly
+    # stop every global rebuild rule from ever matching.
+    normalised = [c.strip().removeprefix("./") for c in changed if c.strip()]
+
+    # A leading quote means the caller handed us git's C-quoted form, which
+    # git emits for any path containing a non-ASCII byte unless
+    # `core.quotePath=false` is set. Such a path matches no recipe prefix, so
+    # the image owning it would be skipped — silently, which is the one
+    # outcome worth shouting about.
+    #
+    # A warning rather than an error: the other paths in the same list were
+    # still classified correctly, and refusing to build anything would turn a
+    # partial miss into a total one.
+    quoted = [c for c in normalised if c.startswith('"')]
+    if quoted:
+        print(
+            f"WARNING: {len(quoted)} changed path(s) arrived C-quoted, e.g. "
+            f"{quoted[0]}. The caller is missing `-c core.quotePath=false`; "
+            f"images owning those paths will NOT be rebuilt.",
+            file=sys.stderr,
+        )
+
+    if any(c in GLOBAL_REBUILD_PATHS for c in normalised):
+        return list(entries)
+
+    affected = []
+    for entry in entries:
+        prefix = entry["recipe"].rstrip("/") + "/"
+        if any(c.startswith(prefix) for c in normalised):
+            affected.append(entry)
+    return affected
+
+
 def build_matrix(
     repo_root: Path | None = None, only: str | None = None
 ) -> list[dict[str, Any]]:
@@ -505,6 +569,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Validate the declaration and print a summary; emit no JSON.",
     )
+    parser.add_argument(
+        "--changed-from",
+        metavar="FILE",
+        help=(
+            "Limit the matrix to images affected by the changed paths listed "
+            "in FILE, one per line. An empty result is legitimate here and "
+            "emits [] with exit 0."
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -513,6 +586,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    # The whole declaration is validated FIRST, above, and only then filtered.
+    # A broken entry therefore fails the run even when the change under test
+    # does not touch it — which is the point: policy.yml is either valid or it
+    # is not, and letting an unrelated PR sail past a broken entry would leave
+    # it to be discovered by whoever next touches that recipe.
     if not matrix:
         print(
             "error: no images are declared in `deployability.publish.images`."
@@ -522,8 +600,33 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    if args.changed_from is not None:
+        try:
+            text = Path(args.changed_from).read_text(encoding="utf-8")
+        except OSError as exc:
+            print(
+                f"error: cannot read {args.changed_from}: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+        changed = text.splitlines()
+        matrix = affected_by(matrix, changed)
+        # Deliberately NOT an error when empty. Unlike an empty declaration,
+        # "this change touched no image" is the normal outcome for most pull
+        # requests. The two are distinguished by exit code: 1 above, 0 here.
+        #
+        # On stderr so it cannot contaminate the JSON on stdout.
+        print(
+            f"{len(matrix)} image(s) affected by "
+            f"{len(changed)} changed path(s)",
+            file=sys.stderr,
+        )
+
     if args.validate:
-        print(f"{len(matrix)} image(s) declared and valid:")
+        if args.changed_from is not None:
+            print(f"{len(matrix)} image(s) affected and valid:")
+        else:
+            print(f"{len(matrix)} image(s) declared and valid:")
         for entry in matrix:
             serves = "http" if entry["serves_http"] else "no-server"
             print(
