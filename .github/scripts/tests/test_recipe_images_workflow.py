@@ -311,3 +311,129 @@ def test_the_workflow_path_matches_the_scripts_global_rebuild_list():
 
     rel = WORKFLOW.relative_to(REPO_ROOT).as_posix()
     assert rel in publish_matrix.GLOBAL_REBUILD_PATHS
+
+
+def _matches_a_trigger_path(candidate: str, patterns: list[str]) -> bool:
+    """Would `candidate` satisfy one of a trigger's `paths` globs?
+
+    Only the two glob shapes this workflow uses are handled — a literal path
+    and a `dir/**` prefix. Anything else is deliberately not guessed at.
+    """
+    for pattern in patterns:
+        if pattern == candidate:
+            return True
+        if pattern.endswith("/**") and candidate.startswith(pattern[:-2]):
+            return True
+    return False
+
+
+@pytest.mark.parametrize("trigger", ["pull_request", "push"])
+def test_every_global_rebuild_path_also_triggers_the_workflow(
+    triggers: dict, trigger: str
+):
+    """The two lists have to agree or a rebuild rule can never fire.
+
+    GLOBAL_REBUILD_PATHS decides which changes rebuild every image, but it is
+    only consulted once the workflow is already running. A path listed there
+    and absent from these filters is a rule that looks right in the script
+    and never runs — the workflow is not triggered at all, so nothing reports
+    anything, which is the worst shape a failure can take.
+    """
+    import publish_matrix
+
+    patterns = triggers[trigger]["paths"]
+    for path in publish_matrix.GLOBAL_REBUILD_PATHS:
+        assert _matches_a_trigger_path(path, patterns), (
+            f"{path} is in GLOBAL_REBUILD_PATHS but no `on.{trigger}.paths` "
+            f"pattern matches it, so changing it would not start this "
+            f"workflow at all"
+        )
+
+
+@pytest.mark.parametrize("trigger", ["pull_request", "push"])
+def test_every_publishable_root_also_triggers_the_workflow(
+    triggers: dict, trigger: str
+):
+    """Same coupling, for the roots recipes may be published from.
+
+    Add a root to PUBLISHABLE_ROOTS without adding it here and images
+    declared under it are never rebuilt when their recipe changes.
+    """
+    import publish_matrix
+
+    patterns = triggers[trigger]["paths"]
+    for root in publish_matrix.PUBLISHABLE_ROOTS:
+        probe = f"{root}some/recipe/agent.py"
+        assert _matches_a_trigger_path(probe, patterns), (
+            f"{root} is a publishable root but no `on.{trigger}.paths` "
+            f"pattern matches paths under it"
+        )
+
+
+def test_the_two_triggers_filter_on_the_same_paths(triggers: dict):
+    """A path that builds on a PR but not on merge — or the reverse — means
+    the thing verified before merge is not the thing published after it."""
+    assert triggers["pull_request"]["paths"] == triggers["push"]["paths"]
+
+
+def test_dispatch_offers_no_control_that_does_nothing(triggers: dict):
+    """A manual run has no diff base, so it always builds everything.
+
+    A `build_all` input would be a checkbox users could untick to no effect.
+    Asserting its absence rather than the exact input set, so a future input
+    that genuinely does something is not blocked by this test.
+    """
+    inputs = triggers["workflow_dispatch"]["inputs"]
+    assert "build_all" not in inputs
+    assert "image" in inputs
+
+
+def test_the_diff_does_not_c_quote_non_ascii_paths(doc: dict):
+    """Without core.quotePath=false git emits `"caf\\303\\251.md"`.
+
+    A quoted path matches no recipe prefix, so the image owning it is
+    silently not rebuilt — the exact silent-miss this pipeline exists to
+    avoid. Verified against real git, not assumed.
+    """
+    step = next(s for s in _steps(doc, "detect") if s.get("id") == "detect")
+    diff_lines = [
+        line
+        for line in step["run"].splitlines()
+        if "git " in line
+        and "diff --name-only" in line
+        and not line.strip().startswith("#")
+    ]
+    assert diff_lines, "the diff line moved or changed shape"
+    for line in diff_lines:
+        assert "core.quotePath=false" in line, (
+            f"non-ASCII paths would be C-quoted and silently skipped: {line}"
+        )
+
+
+def test_the_pull_request_diff_fetch_is_not_shallow(doc: dict):
+    """`--depth` here makes the repository shallow and breaks merge-base.
+
+    The checkout already uses fetch-depth: 0, so this fetch only refreshes a
+    ref that is already present. Adding a depth introduces a shallow
+    boundary, after which `git merge-base` and `git diff` against the base
+    can fail — reproduced on a real clone, not theorised.
+    """
+    step = next(s for s in _steps(doc, "detect") if s.get("id") == "detect")
+    fetch_lines = [
+        line
+        for line in step["run"].splitlines()
+        if "git fetch" in line and not line.strip().startswith("#")
+    ]
+    assert fetch_lines, "the PR path no longer fetches its base ref"
+    for line in fetch_lines:
+        assert "--depth" not in line, f"shallow fetch reintroduced: {line}"
+
+
+def test_the_detect_checkout_takes_full_history(doc: dict):
+    """merge-base needs it, and it is what makes the fetch above safe."""
+    checkout = next(
+        s
+        for s in _steps(doc, "detect")
+        if "actions/checkout" in str(s.get("uses", ""))
+    )
+    assert checkout["with"]["fetch-depth"] == 0

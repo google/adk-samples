@@ -464,6 +464,24 @@ def affected_by(
     # stop every global rebuild rule from ever matching.
     normalised = [c.strip().removeprefix("./") for c in changed if c.strip()]
 
+    # A leading quote means the caller handed us git's C-quoted form, which
+    # git emits for any path containing a non-ASCII byte unless
+    # `core.quotePath=false` is set. Such a path matches no recipe prefix, so
+    # the image owning it would be skipped — silently, which is the one
+    # outcome worth shouting about.
+    #
+    # A warning rather than an error: the other paths in the same list were
+    # still classified correctly, and refusing to build anything would turn a
+    # partial miss into a total one.
+    quoted = [c for c in normalised if c.startswith('"')]
+    if quoted:
+        print(
+            f"WARNING: {len(quoted)} changed path(s) arrived C-quoted, e.g. "
+            f"{quoted[0]}. The caller is missing `-c core.quotePath=false`; "
+            f"images owning those paths will NOT be rebuilt.",
+            file=sys.stderr,
+        )
+
     if any(c in GLOBAL_REBUILD_PATHS for c in normalised):
         return list(entries)
 

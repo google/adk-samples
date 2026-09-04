@@ -787,6 +787,33 @@ def test_changed_from_missing_file_is_an_error(tmp_path, monkeypatch, capsys):
     assert "cannot read" in capsys.readouterr().err
 
 
+def test_c_quoted_paths_warn_loudly_instead_of_being_skipped_silently(
+    tmp_path: Path, capsys
+):
+    """Git C-quotes non-ASCII paths unless core.quotePath=false is set.
+
+    Such a path matches no recipe prefix. If the workflow ever loses that
+    flag, this warning is what turns an invisible missed rebuild into
+    something a reader can see in the log.
+    """
+    entries = _two_images(tmp_path)
+
+    affected = m.affected_by(entries, ['"core/python/demo/caf\\303\\251.md"'])
+
+    assert affected == []
+    err = capsys.readouterr().err
+    assert "C-quoted" in err
+    assert "core.quotePath=false" in err
+
+
+def test_ordinary_paths_produce_no_quoting_warning(tmp_path: Path, capsys):
+    entries = _two_images(tmp_path)
+
+    m.affected_by(entries, ["core/python/demo/agent.py"])
+
+    assert "C-quoted" not in capsys.readouterr().err
+
+
 def test_global_rebuild_paths_exist_in_the_repo():
     """A stale entry here would silently stop triggering rebuilds.
 

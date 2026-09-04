@@ -55,13 +55,12 @@ on:
       - ".github/scripts/publish_matrix.py"
       - ".github/workflows/recipe-images.yml"
   workflow_dispatch:
+    # A manual run builds every declared image. There is no meaningful diff
+    # base for one, so a "use the diff" option would be a control that
+    # silently did nothing — use `image` to narrow it instead.
     inputs:
-      build_all:
-        description: "Build every declared image, ignoring the diff"
-        type: boolean
-        default: true
       image:
-        description: "Limit to one declared image name"
+        description: "Limit to one declared image name (default: all)"
         type: string
         required: false
 
@@ -107,7 +106,6 @@ jobs:
           # particular values are controlled, but the rule that no `${{ }}`
           # reaches a `run:` block is worth keeping unconditional.
           EVENT_NAME: ${{ github.event_name }}
-          BUILD_ALL: ${{ github.event.inputs.build_all }}
           ONLY_IMAGE: ${{ github.event.inputs.image }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           PUSH_BEFORE: ${{ github.event.before }}
@@ -120,45 +118,61 @@ jobs:
           # the change that most needed building.
 
           ARGS=()
-          [ -n "${ONLY_IMAGE:-}" ] && ARGS+=(--image "$ONLY_IMAGE")
+          # An explicit `if`, not `[ -n ... ] && ARGS+=(...)`. Under `set -e`
+          # a failing test in an && list is only exempt from exiting because
+          # it is not the final command — move that line to the end of the
+          # script during some later edit and it silently exits 1 on every
+          # run where the input is empty, which is every PR and every push.
+          if [ -n "${ONLY_IMAGE:-}" ]; then
+            ARGS+=(--image "$ONLY_IMAGE")
+          fi
 
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && \
-             [ "${BUILD_ALL:-false}" = "true" ]; then
-            echo "workflow_dispatch with build_all — building everything."
-          else
-            case "$EVENT_NAME" in
-              pull_request)
-                git fetch --no-tags --depth=1 origin "$BASE_REF"
-                BASE="$(git merge-base HEAD "origin/$BASE_REF")"
-                ;;
-              push)
-                # `before` is all-zeros for a branch's first push, and
-                # points at a commit that no longer exists after a force
-                # push. Fall back rather than fail: rebuilding everything
-                # is the safe direction, building nothing is not.
-                if [ -n "${PUSH_BEFORE:-}" ] && \
-                   git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-                  BASE="$PUSH_BEFORE"
-                else
-                  echo "No usable 'before' commit; treating as build-all."
-                  BASE=""
-                fi
-                ;;
-              *)
+          case "$EVENT_NAME" in
+            pull_request)
+              # NO --depth here. The checkout above used fetch-depth: 0, so
+              # every branch is already present and this only refreshes the
+              # ref. Adding --depth=1 would make the repository SHALLOW —
+              # verified, not theorised — and a shallow boundary is exactly
+              # what breaks `git merge-base` and `git diff` against a base
+              # commit that now sits beyond it.
+              git fetch --no-tags origin "$BASE_REF"
+              BASE="$(git merge-base HEAD "origin/$BASE_REF")"
+              ;;
+            push)
+              # `before` is all-zeros for a branch's first push, and points
+              # at a commit that no longer exists after a force push. Fall
+              # back rather than fail: rebuilding everything is the safe
+              # direction, building nothing is not.
+              if [ -n "${PUSH_BEFORE:-}" ] && \
+                 git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+                BASE="$PUSH_BEFORE"
+              else
+                echo "No usable 'before' commit; treating as build-all."
                 BASE=""
-                ;;
-            esac
+              fi
+              ;;
+            *)
+              # workflow_dispatch and anything added later: build everything.
+              echo "$EVENT_NAME — building every declared image."
+              BASE=""
+              ;;
+          esac
 
-            if [ -n "$BASE" ]; then
-              # Into RUNNER_TEMP, not the workspace. Scratch files written
-              # into a checkout have a way of ending up in a build context
-              # later, and this one would land next to the recipes.
-              CHANGED="$RUNNER_TEMP/changed.txt"
-              git diff --name-only "$BASE" HEAD > "$CHANGED"
-              echo "Changed paths:"
-              sed 's/^/  /' "$CHANGED"
-              ARGS+=(--changed-from "$CHANGED")
-            fi
+          if [ -n "$BASE" ]; then
+            # Into RUNNER_TEMP, not the workspace. Scratch files written into
+            # a checkout have a way of ending up in a build context later,
+            # and this one would land next to the recipes.
+            CHANGED="$RUNNER_TEMP/changed.txt"
+            # core.quotePath=false is not cosmetic. By default git C-quotes
+            # any path with a non-ASCII byte — `core/python/x/café.md` comes
+            # out as `"core/python/x/caf\303\251.md"`, complete with the
+            # leading quote, so the prefix match against the recipe fails and
+            # the image is silently NOT rebuilt. Verified against real git.
+            git -c core.quotePath=false diff --name-only "$BASE" HEAD \
+              > "$CHANGED"
+            echo "Changed paths:"
+            sed 's/^/  /' "$CHANGED"
+            ARGS+=(--changed-from "$CHANGED")
           fi
 
           # The declaration is validated in full regardless of which images
