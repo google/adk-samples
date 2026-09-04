@@ -1,0 +1,313 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Pin the security and correctness properties of recipe-images.yml.
+
+This workflow builds container images from Dockerfiles that community
+contributors write, and is intended to push them to a PUBLIC registry under
+Google's name. Neither actionlint nor zizmor runs in this repository's CI, and
+ruff does not read YAML, so nothing else checks any of the following. Each one
+is a line someone could plausibly "fix" later for a good-sounding local reason.
+
+The assertions are about PROPERTIES rather than exact text, so ordinary edits
+to the workflow do not trip them.
+"""
+
+import re
+from pathlib import Path
+
+import pytest
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "recipe-images.yml"
+
+
+@pytest.fixture(scope="module")
+def doc() -> dict:
+    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def triggers(doc: dict) -> dict:
+    # PyYAML parses the unquoted key `on:` as the boolean True, since YAML 1.1
+    # treats `on` as a truthy scalar. Accept whichever key survives so this
+    # does not break if the workflow ever quotes it.
+    return doc.get("on") or doc[True]
+
+
+def _steps(doc: dict, job: str) -> list[dict]:
+    return doc["jobs"][job]["steps"]
+
+
+def _run_blocks(doc: dict) -> list[tuple[str, str]]:
+    out = []
+    for job_name, job in doc["jobs"].items():
+        for step in job.get("steps") or []:
+            if "run" in step:
+                out.append((f"{job_name}:{step.get('name', '?')}", step["run"]))
+    return out
+
+
+def test_the_workflow_parses():
+    assert yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+
+
+# --------------------------------------------------------------------------
+# Fork safety
+# --------------------------------------------------------------------------
+
+
+def test_it_never_uses_pull_request_target(triggers):
+    """pull_request_target runs with repository credentials in scope of code
+    the contributor wrote. For a workflow that builds contributor Dockerfiles
+    it is the single most dangerous trigger available."""
+    assert "pull_request_target" not in triggers
+
+
+def test_it_builds_on_pull_request(triggers):
+    """A first build discovered on main is a build nobody is watching."""
+    assert "pull_request" in triggers
+
+
+def test_push_is_restricted_to_main(triggers):
+    assert triggers["push"]["branches"] == ["main"]
+
+
+# --------------------------------------------------------------------------
+# Publishing is gated
+# --------------------------------------------------------------------------
+
+
+def test_every_push_step_is_gated_on_the_publish_decision(doc):
+    """Nothing may reach the registry unless the mode step said so.
+
+    This is what keeps the workflow inert while the registry variables are
+    unset, and what keeps a pull request — including one from a fork — from
+    publishing anything.
+    """
+    for step in _steps(doc, "build"):
+        run = step.get("run", "")
+        uses = str(step.get("uses", ""))
+        touches_registry = (
+            "docker push" in run
+            or "docker login" in run
+            or "google-github-actions/auth" in uses
+        )
+        if touches_registry:
+            assert "steps.mode.outputs.publish == 'true'" in step.get(
+                "if", ""
+            ), f"unguarded registry step: {step.get('name')}"
+
+
+def test_the_publish_decision_requires_all_three_registry_vars(doc):
+    """A half-configured registry must not half-publish."""
+    mode = next(s for s in _steps(doc, "build") if s.get("id") == "mode")
+    for var in (
+        "RECIPE_IMAGE_REGISTRY",
+        "RECIPE_IMAGE_WIF_PROVIDER",
+        "RECIPE_IMAGE_SA",
+    ):
+        assert var in str(mode.get("env", {})), f"{var} not consulted"
+    assert "PUBLISH=false" in mode["run"]
+
+
+def test_the_publish_decision_requires_a_push_to_main(doc):
+    mode = next(s for s in _steps(doc, "build") if s.get("id") == "mode")
+    assert "refs/heads/main" in mode["run"]
+    assert '"$EVENT_NAME" != "push"' in mode["run"]
+
+
+# --------------------------------------------------------------------------
+# Credential hygiene
+# --------------------------------------------------------------------------
+
+
+def test_the_build_happens_before_authentication(doc):
+    """A credential acquired before the build is a credential the build
+    context could capture. Checkout still comes first, because auth writes
+    into the workspace that a later checkout would clobber."""
+    names = [s.get("name", "") for s in _steps(doc, "build")]
+    order = {n: i for i, n in enumerate(names)}
+    build = next(i for n, i in order.items() if n.startswith("Build image"))
+    auth = next(i for n, i in order.items() if n.startswith("Authenticate"))
+    checkout = next(i for n, i in order.items() if n.startswith("Checkout"))
+    assert checkout < build < auth
+
+
+def test_auth_writes_no_credential_file(doc):
+    """A credential FILE in the workspace can be swept into a layer by a
+    COPY. A short-lived token in the step environment cannot."""
+    auth = next(
+        s
+        for s in _steps(doc, "build")
+        if "google-github-actions/auth" in str(s.get("uses", ""))
+    )
+    assert auth["with"]["create_credentials_file"] is False
+    assert auth["with"]["token_format"] == "access_token"
+
+
+def test_the_registry_token_is_passed_on_stdin(doc):
+    """Not as a `docker login -p` argument, where it would appear in a
+    process listing and in any `set -x` trace."""
+    push = next(
+        s for s in _steps(doc, "build") if "docker push" in s.get("run", "")
+    )
+    assert "--password-stdin" in push["run"]
+    assert "-p " not in push["run"]
+
+
+def test_checkout_never_persists_credentials(doc):
+    for job_name, job in doc["jobs"].items():
+        for step in job.get("steps") or []:
+            if "actions/checkout" in str(step.get("uses", "")):
+                assert (
+                    step.get("with", {}).get("persist-credentials") is False
+                ), f"{job_name} checkout persists credentials"
+
+
+# --------------------------------------------------------------------------
+# Repository conventions
+# --------------------------------------------------------------------------
+
+
+def test_no_github_expression_reaches_a_run_block(doc):
+    """The repo-wide rule: dynamic values arrive through `env:`, so nothing
+    a contributor controls can be substituted into shell source."""
+    for where, run in _run_blocks(doc):
+        assert "${{" not in run, f"{where} interpolates an expression"
+
+
+def test_every_action_is_pinned_to_a_sha(doc):
+    sha = re.compile(r"^[^@]+@[0-9a-f]{40}$")
+    for job in doc["jobs"].values():
+        for step in job.get("steps") or []:
+            uses = step.get("uses")
+            if uses:
+                assert sha.match(uses), f"{uses} is not pinned to a full SHA"
+
+
+def test_workflow_level_permissions_are_empty(doc):
+    """Declared per job instead, so `detect` and `gate` do not inherit the
+    id-token grant that only `build` needs."""
+    assert doc["permissions"] == {}
+
+
+def test_id_token_is_granted_only_to_the_build_job(doc):
+    for name, job in doc["jobs"].items():
+        perms = job.get("permissions") or {}
+        if name == "build":
+            assert perms.get("id-token") == "write"
+        else:
+            assert "id-token" not in perms, f"{name} should not mint tokens"
+
+
+def test_every_job_has_a_timeout(doc):
+    for name, job in doc["jobs"].items():
+        assert job.get("timeout-minutes"), f"{name} has no timeout"
+
+
+def test_the_matrix_does_not_fail_fast(doc):
+    """One broken image must not hide the state of the others."""
+    assert doc["jobs"]["build"]["strategy"]["fail-fast"] is False
+
+
+def test_a_main_build_is_not_cancelled_by_a_later_push(doc):
+    """Cancelling the run that publishes could leave some images pushed and
+    others not. Superseding a PR build is free; superseding this is not."""
+    assert (
+        doc["concurrency"]["cancel-in-progress"]
+        == "${{ github.event_name == 'pull_request' }}"
+    )
+
+
+# --------------------------------------------------------------------------
+# The gate
+# --------------------------------------------------------------------------
+
+
+def test_the_gate_always_runs(doc):
+    """A skipped required check is often treated as passing by branch
+    protection, which is the silent-green failure this guards against."""
+    gate = doc["jobs"]["gate"]
+    assert gate["if"] == "always()"
+    assert set(gate["needs"]) == {"detect", "build"}
+
+
+def test_the_gate_passes_when_no_image_was_affected(doc):
+    """`skipped` on build is the normal outcome for most pull requests."""
+    run = doc["jobs"]["gate"]["steps"][0]["run"]
+    assert "skipped)" in run
+
+
+def test_the_gate_fails_when_detect_fails(doc):
+    """Otherwise an invalid declaration produces a green run that built
+    nothing."""
+    run = doc["jobs"]["gate"]["steps"][0]["run"]
+    assert '"$DETECT_RESULT" != "success"' in run
+    assert "exit 1" in run
+
+
+# --------------------------------------------------------------------------
+# Wiring
+# --------------------------------------------------------------------------
+
+
+def test_the_matrix_comes_from_the_detect_job(doc):
+    build = doc["jobs"]["build"]
+    assert build["needs"] == "detect"
+    assert (
+        build["strategy"]["matrix"]["entry"]
+        == "${{ fromJson(needs.detect.outputs.matrix) }}"
+    )
+    assert build["if"] == "needs.detect.outputs.count != '0'"
+
+
+def test_the_detect_job_declares_the_outputs_build_consumes(doc):
+    outputs = doc["jobs"]["detect"]["outputs"]
+    assert "matrix" in outputs
+    assert "count" in outputs
+
+
+def test_the_build_uses_the_declared_context_and_dockerfile(doc):
+    """The matrix carries these per image; hardcoding either here would
+    silently ignore the declaration."""
+    step = next(
+        s for s in _steps(doc, "build") if "docker build" in s.get("run", "")
+    )
+    env = step["env"]
+    assert env["DOCKERFILE"] == "${{ matrix.entry.dockerfile }}"
+    assert env["CONTEXT"] == "${{ matrix.entry.context }}"
+    assert env["PLATFORMS"] == "${{ matrix.entry.platforms }}"
+
+
+def test_images_are_tagged_by_commit_sha_only(doc):
+    """No moving tag. What a consumer should pin to is still an open
+    question, and a public tag published once is hard to withdraw."""
+    push = next(
+        s for s in _steps(doc, "build") if "docker push" in s.get("run", "")
+    )
+    assert "$COMMIT_SHA" in push["run"]
+    assert ":latest" not in push["run"]
+
+
+def test_the_workflow_path_matches_the_scripts_global_rebuild_list():
+    """publish_matrix.GLOBAL_REBUILD_PATHS names this file literally.
+
+    Rename the workflow without updating that tuple and a change to it stops
+    triggering rebuilds, silently.
+    """
+    import publish_matrix
+
+    rel = WORKFLOW.relative_to(REPO_ROOT).as_posix()
+    assert rel in publish_matrix.GLOBAL_REBUILD_PATHS
