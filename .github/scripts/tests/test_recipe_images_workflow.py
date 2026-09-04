@@ -15,9 +15,19 @@
 
 This workflow builds container images from Dockerfiles that community
 contributors write, and is intended to push them to a PUBLIC registry under
-Google's name. Neither actionlint nor zizmor runs in this repository's CI, and
-ruff does not read YAML, so nothing else checks any of the following. Each one
-is a line someone could plausibly "fix" later for a good-sounding local reason.
+Google's name.
+
+What these tests are NOT for: generic GitHub Actions anti-patterns. An
+org-level required workflow runs zizmor over every workflow here — it is not
+a file in this repository, which makes it easy to miss when grepping — and it
+already covers unpinned actions, over-broad permissions and the like.
+
+What they ARE for is the repository-specific properties zizmor cannot know:
+that publishing is gated on three named variables, that the build runs before
+authentication, that the trigger filters agree with publish_matrix.py's path
+constants, that images are tagged by SHA alone. Each is a line someone could
+plausibly "fix" later for a good-sounding local reason, and ruff does not read
+YAML.
 
 The assertions are about PROPERTIES rather than exact text, so ordinary edits
 to the workflow do not trip them.
