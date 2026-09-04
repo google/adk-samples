@@ -37,6 +37,12 @@ import publish_matrix as m
 import pytest
 import yaml
 
+# Derived here independently of publish_matrix.REPO_ROOT, and deliberately
+# so: this file sits one level deeper than the module, so the two walk a
+# different number of parents to reach the same place. Reusing the module's
+# value would make the guard tests below agree with it by construction —
+# including when it is wrong. test_repo_root_derivations_agree pins that they
+# match, which is the part worth asserting.
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
@@ -367,9 +373,17 @@ def test_entry_must_be_a_mapping(tmp_path: Path):
         m.build_matrix(repo_root=tmp_path)
 
 
-@pytest.mark.parametrize(
-    "key", ["recipe", "dockerfile", "context", "image", "serves_http"]
-)
+def test_entry_fixture_covers_every_required_key():
+    """Keeps _entry() honest as REQUIRED_KEYS grows.
+
+    test_missing_required_key deletes each required key from _entry() in
+    turn, so a key added to the module but not to the fixture would surface
+    as a KeyError inside the test rather than as the missing coverage it is.
+    """
+    assert set(_entry()) == m.REQUIRED_KEYS
+
+
+@pytest.mark.parametrize("key", sorted(m.REQUIRED_KEYS))
 def test_missing_required_key(tmp_path: Path, key: str):
     _scaffold(tmp_path)
     entry = _entry()
@@ -496,6 +510,116 @@ def test_parent_escapes_are_refused(tmp_path: Path, field: str, value: str):
         m.PublishMatrixError, match=r"must stay inside|must be under"
     ):
         m.build_matrix(repo_root=tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("dockerfile", "Docker file"),
+        ("dockerfile", "Dockerfile;rm -rf /"),
+        ("dockerfile", "$(id)/Dockerfile"),
+        ("dockerfile", "Dockerfile`whoami`"),
+        ("context", "sub dir"),
+        ("context", "sub&dir"),
+        ("recipe", "core/python/de mo"),
+        ("recipe", "core/python/demo$X"),
+    ],
+)
+def test_shell_unsafe_path_characters_are_refused(
+    tmp_path: Path, field: str, value: str
+):
+    """These values are pasted into the build command by the workflow.
+
+    POSIX allows almost any byte in a filename, so a directory really can be
+    called `demo;rm -rf /`. Constraining the declaration is more reliable
+    than hoping every downstream use site quotes correctly.
+    """
+    _scaffold(tmp_path)
+    _write_policy(tmp_path, [_entry(**{field: value})])
+
+    with pytest.raises(
+        m.PublishMatrixError, match=r"may only contain|must be under"
+    ):
+        m.build_matrix(repo_root=tmp_path)
+
+
+# --------------------------------------------------------------------------
+# Symlink containment
+#
+# The textual checks cannot see symlinks, and a reviewer reading
+# `context: data` in policy.yml cannot tell that `data` links to /etc. These
+# are the checks that do not depend on anyone noticing.
+# --------------------------------------------------------------------------
+
+
+def test_symlinked_context_out_of_repo_is_refused(tmp_path: Path):
+    outside = tmp_path.parent / f"outside-{tmp_path.name}"
+    outside.mkdir()
+    (outside / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+
+    _scaffold(tmp_path)
+    (tmp_path / "core/python/demo/data").symlink_to(
+        outside, target_is_directory=True
+    )
+    _write_policy(
+        tmp_path,
+        [_entry(dockerfile="data/Dockerfile", context="data")],
+    )
+
+    with pytest.raises(m.PublishMatrixError, match="outside the repository"):
+        m.build_matrix(repo_root=tmp_path)
+
+
+def test_symlinked_dockerfile_out_of_repo_is_refused(tmp_path: Path):
+    outside = tmp_path.parent / f"outside-df-{tmp_path.name}"
+    outside.mkdir()
+    (outside / "evil").write_text("FROM scratch\n", encoding="utf-8")
+
+    _scaffold(tmp_path)
+    (tmp_path / "core/python/demo/Dockerfile.link").symlink_to(outside / "evil")
+    _write_policy(tmp_path, [_entry(dockerfile="Dockerfile.link")])
+
+    with pytest.raises(m.PublishMatrixError, match="outside the repository"):
+        m.build_matrix(repo_root=tmp_path)
+
+
+def test_symlinked_recipe_out_of_repo_is_refused(tmp_path: Path):
+    outside = tmp_path.parent / f"outside-recipe-{tmp_path.name}"
+    (outside / "core/python/demo").mkdir(parents=True)
+    (outside / "core/python/demo/manifest.yaml").write_text(
+        "language: python\n", encoding="utf-8"
+    )
+    (outside / "core/python/demo/Dockerfile").write_text(
+        "FROM scratch\n", encoding="utf-8"
+    )
+
+    (tmp_path / "core/python").mkdir(parents=True)
+    (tmp_path / "core/python/demo").symlink_to(
+        outside / "core/python/demo", target_is_directory=True
+    )
+    _write_policy(tmp_path, [_entry()])
+
+    with pytest.raises(m.PublishMatrixError, match="outside the repository"):
+        m.build_matrix(repo_root=tmp_path)
+
+
+def test_symlink_inside_the_repo_is_allowed(tmp_path: Path):
+    """Containment, not a blanket ban — an in-tree link is legitimate."""
+    _scaffold(tmp_path)
+    real = tmp_path / "core/python/demo/real"
+    real.mkdir()
+    (real / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    (tmp_path / "core/python/demo/aliased").symlink_to(
+        real, target_is_directory=True
+    )
+    _write_policy(
+        tmp_path,
+        [_entry(dockerfile="aliased/Dockerfile", context="aliased")],
+    )
+
+    (entry,) = m.build_matrix(repo_root=tmp_path)
+
+    assert entry["context"] == "core/python/demo/aliased"
 
 
 # --------------------------------------------------------------------------
@@ -636,6 +760,31 @@ def test_main_returns_1_on_error(tmp_path, monkeypatch, capsys):
 # --------------------------------------------------------------------------
 # Guard: the real declaration against the real repository
 # --------------------------------------------------------------------------
+
+
+def test_missing_pyyaml_reports_cleanly_instead_of_killing_the_import(
+    tmp_path: Path, monkeypatch
+):
+    """The module must stay importable when PyYAML is absent.
+
+    Exiting at import time would take the whole test session down during
+    collection, and leave any other consumer unable to import the module to
+    ask it anything at all.
+    """
+    monkeypatch.setattr(m, "yaml", None)
+
+    with pytest.raises(m.PublishMatrixError, match="PyYAML is not installed"):
+        m.build_matrix(repo_root=tmp_path)
+
+
+def test_repo_root_derivations_agree():
+    """The module and this file compute the repo root independently.
+
+    They walk a different number of parents from different depths, so this
+    asserts the two agree rather than assuming it — which is the reason the
+    duplication is kept rather than replaced by `m.REPO_ROOT`.
+    """
+    assert REPO_ROOT == m.REPO_ROOT
 
 
 def test_real_policy_declaration_is_valid():

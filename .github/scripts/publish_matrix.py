@@ -85,12 +85,12 @@ from typing import Any
 try:
     import yaml
 except ImportError:  # pragma: no cover - exercised only without pyyaml
-    print(
-        "error: PyYAML not installed. Run via "
-        "`uv run --no-project --with pyyaml python3 ...`.",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+    # Recorded, not acted on. Calling sys.exit() here would make the module
+    # unimportable rather than merely unusable, so anything that imports it —
+    # the test suite included — would die during collection with a SystemExit
+    # instead of a readable failure. The missing dependency is reported by
+    # load_publish_block(), the first function that actually needs it.
+    yaml = None  # type: ignore[assignment]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -118,6 +118,20 @@ IMAGE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 # `os/arch`, optionally `os/arch/variant` — linux/amd64, linux/arm64/v8.
 PLATFORM_RE = re.compile(r"^[a-z0-9]+/[a-z0-9]+(?:/[a-z0-9]+)?$")
 
+# The characters a recipe, Dockerfile or context path may contain.
+#
+# Same reasoning as IMAGE_NAME_RE above, and for the same reason: these
+# values are pasted into `docker build -f <dockerfile> <context>` by the
+# build workflow. A path holding a space, a quote, a semicolon or a `$`
+# would be a command-injection point at that use site, and the filesystem
+# is perfectly willing to hold such a directory — POSIX permits almost
+# anything but NUL and `/` in a name. Constraining the input is more
+# reliable than hoping every downstream use site quotes correctly.
+#
+# Uppercase is allowed because filenames need it (`Dockerfile`, `README.md`)
+# even though recipe directories are lowercase by convention.
+PATH_CHARS_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
+
 REQUIRED_KEYS = frozenset(
     {"recipe", "dockerfile", "context", "image", "serves_http"}
 )
@@ -142,6 +156,12 @@ def load_publish_block(repo_root: Path) -> dict[str, Any]:
     a workflow whose entire purpose is publishing these images, so an absent
     declaration is a broken repository, not an empty one.
     """
+    if yaml is None:
+        raise PublishMatrixError(
+            "PyYAML is not installed. Run via "
+            "`uv run --no-project --with pyyaml python3 ...`."
+        )
+
     path = _policy_path(repo_root)
     try:
         with open(path, "rb") as handle:
@@ -233,11 +253,15 @@ def _platforms(publish: dict[str, Any]) -> str:
 
 
 def _check_relative(value: str, field: str, image: str) -> None:
-    """Reject absolute paths and parent-directory escapes.
+    """Reject absolute paths, parent escapes and unsafe characters.
 
-    Both are containment failures with the same consequence: a build context
-    or Dockerfile outside the recipe it claims to belong to, which puts files
-    the recipe does not own into an image published under its name.
+    The first two are containment failures with the same consequence: a build
+    context or Dockerfile outside the recipe it claims to belong to, which
+    puts files the recipe does not own into an image published under its name.
+
+    The third is a downstream concern — see PATH_CHARS_RE. It is enforced
+    here, at the single point every path field passes through, rather than at
+    each place a path is later used.
     """
     if Path(value).is_absolute():
         raise PublishMatrixError(
@@ -248,6 +272,37 @@ def _check_relative(value: str, field: str, image: str) -> None:
         raise PublishMatrixError(
             f"image {image!r}: `{field}` must stay inside the recipe, "
             f"got {value!r}"
+        )
+    if not PATH_CHARS_RE.match(value):
+        raise PublishMatrixError(
+            f"image {image!r}: `{field}` may only contain letters, digits, "
+            f"dot, dash, underscore and slash — got {value!r}. These paths "
+            f"are interpolated into the build command, so a character the "
+            f"shell treats specially is refused rather than quoted."
+        )
+
+
+def _check_inside_repo(
+    resolved: Path, repo_root: Path, field: str, image: str, shown: str
+) -> None:
+    """Refuse a path that resolves outside the repository.
+
+    The textual checks above cannot see symlinks. A recipe may contain one
+    pointing anywhere on the host, and a reviewer reading `context: data` in
+    policy.yml has no way to tell that `data` is a link to /etc — which is
+    precisely why "an admin approved it" is not the safeguard it appears to
+    be. Resolving both sides and comparing is the check that does not depend
+    on anyone noticing.
+
+    repo_root is resolved by the caller as well, so a repository that itself
+    lives under a symlink (/tmp on macOS is the everyday case) compares
+    like with like instead of failing for everyone.
+    """
+    if not resolved.is_relative_to(repo_root):
+        raise PublishMatrixError(
+            f"image {image!r}: `{field}` {shown!r} resolves to {resolved}, "
+            f"outside the repository at {repo_root}. A symlink leading out "
+            f"of the tree would copy host files into a public image."
         )
 
 
@@ -303,11 +358,15 @@ def _validate_entry(
         )
     _check_relative(recipe, "recipe", image)
 
+    # Resolved once here and reused, so every containment comparison below is
+    # made against the same real location.
+    repo_real = repo_root.resolve()
     recipe_dir = repo_root / recipe
     if not recipe_dir.is_dir():
         raise PublishMatrixError(
             f"image {image!r}: recipe directory {recipe!r} does not exist"
         )
+    _check_inside_repo(recipe_dir.resolve(), repo_real, "recipe", image, recipe)
     if not (recipe_dir / "manifest.yaml").is_file():
         raise PublishMatrixError(
             f"image {image!r}: {recipe!r} has no manifest.yaml, so it is not "
@@ -325,6 +384,9 @@ def _validate_entry(
         raise PublishMatrixError(
             f"image {image!r}: no Dockerfile at {recipe}/{dockerfile}"
         )
+    _check_inside_repo(
+        dockerfile_path.resolve(), repo_real, "dockerfile", image, dockerfile
+    )
 
     context = raw["context"]
     if not isinstance(context, str) or not context:
@@ -339,6 +401,9 @@ def _validate_entry(
             f"image {image!r}: build context {recipe}/{context} is not a "
             f"directory"
         )
+    _check_inside_repo(
+        context_path.resolve(), repo_real, "context", image, context
+    )
 
     # `docker build -f` accepts a Dockerfile outside the context, but every
     # COPY in it resolves against the context, so the pairing is almost
