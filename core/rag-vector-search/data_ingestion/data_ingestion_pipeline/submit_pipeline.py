@@ -32,6 +32,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _str_to_bool(value: str) -> bool:
+    """Parse common string boolean values."""
+
+    if isinstance(value, bool):
+        return value
+
+    normalized_value = value.lower()
+    if normalized_value in ("true", "t", "1", "yes", "y"):
+        return True
+    if normalized_value in ("false", "f", "0", "no", "n"):
+        return False
+
+    raise argparse.ArgumentTypeError(
+        "expected one of: true, false, 1, 0, yes, no"
+    )
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments for pipeline configuration."""
 
@@ -71,9 +88,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--disable-caching",
-        type=bool,
+        type=_str_to_bool,
         default=os.getenv("DISABLE_CACHING", "false").lower() == "true",
-        help="Enable pipeline caching",
+        help="Disable pipeline caching",
     )
     parser.add_argument(
         "--cron-schedule",
@@ -82,7 +99,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--schedule-only",
-        type=bool,
+        type=_str_to_bool,
         default=os.getenv("SCHEDULE_ONLY", "false").lower() == "true",
         help="Schedule only (do not submit)",
     )
