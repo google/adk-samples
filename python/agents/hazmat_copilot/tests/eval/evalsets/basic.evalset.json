@@ -1,0 +1,45 @@
+{
+  "eval_set_id": "hazmat_basic_mock_eval",
+  "name": "Hazmat Agent Mock Evaluation",
+  "description": "Evaluation set for testing the local ADK mocked Hazmat Co-Pilot.",
+  "eval_cases": [
+    {
+      "eval_id": "worker_acid_spill",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "Emergency! I just spilled Hydrochloric acid. What PPE do I need to clean this up?"}]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [{"text": "⚠️ **DANGER: Hydrochloric Acid (HCl) Spill!**\n\n🛡️ **Required PPE**:\n*   **Nitrile Gloves**\n*   **Safety Goggles** (ANSI Z87.1 approved)\n*   **Respirator** (NIOSH-approved organic vapor respirator if ventilation is poor)\n\n🧽 **Spill Response**:\n1.  **Neutralize** the spill immediately with sodium bicarbonate or soda ash.\n2.  **Contain and collect** the spillage with non-combustible absorbent material.\n\nDo not touch the spill directly. Evacuate non-essential personnel."}]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "hazmat_copilot_app",
+        "user_id": "eval_worker_1",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "compliance_benzene",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "What are the specific hazard classifications and regulatory reporting requirements for Benzene?"}]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [{"text": "⚖️ **Regulatory Compliance Report: Benzene (C6H6)**\n\n**Identification**:\n*   **CAS Number**: 71-43-2\n\n**Hazard Classifications (GHS)**:\n*   **Flammable Liquids**: Category 2 (Highly flammable liquid and vapor).\n*   **Carcinogenicity**: Known human carcinogen. May cause cancer.\n\n**Regulatory & Safety Measures**:\n*   **PPE Requirements**: Protective gloves, protective clothing, eye protection, and face protection are strictly required.\n*   **First Aid Measure (Skin)**: If on skin, wash immediately with plenty of water.\n\n*Reference: SDS Section 2 (Hazards Identification) and Section 8 (Exposure Controls/Personal Protection).*"}]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "hazmat_copilot_app",
+        "user_id": "eval_compliance_1",
+        "state": {}
+      }
+    }
+  ]
+}

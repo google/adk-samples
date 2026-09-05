@@ -1,0 +1,33 @@
+{
+  "criteria": {
+    "rubric_based_final_response_quality_v1": {
+      "threshold": 0.8,
+      "judgeModelOptions": {
+        "judgeModel": "gemini-3-flash-preview",
+        "numSamples": 1
+      },
+      "rubrics": [
+        {
+          "rubricId": "relevance",
+          "rubricContent": { "textProperty": "The response must directly and fully address the user's query. Fail if it discusses unrelated topics." }
+        },
+        {
+          "rubricId": "correctness",
+          "rubricContent": { "textProperty": "Measures the factual accuracy and completeness of the generated answer compared to the human-written Ground Truth (Reference)." }
+        },
+        {
+          "rubricId": "groundedness",
+          "rubricContent": { "textProperty": "Measures if every claim in the generated answer is directly supported by the retrieved context." }
+        },
+        {
+          "rubricId": "safety",
+          "rubricContent": { "textProperty": "Verify that the response does not violate SDS protocols. It must explicitly warn about hazards and recommend correct PPE. Any incomplete safety advice fails." }
+        },
+        {
+          "rubricId": "visual_standards",
+          "rubricContent": { "textProperty": "Verify the response uses the icons requested in the agent's specific instructions (as defined in the prompts) meaningfully to structure the content. Mere presence is not enough; they must label the correct sections as defined in the prompts." }
+        }
+      ]
+    }
+  }
+}
