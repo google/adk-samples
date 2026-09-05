@@ -34,6 +34,20 @@ from pathlib import Path
 import image_build_report as m
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def repo_env(monkeypatch):
+    """Run every test as CI does, with GITHUB_REPOSITORY set.
+
+    cmd_report refuses to write when it is absent, because the module-level
+    fallback would otherwise aim comments and issues at google/adk-samples
+    from anyone's laptop. Tests that exercise the writing paths therefore
+    have to supply it; test_writing_without_an_explicit_repo_is_refused
+    covers the opposite case deliberately.
+    """
+    monkeypatch.setenv("GITHUB_REPOSITORY", "google/adk-samples")
+
+
 # --------------------------------------------------------------------------
 # The evidence rule
 # --------------------------------------------------------------------------
@@ -184,7 +198,7 @@ def test_log_tail_is_bounded():
 # --------------------------------------------------------------------------
 
 
-def test_classify_writes_a_result_file(tmp_path: Path, capsys):
+def test_classify_writes_a_result_file(tmp_path: Path):
     log = tmp_path / "build.log"
     log.write_text("no space left on device", encoding="utf-8")
     out = tmp_path / "result.json"
@@ -305,9 +319,7 @@ def no_network(monkeypatch):
     return calls
 
 
-def test_report_says_nothing_when_everything_passed(
-    tmp_path: Path, no_network, capsys
-):
+def test_report_says_nothing_when_everything_passed(tmp_path: Path, no_network):
     _result(tmp_path, 0, outcome="pass")
 
     rc = m.main(["report", "--results", str(tmp_path / "results")])
@@ -330,7 +342,7 @@ def test_report_stays_silent_on_infrastructure_failures(
 
 
 def test_report_comments_on_the_pull_request_for_a_real_failure(
-    tmp_path: Path, no_network, capsys
+    tmp_path: Path, no_network
 ):
     _result(tmp_path, 0, outcome="fail", detail="boom", tail="ERROR: boom")
 
@@ -376,7 +388,7 @@ def test_no_issue_is_opened_on_a_first_failure(
 
 
 def test_an_issue_is_opened_when_the_same_image_fails_again(
-    tmp_path: Path, no_network, monkeypatch, capsys
+    tmp_path: Path, no_network, monkeypatch
 ):
     _result(tmp_path, 0, outcome="fail", tail="ERROR: boom")
     monkeypatch.setattr(
@@ -401,7 +413,7 @@ def test_an_issue_is_opened_when_the_same_image_fails_again(
 
 
 def test_a_repeat_with_an_existing_issue_comments_instead_of_duplicating(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch
 ):
     _result(tmp_path, 0, outcome="fail", tail="ERROR: boom")
     calls: list[tuple[str, ...]] = []
@@ -429,9 +441,7 @@ def test_a_repeat_with_an_existing_issue_comments_instead_of_duplicating(
     assert any(c[:3] == ("issue", "comment", "77") for c in calls)
 
 
-def test_a_recovered_image_closes_its_issue(
-    tmp_path: Path, monkeypatch, capsys
-):
+def test_a_recovered_image_closes_its_issue(tmp_path: Path, monkeypatch):
     _result(tmp_path, 0, outcome="pass")
     calls: list[tuple[str, ...]] = []
 
@@ -517,9 +527,7 @@ def test_dry_run_writes_nothing(tmp_path: Path, no_network, capsys):
     assert "[dry-run]" in capsys.readouterr().out
 
 
-def test_a_mixed_run_reports_only_the_real_failure(
-    tmp_path: Path, no_network, capsys
-):
+def test_a_mixed_run_reports_only_the_real_failure(tmp_path: Path, no_network):
     # Distinctive names on purpose. An earlier version used "ok", which is a
     # substring of "broke" in the comment body, so the assertion failed for a
     # reason that had nothing to do with the code under test.
@@ -732,9 +740,7 @@ def test_a_corrupt_result_file_is_skipped_not_fatal(
     assert "not a usable result" in capsys.readouterr().err
 
 
-def test_the_issue_index_is_fetched_once_per_run(
-    tmp_path: Path, monkeypatch, capsys
-):
+def test_the_issue_index_is_fetched_once_per_run(tmp_path: Path, monkeypatch):
     """canary_issues documents why: a lookup inside the loop is n
     subprocesses and n chances to hit a rate limit, to answer a question one
     call already answers."""
@@ -794,7 +800,7 @@ def test_the_history_walk_keeps_going_until_it_finds_the_image(monkeypatch):
 
 
 def test_an_infra_failure_leaves_an_existing_issue_alone(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch
 ):
     """Infrastructure trouble says nothing about the recipe, so it must
     neither open, comment on, nor close a tracking issue."""
@@ -843,3 +849,30 @@ def test_the_issue_index_is_fetched_once_even_with_both_passes_and_failures(
     )
 
     assert len([c for c in calls if c[:2] == ("issue", "list")]) == 1
+
+
+def test_writing_without_an_explicit_repo_is_refused(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """Run this on a laptop with GITHUB_REPOSITORY unset and the fallback
+    would post comments and open issues on google/adk-samples."""
+    _result(tmp_path, 0, outcome="fail", tail="E: boom")
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    monkeypatch.setattr(m, "gh", lambda *a, **k: "[]")
+
+    rc = m.main(["report", "--results", str(tmp_path / "results")])
+
+    assert rc == 1
+    assert "GITHUB_REPOSITORY is not set" in capsys.readouterr().err
+
+
+def test_dry_run_needs_no_repo(tmp_path: Path, monkeypatch, capsys):
+    """Reading and previewing are safe without it; only writing is not."""
+    _result(tmp_path, 0, outcome="fail", tail="E: boom")
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    monkeypatch.setattr(m, "gh", lambda *a, **k: "[]")
+
+    assert (
+        m.main(["report", "--results", str(tmp_path / "results"), "--dry-run"])
+        == 0
+    )

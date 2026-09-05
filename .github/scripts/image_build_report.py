@@ -73,10 +73,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "google/adk-samples")
+# The default is for reading and for tests. Writing with it is refused —
+# see _require_explicit_repo(). Without that guard, running the report
+# subcommand anywhere GITHUB_REPOSITORY is unset would post comments and
+# open issues on google/adk-samples, which is the wrong repository for
+# everyone who is not CI.
+DEFAULT_REPO = "google/adk-samples"
+REPO = os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPO)
 WORKFLOW_FILE = "recipe-images.yml"
 
 # Who is told when a failure needs a human and no better address exists.
+# The repository's CODEOWNERS catch-all, and the same value canary_issues.py
+# uses for the same purpose.
 MAINTAINER = "happyhuman"
 
 TITLE_PREFIX = "Recipe image build failing:"
@@ -85,6 +93,11 @@ LABEL_TRACKING = "recipe-image-build"
 # How many log lines to quote back. Enough to show the failing instruction
 # and its error, short enough that a comment stays readable.
 LOG_TAIL_LINES = 25
+
+# How much of the one-line summary to keep. Long enough for a docker error
+# naming the failing instruction, short enough that a result.json stays small
+# and a printed summary line stays on one row.
+MAX_DETAIL_CHARS = 300
 
 # Upper bound on issues one run will open. Sized well above routine breakage
 # — three images are declared today — and below "something is systemically
@@ -249,8 +262,8 @@ def _failure_detail(log: str) -> str:
             line,
             re.IGNORECASE,
         ):
-            return line[:300]
-    return lines[-1][:300] if lines else ""
+            return line[:MAX_DETAIL_CHARS]
+    return lines[-1][:MAX_DETAIL_CHARS] if lines else ""
 
 
 def log_tail(log: str, limit: int = LOG_TAIL_LINES) -> str:
@@ -538,7 +551,29 @@ def load_results(results_dir: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def _require_explicit_repo(dry_run: bool) -> None:
+    """Refuse to write to the fallback repository.
+
+    `REPO` falls back to DEFAULT_REPO so the module imports cleanly and the
+    tests need no environment. That is harmless for reading and for
+    `--dry-run`, and dangerous for anything else: run the report subcommand
+    on a laptop, or in a fork whose workflow forgot the variable, and it
+    would post comments and open issues on google/adk-samples.
+
+    CI always sets GITHUB_REPOSITORY, so this costs the real caller nothing.
+    """
+    if dry_run:
+        return
+    if not os.environ.get("GITHUB_REPOSITORY"):
+        raise ReportError(
+            "GITHUB_REPOSITORY is not set, so the target repository would "
+            f"fall back to {DEFAULT_REPO}. Refusing to comment or open "
+            "issues there. Set it, or pass --dry-run."
+        )
+
+
 def cmd_report(args: argparse.Namespace) -> int:
+    _require_explicit_repo(args.dry_run)
     entries = load_results(Path(args.results))
     if not entries:
         # Distinguished from "everything passed": the build job writes a
