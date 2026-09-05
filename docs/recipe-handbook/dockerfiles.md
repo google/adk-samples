@@ -112,7 +112,7 @@ is deprecated.
 
 Fetching model weights or remote installers during the build ties it
 to a third-party host serving the same bytes tomorrow. It can also
-mean redistributing someone else's artifact under your licence.
+mean redistributing someone else's artifact under your license.
 
 ### 9. Declared, not inferred
 
