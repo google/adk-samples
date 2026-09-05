@@ -23,6 +23,6 @@ os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
 MODEL = os.getenv("GOOGLE_GENAI_MODEL")
 if not MODEL:
-    MODEL = "gemini-2.5-flash"
+    MODEL = "gemini-3.5-flash"
 
 from . import agent  # noqa: E402
