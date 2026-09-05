@@ -447,3 +447,124 @@ def test_the_detect_checkout_takes_full_history(doc: dict):
         if "actions/checkout" in str(s.get("uses", ""))
     )
     assert checkout["with"]["fetch-depth"] == 0
+
+
+# --------------------------------------------------------------------------
+# Failure reporting
+# --------------------------------------------------------------------------
+
+
+def test_a_failed_build_still_fails_its_job(doc: dict):
+    """`continue-on-error` on the build step exists only so the log can be
+    captured and classified. Without a step restoring the failure, the leg
+    reports success, the gate aggregates three successes, and a required
+    check goes green over an image that did not build."""
+    steps = _steps(doc, "build")
+    build = next(s for s in steps if s.get("id") == "build")
+    assert build["continue-on-error"] is True
+
+    restorer = next(
+        s
+        for s in steps
+        if "steps.build.outcome == 'failure'" in str(s.get("if", ""))
+    )
+    assert "exit 1" in restorer["run"]
+    # After classify and upload, or the evidence is lost before anything
+    # records it.
+    names = [s.get("name", "") for s in steps]
+    assert names.index(restorer["name"]) > names.index("Upload result")
+
+
+def test_every_leg_uploads_a_result_even_when_it_passed(doc: dict):
+    """A recipe absent from the results cannot be told apart from one that
+    passed, which is how a recovery goes unnoticed and its tracking issue
+    stays open forever."""
+    for name in ("Classify the result", "Upload result"):
+        step = next(s for s in _steps(doc, "build") if s.get("name") == name)
+        assert step["if"] == "always()", f"{name} does not always run"
+
+
+def test_the_report_job_only_runs_on_a_merge_to_main(doc: dict):
+    """On a pull request the author is already looking at the failing check;
+    a bot comment repeating it is noise."""
+    condition = doc["jobs"]["report"]["if"]
+    assert "github.event_name == 'push'" in condition
+    assert "refs/heads/main" in condition
+    assert "!cancelled()" in condition
+
+
+def test_the_report_job_is_the_only_writer(doc: dict):
+    """It writes to the tracker and takes no part in building, so nothing a
+    contributor's Dockerfile does happens in a job holding these scopes."""
+    for name, job in doc["jobs"].items():
+        perms = job.get("permissions") or {}
+        writes = {
+            k for k, v in perms.items() if v == "write" and k != "id-token"
+        }
+        if name == "report":
+            assert writes == {"issues", "pull-requests"}
+        else:
+            assert not writes, f"{name} can write {writes}"
+
+
+def test_the_report_job_does_not_build_anything(doc: dict):
+    runs = " ".join(s.get("run", "") for s in _steps(doc, "report"))
+    assert "docker build" not in runs
+    assert "docker push" not in runs
+
+
+def test_the_report_job_reads_the_results_the_build_job_wrote(doc: dict):
+    """The artifact name is the contract between the two jobs; a mismatch
+    means the reporter silently finds nothing and says nothing."""
+    upload = next(
+        s
+        for s in _steps(doc, "build")
+        if "upload-artifact" in str(s.get("uses", ""))
+    )
+    download = next(
+        s
+        for s in _steps(doc, "report")
+        if "download-artifact" in str(s.get("uses", ""))
+    )
+    produced = upload["with"]["name"]
+    pattern = download["with"]["pattern"]
+    assert pattern.endswith("*")
+    assert produced.startswith(pattern[:-1]), (
+        f"upload writes {produced!r}, download looks for {pattern!r}"
+    )
+
+
+def test_the_gate_does_not_depend_on_the_reporter(doc: dict):
+    """Branch protection must not turn red because commenting failed, nor
+    green because it succeeded. The two answer different questions."""
+    assert "report" not in doc["jobs"]["gate"]["needs"]
+
+
+def test_the_reporter_does_not_run_when_no_image_was_built(doc: dict):
+    """Most merges that trigger this workflow affect no declared image, and
+    then `build` is skipped and no artifacts exist. Without this guard the
+    reporter goes red on an ordinary healthy merge, and a channel that cries
+    wolf gets muted along with its real reports."""
+    assert "needs.build.result != 'skipped'" in doc["jobs"]["report"]["if"]
+
+
+def test_the_build_job_name_matches_what_the_reporter_parses(doc: dict):
+    """The job name is the only link between a historical run and an image.
+
+    image_build_report strips BUILD_JOB_PREFIX off each job name to work out
+    which image it built, which is how "did this fail last time it was
+    built" is answered. Rename the job and that parsing silently returns
+    nothing: no repeats are ever detected, and no tracking issue is ever
+    opened again.
+    """
+    import image_build_report
+
+    name = doc["jobs"]["build"]["name"]
+    prefix = image_build_report.BUILD_JOB_PREFIX
+
+    assert name.startswith(prefix), (
+        f"build job is named {name!r} but the reporter strips {prefix!r}"
+    )
+    # What remains must be the image expression, or the parsed value is not
+    # an image name at all.
+    assert name[len(prefix) :].strip() == "${{ matrix.entry.image }}"

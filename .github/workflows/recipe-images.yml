@@ -250,6 +250,12 @@ jobs:
       # `COPY` in any Dockerfile. Checkout still comes first because auth
       # writes into the workspace that checkout would otherwise clobber.
       - name: Build image
+        id: build
+        # The job must still go red when this fails — the "Fail the job" step
+        # below restores that. This only keeps the leg alive long enough to
+        # capture the log and classify it, which is the entire input to the
+        # report job.
+        continue-on-error: true
         env:
           IMAGE: ${{ matrix.entry.image }}
           DOCKERFILE: ${{ matrix.entry.dockerfile }}
@@ -258,7 +264,15 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          set -euo pipefail
+          # `set +e` is load-bearing — do not drop it. GitHub invokes `run:`
+          # as `bash -e {0}`, so errexit is ALREADY on and `set -uo pipefail`
+          # does not clear it. Without `set +e` a failing docker build kills
+          # the step where it stands, the `tail` below never runs, and the
+          # log tail is lost at exactly the moment it is worth reading. Same
+          # reasoning as the sync step in recipe-canary.yml.
+          set -uo pipefail
+          set +e
+
           # Tagged with the commit SHA only. A moving tag is deliberately not
           # produced: what a consumer should pin to is an open question with
           # Agent Garden, and a tag published once is hard to withdraw.
@@ -275,9 +289,50 @@ jobs:
             --build-arg "COMMIT_SHA=$COMMIT_SHA" \
             --label "org.opencontainers.image.source=$SOURCE_URL" \
             --label "org.opencontainers.image.revision=$COMMIT_SHA" \
-            "$CONTEXT"
-          docker image inspect "local/$IMAGE:$COMMIT_SHA" \
-            --format 'built {{.RepoTags}} — {{.Size}} bytes'
+            "$CONTEXT" > "$RUNNER_TEMP/build.log" 2>&1
+          rc=$?
+
+          # Echo it either way: on success this is the build output a reader
+          # expects to find in the job log, and on failure it is the evidence.
+          tail -80 "$RUNNER_TEMP/build.log"
+
+          if [ $rc -eq 0 ]; then
+            docker image inspect "local/$IMAGE:$COMMIT_SHA" \
+              --format 'built {{.RepoTags}} — {{.Size}} bytes'
+          fi
+          exit $rc
+
+      # Runs even when the build succeeded: the report job needs a result for
+      # every leg, not only the failing ones. A recipe absent from the results
+      # cannot be told apart from one that passed, and that is how a recovery
+      # goes unnoticed and its tracking issue stays open forever.
+      - name: Classify the result
+        if: always()
+        env:
+          IMAGE: ${{ matrix.entry.image }}
+          DOCKERFILE: ${{ matrix.entry.dockerfile }}
+          CONTEXT: ${{ matrix.entry.context }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          set -euo pipefail
+          # Plain python3, no uv: the classify path is standard library only,
+          # so there is nothing to resolve and nothing to install.
+          python3 .github/scripts/image_build_report.py classify \
+            --image "$IMAGE" \
+            --dockerfile "$DOCKERFILE" \
+            --context "$CONTEXT" \
+            --outcome "$BUILD_OUTCOME" \
+            --log "$RUNNER_TEMP/build.log" \
+            --out "$RUNNER_TEMP/result.json"
+          cat "$RUNNER_TEMP/result.json"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # ratchet:actions/upload-artifact@v7.0.1
+        with:
+          name: image-result-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/result.json
+          retention-days: 7
 
       # `token_format: access_token` rather than the default credential file,
       # and no setup-gcloud step. Two reasons: the only cloud operation here
@@ -339,6 +394,82 @@ jobs:
               echo "- Published: no (build only)"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Restores the failure that `continue-on-error` on the build step
+      # suppressed. Without this the leg reports success, the gate aggregates
+      # three successes, and a branch-protection check goes green over an
+      # image that did not build — the exact silent-green this pipeline is
+      # built to prevent. It runs last so the log, the classification and the
+      # artifact are all safely captured first.
+      - name: Fail the job if the build failed
+        if: always() && steps.build.outcome == 'failure'
+        env:
+          IMAGE: ${{ matrix.entry.image }}
+        run: |
+          echo "::error::$IMAGE failed to build. See the 'Build image' step."
+          exit 1
+
+  # Tells a human that a recipe image broke. Separate from the gate because
+  # the two answer different questions: the gate answers "is this branch
+  # healthy" for branch protection, this answers "who needs to know".
+  #
+  # Only on a merge to main. On a pull request the author is already looking
+  # at the failing check, and a bot comment repeating it is noise.
+  report:
+    name: Report build failures
+    needs: [detect, build]
+    # `needs.build.result != 'skipped'` is not redundant with the rest. Most
+    # merges that trigger this workflow affect NO declared image — a change
+    # under core/ to a recipe that publishes nothing is the common case — and
+    # then `build` is skipped, no artifacts exist, and this job would go red
+    # on an ordinary merge for having nothing to read. A reporter that cries
+    # wolf on healthy merges gets muted, taking the real reports with it.
+    if: >-
+      !cancelled()
+      && github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && needs.detect.result == 'success'
+      && needs.build.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # To comment on the merged pull request, and to open a tracking issue
+      # when the same image fails twice running. Deliberately the only job
+      # in this workflow that can write anything to the repository, and it
+      # takes no part in building — so nothing a Dockerfile does happens in
+      # a job holding these.
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # ratchet:actions/download-artifact@v8.0.1
+        with:
+          pattern: image-result-*
+          path: ${{ runner.temp }}/results
+          merge-multiple: false
+
+      - name: Report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: >-
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
+            github.run_id }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/image_build_report.py report \
+            --results "$RUNNER_TEMP/results" \
+            --run-url "$RUN_URL" \
+            --run-id "$RUN_ID" \
+            --sha "$COMMIT_SHA"
 
   # Branch-protection gate. `if: always()` so the required check still
   # reports when detect or build was skipped or cancelled — a skipped
