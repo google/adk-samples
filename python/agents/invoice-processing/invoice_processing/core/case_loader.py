@@ -101,10 +101,10 @@ class CaseLoaderAgent:
             alf_audit_path = alf_case_dir / "alf_audit_log.json"
             alf_pp_path = alf_case_dir / "Postprocessing_Data.json"
             if alf_audit_path.exists():
-                with open(alf_audit_path) as f:
+                with open(alf_audit_path, encoding="utf-8") as f:
                     data.alf_audit = json.load(f)
             if alf_pp_path.exists():
-                with open(alf_pp_path) as f:
+                with open(alf_pp_path, encoding="utf-8") as f:
                     data.alf_postprocessing = json.load(f)
 
         # --- Build human summary ---

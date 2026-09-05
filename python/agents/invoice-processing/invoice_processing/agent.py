@@ -336,7 +336,7 @@ def _run_alf_stage(
             "pipeline_time": pipeline_time,
         }
 
-    with open(postprocessing_path) as f:
+    with open(postprocessing_path, encoding="utf-8") as f:
         provisional_output = json.load(f)
 
     # Run ALF Collect-Plan-Execute pipeline
@@ -421,10 +421,10 @@ def _save_alf_output(
         alf_output_dir = DATA_DIR / "alf_output" / case_id
         alf_output_dir.mkdir(parents=True, exist_ok=True)
 
-        with open(alf_output_dir / "Postprocessing_Data.json", "w") as f:
+        with open(alf_output_dir / "Postprocessing_Data.json", "w", encoding="utf-8") as f:
             json.dump(revised_output, f, indent=2, default=str)
 
-        with open(alf_output_dir / "alf_audit_log.json", "w") as f:
+        with open(alf_output_dir / "alf_audit_log.json", "w", encoding="utf-8") as f:
             json.dump(audit_log, f, indent=2, default=str)
 
         final_output = str(alf_output_dir)

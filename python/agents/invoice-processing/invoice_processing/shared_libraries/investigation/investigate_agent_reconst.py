@@ -128,7 +128,7 @@ INVESTIGATION_OUTPUT_DIR = AGENT_PKG_DIR / "data" / "investigation_output"
 _gcp_config: dict[str, Any] = {
     "PROJECT_ID": None,
     "LOCATION": os.getenv("LOCATION", "us-central1"),
-    "GEMINI_PRO_MODEL": os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro"),
+    "GEMINI_PRO_MODEL": os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-flash"),
     "initialized": False,
 }
 
@@ -154,7 +154,7 @@ def _ensure_gcp_initialized():
         "GOOGLE_CLOUD_REGION", "us-central1"
     )
     _gcp_config["GEMINI_PRO_MODEL"] = os.getenv(
-        "GEMINI_PRO_MODEL", "gemini-2.5-pro"
+        "GEMINI_PRO_MODEL", "gemini-2.5-flash"
     )
     if not _gcp_config["PROJECT_ID"]:
         raise RuntimeError(
@@ -4198,7 +4198,7 @@ def _validate_phase3(
     abn_metadata = invoice.get("_tax_id_validation", {}) or extraction_data.get(
         "abn_validation", {}
     )
-    currency = invoice.get("currency", "AUD")
+    currency = invoice.get("currency", "INR")
 
     # Vendor name — no reference vendor in general agent (no preprocessing)
     extracted_vendor = invoice.get("vendor_name", "")

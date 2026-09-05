@@ -65,7 +65,7 @@ extraction_schemas:
       - name: "vendor_tax_id"
         type: "string"
         required: false
-        prompt_hint: "Vendor's tax identification number (ABN, VAT, EIN)"
+        prompt_hint: "Vendor's tax identification number (GSTIN, PAN, VAT)"
       - name: "vendor_name"
         type: "string"
         required: true
@@ -77,7 +77,7 @@ extraction_schemas:
         prompt_hint: "Customer/recipient name the invoice is addressed to"
       - name: "currency"
         type: "string"
-        default: "AUD"
+        default: "INR"
         prompt_hint: "ISO currency code"
     line_item_schema:
       fields:
@@ -441,11 +441,10 @@ investigation:
 # Section 8: Config Defaults
 # ============================================================================
 config_defaults:
-  organization_names: ["ACME Corp", "ACME Corporation", "ACME Ltd"]
-  default_tax_rate: 0.10
+  organization_names: []  # Empty = skip customer name verification (accept any customer)
+  default_tax_rate: 0.18
   tax_rates_by_currency:
-    AUD: 0.10
-    NZD: 0.15
+    INR: 0.18
     USD: 0.00
     EUR: 0.20
   require_work_authorization: false
@@ -459,7 +458,7 @@ config_defaults:
   line_sum_tolerance: 1.00
   hours_tolerance: 0.5
   validate_tax_id_checksum: true
-  tax_id_format: "ABN"
+  tax_id_format: "GSTIN"
 
 # ============================================================================
 # Section 9: Labour/Hours Detection

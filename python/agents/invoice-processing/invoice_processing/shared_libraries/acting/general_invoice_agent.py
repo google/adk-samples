@@ -79,7 +79,7 @@ else:
 
 # Magic-value constants
 _MIN_PDF_CONTENT_LENGTH = 50
-_ABN_EXPECTED_LENGTH = 11
+_GSTIN_EXPECTED_LENGTH = 15
 
 
 @dataclass
@@ -89,7 +89,7 @@ class _GCPConfig:
     PROJECT_ID: str | None = None
     LOCATION: str = "us-central1"
     GEMINI_FLASH_MODEL: str = "gemini-2.5-flash"
-    GEMINI_PRO_MODEL: str = "gemini-2.5-pro"
+    GEMINI_PRO_MODEL: str = "gemini-2.5-flash"
     API_CALL_DELAY_SECONDS: float = 1.0
     initialized: bool = False
 
@@ -97,7 +97,7 @@ class _GCPConfig:
 _gcp_config = _GCPConfig(
     LOCATION=os.getenv("LOCATION", "us-central1"),
     GEMINI_FLASH_MODEL=os.getenv("GEMINI_FLASH_MODEL", "gemini-2.5-flash"),
-    GEMINI_PRO_MODEL=os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro"),
+    GEMINI_PRO_MODEL=os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-flash"),
     API_CALL_DELAY_SECONDS=float(os.getenv("API_CALL_DELAY_SECONDS", "1.0")),
 )
 
@@ -121,7 +121,7 @@ def _ensure_gcp_initialized():
         "GEMINI_FLASH_MODEL", "gemini-2.5-flash"
     )
     _gcp_config.GEMINI_PRO_MODEL = os.getenv(
-        "GEMINI_PRO_MODEL", "gemini-2.5-pro"
+        "GEMINI_PRO_MODEL", "gemini-2.5-flash"
     )
     _gcp_config.API_CALL_DELAY_SECONDS = float(
         os.getenv("API_CALL_DELAY_SECONDS", "1.0")
@@ -139,12 +139,11 @@ def _ensure_gcp_initialized():
 # Default configuration - can be overridden via config file
 DEFAULT_CONFIG = {
     # Organization names for customer verification
-    "organization_names": ["ACME Corp", "ACME Corporation", "ACME Ltd"],
+    "organization_names": [],  # Empty = skip customer name verification
     # Tax settings
-    "default_tax_rate": 0.10,  # 10%
+    "default_tax_rate": 0.18,  # 18% (Indian GST standard rate)
     "tax_rates_by_currency": {
-        "AUD": 0.10,
-        "NZD": 0.15,
+        "INR": 0.18,
         "USD": 0.00,
         "EUR": 0.20,
     },
@@ -164,7 +163,7 @@ DEFAULT_CONFIG = {
     "hours_tolerance": 0.5,
     # Tax ID validation
     "validate_tax_id_checksum": True,
-    "tax_id_format": "ABN",  # "ABN", "VAT", "EIN", "NONE"
+    "tax_id_format": "GSTIN",  # "GSTIN", "ABN", "VAT", "EIN", "NONE"
 }
 
 # Module-level mutable containers for config and metrics
@@ -212,29 +211,79 @@ class DocumentContent(BaseModel):
 
 
 class InvoiceLineItem(BaseModel):
-    """Single line item from invoice"""
+    """Single line item from invoice (GST e-Invoice compatible)"""
 
+    sl_no: str | None = None
     description: str
+    is_service: str | None = "N"
+    hsn_cd: str | None = ""
     quantity: float | None = None
+    free_qty: float | None = 0.0
+    unit: str | None = ""
     unit_price: float | None = None
     amount_ex_tax: float | None = None
+    discount: float | None = 0.0
+    pre_tax_val: float | None = 0.0
+    ass_amt: float | None = 0.0
+    gst_rt: float | None = 0.0
+    cgst_amt: float | None = 0.0
+    sgst_amt: float | None = 0.0
+    igst_amt: float | None = 0.0
+    ces_rt: float | None = 0.0
+    ces_amt: float | None = 0.0
+    oth_chrg: float | None = 0.0
+    tot_item_val: float | None = 0.0
     tax_code: str | None = "TAX"
     tax_amount: float | None = None
     amount_inc_tax: float | None = None
 
 
+class AddressDetails(BaseModel):
+    """Address details for seller/buyer/dispatch/ship"""
+
+    addr1: str | None = ""
+    addr2: str | None = ""
+    loc: str | None = ""
+    pin: int | None = None
+    stcd: str | None = ""
+    ph: str | None = None
+    em: str | None = None
+
+
 class InvoiceExtraction(BaseModel):
-    """Extracted invoice data"""
+    """Extracted invoice data (GST e-Invoice compatible)"""
 
     invoice_number: str | None = "UNKNOWN"
     invoice_date: str | None = ""
+    invoice_type: str | None = "INV"
     invoice_total_inc_tax: float | None = 0.0
     invoice_total_ex_tax: float | None = 0.0
     tax_amount: float | None = 0.0
+    cgst_val: float | None = 0.0
+    sgst_val: float | None = 0.0
+    igst_val: float | None = 0.0
+    ces_val: float | None = 0.0
+    discount: float | None = 0.0
+    oth_chrg: float | None = 0.0
+    rnd_off_amt: float | None = None
     vendor_tax_id: str | None = None
     vendor_name: str | None = "UNKNOWN"
+    vendor_trade_name: str | None = ""
+    vendor_address: AddressDetails | None = None
+    customer_tax_id: str | None = None
     customer_name: str | None = None
-    currency: str | None = "AUD"
+    customer_trade_name: str | None = ""
+    customer_pos: str | None = ""
+    customer_address: AddressDetails | None = None
+    ship_to_gstin: str | None = ""
+    ship_to_name: str | None = ""
+    ship_to_address: AddressDetails | None = None
+    irn: str | None = None
+    ack_no: str | None = None
+    ack_dt: str | None = None
+    currency: str | None = "INR"
+    supply_type: str | None = ""
+    reverse_charge: str | None = "N"
     line_items: list[InvoiceLineItem] | None = []
 
 
@@ -292,7 +341,7 @@ def load_config(config_path: str | None = None) -> dict:
             config_file = SCRIPT_DIR / config_file
 
         if config_file.exists():
-            with open(config_file) as f:
+            with open(config_file, encoding="utf-8") as f:
                 user_config = json.load(f)
                 _config_store["CONFIG"] = {**DEFAULT_CONFIG, **user_config}
                 print(f"Loaded config from {config_file}")
@@ -420,42 +469,102 @@ def clean_json_response(response_text: str) -> str:
     return json_str
 
 
-def normalize_tax_id(tax_id: str) -> str:
-    """Remove all non-numeric characters from tax ID"""
+def normalize_tax_id(tax_id: str, alphanumeric: bool = False) -> str:
+    """Remove whitespace and special characters from tax ID.
+
+    Args:
+        tax_id: Raw tax ID string.
+        alphanumeric: If True, keep letters too (for GSTIN). Otherwise digits only.
+    """
+    if alphanumeric:
+        return re.sub(r"[^0-9A-Za-z]", "", tax_id or "").upper()
     return re.sub(r"[^0-9]", "", tax_id or "")
 
 
-def validate_abn_checksum(abn: str) -> tuple[bool, str]:
-    """Validate Australian Business Number checksum"""
-    abn_clean = normalize_tax_id(abn)
+def validate_gstin_checksum(gstin: str) -> tuple[bool, str]:
+    """Validate Indian GST Identification Number (GSTIN).
 
-    if len(abn_clean) != _ABN_EXPECTED_LENGTH:
+    GSTIN format (15 chars): SSPPPPPPPPPPXCZD
+      SS   = 2-digit state code (01-37, 97)
+      PPPPPPPPPP = 10-char PAN
+      X    = entity code (1-9 or A-Z)
+      C    = check character (alphanumeric)
+      Z/D  = default 'Z' + check digit
+    """
+    gstin_clean = normalize_tax_id(gstin, alphanumeric=True)
+
+    if len(gstin_clean) != _GSTIN_EXPECTED_LENGTH:
         return (
             False,
-            f"Invalid length: {len(abn_clean)} (must be {_ABN_EXPECTED_LENGTH})",
+            f"Invalid length: {len(gstin_clean)} (must be {_GSTIN_EXPECTED_LENGTH})",
         )
 
-    if not abn_clean.isdigit():
-        return False, "Contains non-numeric characters"
+    # State code validation (first 2 chars must be digits)
+    if not gstin_clean[0:2].isdigit():
+        return False, "First 2 characters must be state code (digits)"
 
-    weights = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
-    checksum = (int(abn_clean[0]) - 1) * weights[0]
+    state_code = int(gstin_clean[0:2])
+    valid_state_codes = set(range(1, 38)) | {97}
+    if state_code not in valid_state_codes:
+        return False, f"Invalid state code: {state_code:02d} (valid: 01-37, 97)"
 
-    for i in range(1, 11):
-        checksum += int(abn_clean[i]) * weights[i]
+    # PAN format check (chars 3-12): 5 letters + 4 digits + 1 letter
+    pan = gstin_clean[2:12]
+    if not (pan[:5].isalpha() and pan[5:9].isdigit() and pan[9].isalpha()):
+        return False, f"Invalid PAN format in positions 3-12: {pan}"
 
-    if checksum % 89 == 0:
-        return True, "Valid checksum"
-    return False, f"Invalid checksum (mod 89 = {checksum % 89})"
+    # Entity code (char 13): must be alphanumeric
+    if not gstin_clean[12].isalnum():
+        return False, "Character 13 (entity code) must be alphanumeric"
+
+    # Character 14 is check character (alphanumeric) — validated via checksum below
+    # Character 15: typically 'Z' but some GSTINs use other values
+
+    # Mod-36 checksum validation (Luhn-like for alphanumeric)
+    _GSTIN_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    try:
+        factor = 1
+        total = 0
+        for i in range(len(gstin_clean) - 1):
+            code_point = _GSTIN_CHARS.index(gstin_clean[i])
+            digit = factor * code_point
+            digit = (digit // 36) + (digit % 36)
+            total += digit
+            factor = 2 if factor == 1 else 1
+
+        remainder = total % 36
+        check_char = _GSTIN_CHARS[(36 - remainder) % 36]
+
+        if check_char == gstin_clean[-1]:
+            return True, "Valid GSTIN checksum"
+        return (
+            False,
+            f"Invalid check character: '{gstin_clean[-1]}' (expected '{check_char}')",
+        )
+    except (ValueError, IndexError) as e:
+        return False, f"Checksum validation error: {e}"
 
 
-def validate_tax_id(tax_id: str, format_type: str = "ABN") -> tuple[bool, str]:
+def validate_tax_id(tax_id: str, format_type: str = "GSTIN") -> tuple[bool, str]:
     """Validate tax ID based on format type"""
     if format_type == "NONE":
         return True, "Validation disabled"
 
+    if format_type == "GSTIN":
+        return validate_gstin_checksum(tax_id)
+
     if format_type == "ABN":
-        return validate_abn_checksum(tax_id)
+        # Legacy Australian ABN support (11 digits, mod 89)
+        abn_clean = normalize_tax_id(tax_id)
+        if len(abn_clean) != 11:
+            return False, f"Invalid ABN length: {len(abn_clean)} (must be 11)"
+        weights = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+        checksum = (int(abn_clean[0]) - 1) * weights[0]
+        for i in range(1, 11):
+            checksum += int(abn_clean[i]) * weights[i]
+        if checksum % 89 == 0:
+            return True, "Valid ABN checksum"
+        return False, f"Invalid ABN checksum (mod 89 = {checksum % 89})"
 
     # Add other formats as needed (VAT, EIN, etc.)
     return True, "Format validation not implemented"
@@ -722,6 +831,12 @@ WORK AUTHORIZATION INDICATORS:
 - Authorized hours
 - Technician signatures
 
+IMPORTANT: If a single PDF contains multiple copies of the SAME invoice
+(e.g., "Original for Recipient", "Duplicate for Transporter",
+"Triplicate for Supplier" — common in Indian tax invoices), count it as
+invoice_count: 1, NOT multiple invoices. Only count truly distinct invoices
+with different invoice numbers.
+
 Return ONLY this JSON:
 {{
   "has_invoice": true/false,
@@ -785,7 +900,7 @@ class ExtractorAgent(BaseAgent):
                 ) and invoice_data.get("vendor_tax_id"):
                     tax_valid, tax_reason = validate_tax_id(
                         invoice_data["vendor_tax_id"],
-                        _get_config().get("tax_id_format", "ABN"),
+                        _get_config().get("tax_id_format", "GSTIN"),
                     )
                     invoice_data["_tax_id_validation"] = {
                         "valid": tax_valid,
@@ -835,33 +950,99 @@ class ExtractorAgent(BaseAgent):
         return output
 
     def _extract_invoice(self, pdf_path: Path) -> dict:
-        """Extract structured invoice data from PDF"""
-        prompt = """Extract structured data from this invoice PDF.
+        """Extract structured invoice data from PDF (GST e-Invoice compatible)"""
+        prompt = """Extract structured data from this Indian GST invoice PDF.
+If the PDF has multiple copies of the same invoice (Original, Duplicate,
+Triplicate), extract from the FIRST copy only.
 
 Return ONLY valid JSON with these fields:
 {
-  "invoice_number": "string",
-  "invoice_date": "YYYY-MM-DD",
+  "invoice_number": "string (Invoice No / Bill No)",
+  "invoice_date": "DD/MM/YYYY",
+  "invoice_type": "INV or CRN or DBN",
   "invoice_total_inc_tax": decimal,
-  "invoice_total_ex_tax": decimal,
-  "tax_amount": decimal,
-  "vendor_tax_id": "string (tax ID/ABN)",
-  "vendor_name": "string",
-  "customer_name": "string (who invoice is addressed to)",
-  "currency": "AUD/USD/EUR/etc",
+  "invoice_total_ex_tax": decimal (taxable value / assessable value)",
+  "tax_amount": decimal (total tax),
+  "cgst_val": decimal (total CGST amount),
+  "sgst_val": decimal (total SGST amount),
+  "igst_val": decimal (total IGST amount),
+  "ces_val": decimal (total Cess amount or 0),
+  "discount": decimal (total discount or 0),
+  "oth_chrg": decimal (other charges or 0),
+  "rnd_off_amt": decimal or null (rounding off amount),
+  "vendor_tax_id": "string (seller GSTIN - exactly 15 chars)",
+  "vendor_name": "string (seller legal name)",
+  "vendor_trade_name": "string (seller trade name if different)",
+  "vendor_address": {
+    "addr1": "string", "addr2": "string", "loc": "string",
+    "pin": integer or null, "stcd": "string (2-digit state code)",
+    "ph": "string or null", "em": "string or null"
+  },
+  "customer_tax_id": "string (buyer GSTIN - exactly 15 chars)",
+  "customer_name": "string (buyer legal name from Bill To)",
+  "customer_trade_name": "string (buyer trade name if different)",
+  "customer_pos": "string (Place of Supply state code)",
+  "customer_address": {
+    "addr1": "string", "addr2": "string", "loc": "string",
+    "pin": integer or null, "stcd": "string (2-digit state code)",
+    "ph": "string or null", "em": "string or null"
+  },
+  "ship_to_gstin": "string (Consignee GSTIN if different from buyer)",
+  "ship_to_name": "string (Consignee name if different)",
+  "ship_to_address": {
+    "addr1": "string", "addr2": "string", "loc": "string",
+    "pin": integer or null, "stcd": "string"
+  },
+  "irn": "string or null (Invoice Reference Number - 64 hex chars, strip hyphens)",
+  "ack_no": "string or null (Acknowledgement Number)",
+  "ack_dt": "string or null (Acknowledgement Date DD/MM/YYYY)",
+  "currency": "INR",
+  "supply_type": "string (B2B, B2C, SEZWP, SEZWOP, EXPWP, EXPWOP, DEXP)",
+  "reverse_charge": "Y or N",
   "line_items": [
     {
-      "description": "string",
+      "sl_no": "string (serial number)",
+      "description": "string (product/service description)",
+      "is_service": "Y or N",
+      "hsn_cd": "string (HSN/SAC code)",
       "quantity": decimal or null,
+      "free_qty": decimal or 0,
+      "unit": "string (UOM - EA, KG, NOS, etc.)",
       "unit_price": decimal or null,
-      "amount_ex_tax": decimal,
-      "tax_code": "TAX/GST/NA",
-      "tax_amount": decimal or null
+      "amount_ex_tax": decimal (line total before tax),
+      "discount": decimal or 0,
+      "pre_tax_val": decimal or 0,
+      "ass_amt": decimal (assessable amount for this line),
+      "gst_rt": decimal (combined GST rate e.g. 18 for 9+9),
+      "cgst_amt": decimal (CGST amount - use printed value only),
+      "sgst_amt": decimal (SGST amount - use printed value only),
+      "igst_amt": decimal (IGST amount - use printed value only),
+      "ces_rt": decimal or 0,
+      "ces_amt": decimal or 0,
+      "oth_chrg": decimal or 0,
+      "tot_item_val": decimal (final line total including tax),
+      "tax_code": "CGST/SGST/IGST/GST/TAX/NA",
+      "tax_amount": decimal or null (total tax for this line)
     }
   ]
 }
 
-Extract ALL line items. Use null for missing optional fields."""
+IMPORTANT RULES:
+- Use ONLY printed values. Do NOT recalculate totals.
+- IRN: strip hyphens/spaces, must be exactly 64 hex chars or null.
+- GSTIN: must be exactly 15 alphanumeric characters.
+- For tax split: use CGST/SGST if intra-state, IGST if inter-state.
+- gst_rt: if only CGST 9% and SGST 9% printed, set gst_rt to 18.
+- Use 0 for missing numeric fields, "" for missing text, null for IRN/AckNo if absent.
+- Extract ALL line items including transport charges, freight, other services.
+- DISCOUNT HANDLING: If a discount is printed on a line item:
+  - Set "discount" to the printed discount amount.
+  - Set "ass_amt" to the NET assessable amount AFTER discount (not the gross amount).
+  - Set "amount_ex_tax" to the same net value after discount.
+  - Tax (CGST/SGST) should be calculated on the net (post-discount) amount.
+  - Set "pre_tax_val" to the net assessable amount (same as ass_amt).
+- PHONE NUMBERS: Extract seller/buyer phone numbers into the address ph field.
+- SUPPLY TYPE: Set supply_type to "B2B" if both seller and buyer have GSTIN."""
 
         result, _ = call_gemini_with_pdf(
             pdf_path, prompt, _gcp_config.GEMINI_PRO_MODEL, InvoiceExtraction
@@ -891,17 +1072,39 @@ Return ONLY valid JSON:
         return result.model_dump()
 
     def _empty_invoice(self) -> dict:
-        """Return empty invoice structure"""
+        """Return empty invoice structure (GST e-Invoice compatible)"""
         return {
             "invoice_number": "EXTRACTION_FAILED",
             "invoice_date": "",
+            "invoice_type": "INV",
             "invoice_total_inc_tax": 0.0,
             "invoice_total_ex_tax": 0.0,
             "tax_amount": 0.0,
+            "cgst_val": 0.0,
+            "sgst_val": 0.0,
+            "igst_val": 0.0,
+            "ces_val": 0.0,
+            "discount": 0.0,
+            "oth_chrg": 0.0,
+            "rnd_off_amt": None,
             "vendor_tax_id": "",
             "vendor_name": "UNKNOWN",
+            "vendor_trade_name": "",
+            "vendor_address": None,
+            "customer_tax_id": None,
             "customer_name": None,
-            "currency": "AUD",
+            "customer_trade_name": "",
+            "customer_pos": "",
+            "customer_address": None,
+            "ship_to_gstin": "",
+            "ship_to_name": "",
+            "ship_to_address": None,
+            "irn": None,
+            "ack_no": None,
+            "ack_dt": None,
+            "currency": "INR",
+            "supply_type": "",
+            "reverse_charge": "N",
             "line_items": [],
         }
 
@@ -1411,9 +1614,9 @@ class TransformerAgent(BaseAgent):
         print(" [7/9] Transformer Agent: Starting...")
 
         invoice = extraction.get("invoice", {})
-        currency = invoice.get("currency", "AUD")
+        currency = invoice.get("currency", "INR")
         tax_rate = (
-            _get_config().get("tax_rates_by_currency", {}).get(currency, 0.10)
+            _get_config().get("tax_rates_by_currency", {}).get(currency, 0.18)
         )
 
         line_items = invoice.get("line_items") or []
@@ -1588,6 +1791,332 @@ Return ONLY a JSON object in this exact format:
 
 
 # ============================================================================
+# GST e-INVOICE JSON BUILDER
+# ============================================================================
+
+
+def _addr_dict(addr: dict | None) -> dict:
+    """Convert address details to e-Invoice format."""
+    if not addr:
+        return {"Addr1": "", "Addr2": "", "Loc": "", "Pin": None, "Stcd": ""}
+    return {
+        "Addr1": addr.get("addr1", "") or "",
+        "Addr2": addr.get("addr2", "") or "",
+        "Loc": addr.get("loc", "") or "",
+        "Pin": addr.get("pin"),
+        "Stcd": addr.get("stcd", "") or "",
+    }
+
+
+def build_einvoice_json(extraction: dict) -> dict:
+    """Transform enriched extraction into GST e-Invoice JSON schema.
+
+    This produces the GST e-Invoice JSON structure.
+    """
+    inv = extraction.get("invoice", {})
+    v_addr = _addr_dict(inv.get("vendor_address"))
+    c_addr = _addr_dict(inv.get("customer_address"))
+    s_addr = _addr_dict(inv.get("ship_to_address"))
+
+    # --- Deterministic field derivations ---
+    seller_gstin = inv.get("vendor_tax_id", "") or ""
+    buyer_gstin = inv.get("customer_tax_id", "") or ""
+    seller_name = inv.get("vendor_name", "") or ""
+    buyer_name = inv.get("customer_name", "") or ""
+    seller_trd = inv.get("vendor_trade_name", "") or ""
+    buyer_trd = inv.get("customer_trade_name", "") or ""
+
+    # SupTyp: derive from GSTIN presence if LLM didn't extract it
+    sup_typ = inv.get("supply_type", "") or ""
+    if not sup_typ:
+        if seller_gstin and buyer_gstin:
+            sup_typ = "B2B"
+        elif seller_gstin and not buyer_gstin:
+            sup_typ = "B2C"
+
+    # TrdNm: default to LglNm when empty
+    if not seller_trd:
+        seller_trd = seller_name
+    if not buyer_trd:
+        buyer_trd = buyer_name
+
+    # Pos (Place of Supply): derive from buyer state code if empty
+    cust_pos = inv.get("customer_pos", "") or ""
+    if not cust_pos:
+        cust_pos = c_addr.get("Stcd", "") or ""
+    # Fallback: derive from buyer GSTIN first 2 digits
+    if not cust_pos and len(buyer_gstin) >= 2:
+        cust_pos = buyer_gstin[:2]
+
+    # Build ItemList
+    item_list = []
+    for item in inv.get("line_items") or []:
+        item_list.append({
+            "SlNo": str(item.get("sl_no") or (len(item_list) + 1)),
+            "PrdDesc": item.get("description", ""),
+            "IsServc": item.get("is_service", "N") or "N",
+            "HsnCd": item.get("hsn_cd", "") or "",
+            "Barcde": None,
+            "Qty": item.get("quantity") or 0,
+            "FreeQty": item.get("free_qty") or 0,
+            "Unit": item.get("unit", "") or "",
+            "UnitPrice": item.get("unit_price") or 0,
+            "TotAmt": item.get("amount_ex_tax") or item.get("ass_amt") or 0,
+            "Discount": item.get("discount") or 0,
+            "PreTaxVal": item.get("pre_tax_val") or 0,
+            "AssAmt": item.get("ass_amt") or item.get("amount_ex_tax") or 0,
+            "GstRt": item.get("gst_rt") or 0,
+            "IgstAmt": item.get("igst_amt") or 0,
+            "CgstAmt": item.get("cgst_amt") or 0,
+            "SgstAmt": item.get("sgst_amt") or 0,
+            "CesRt": item.get("ces_rt") or 0,
+            "CesAmt": item.get("ces_amt") or 0,
+            "CesNonAdvlAmt": 0,
+            "StateCesRt": 0,
+            "StateCesAmt": 0,
+            "StateCesNonAdvlAmt": 0,
+            "OthChrg": item.get("oth_chrg") or 0,
+            "TotItemVal": item.get("tot_item_val") or item.get("amount_inc_tax") or 0,
+            "OrdLineRef": None,
+            "OrgCntry": None,
+            "PrdSlNo": None,
+            "BchDtls": {"Nm": None, "Expdt": None, "Wrdt": None},
+            "AttribDtls": None,
+        })
+
+    return {
+        "Version": "1.1",
+        "Irn": inv.get("irn"),
+        "AckNo": inv.get("ack_no"),
+        "AckDt": inv.get("ack_dt"),
+        "TranDtls": {
+            "TaxSch": "GST",
+            "SupTyp": sup_typ,
+            "RegRev": inv.get("reverse_charge", "N") or "N",
+            "EcmGstin": None,
+            "IgstOnIntra": "N",
+        },
+        "DocDtls": {
+            "Typ": inv.get("invoice_type", "INV") or "INV",
+            "No": inv.get("invoice_number", "") or "",
+            "Dt": inv.get("invoice_date", "") or "",
+        },
+        "SellerDtls": {
+            "Gstin": seller_gstin,
+            "LglNm": seller_name,
+            "TrdNm": seller_trd,
+            **v_addr,
+            "Ph": (inv.get("vendor_address") or {}).get("ph"),
+            "Em": (inv.get("vendor_address") or {}).get("em"),
+        },
+        "BuyerDtls": {
+            "Gstin": buyer_gstin,
+            "LglNm": buyer_name,
+            "TrdNm": buyer_trd,
+            "Pos": cust_pos,
+            **c_addr,
+            "Ph": (inv.get("customer_address") or {}).get("ph"),
+            "Em": (inv.get("customer_address") or {}).get("em"),
+        },
+        "DispDtls": {
+            "Nm": "", "Addr1": "", "Addr2": "", "Loc": "",
+            "Pin": None, "Stcd": "",
+        },
+        "ShipDtls": {
+            "Gstin": inv.get("ship_to_gstin", "") or "",
+            "LglNm": inv.get("ship_to_name", "") or "",
+            "TrdNm": "",
+            **s_addr,
+        },
+        "ItemList": item_list,
+        "ValDtls": {
+            "AssVal": inv.get("invoice_total_ex_tax") or 0,
+            "CgstVal": inv.get("cgst_val") or 0,
+            "SgstVal": inv.get("sgst_val") or 0,
+            "IgstVal": inv.get("igst_val") or 0,
+            "CesVal": inv.get("ces_val") or 0,
+            "StCesVal": 0,
+            "Discount": inv.get("discount") or 0,
+            "OthChrg": inv.get("oth_chrg") or 0,
+            "RndOffAmt": inv.get("rnd_off_amt"),
+            "TotInvVal": inv.get("invoice_total_inc_tax") or 0,
+            "TotInvValFc": 0,
+        },
+        "PayDtls": None,
+        "RefDtls": None,
+        "AddlDocDtls": None,
+        "ExpDtls": None,
+        "EwbDtls": None,
+    }
+
+
+# ============================================================================
+# POST-EXTRACTION VALIDATOR & ENRICHER
+# ============================================================================
+
+_PHONE_RE = re.compile(
+    r"(?:\+91[-\s]?)?(?:\d{2,5}[-\s/]?)?\d{6,10}(?:[-/]\d{6,10})*"
+)
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+_GSTIN_RE = re.compile(r"\b\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]\b")
+
+
+def validate_and_enrich_einvoice(
+    einvoice: dict,
+    raw_pdf_text: str | None = None,
+    buyer_gstin_list: list[str] | None = None,
+) -> dict:
+    """Post-extraction validation and enrichment of e-Invoice JSON.
+
+    Phase 1: Arithmetic validation on items vs totals
+    Phase 2: Regex extraction for phone/email from raw PDF text
+    Phase 3: Buyer GSTIN validation against known list
+    Plus: ShipDtls and PreTaxVal deterministic fixes
+    """
+    items = einvoice.get("ItemList") or []
+    val = einvoice.get("ValDtls") or {}
+
+    # ----- Phase 1: Arithmetic Validator -----
+    declared_ass = val.get("AssVal") or 0
+    if items and declared_ass > 0:
+        item_ass_sum = sum(it.get("AssAmt") or 0 for it in items)
+        tolerance = max(declared_ass * 0.02, 1.0)
+
+        # Fix individual items if they look like gross (pre-discount) values
+        if abs(item_ass_sum - declared_ass) > tolerance:
+            for it in items:
+                ass = it.get("AssAmt") or 0
+                disc = it.get("Discount") or 0
+                tot_amt = it.get("TotAmt") or 0
+
+                # If TotAmt = AssAmt and discount exists, AssAmt is gross
+                if disc > 0 and abs(ass - tot_amt) < 1:
+                    net = ass - disc
+                    it["AssAmt"] = net
+                    it["PreTaxVal"] = net
+                    it["TotAmt"] = net
+
+                    # Recalculate tax on net value
+                    gst_rt = it.get("GstRt") or 0
+                    if gst_rt > 0:
+                        half_rate = gst_rt / 2
+                        cgst = round(net * half_rate / 100, 2)
+                        sgst = round(net * half_rate / 100, 2)
+                        igst = it.get("IgstAmt") or 0
+                        if igst == 0:
+                            it["CgstAmt"] = cgst
+                            it["SgstAmt"] = sgst
+                        it["TotItemVal"] = round(
+                            net + (it.get("CgstAmt") or 0)
+                            + (it.get("SgstAmt") or 0)
+                            + (it.get("IgstAmt") or 0), 2
+                        )
+
+            # Recalculate ValDtls totals from corrected items
+            new_ass = sum(it.get("AssAmt") or 0 for it in items)
+            new_cgst = sum(it.get("CgstAmt") or 0 for it in items)
+            new_sgst = sum(it.get("SgstAmt") or 0 for it in items)
+            new_disc = sum(it.get("Discount") or 0 for it in items)
+
+            # Only update if the recalculated values are closer to declared
+            if abs(new_ass - declared_ass) < abs(item_ass_sum - declared_ass):
+                val["AssVal"] = new_ass
+                val["CgstVal"] = new_cgst
+                val["SgstVal"] = new_sgst
+                val["Discount"] = new_disc
+                val["TotInvVal"] = round(
+                    new_ass + new_cgst + new_sgst
+                    + (val.get("IgstVal") or 0)
+                    + (val.get("CesVal") or 0)
+                    + (val.get("OthChrg") or 0)
+                    - new_disc
+                    + (val.get("RndOffAmt") or 0), 2
+                )
+
+    # Fix PreTaxVal: default to AssAmt when zero
+    for it in items:
+        if not it.get("PreTaxVal") and it.get("AssAmt"):
+            it["PreTaxVal"] = it["AssAmt"]
+
+    # ----- Phase 2: Regex enrichment from raw PDF text -----
+    if raw_pdf_text:
+        seller = einvoice.get("SellerDtls") or {}
+        buyer = einvoice.get("BuyerDtls") or {}
+
+        # Extract phone numbers if missing
+        if not seller.get("Ph"):
+            phones = _PHONE_RE.findall(raw_pdf_text[:3000])
+            # Filter: at least 7 digits, skip GSTINs and dates
+            valid_phones = [
+                p.strip() for p in phones
+                if sum(c.isdigit() for c in p) >= 7
+                and not _GSTIN_RE.match(p)
+                and len(p) < 40
+            ]
+            if valid_phones:
+                seller["Ph"] = valid_phones[0]
+
+        # Extract emails if missing
+        if not seller.get("Em"):
+            emails = _EMAIL_RE.findall(raw_pdf_text[:3000])
+            if emails:
+                seller["Em"] = emails[0]
+
+    # ----- Phase 3: Buyer GSTIN validation -----
+    if buyer_gstin_list:
+        buyer = einvoice.get("BuyerDtls") or {}
+        extracted_gstin = buyer.get("Gstin", "")
+
+        # If extracted GSTIN not in the known list, find the correct one
+        if extracted_gstin and extracted_gstin not in buyer_gstin_list:
+            # Check if it's actually the seller's GSTIN (common LLM mistake)
+            seller_gstin = (einvoice.get("SellerDtls") or {}).get("Gstin", "")
+            if extracted_gstin == seller_gstin:
+                # LLM put seller GSTIN in buyer field — try to find correct one
+                # Match by state code (first 2 digits)
+                state_code = extracted_gstin[:2] if len(extracted_gstin) >= 2 else ""
+                matches = [g for g in buyer_gstin_list if g.startswith(state_code)]
+                if len(matches) == 1:
+                    buyer["Gstin"] = matches[0]
+                elif matches:
+                    buyer["Gstin"] = matches[0]  # best guess: first match
+
+            # Also try: maybe the extracted GSTIN has an OCR error
+            # Check if any list item differs by only 1-2 chars
+            if buyer.get("Gstin") == extracted_gstin:  # still unchanged
+                for known in buyer_gstin_list:
+                    if len(known) == 15 and len(extracted_gstin) == 15:
+                        diffs = sum(
+                            1 for a, b in zip(known, extracted_gstin) if a != b
+                        )
+                        if diffs <= 2:
+                            buyer["Gstin"] = known
+                            break
+
+        # Derive Pos from corrected GSTIN
+        if buyer.get("Gstin") and not buyer.get("Pos"):
+            buyer["Pos"] = buyer["Gstin"][:2]
+
+    # ----- ShipDtls: copy from BuyerDtls when empty -----
+    ship = einvoice.get("ShipDtls") or {}
+    if not ship.get("Gstin") and not ship.get("LglNm"):
+        buyer = einvoice.get("BuyerDtls") or {}
+        if buyer.get("Gstin"):
+            ship["Gstin"] = buyer["Gstin"]
+            ship["LglNm"] = buyer.get("LglNm", "")
+            ship["TrdNm"] = buyer.get("TrdNm", "")
+            if not ship.get("Addr1"):
+                ship["Addr1"] = buyer.get("Addr1", "")
+                ship["Addr2"] = buyer.get("Addr2", "")
+                ship["Loc"] = buyer.get("Loc", "")
+                ship["Pin"] = buyer.get("Pin")
+                ship["Stcd"] = buyer.get("Stcd", "")
+    einvoice["ShipDtls"] = ship
+
+    return einvoice
+
+
+# ============================================================================
 # AGENT 8: OUTPUT GENERATOR
 # ============================================================================
 
@@ -1633,27 +2162,28 @@ class OutputGeneratorAgent(BaseAgent):
         else:
             outcome = f"Invoice requires review as of {timestamp}"
 
-        # Build output
+        # Build GST e-Invoice JSON
+        einvoice_data = build_einvoice_json(extraction)
+
+        # Post-extraction validation and enrichment
+        einvoice_data = validate_and_enrich_einvoice(einvoice_data)
+
+        # Attach processing metadata
         output_data = {
-            "Invoice Processing": {
-                "Invoice Type": "Normal",
-                "Invoice Status": invoice_status,
-                "Invoice Source": "Email",
+            **einvoice_data,
+            "_processing": {
+                "invoice_type": "Normal",
+                "invoice_status": invoice_status,
+                "invoice_source": "Email",
+                "decision": decision,
+                "rejection_template": rejection_template,
+                "rejection_reason": rejection_reason,
+                "rejection_phase": f"Phase {rejection_phase}"
+                if rejection_phase
+                else None,
+                "outcome_message": outcome,
+                "currency": invoice.get("currency", "INR"),
             },
-            "Invoice Details": {
-                "Vendor Invoice": invoice.get("invoice_number", ""),
-                "Invoice Date": invoice.get("invoice_date", ""),
-                "Invoice Total": f"{invoice.get('invoice_total_inc_tax', 0):,.2f}",
-                "Pretax Total": f"{invoice.get('invoice_total_ex_tax', 0):,.2f}",
-                "Tax Amount": f"{invoice.get('tax_amount', 0):,.2f}",
-                "Currency": invoice.get("currency", "AUD"),
-            },
-            "Vendor Information": {
-                "Vendor Name": invoice.get("vendor_name", ""),
-                "Tax ID": invoice.get("vendor_tax_id", ""),
-            },
-            "Line Items": json.dumps(transformer.get("line_items_mapped", [])),
-            "Outcome Message": {"Outcome Message": outcome},
         }
 
         # Save output

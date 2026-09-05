@@ -192,7 +192,7 @@ def _get_llm_location():
 
 
 def _get_llm_model():
-    return os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
+    return os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-flash")
 
 
 def _get_llm_call_delay():
@@ -996,7 +996,7 @@ class LLMActionExecutor:
         waf = context.get("work_authorization") or {}
         waf_count = context.get("waf_count", 0)
         has_waf = context.get("has_waf", False)
-        currency = invoice.get("currency", "AUD")
+        currency = invoice.get("currency", "INR")
 
         # Build the task prompt
         task_prompt = LLM_CONTINUE_TASK_TEMPLATE.format(
@@ -2152,7 +2152,7 @@ class ActingAgentAdapter:
             filepath = output_folder / filename
             if filepath.exists():
                 try:
-                    with open(filepath) as f:
+                    with open(filepath, encoding="utf-8") as f:
                         context[key] = json.load(f)
                 except json.JSONDecodeError:
                     context[key] = {}
@@ -2278,7 +2278,7 @@ def run_alf_on_case(
     postprocessing = {}
     pp_path = Path(postprocessing_path)
     if pp_path.exists():
-        with open(pp_path) as f:
+        with open(pp_path, encoding="utf-8") as f:
             postprocessing = json.load(f)
 
     # Merge postprocessing into context
