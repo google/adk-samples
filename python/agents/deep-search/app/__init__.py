@@ -15,22 +15,12 @@
 """Deep Search Agent: strategize, research, and synthesize comprehensive reports."""
 
 import os
-from pathlib import Path
 
-from dotenv import load_dotenv
+import google.auth
 
-# Load variables from .env if present. app/config.py also loads this file,
-# but the mode check below runs before that import.
-load_dotenv(Path(__file__).parent / ".env")
-
-# AI Studio mode (GOOGLE_API_KEY set) runs without Cloud credentials, so the
-# project id lookup only applies to Vertex AI. Matches app/config.py.
-if not os.getenv("GOOGLE_API_KEY"):
-    import google.auth
-
-    _, project_id = google.auth.default()
-    os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
-    os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
-    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+_, project_id = google.auth.default()
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
 from app.agent import root_agent
