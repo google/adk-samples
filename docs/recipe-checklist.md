@@ -1,4 +1,4 @@
-<!-- word count: 906 (target 900, cap 1200) -->
+<!-- word count: 926 (target 900, cap 1200) -->
 
 # Recipe Checklist
 
@@ -26,6 +26,10 @@ skill in the right order.
 
 For deep detail on each skill, see the
 [Repo Skills Catalog](./recipe-handbook/skills-catalog.md).
+
+If your recipe ships a `Dockerfile` and you want its image
+published, it also has to meet the
+[Dockerfile standard](./recipe-handbook/dockerfiles.md).
 
 ---
 
