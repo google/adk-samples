@@ -93,6 +93,19 @@ LOG_TAIL_LINES = 25
 # size implies its own inputs are broken.
 MAX_ISSUES_PER_RUN = 5
 
+# How many past runs to walk when asking "did this image fail last time it
+# was built". Deep enough to see through a stretch of merges that touched
+# other recipes, shallow enough to cost a handful of API calls. Beyond this
+# the answer is "no recent evidence", which biases toward not opening an
+# issue — the recoverable direction.
+RUN_HISTORY_DEPTH = 10
+
+# The build job's name is `build <image>`; the matrix leg names come from
+# the workflow's `name:` expression. Parsing them back is the only way to
+# map a historical job to an image, so the two must agree — enforced by
+# test_the_build_job_name_matches_what_the_reporter_parses.
+BUILD_JOB_PREFIX = "build "
+
 # Log signatures that mean the infrastructure failed, not the recipe.
 #
 # Each is a real docker/registry failure mode with a distinctive string. The
@@ -289,23 +302,69 @@ def pull_request_for_commit(sha: str) -> int | None:
     return None
 
 
-def images_that_failed_in_the_previous_run(current_run_id: str) -> set[str]:
-    """Images whose build job failed in the last completed run before this one.
+def images_that_failed_in_the_previous_run(
+    current_run_id: str, wanted: set[str] | None = None
+) -> set[str]:
+    """Images that failed THE LAST TIME EACH WAS BUILT, not merely last run.
 
-    The run history IS the state. The alternative — a label, a file, a issue
-    body counter — has to be kept in sync with reality, and the first run
-    after it is introduced behaves differently from every later one because
-    the state does not exist yet.
+    The distinction is the whole correctness of this function, because builds
+    are affected-only. The realistic sequence is:
 
-    Returns an empty set on any difficulty reaching the API. That biases
+        run A   demo fails
+        run B   a merge touching another recipe; demo is not built at all
+        run C   a merge touching another recipe; demo is not built at all
+        run D   demo fails again
+
+    Asking "did demo fail in the run immediately before D" answers no — run C
+    never built it — so D reads as a first failure, and it reads that way
+    every time. An earlier version did exactly that, which made the issue
+    path unreachable in practice rather than merely rare.
+
+    So this walks back through recent runs and, for each image, takes the
+    verdict from the most recent run that ACTUALLY BUILT it. Runs that
+    skipped an image are transparent to that image and opaque to no other.
+
+    The run history IS the state. The alternative — a label, a file, a
+    counter in an issue body — has to be kept in sync with reality, and the
+    first run after it is introduced behaves differently from every later one
+    because the state does not exist yet.
+
+    Returns an empty set on any difficulty reaching the API: that biases
     toward commenting without opening an issue, which is the recoverable
-    direction: the next failure opens it.
+    direction, since the next failure opens it.
     """
+    runs = _recent_completed_runs()
+    if not runs:
+        return set()
+
+    # image -> conclusion from the most recent run that built it.
+    seen: dict[str, str] = {}
+    for run in runs:
+        if str(run.get("id")) == str(current_run_id):
+            continue
+        for image, conclusion in _build_job_outcomes(run.get("id")).items():
+            # First writer wins: runs arrive newest-first, so the first time
+            # an image appears is the most recent build of it.
+            seen.setdefault(image, conclusion)
+        # Stop once every image the caller asked about has a verdict. Each
+        # extra run costs an API call, and in the common case — the previous
+        # run built the same image — the answer is complete after one.
+        # Without this the walk always cost RUN_HISTORY_DEPTH calls, which is
+        # the n-calls-for-one-question shape canary_issues warns about.
+        if wanted and wanted <= set(seen):
+            break
+
+    return {img for img, concl in seen.items() if concl == "failure"}
+
+
+def _recent_completed_runs() -> list[dict]:
+    """Recent completed push-to-main runs of this workflow, newest first."""
     try:
         raw = gh(
             "api",
             f"repos/{REPO}/actions/workflows/{WORKFLOW_FILE}/runs"
-            "?branch=main&event=push&status=completed&per_page=5",
+            f"?branch=main&event=push&status=completed"
+            f"&per_page={RUN_HISTORY_DEPTH}",
             check=False,
         )
         parsed = json.loads(raw or "{}")
@@ -313,37 +372,42 @@ def images_that_failed_in_the_previous_run(current_run_id: str) -> set[str]:
         # list on some error shapes. Guarding the TYPE rather than only the
         # decode is what keeps a bad response from taking the whole report
         # down after the pull request comment has already been posted.
-        runs = (
-            parsed.get("workflow_runs") or []
-            if isinstance(parsed, dict)
-            else []
-        )
+        if not isinstance(parsed, dict):
+            return []
+        runs = parsed.get("workflow_runs") or []
+        return [r for r in runs if isinstance(r, dict)]
     except (json.JSONDecodeError, ReportError):
-        return set()
+        return []
 
-    previous = next(
-        (r for r in runs if str(r.get("id")) != str(current_run_id)), None
-    )
-    if not previous:
-        return set()
 
+def _build_job_outcomes(run_id: Any) -> dict[str, str]:
+    """image -> job conclusion for the build legs of one run."""
+    if run_id is None:
+        return {}
     try:
         raw = gh(
             "api",
-            f"repos/{REPO}/actions/runs/{previous['id']}/jobs?per_page=100",
+            f"repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100",
             check=False,
         )
         parsed = json.loads(raw or "{}")
-        jobs = parsed.get("jobs") or [] if isinstance(parsed, dict) else []
+        if not isinstance(parsed, dict):
+            return {}
+        jobs = parsed.get("jobs") or []
     except (json.JSONDecodeError, ReportError):
-        return set()
+        return {}
 
-    failed = set()
+    outcomes: dict[str, str] = {}
     for job in jobs:
+        if not isinstance(job, dict):
+            continue
         name = str(job.get("name") or "")
-        if job.get("conclusion") == "failure" and name.startswith("build "):
-            failed.add(name[len("build ") :].strip())
-    return failed
+        if not name.startswith(BUILD_JOB_PREFIX):
+            continue
+        image = name[len(BUILD_JOB_PREFIX) :].strip()
+        if image:
+            outcomes[image] = str(job.get("conclusion") or "")
+    return outcomes
 
 
 # ---------------------------------------------------------------------------
@@ -353,14 +417,21 @@ def images_that_failed_in_the_previous_run(current_run_id: str) -> set[str]:
 
 def comment_body(failures: list[dict], run_url: str, sha: str) -> str:
     plural = "image" if len(failures) == 1 else "images"
+    merge = f"The merge of {sha[:8]}" if sha else "This merge"
     lines = [
         f"### Recipe {plural} failed to build on `main`",
         "",
-        f"The merge of {sha[:8]} broke the container build for "
-        f"{len(failures)} declared {plural}. Nothing was published.",
+        f"{merge} broke the container build for {len(failures)} declared "
+        f"{plural}. Nothing was published — the build and the publish step "
+        f"are separate, and publishing did not run.",
         "",
     ]
     for entry in failures:
+        # The reproduce command goes with EACH image, not once at the end.
+        # An earlier version printed only the first failure's command below
+        # the whole list, which reads as though it covers all of them — so
+        # someone with three broken images would run one build, see it pass
+        # after a fix, and believe they were done.
         lines += [
             f"**`{entry['image']}`** — `{entry.get('dockerfile', '?')}`",
             "",
@@ -368,18 +439,13 @@ def comment_body(failures: list[dict], run_url: str, sha: str) -> str:
             entry.get("tail") or entry.get("detail") or "(no output captured)",
             "```",
             "",
+            "```bash",
+            f"docker build -f {entry.get('dockerfile', 'Dockerfile')} "
+            f"{entry.get('context', '.')}",
+            "```",
+            "",
         ]
-    lines += [
-        f"[Full logs]({run_url})",
-        "",
-        "This is the build only — publishing is separate and did not run. "
-        "Reproduce locally with:",
-        "",
-        "```bash",
-        f"docker build -f {failures[0].get('dockerfile', 'Dockerfile')} "
-        f"{failures[0].get('context', '.')}",
-        "```",
-    ]
+    lines += [f"[Full logs]({run_url})"]
     return "\n".join(lines)
 
 
@@ -447,12 +513,28 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
 
 def load_results(results_dir: Path) -> list[dict[str, Any]]:
+    """Every result.json under `results_dir`, skipping anything unusable.
+
+    Shape is checked, not assumed. A file that is valid JSON but not an
+    object — or an object with no `image` — would otherwise raise deep in the
+    reporting logic, potentially after a comment has already been posted, and
+    the run would look like a reporter bug rather than a corrupt artifact.
+    """
     entries = []
     for path in sorted(results_dir.rglob("result.json")):
         try:
-            entries.append(json.loads(path.read_text(encoding="utf-8")))
+            entry = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             print(f"WARNING: cannot read {path}: {exc}", file=sys.stderr)
+            continue
+        if not isinstance(entry, dict) or not entry.get("image"):
+            print(
+                f"WARNING: {path} is not a usable result (no image); "
+                f"ignoring it",
+                file=sys.stderr,
+            )
+            continue
+        entries.append(entry)
     return entries
 
 
@@ -495,17 +577,33 @@ def cmd_report(args: argparse.Namespace) -> int:
     # failures" is exactly the case a recovery looks like. An earlier version
     # returned first and left every tracking issue open forever — the close
     # path was unreachable code that read as if it worked.
-    _close_recovered(passed, args)
+    # ONE snapshot for the whole run, taken here and passed down.
+    # canary_issues.open_issues_by_title documents why a lookup inside a
+    # loop is wrong: n subprocesses and n chances to hit a rate limit, to
+    # answer a question one call already answers. Taking it twice — once
+    # for recoveries and once for failures — was a smaller version of the
+    # same mistake.
+    open_issues = _open_tracking_issues()
+
+    _close_recovered(passed, args, open_issues)
 
     if not failures:
         return 0
 
-    if len(failures) > MAX_ISSUES_PER_RUN:
+    # Above the cap, comment and open NOTHING. The message used to say
+    # "commenting only" while the loop below went on opening issues up to the
+    # cap anyway — the log said one thing and the tracker showed another.
+    # Refusing outright is also the better behaviour: this many failures at
+    # once is far more likely to be one systemic cause than N independent
+    # breakages, and N issues would each be wrong about what to fix.
+    file_issues = len(failures) <= MAX_ISSUES_PER_RUN
+    if not file_issues:
         print(
             f"WARNING: {len(failures)} images failed at once, above the "
-            f"{MAX_ISSUES_PER_RUN} this run will open issues for. Something "
-            f"systemic is more likely than {len(failures)} independent "
-            f"breakages; commenting only.",
+            f"{MAX_ISSUES_PER_RUN} this run will file for. That is more "
+            f"likely one systemic cause than {len(failures)} independent "
+            f"breakages, so no issues are being opened — the pull request "
+            f"comment is the whole report for this run.",
             file=sys.stderr,
         )
 
@@ -521,20 +619,25 @@ def cmd_report(args: argparse.Namespace) -> int:
         print(f"\nCommented on #{pr}.")
 
     # --- the issue, only on a repeat ---------------------------------------
-    repeats = images_that_failed_in_the_previous_run(args.run_id or "")
-    opened = 0
+    if not file_issues:
+        return 0
+
+    repeats = images_that_failed_in_the_previous_run(
+        args.run_id or "", {e["image"] for e in failures}
+    )
+    # One snapshot for the whole run, not one lookup per image.
+    # canary_issues.open_issues_by_title documents why: a lookup inside the
+    # loop is n subprocesses and n chances to hit a rate limit, to answer a
+    # question one call already answers.
     for entry in failures:
         image = entry["image"]
         if image not in repeats:
             print(f"{image}: first failure — commented, no issue opened.")
             continue
-        if opened >= MAX_ISSUES_PER_RUN:
-            print(f"{image}: issue cap reached, skipping.")
-            continue
 
         title = issue_title(image)
-        existing = _find_open_issue(title)
-        note = "twice in a row"
+        existing = open_issues.get(title)
+        note = "again since it was last built"
         if existing:
             if args.dry_run:
                 print(f"[dry-run] would comment on issue #{existing}")
@@ -569,15 +672,18 @@ def cmd_report(args: argparse.Namespace) -> int:
                 issue_body(entry, args.run_url, note),
             )
             print(f"{image}: opened a tracking issue.")
-        opened += 1
 
     return 0
 
 
-def _close_recovered(passed: list[dict], args: argparse.Namespace) -> None:
+def _close_recovered(
+    passed: list[dict],
+    args: argparse.Namespace,
+    open_issues: dict[str, int],
+) -> None:
     """Close the tracking issue of any image that is building again."""
     for entry in passed:
-        existing = _find_open_issue(issue_title(entry["image"]))
+        existing = open_issues.get(issue_title(entry["image"]))
         if not existing:
             continue
         if args.dry_run:
@@ -595,12 +701,12 @@ def _close_recovered(passed: list[dict], args: argparse.Namespace) -> None:
         print(f"{entry['image']}: closed issue #{existing}.")
 
 
-def _find_open_issue(title: str) -> int | None:
-    """Exact title match among open tracking issues.
+def _open_tracking_issues() -> dict[str, int]:
+    """Open tracking issues indexed by EXACT title. One `gh` call per run.
 
-    Never a prefix match: `demo` must not be handed the issue belonging to
-    `demo-sandbox`, which would report one image's failure on another's
-    thread.
+    Exact keys, never a prefix scan: `demo` must not be handed the issue
+    belonging to `demo-sandbox-runtime`, which would report one image's
+    failure on another image's thread.
     """
     raw = gh(
         "issue",
@@ -618,12 +724,18 @@ def _find_open_issue(title: str) -> int | None:
         check=False,
     )
     try:
-        for issue in json.loads(raw or "[]"):
-            if issue.get("title") == title:
-                return int(issue["number"])
+        parsed = json.loads(raw or "[]")
     except json.JSONDecodeError:
-        return None
-    return None
+        return {}
+    if not isinstance(parsed, list):
+        return {}
+    return {
+        issue["title"]: int(issue["number"])
+        for issue in parsed
+        if isinstance(issue, dict)
+        and issue.get("title")
+        and issue.get("number")
+    }
 
 
 def _ensure_label() -> None:

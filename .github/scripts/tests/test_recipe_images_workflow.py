@@ -546,3 +546,25 @@ def test_the_reporter_does_not_run_when_no_image_was_built(doc: dict):
     reporter goes red on an ordinary healthy merge, and a channel that cries
     wolf gets muted along with its real reports."""
     assert "needs.build.result != 'skipped'" in doc["jobs"]["report"]["if"]
+
+
+def test_the_build_job_name_matches_what_the_reporter_parses(doc: dict):
+    """The job name is the only link between a historical run and an image.
+
+    image_build_report strips BUILD_JOB_PREFIX off each job name to work out
+    which image it built, which is how "did this fail last time it was
+    built" is answered. Rename the job and that parsing silently returns
+    nothing: no repeats are ever detected, and no tracking issue is ever
+    opened again.
+    """
+    import image_build_report
+
+    name = doc["jobs"]["build"]["name"]
+    prefix = image_build_report.BUILD_JOB_PREFIX
+
+    assert name.startswith(prefix), (
+        f"build job is named {name!r} but the reporter strips {prefix!r}"
+    )
+    # What remains must be the image expression, or the parsed value is not
+    # an image name at all.
+    assert name[len(prefix) :].strip() == "${{ matrix.entry.image }}"

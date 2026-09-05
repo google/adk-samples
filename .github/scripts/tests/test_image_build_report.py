@@ -380,7 +380,9 @@ def test_an_issue_is_opened_when_the_same_image_fails_again(
 ):
     _result(tmp_path, 0, outcome="fail", tail="ERROR: boom")
     monkeypatch.setattr(
-        m, "images_that_failed_in_the_previous_run", lambda _run: {"demo"}
+        m,
+        "images_that_failed_in_the_previous_run",
+        lambda _run, _wanted=None: {"demo"},
     )
 
     m.main(
@@ -414,7 +416,9 @@ def test_a_repeat_with_an_existing_issue_comments_instead_of_duplicating(
 
     monkeypatch.setattr(m, "gh", fake_gh)
     monkeypatch.setattr(
-        m, "images_that_failed_in_the_previous_run", lambda _run: {"demo"}
+        m,
+        "images_that_failed_in_the_previous_run",
+        lambda _run, _wanted=None: {"demo"},
     )
 
     m.main(
@@ -587,3 +591,255 @@ def test_previous_run_lookup_ignores_jobs_that_are_not_builds(monkeypatch):
     monkeypatch.setattr(m, "gh", fake_gh)
 
     assert m.images_that_failed_in_the_previous_run("2") == set()
+
+
+def test_repeat_looks_back_past_runs_that_did_not_build_the_image(
+    monkeypatch,
+):
+    """The defect that made the issue path unreachable in practice.
+
+    Builds are affected-only, so the common sequence is: the image fails,
+    then several merges touch other recipes and never build it, then it
+    fails again. Asking only about the immediately previous run answers
+    "not failing" every time, so a repeat is never detected and no issue is
+    ever opened.
+    """
+    runs = {"workflow_runs": [{"id": 4}, {"id": 3}, {"id": 2}]}
+    jobs = {
+        # The two most recent runs built a different recipe entirely.
+        4: {"jobs": [{"name": "build other", "conclusion": "success"}]},
+        3: {"jobs": [{"name": "build other", "conclusion": "success"}]},
+        # The last run that actually built `demo` — and it failed.
+        2: {"jobs": [{"name": "build demo", "conclusion": "failure"}]},
+    }
+
+    def fake_gh(*args: str, check: bool = True) -> str:
+        if "/runs?" in args[1]:
+            return json.dumps(runs)
+        run_id = int(args[1].split("/runs/")[1].split("/")[0])
+        return json.dumps(jobs[run_id])
+
+    monkeypatch.setattr(m, "gh", fake_gh)
+
+    assert m.images_that_failed_in_the_previous_run("5") == {"demo"}
+
+
+def test_a_later_success_beats_an_earlier_failure(monkeypatch):
+    """Only the MOST RECENT build of an image counts. A failure further back
+    that has since been fixed must not reopen an issue."""
+    runs = {"workflow_runs": [{"id": 9}, {"id": 8}]}
+    jobs = {
+        9: {"jobs": [{"name": "build demo", "conclusion": "success"}]},
+        8: {"jobs": [{"name": "build demo", "conclusion": "failure"}]},
+    }
+
+    def fake_gh(*args: str, check: bool = True) -> str:
+        if "/runs?" in args[1]:
+            return json.dumps(runs)
+        run_id = int(args[1].split("/runs/")[1].split("/")[0])
+        return json.dumps(jobs[run_id])
+
+    monkeypatch.setattr(m, "gh", fake_gh)
+
+    assert m.images_that_failed_in_the_previous_run("10") == set()
+
+
+def test_the_current_run_is_never_its_own_evidence(monkeypatch):
+    runs = {"workflow_runs": [{"id": 7}]}
+
+    def fake_gh(*args: str, check: bool = True) -> str:
+        if "/runs?" in args[1]:
+            return json.dumps(runs)
+        return json.dumps(
+            {"jobs": [{"name": "build demo", "conclusion": "failure"}]}
+        )
+
+    monkeypatch.setattr(m, "gh", fake_gh)
+
+    assert m.images_that_failed_in_the_previous_run("7") == set()
+
+
+def test_too_many_failures_opens_no_issues_at_all(
+    tmp_path: Path, no_network, monkeypatch, capsys
+):
+    """The message used to say "commenting only" while the loop went on
+    opening issues anyway. This many at once is one systemic cause, and N
+    issues would each be wrong about what to fix."""
+    for i in range(m.MAX_ISSUES_PER_RUN + 1):
+        _result(tmp_path, i, image=f"img{i}", outcome="fail", tail="E: boom")
+    monkeypatch.setattr(
+        m,
+        "images_that_failed_in_the_previous_run",
+        lambda _run, _wanted=None: {
+            f"img{i}" for i in range(m.MAX_ISSUES_PER_RUN + 1)
+        },
+    )
+
+    m.main(
+        ["report", "--results", str(tmp_path / "results"), "--sha", "a" * 40]
+    )
+
+    assert not [c for c in no_network if c[:2] == ("issue", "create")]
+    assert "no issues are being opened" in capsys.readouterr().err
+
+
+def test_every_failing_image_gets_its_own_reproduce_command(
+    tmp_path: Path, no_network
+):
+    """One command printed under a list of three reads as though it covers
+    all of them, so a reader fixes one image and believes they are done."""
+    _result(
+        tmp_path,
+        0,
+        image="one",
+        outcome="fail",
+        tail="E: 1",
+        dockerfile="core/python/one/Dockerfile",
+        context="core/python/one",
+    )
+    _result(
+        tmp_path,
+        1,
+        image="two",
+        outcome="fail",
+        tail="E: 2",
+        dockerfile="core/python/two/Dockerfile",
+        context="core/python/two",
+    )
+
+    m.main(
+        ["report", "--results", str(tmp_path / "results"), "--sha", "b" * 40]
+    )
+
+    body = next(c for c in no_network if c[:2] == ("issue", "comment"))[-1]
+    assert "docker build -f core/python/one/Dockerfile core/python/one" in body
+    assert "docker build -f core/python/two/Dockerfile core/python/two" in body
+
+
+def test_a_corrupt_result_file_is_skipped_not_fatal(
+    tmp_path: Path, no_network, capsys
+):
+    """A valid-JSON but wrong-shape artifact must not raise deep in the
+    reporting logic, possibly after a comment has already been posted."""
+    _result(tmp_path, 0, image="good", outcome="pass")
+    bad = tmp_path / "results" / "image-result-9"
+    bad.mkdir(parents=True)
+    (bad / "result.json").write_text("[]", encoding="utf-8")
+
+    rc = m.main(["report", "--results", str(tmp_path / "results")])
+
+    assert rc == 0
+    assert "not a usable result" in capsys.readouterr().err
+
+
+def test_the_issue_index_is_fetched_once_per_run(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """canary_issues documents why: a lookup inside the loop is n
+    subprocesses and n chances to hit a rate limit, to answer a question one
+    call already answers."""
+    for i in range(3):
+        _result(tmp_path, i, image=f"img{i}", outcome="pass")
+    calls: list[tuple[str, ...]] = []
+
+    def fake_gh(*args: str, check: bool = True) -> str:
+        calls.append(args)
+        return "[]" if args[:2] == ("issue", "list") else ""
+
+    monkeypatch.setattr(m, "gh", fake_gh)
+
+    m.main(
+        ["report", "--results", str(tmp_path / "results"), "--sha", "c" * 40]
+    )
+
+    assert len([c for c in calls if c[:2] == ("issue", "list")]) == 1
+
+
+def test_the_history_walk_stops_once_every_image_is_answered(monkeypatch):
+    """Each extra run costs an API call. In the common case the previous run
+    built the same image and one call is enough."""
+    runs = {"workflow_runs": [{"id": 3}, {"id": 2}, {"id": 1}]}
+    fetched: list[int] = []
+
+    def fake_gh(*args: str, check: bool = True) -> str:
+        if "/runs?" in args[1]:
+            return json.dumps(runs)
+        run_id = int(args[1].split("/runs/")[1].split("/")[0])
+        fetched.append(run_id)
+        return json.dumps(
+            {"jobs": [{"name": "build demo", "conclusion": "failure"}]}
+        )
+
+    monkeypatch.setattr(m, "gh", fake_gh)
+
+    assert m.images_that_failed_in_the_previous_run("9", {"demo"}) == {"demo"}
+    assert fetched == [3], f"walked further than needed: {fetched}"
+
+
+def test_the_history_walk_keeps_going_until_it_finds_the_image(monkeypatch):
+    runs = {"workflow_runs": [{"id": 3}, {"id": 2}]}
+    jobs = {
+        3: {"jobs": [{"name": "build other", "conclusion": "success"}]},
+        2: {"jobs": [{"name": "build demo", "conclusion": "failure"}]},
+    }
+
+    def fake_gh(*args: str, check: bool = True) -> str:
+        if "/runs?" in args[1]:
+            return json.dumps(runs)
+        return json.dumps(jobs[int(args[1].split("/runs/")[1].split("/")[0])])
+
+    monkeypatch.setattr(m, "gh", fake_gh)
+
+    assert m.images_that_failed_in_the_previous_run("9", {"demo"}) == {"demo"}
+
+
+def test_an_infra_failure_leaves_an_existing_issue_alone(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """Infrastructure trouble says nothing about the recipe, so it must
+    neither open, comment on, nor close a tracking issue."""
+    _result(tmp_path, 0, image="demo", outcome="infra", detail="DNS failure")
+    calls: list[tuple[str, ...]] = []
+
+    def fake_gh(*args: str, check: bool = True) -> str:
+        calls.append(args)
+        if args[:2] == ("issue", "list"):
+            return json.dumps([{"number": 5, "title": m.issue_title("demo")}])
+        return ""
+
+    monkeypatch.setattr(m, "gh", fake_gh)
+
+    m.main(
+        ["report", "--results", str(tmp_path / "results"), "--sha", "d" * 40]
+    )
+
+    for verb in ("create", "comment", "close"):
+        assert not [c for c in calls if c[:2] == ("issue", verb)]
+
+
+def test_the_issue_index_is_fetched_once_even_with_both_passes_and_failures(
+    tmp_path: Path, monkeypatch
+):
+    """The earlier version of this assertion only covered the all-pass case,
+    where just one of the two call sites ran."""
+    _result(tmp_path, 0, image="good", outcome="pass")
+    _result(tmp_path, 1, image="bad", outcome="fail", tail="E: boom")
+    calls: list[tuple[str, ...]] = []
+
+    def fake_gh(*args: str, check: bool = True) -> str:
+        calls.append(args)
+        if args[:2] == ("issue", "list"):
+            return "[]"
+        if args[0] == "api" and "/pulls" in args[1]:
+            return json.dumps([{"number": 1}])
+        if args[0] == "api" and "/runs?" in args[1]:
+            return json.dumps({"workflow_runs": []})
+        return ""
+
+    monkeypatch.setattr(m, "gh", fake_gh)
+
+    m.main(
+        ["report", "--results", str(tmp_path / "results"), "--sha", "e" * 40]
+    )
+
+    assert len([c for c in calls if c[:2] == ("issue", "list")]) == 1
