@@ -126,6 +126,10 @@ BUILD_JOB_PREFIX = "build "
 # the next run catches, while a false `fail` costs the channel's credibility.
 #
 # Matched case-insensitively against the build log.
+# One reason string shared by the three spellings below, so the wording
+# they report cannot drift apart.
+_REGISTRY_5XX = "registry returned a server error"
+
 INFRA_SIGNATURES: tuple[tuple[str, str], ...] = (
     # Registry and network.
     #
@@ -134,19 +138,16 @@ INFRA_SIGNATURES: tuple[tuple[str, str], ...] = (
     # docker reports it, and a signature matching only one order would blame
     # the recipe for the other — which is how the first version of this list
     # misclassified a real 503 from docker.io.
-    (
-        r"unexpected (?:http )?status:?\s*(?:50\d|429)",
-        "registry returned a server error",
-    ),
+    (r"unexpected (?:http )?status:?\s*(?:50\d|429)", _REGISTRY_5XX),
     (
         r"\b(?:50\d|429)\b[^\n]{0,160}"
         r"(?:registry|docker\.io|pkg\.dev|ghcr\.io)",
-        "registry returned a server error",
+        _REGISTRY_5XX,
     ),
     (
         r"(?:registry|docker\.io|pkg\.dev|ghcr\.io)[^\n]{0,160}"
         r"\b(?:50\d|429)\b",
-        "registry returned a server error",
+        _REGISTRY_5XX,
     ),
     (r"toomanyrequests|rate limit|too many requests", "registry rate limit"),
     (
