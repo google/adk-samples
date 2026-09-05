@@ -126,24 +126,29 @@ def validate_customer_id(
 
 
 def lowercase_value(value):
-    """Make dictionary lowercase"""
+    """Recursively lowercase string values in nested structures."""
     if isinstance(value, dict):
-        return (dict(k, lowercase_value(v)) for k, v in value.items())
-    elif isinstance(value, str):
+        return {k: lowercase_value(v) for k, v in value.items()}
+    if isinstance(value, str):
         return value.lower()
-    elif isinstance(value, (list, set, tuple)):
-        tp = type(value)
-        return tp(lowercase_value(i) for i in value)
-    else:
-        return value
+    if isinstance(value, list):
+        return [lowercase_value(i) for i in value]
+    if isinstance(value, tuple):
+        return tuple(lowercase_value(i) for i in value)
+    if isinstance(value, set):
+        return {lowercase_value(i) for i in value}
+    return value
 
 
 # Callback Methods
 def before_tool(
     tool: BaseTool, args: dict[str, Any], tool_context: CallbackContext
 ):
-    # i make sure all values that the agent is sending to tools are lowercase
-    lowercase_value(args)
+    # Make sure all string values the agent sends to tools are lowercase.
+    normalized_args = lowercase_value(args)
+    if isinstance(normalized_args, dict):
+        args.clear()
+        args.update(normalized_args)
 
     # Several tools require customer_id as input. We don't want to rely
     # solely on the model picking the right customer id. We validate it.
