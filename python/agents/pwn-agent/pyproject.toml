@@ -1,0 +1,5 @@
+[tool.agent-starter-pack]
+[tool.agent-starter-pack.settings]
+deployment_targets = [
+  "agent_engine"
+]
