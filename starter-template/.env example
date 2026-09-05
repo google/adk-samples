@@ -1,0 +1,17 @@
+# Copy as .env file and fill your values below
+
+# Choose Model Backend: 0 -> AI Studio, 1 -> Vertex AI
+GOOGLE_GENAI_USE_VERTEXAI=1
+
+# AI Studio config (only needed if using GOOGLE_GENAI_USE_VERTEXAI=0)
+GOOGLE_API_KEY=YOUR_VALUE_HERE
+
+# Vertex AI config
+GOOGLE_CLOUD_PROJECT=YOUR_VALUE_HERE
+GOOGLE_CLOUD_LOCATION=YOUR_VALUE_HERE
+
+# Staging bucket name for ADK agent deployment to Vertex AI Agent Engine (Shall respect this format gs://your-bucket-name)
+STAGING_BUCKET=YOUR VALUE HERE
+
+# Agent Engine ID in the following format: projects/<PROJECT_NUMBER>/locations/us-central1/reasoningEngines/<AGENT_ENGINE_ID>
+AGENT_ENGINE_ID=YOUR VALUE HERE
