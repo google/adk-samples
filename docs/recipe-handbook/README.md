@@ -1,4 +1,4 @@
-<!-- word count: 603 (target 500, cap 800) -->
+<!-- word count: 625 (target 500, cap 800) -->
 
 # Recipe Handbook
 
@@ -35,6 +35,9 @@ it covers everything on one page. Come back here for deeper context:
   recipes, regardless of language
 - [Python language rules](./languages/python.md) — starts with the
   fast path; specific requirements and end-to-end scenarios
+- [Dockerfile standard](./dockerfiles.md) — what a recipe's
+  `Dockerfile` must meet before its image is published. Only
+  applies if your recipe ships one
 - [Repo skills catalog](./skills-catalog.md) — the assistant
   helpers that build this repo
 
