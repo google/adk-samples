@@ -1,0 +1,31 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+uv.lock
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Node.js / React (For the CLI output)
+node_modules/
+.next/
+out/
+build/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.*
+
+# IDEs and System Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.dbfabric-app/
