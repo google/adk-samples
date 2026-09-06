@@ -115,7 +115,7 @@ The `adk web` command starts a local server and prints a URL. Open it, select **
 who are you
 ```
 
-Sampled responses of these requrests are shown below in the [Example
+Sampled responses of these requests are shown below in the [Example
 Interaction](#example-interaction) section.
 
 ```
@@ -374,6 +374,11 @@ commands:
 uv sync --group deployment
 uv run deployment/deploy.py --create
 ```
+
+The deployment script pins the remote ADK and Vertex AI SDK versions to the
+versions installed in the local `uv` environment. Run `uv sync` before
+deploying so the serialized agent and Agent Engine runtime use compatible
+framework versions.
 
 When the deployment finishes, it will print a line like this:
 
