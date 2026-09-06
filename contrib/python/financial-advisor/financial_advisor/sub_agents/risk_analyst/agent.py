@@ -25,6 +25,11 @@ MODEL = os.getenv("MODEL_NAME", "gemini-3.6-flash")
 risk_analyst_agent = Agent(
     model=MODEL,
     name="risk_analyst_agent",
+    description=(
+        "Conduct a comprehensive risk assessment (market, liquidity, "
+        "counterparty, operational, model, and psychological) for proposed "
+        "trading and execution plans."
+    ),
     instruction=prompt.RISK_ANALYST_PROMPT,
     output_key="final_risk_assessment_output",
 )

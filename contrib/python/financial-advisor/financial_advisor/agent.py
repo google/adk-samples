@@ -17,6 +17,7 @@
 import os
 
 from google.adk.agents import LlmAgent
+from google.adk.apps import App
 from google.adk.tools.agent_tool import AgentTool
 
 from . import prompt
@@ -48,3 +49,5 @@ financial_coordinator = LlmAgent(
 )
 
 root_agent = financial_coordinator
+
+app = App(root_agent=root_agent, name="financial_advisor")

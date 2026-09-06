@@ -56,6 +56,7 @@ to implement this workflow.
 
         ```bash
         curl -LsSf https://astral.sh/uv/install.sh | sh
+        source $HOME/.local/bin/env  # Or add export PATH="$HOME/.local/bin:$PATH" to your ~/.bashrc
         ```
 
     * A project on Google Cloud Platform
@@ -68,17 +69,23 @@ to implement this workflow.
     ```bash
     # Clone this repository.
     git clone https://github.com/google/adk-samples.git
-    cd adk-samples/python/agents/financial-advisor
+    cd adk-samples/contrib/python/financial-advisor
     # Install the package and dependencies.
     uv sync
     ```
 
 3.  **Configuration**
 
+    *   Create a `.env` file from the example:
+
+        ```bash
+        cp .env.example .env
+        ```
+
     *   Set up Google Cloud credentials.
 
-        *   You may set the following environment variables in your shell, or in
-            a `.env` file instead.
+        *   You may set the following environment variables in your shell or in
+            your `.env` file.
 
         ```bash
         export GOOGLE_GENAI_USE_VERTEXAI=true
@@ -87,7 +94,7 @@ to implement this workflow.
         export GOOGLE_CLOUD_STORAGE_BUCKET=<your-storage-bucket>  # Only required for deployment on Agent Engine
         ```
 
-    *   Authenticate your GCloud account.
+    *   Authenticate your Google Cloud account.
 
         ```bash
         gcloud auth application-default login
@@ -102,16 +109,19 @@ ADK provides convenient ways to bring up agents locally and interact with them.
 You may talk to the agent using the CLI:
 
 ```bash
-adk run financial_advisor
+uv run adk run financial_advisor
 ```
+
+> **Note:** On first launch, ADK prompts to enable anonymous telemetry. You can answer `n` or disable it anytime via `uv run adk telemetry disable`.
 
 Or on a web interface:
 
 ```bash
- adk web
+uv run adk web financial_advisor
 ```
 
-The command `adk web` will start a web server on your machine and print the URL.
+The command `adk web financial_advisor` will start a web server on your machine and print the URL.
+(You can also run `uv run adk web .` to discover all agents in the workspace.)
 You may open the URL, select "financial_advisor" in the top-left drop-down menu, and
 a chatbot interface will appear on the right. The conversation is initially
 blank. Here are some example requests you may ask the Financial Advisor to verify:
@@ -120,7 +130,7 @@ blank. Here are some example requests you may ask the Financial Advisor to verif
 who are you
 ```
 
-Sampled responses of these requrests are shown below in the [Example
+Sampled responses of these requests are shown below in the [Example
 Interaction](#example-interaction) section.
 
 ```
@@ -697,30 +707,136 @@ Thank you!
 
 ## Running Tests
 
-For running tests and evaluation, install the extra dependencies:
+For running tests and evaluation, install development dependencies:
 
 ```bash
 uv sync --dev
 ```
 
-Then the tests and evaluation can be run from the `financial-advisor` directory using
-the `pytest` module:
+### 1. Offline Smoke / Runnability Test (No GCP credentials required)
+
+To verify package imports, agent globals, and setup without making live external API calls:
 
 ```bash
-uv run pytest tests
+uv run pytest tests/test_runnability.py
+```
+
+### 2. Integration Tests (Requires GCP credentials)
+
+To run the integration test that communicates with Vertex AI:
+
+```bash
+uv run pytest tests/integration
+```
+
+### 3. Evaluation
+
+To evaluate the agent against evaluation scenarios using the ADK `AgentEvaluator`:
+
+```bash
 uv run pytest eval
 ```
 
-`tests` runs the agent on a sample request, and makes sure that every component
-is functional. `eval` is a demonstration of how to evaluate the agent, using the
-`AgentEvaluator` in ADK. It sends a couple requests to the agent and expects
-that the agent's responses match a pre-defined response reasonably well.
+## Local Serving (FastAPI & A2A)
 
+The recipe provides a serving layer in `financial_advisor/fast_api_app.py` supporting the ADK Web interface, A2A (Agent-to-Agent) protocol, and Reasoning Engine endpoints:
+
+```bash
+# Run the FastAPI server locally (defaults to port 8080, or $PORT if set)
+uv run python financial_advisor/fast_api_app.py
+
+# Or run as a module:
+uv run python -m financial_advisor.fast_api_app
+
+# Or start with uvicorn:
+uv run uvicorn financial_advisor.fast_api_app:app --host 0.0.0.0 --port 8080
+```
+
+### Probing Endpoints
+
+- **Health Check (Liveness & Readiness):**
+  ```bash
+  curl http://localhost:8080/healthz
+  curl http://localhost:8080/health
+  ```
+
+- **List Registered Apps:**
+  ```bash
+  curl http://localhost:8080/list-apps
+  ```
+
+- **A2A Agent Card:**
+  ```bash
+  curl http://localhost:8080/a2a/financial_advisor/.well-known/agent-card.json
+  # Root redirect is also available (use -L to follow redirect):
+  curl -L http://localhost:8080/.well-known/agent-card.json
+  ```
+
+- **Reasoning Engine API (Create Session):**
+  ```bash
+  curl -X POST http://localhost:8080/api/reasoning_engine \
+    -H "Content-Type: application/json" \
+    -d '{"class_method": "create_session", "input": {"user_id": "test_user"}}'
+  ```
 
 ## Deployment
 
-The Financial Advisor can be deployed to Agent Runtime using the following
-commands:
+### Option 1: Container & Cloud Run (Recommended)
+
+The recipe includes a production-ready `Dockerfile` and `agents-cli-manifest.yaml` targeting Cloud Run.
+
+#### Container Highlights & Operational Characteristics
+- **Non-Root Execution:** Runs as unprivileged user `appuser` (UID 1000) following enterprise container security best practices.
+- **Optimized Layer Caching:** Pre-syncs dependencies with `uv sync --frozen --no-install-project` so code changes rebuild in seconds.
+- **Graceful Shutdown:** Configured with `--timeout-graceful-shutdown 10` for clean `SIGTERM` / `SIGINT` handling during Cloud Run scale-down.
+- **Health Check Endpoints:** Exposes both `/health` and `/healthz` (returning `{"status": "ok"}`) for Cloud Run and Kubernetes liveness/readiness probes.
+- **Environment Variables:**
+  - `PORT`: Server listening port (defaults to `8080`).
+  - `ALLOW_ORIGINS`: Comma-separated list of allowed CORS origins (e.g. `https://my-frontend.web.app, http://localhost:3000`).
+  - `APP_URL`: Base URL used in the dynamic Agent Card for A2A communication (defaults to `http://0.0.0.0:$PORT`).
+
+1. **Build and Run with Docker (or Podman) locally:**
+
+   ```bash
+   # Build the container image
+   docker build -t financial-advisor .
+
+   # Run container (listens on port 8080 as non-root user)
+   docker run -p 8080:8080 --env-file .env financial-advisor
+   ```
+
+2. **Probe Health & Serving Endpoints:**
+
+   ```bash
+   # Health check (Liveness / Readiness probe)
+   curl -i http://localhost:8080/healthz
+
+   # Registered ADK apps
+   curl -i http://localhost:8080/list-apps
+
+   # Agent Card (A2A discovery)
+   curl -i http://localhost:8080/.well-known/agent-card.json
+   ```
+
+3. **Deploy to Cloud Run with Google Cloud CLI:**
+
+   ```bash
+   gcloud run deploy financial-advisor \
+     --source . \
+     --port 8080 \
+     --region us-central1 \
+     --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT,GOOGLE_CLOUD_LOCATION=us-central1
+   ```
+
+4. **Deploy with Google Agents CLI:**
+
+   ```bash
+   agents-cli deploy
+   ```
+
+### Option 2: Deploy to Vertex AI Agent Engine
+
+The Financial Advisor can also be deployed to Vertex AI Agent Engine (Reasoning Engine) using the deployment script:
 
 ```bash
 uv sync --group deployment
@@ -749,22 +865,11 @@ All remote agents:
 - Update time: 2025-05-12 12:36:01.421432+00:00
 ```
 
-You may interact with the deployed agent using the `test_deployment.py` script
+You may interact with the deployed agent using the `test_deployment.py` script:
+
 ```bash
-$ export USER_ID=<any string>
-$ uv run deployment/test_deployment.py --resource_id=${AGENT_ENGINE_ID} --user_id=${USER_ID}
-Found agent with resource ID: ...
-Created session for user ID: ...
-Type 'quit' to exit.
-Input: Hello, what can you do for me?
-Response: Hello! I can guide you through a structured process to receive financial advice. We'll work together with a team of expert subagents to:
-
-1.  **Analyze a market ticker**: We'll start by having you provide a market ticker symbol (e.g., AAPL, GOOGL). Our data analyst subagent will then provide a comprehensive analysis of it.
-2.  **Develop trading strategies**: Based on the market analysis and your risk attitude and investment period, our trading strategist subagent will propose potential trading strategies.
-3.  **Define an execution plan**: Next, our execution specialist subagent will create a detailed plan for implementing the chosen strategy, considering factors like order types and timing.
-4.  **Evaluate the overall risk**: Finally, our risk analyst subagent will assess the overall risk of the financial plan, ensuring it aligns with your goals and risk tolerance.
-
-Would you like to begin by providing a market ticker symbol for analysis?
+export USER_ID=<any string>
+uv run deployment/test_deployment.py --resource_id=${AGENT_ENGINE_ID} --user_id=${USER_ID}
 ```
 
 To delete the deployed agent, you may run the following command:
@@ -772,6 +877,37 @@ To delete the deployed agent, you may run the following command:
 ```bash
 uv run deployment/deploy.py --delete --resource_id=${AGENT_ENGINE_ID}
 ```
+
+### Security & Least-Privilege IAM Roles
+
+Follow the principle of least privilege when configuring Service Accounts for deployment and runtime execution. Do NOT assign broad administrative roles such as `roles/owner` or `roles/editor`.
+
+#### 1. Cloud Run Runtime Service Account
+The service account assigned to the Cloud Run instance (`--service-account`) requires only:
+- **`roles/aiplatform.user`**: Required to call Vertex AI Gemini models and Reasoning Engine APIs.
+- **`roles/storage.objectUser`**: Required only if persisting session states or artifacts to Cloud Storage (`LOGS_BUCKET_NAME`).
+- **`roles/logging.logWriter`**: Automatically granted in most environments for writing application logs to Cloud Logging.
+
+```bash
+# Example: Create runtime service account and grant least-privilege roles
+gcloud iam service-accounts create financial-advisor-runner \
+  --display-name="Financial Advisor Cloud Run Runner"
+
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT \
+  --member="serviceAccount:financial-advisor-runner@$GOOGLE_CLOUD_PROJECT.iam.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
+```
+
+#### 2. Deployer / CI/CD Service Account
+The identity deploying the service via Cloud Build or CI/CD requires:
+- **`roles/run.admin`**: To deploy and configure Cloud Run services.
+- **`roles/iam.serviceAccountUser`**: On the runtime service account to bind it to the Cloud Run service.
+- **`roles/artifactregistry.writer`**: To build and push container images to Artifact Registry.
+
+#### 3. Vertex AI Agent Engine Deployment (`deploy.py`)
+To deploy to Reasoning Engine via `deploy.py`:
+- **`roles/aiplatform.admin`**: To create, list, and delete ReasoningEngine resources.
+- **`roles/storage.objectAdmin`**: On the staging Cloud Storage bucket (`GOOGLE_CLOUD_STORAGE_BUCKET`) to upload source distributions.
 
 ### Alternative: Using Google Agents CLI
 
@@ -783,7 +919,7 @@ You can also use the [Google Agents CLI](https://github.com/google/agents-cli) t
 uvx google-agents-cli setup
 ```
 
-**Create the project from this sample** (replace `my-financial-advisor` with your project name):
+**Create the project from this recipe** (replace `my-financial-advisor` with your project name):
 
 ```bash
 agents-cli create my-financial-advisor -a adk@financial-advisor
@@ -799,3 +935,100 @@ To empower the data_analyst module with more comprehensive insights, expand its 
 Systematically define and implement a broader range of analyst personas or role-based access configurations tailored to specific analytical needs and organizational structures. This involves identifying different types of data analysts (e.g., quantitative analysts, fundamental analysts, risk analysts, compliance analysts, market researchers) and mapping their unique data access requirements, tool functionalities, and reporting needs. By assigning specific roles or personas, the system can ensure that each analyst has access only to the relevant data, tools, and features necessary for their tasks, improving security, streamlining workflows, and preventing information overload. This also allows for the customization of user interfaces and analytical dashboards to better suit the preferences and expertise of each persona.
 3. Iteratively Refine Prompt Engineering for Optimal Result Precision and Relevance:
 Continuously iterate on the strategies and techniques used in prompt engineering to elicit more precise, relevant, and actionable results from generative AI models or search algorithms. This process involves experimenting with various prompt structures, keywords, contextual information, examples, and constraints to guide the AI towards producing outputs that directly address the user's intent and specific information requirements. Regular feedback loops, A/B testing of different prompts, and ongoing analysis of result quality are crucial to refine the prompts. The aim is to minimize irrelevant or inaccurate information, enhance the clarity and conciseness of the outputs, and ensure that the results are consistently aligned with the analytical objectives.
+
+## Troubleshooting & FAQ
+
+### 1. Telemetry Prompt Stalls Automated / Headless Runs
+- **Symptom:** When running `uv run adk run financial_advisor` or `uv run adk web financial_advisor` in CI, a background task, or a non-interactive shell, execution hangs indefinitely on:
+  ```text
+  Help improve the ADK (CLI and Web UI) by allowing Google to collect pseudonymized usage data?
+  Enable telemetry? [Y/n]:
+  ```
+- **Resolution:** Explicitly disable or enable telemetry once in your environment:
+  ```bash
+  uv run adk telemetry disable
+  ```
+  In non-interactive scripts, you can also pipe `n` into the command: `echo n | uv run adk run financial_advisor "who are you"`.
+
+### 2. Google Cloud Application Default Credentials (ADC) Issues
+- **Symptom:** Agent runs fail with:
+  ```text
+  google.auth.exceptions.DefaultCredentialsError: Could not automatically determine credentials.
+  ```
+  or API calls fail with `403 Permission Denied: Permission 'resourcemanager.projects.get' denied` on a quota project.
+- **Resolution:** Ensure your Google Cloud SDK is authenticated and a quota project is set:
+  ```bash
+  gcloud auth application-default login
+  gcloud auth application-default set-quota-project <YOUR_PROJECT_ID>
+  export GOOGLE_GENAI_USE_VERTEXAI=true
+  export GOOGLE_CLOUD_PROJECT=<YOUR_PROJECT_ID>
+  export GOOGLE_CLOUD_LOCATION=us-central1
+  ```
+
+### 3. Port Configuration ($PORT, 8080 vs. 8000)
+- **Explanation:** The recipe standardizes on port **8080** across `fast_api_app.py`, `Dockerfile`, and Cloud Run.
+  - When deployed to Cloud Run, the platform automatically injects the `$PORT` environment variable, which `fast_api_app.py` detects dynamically (`os.environ.get("PORT", "8080")`).
+  - For local execution on a custom port, set the environment variable:
+    ```bash
+    PORT=9000 uv run python financial_advisor/fast_api_app.py
+    ```
+  - When running container images, map the host port to the container's port 8080:
+    ```bash
+    docker run -p 9000:8080 --env-file .env financial-advisor
+    ```
+  - Ensure that `APP_URL` in `.env` matches the public or local URL where callers reach your server (e.g. `APP_URL=http://localhost:8080`).
+
+### 4. CORS Errors with Web Frontends (`ALLOW_ORIGINS`)
+- **Symptom:** When connecting a custom web frontend (e.g. React, Next.js, Angular) to the FastAPI server, the browser console reports:
+  ```text
+  Access to fetch at 'http://localhost:8080/...' from origin 'http://localhost:3000' has been blocked by CORS policy.
+  ```
+- **Resolution:** Define `ALLOW_ORIGINS` in your `.env` file with a comma-separated list of allowed web origins:
+  ```bash
+  ALLOW_ORIGINS="http://localhost:3000, http://127.0.0.1:3000, https://my-app.web.app"
+  ```
+  The server automatically strips surrounding whitespace from each entry before applying FastAPI CORSMiddleware.
+
+### 5. A2A Protocol Routing & Root `.well-known` Redirect
+- **Symptom:** Probing `http://localhost:8080/.well-known/agent-card.json` returns HTTP 307 or curl fails to show JSON data without `-L`.
+- **Explanation:** Under the A2A (Agent-to-Agent) protocol in ADK, agents are mounted at `/a2a/{app_name}/`. The canonical Agent Card URL is:
+  ```bash
+  curl http://localhost:8080/a2a/financial_advisor/.well-known/agent-card.json
+  ```
+  To adhere to standard discovery conventions, a root redirect is provided at `/.well-known/agent-card.json`. Always pass `-L` with `curl` to automatically follow the redirect:
+  ```bash
+  curl -L http://localhost:8080/.well-known/agent-card.json
+  ```
+
+### 6. Cloud Run Runtime IAM Permissions
+- **Symptom:** Deployed Cloud Run container logs show `google.api_core.exceptions.PermissionDenied: 403 Caller does not have required permission to use Vertex AI`.
+- **Resolution:** Ensure the Cloud Run runtime service account has the least-privilege Vertex AI role:
+  ```bash
+  gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT \
+    --member="serviceAccount:<SERVICE_ACCOUNT_EMAIL>" \
+    --role="roles/aiplatform.user"
+  ```
+  Do NOT grant broad administrative roles like `roles/owner` or `roles/editor` to the runtime service account.
+
+### 7. Container Engines: Docker vs. Podman
+- **Explanation:** On Linux distributions and workstations (such as Google Cloudtop) where Docker daemon is not active, `podman` is a 100% drop-in replacement:
+  ```bash
+  # Build using podman
+  podman build -t financial-advisor .
+
+  # Run using podman
+  podman run -p 8080:8080 --env-file .env financial-advisor
+  ```
+  You can also set `alias docker=podman` in your shell profile.
+
+### 8. Testing Tiers: Offline Smoke Tests vs. Live Integration Tests
+- **Offline Smoke Tests:**
+  ```bash
+  uv run pytest tests/test_runnability.py
+  ```
+  Requires zero Google Cloud credentials, mocks import-time authentication, checks subagent declarations, tests A2A route redirects, and verifies security boundaries in under 10 seconds.
+- **Live Integration Tests:**
+  ```bash
+  uv run pytest tests/integration
+  ```
+  Executes an end-to-end multi-agent conversation against live Vertex AI Gemini models. Requires valid Google Cloud credentials (`gcloud auth application-default login`) and active Vertex AI API quota.
