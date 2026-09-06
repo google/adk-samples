@@ -55,14 +55,14 @@ def build_root_agent(model: Any) -> LlmAgent:
         model=model,
         description="Reads invoices and explains billing questions.",
         instruction=BILLING_PROMPT,
-        tools=[get_invoice, issue_refund, email_customer],
+        tools=[get_invoice, issue_refund],
     )
     return LlmAgent(
         name=ROOT_AGENT_NAME,
         model=model,
         description="Handles customer-service requests end to end.",
         instruction=COORDINATOR_PROMPT,
-        tools=[lookup_order],
+        tools=[lookup_order, email_customer],
         sub_agents=[billing_agent],
     )
 
