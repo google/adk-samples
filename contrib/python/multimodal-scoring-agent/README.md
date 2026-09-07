@@ -11,16 +11,15 @@ Enterprises often struggle to automate subjective visual tasks, such as grading 
 
 ## Requirements
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ## Usage
 Run the agent by providing it an image to evaluate and the JSON rubric:
 
 ```bash
-python agent.py --image path/to/your/image.jpg --rubric rubric.json
+uv run python -m multimodal_scoring_agent.agent --image images/pass_board.jpg --rubric rubric.json
 ```
-
 ## Example Output
 ```
 === Scoring Result ===
