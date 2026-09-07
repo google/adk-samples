@@ -37,7 +37,7 @@ The key features of the LLM Auditor include:
 
 This diagram shows the detailed architecture of the agents and tools used
 to implement this workflow.
-<img src="llm_auditor_architecture.png" alt="LLM Auditor Architecture" width="800"/>
+<img src="llm_auditor_architecture.webp" alt="LLM Auditor Architecture" width="800"/>
 
 ## Setup and Installation
 

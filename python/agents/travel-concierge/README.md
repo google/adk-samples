@@ -31,7 +31,7 @@ See section [MCP](#mcp) for an example using Airbnb's MCP search tool.
 ### Agent Architecture
 Travel Concierge Agents Architecture
 
-<img src="travel-concierge-arch.png" alt="Travel Concierge's Multi-Agent Architecture" width="800"/>
+<img src="travel-concierge-arch.webp" alt="Travel Concierge's Multi-Agent Architecture" width="800"/>
 
 ### Component Details
 
@@ -145,7 +145,7 @@ During setup, the Google Agents CLI will prompt you for deployment options and a
 ```
 .
 ├── README.md
-├── travel-concierge-arch.png
+├── travel-concierge-arch.webp
 ├── pyproject.toml
 ├── travel_concierge/
 │   ├── shared_libraries/

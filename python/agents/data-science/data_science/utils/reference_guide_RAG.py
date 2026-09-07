@@ -37,7 +37,7 @@ paths = [
 
 
 # Initialize Vertex AI API once per session
-vertexai.init(project=PROJECT_ID, location="us-central1")
+vertexai.init(project=PROJECT_ID, location="us-east1")
 
 
 def create_RAG_corpus():

@@ -1,0 +1,26 @@
+# Cloud Build config for the IAP-fronted web frontend.
+# Usage:
+#   gcloud builds submit . --config web/server/cloudbuild.yaml \
+#     --substitutions=_IMAGE=us-central1-docker.pkg.dev/PROJECT/lha/web:TAG
+#
+# Build context must be the repo root so the Dockerfile can pull from
+# both web/ (Vite SPA) and web/server/ (Express runtime).
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - web/server/Dockerfile
+      - -t
+      - ${_IMAGE}
+      - .
+
+images:
+  - ${_IMAGE}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _IMAGE: ""

@@ -1,0 +1,34 @@
+# Example variables for a high-availability PROD Cloud SQL setup.
+#
+#   terraform apply -var-file=prod.tfvars
+#
+# Defaults are now prod-safe: db_tier=db-custom-1-3840 (ZONAL) with
+# db_max_connections=300, sized for the app's bounded pools across 8 Cloud Run
+# instances. This file adds the HA upgrade on top. For a cheap throwaway dev
+# instance, set db_tier=db-f1-micro (shared core) in your own tfvars — note its
+# ~25-connection ceiling won't survive multi-instance load.
+# REGIONAL fails over during maintenance so an outage becomes a seconds-long
+# blip instead of a multi-minute hard down.
+
+env = "prod"
+
+# Already the default; shown for clarity. HA needs a dedicated tier — shared-core
+# (db-f1-micro/g1-small) can't be REGIONAL.
+db_tier              = "db-custom-1-3840" # 1 vCPU / 3.75 GB, smallest dedicated
+db_availability_type = "REGIONAL"         # hot standby + automatic failover
+
+# Raise alongside the tier if you add Cloud Run instances or bigger pools.
+# db_max_connections = 300
+
+# Confine maintenance to off-hours on the later (stable) track.
+db_maintenance_window = {
+  day          = 7 # Sunday
+  hour         = 4 # 04:00 instance-local
+  update_track = "stable"
+}
+
+# Optional: ENTERPRISE_PLUS for sub-second planned maintenance (requires a
+# perf-optimized db_tier, e.g. db-perf-optimized-N-2 — costs more). Leave unset
+# for ENTERPRISE, which with REGIONAL already gives a seconds-long failover.
+# db_edition = "ENTERPRISE_PLUS"
+# db_tier    = "db-perf-optimized-N-2"

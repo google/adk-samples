@@ -36,7 +36,7 @@ The Cyber Guardian Agent leverages a **hierarchical multi-agent architecture** b
 
 ## B. Architecture Visuals
 
-![Cyber Guardian Architecture](agent_pattern.png)
+![Cyber Guardian Architecture](agent_pattern.webp)
 
 ---
 

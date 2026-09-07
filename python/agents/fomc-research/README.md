@@ -23,7 +23,7 @@ without human interaction.
 
 This is the high-level workflow the agent follows to generate its analysis (note
 that step 3, "Review press conference video", is still in development).
-![FOMC Research agent workflow](<FOMC_Research_Agent_Workflow.png>)
+![FOMC Research agent workflow](<FOMC_Research_Agent_Workflow.webp>)
 
 ## Agent Details
 The key features of the FOMC Research Agent include:
@@ -230,7 +230,7 @@ python3 deploy.py --create
 When this command returns, if it succeeds it will print an Agent Runtime resource
 name that looks something like this:
 ```
-projects/************/locations/us-central1/reasoningEngines/7737333693403889664
+projects/************/locations/us-east1/reasoningEngines/7737333693403889664
 ```
 The last sequence of digits is the Agent Runtime resource ID.
 

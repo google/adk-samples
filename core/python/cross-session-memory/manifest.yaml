@@ -1,0 +1,13 @@
+type: "standalone"
+status: "active"
+language: "python"
+description: "ADK agent with Memory Bank integration — deployable to Agent Engine or Cloud Run"
+architecture:
+  agent: "single"
+  stateful: true
+  datasources:
+  - "external"
+
+ownership:
+  team: "GS&I AI Apps and Platforms"
+  poc: "allen-stephen"

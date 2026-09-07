@@ -4,7 +4,7 @@
 
 This agent is intended to be used as part of a broader Software Development Life Cycle (SDLC) workflow. For more details on how it integrates with other agents, please see the [SDLC Agents Workflow](sdlc_agents_workflow.md):
 
-![Full SDLC Workflow](sdlc_agents_workflow.png)
+![Full SDLC Workflow](sdlc_agents_workflow.webp)
 
 ### Agent Details Table
 | Interaction Type | Conversational / Workflow |
@@ -16,7 +16,7 @@ This agent is intended to be used as part of a broader Software Development Life
 
 ## B. Architecture
 
-![Architecture Diagram](agent_pattern.png)
+![Architecture Diagram](agent_pattern.webp)
 
 ### Example Interaction
 **User:** Here is the refined user story for the Slack notification integration:

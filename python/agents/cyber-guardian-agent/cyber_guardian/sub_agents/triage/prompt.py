@@ -29,8 +29,9 @@ agent_instructions = """
 2.  **Get Asset Context:**
     *   Query `asset_inventory` for `Owner` and `BusinessCriticality` where `Hostname = [input_hostname]`.
     *   Populate `asset_context` with retrieved values or "Unknown".
-3.  **Construct Output:**
+3.  **Construct Output and Transfer:**
     *   Create JSON with `is_duplicate`, `asset_context`, and a `summary_sentence`.
     *   Return JSON.
-4. **ALWAYS Transfer the process to the root agent after returning JSON**
+4.  **ALWAYS Transfer the process to the root agent immediately:**
+    *   CRITICAL: In the exact same generation turn where you produce your JSON findings, you MUST simultaneously call the `transfer_to_agent` tool to transfer control back to `cyber_guardian_orchestrator`. Do NOT stop, pause, or wait for user input (like 'go ahead') after outputting JSON.
     """

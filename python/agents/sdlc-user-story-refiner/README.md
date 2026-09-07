@@ -4,7 +4,7 @@
 
 This agent is intended to be used as part of a broader Software Development Life Cycle (SDLC) workflow. For more details on how it integrates with other agents, please see the [SDLC Agents Workflow](sdlc_agents_workflow.md):
 
-![Full SDLC Workflow](sdlc_agents_workflow.png)
+![Full SDLC Workflow](sdlc_agents_workflow.webp)
 
 ### Agent Details Table
 | Interaction Type | Conversational |
@@ -16,7 +16,7 @@ This agent is intended to be used as part of a broader Software Development Life
 
 ## B. Architecture
 
-![Architecture Diagram](agent_pattern.png)
+![Architecture Diagram](agent_pattern.webp)
 
 ### Example Interaction
 **User:** I want to build a Slack integration for our notification system. When a critical system alert triggers in our app, it should automatically post a formatted message to a specific Slack channel. We'll need to handle OAuth for Slack workspaces.

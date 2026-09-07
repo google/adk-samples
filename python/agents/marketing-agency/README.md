@@ -21,7 +21,7 @@ The key features of the Marketing Agency include:
 
 This diagram shows the detailed architecture of the agents and tools used
 to implement this workflow.
-<img src="marketing-agency.png" alt="marketing agency" width="800"/>
+<img src="marketing-agency.webp" alt="marketing agency" width="800"/>
 
 ## Quick Start with Google Agents CLI (Recommended)
 

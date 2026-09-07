@@ -1,6 +1,20 @@
 # How to contribute
 
-We'd love to accept your patches and contributions to this project.
+We accept patches and contributions to this collection of ADK
+recipes — small, runnable agents built with the
+[Agent Development Kit](https://adk.dev).
+
+## Contribute a recipe
+
+Recipes live in two roots: [`core/`](./core/), curated by the
+`agents-cli` team, and [`contrib/`](./contrib/), the community
+root. Send new work to `contrib/`.
+
+Start with the [contributor guide](./docs/README.md). It routes
+you to the [recipe checklist](./docs/recipe-checklist.md) — the
+one-page path from empty folder to PR — and to the
+[recipe handbook](./docs/recipe-handbook/README.md) for context
+and reference.
 
 ## Before you begin
 

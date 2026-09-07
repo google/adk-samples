@@ -2,17 +2,15 @@
 name = "fomc-research"
 version = "0.1.0"
 description = "FOMC Research Agent Demo using Google ADK"
-authors = [
-    { name = "Mike Styer", email = "styer@google.com" }
-]
-license = {text = "Apache License 2.0"}
+authors = [{ name = "Mike Styer", email = "styer@google.com" }]
+license = { text = "Apache License 2.0" }
 readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
     "absl-py>=2.2.1",
     "diff-match-patch>=20241021",
-    "google-adk>=1.0.0",
+    "google-adk>=1.31.0",
     "google-cloud-bigquery>=3.30.0",
     "google-genai>=1.5.0",
     "pdfplumber>=0.11.5",
@@ -29,7 +27,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest>=8.3.2",
     "pytest-asyncio>=0.23.7",
-    "google-adk[eval]>=1.0.0",
+    "google-adk[eval]>=1.31.0",
     "nest-asyncio>=1.6.0",
     "agent-starter-pack>=0.14.1",
 ]

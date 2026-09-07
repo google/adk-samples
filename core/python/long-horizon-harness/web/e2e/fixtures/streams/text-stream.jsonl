@@ -1,0 +1,3 @@
+{"statusUpdate": {"taskId": "task-1", "contextId": "ctx-e2e", "status": {"state": "TASK_STATE_WORKING", "message": {"messageId": "", "contextId": "ctx-e2e", "role": 2, "parts": [{"text": "Hello"}]}}, "final": false, "metadata": {"adk_partial": true}}}
+{"statusUpdate": {"taskId": "task-1", "contextId": "ctx-e2e", "status": {"state": "TASK_STATE_WORKING", "message": {"messageId": "", "contextId": "ctx-e2e", "role": 2, "parts": [{"text": ", world"}]}}, "final": false, "metadata": {"adk_partial": true}}}
+{"message": {"messageId": "m-final", "contextId": "ctx-e2e", "role": 2, "parts": [{"text": "Hello, world!"}]}}

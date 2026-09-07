@@ -1,0 +1,33 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""The subagent description rewrite is wired into the root before_model chain."""
+
+from __future__ import annotations
+
+
+def test_description_callback_registered_after_prompt_assembly() -> None:
+    from horizon.agent import root_agent
+    from horizon.subagents.descriptions import subagent_description_callback
+
+    chain = root_agent.before_model_callback
+    assert subagent_description_callback in chain
+    # Must run after system prompt assembly so the chain order is preserved.
+    from horizon.conversation.system_prompt import (
+        system_prompt_assembly_callback,
+    )
+
+    assert chain.index(subagent_description_callback) > chain.index(
+        system_prompt_assembly_callback
+    )

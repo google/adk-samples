@@ -37,7 +37,7 @@ MCP_TOOLBOX_PORT = os.getenv("MCP_TOOLBOX_PORT", "5000")
 # MAX_NUM_ROWS = 80
 
 vertex_project = os.getenv("GOOGLE_CLOUD_PROJECT", None)
-location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-east1")
 http_options = HttpOptions(headers={"user-agent": USER_AGENT})
 llm_client = Client(
     vertexai=True,

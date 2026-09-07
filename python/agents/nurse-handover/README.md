@@ -36,7 +36,7 @@ The agent operates in a clear, multi-step process:
 4.  **Summarization with Gemini**: The `Summarizer` class in `nurse_handover/summary.py` orchestrates a series of calls to the Gemini model. It breaks down the summarization task into smaller, manageable chunks based on the ISBAR format, using specific prompts and configurations for each section (e.g., `id_and_background_template.txt`, `situation_template.txt`).
 5.  **Report Generation**: The final, structured ISBAR report is assembled from the model's responses and saved as a Markdown file.
 
-![Architecture Diagram](agent_pattern.png)
+![Architecture Diagram](agent_pattern.webp)
 
 ## Setup and Running
 
@@ -181,16 +181,9 @@ This test suite performs end-to-end testing to ensure the agent correctly identi
 
 ## Deployment
 
-For production use, you can deploy this agent using the [Google Agents CLI](https://github.com/google/agents-cli), which provides automated CI/CD deployment scripts for services like Google Cloud Run.
-
-**Install the CLI** (one-time):
+For production use, you can deploy this agent using the [Agent Starter Pack](https://goo.gle/agent-starter-pack), which provides automated CI/CD deployment scripts for services like Google Cloud Run.
 
 ```bash
-uvx google-agents-cli setup
-```
-
-**Create the project from this sample**:
-
-```bash
-agents-cli create my-nurse-handover -a adk@nurse-handover
+# Install the starter pack and create a new project from this sample
+uvx agent-starter-pack create my-nurse-handover -a adk@nurse-handover
 ```

@@ -1,6 +1,6 @@
 # Example Session: image_search_denim_skirt
 
-**\[user\]:** (Upload [an image](example_product.png)) I really like this one, can you help me find something similar?
+**\[user\]:** (Upload [an image](example_product.webp)) I really like this one, can you help me find something similar?
 
 **\[personalized_shopping_agent\]:** Okay, I can help with that! Based on the image, it looks like you're interested in a denim skirt. I'll search for similar items.
 

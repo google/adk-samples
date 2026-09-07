@@ -25,7 +25,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("project_id", None, "GCP project ID.")
 flags.DEFINE_string("dataset_id", None, "BigQuery dataset ID.")
 flags.DEFINE_string("data_file", None, "Path to the data file.")
-flags.DEFINE_string("location", "us-central1", "Location for the dataset.")
+flags.DEFINE_string("location", "us-east1", "Location for the dataset.")
 flags.mark_flags_as_required(["project_id", "dataset_id"])
 
 

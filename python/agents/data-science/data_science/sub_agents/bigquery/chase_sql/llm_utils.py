@@ -51,7 +51,7 @@ GEMINI_AVAILABLE_REGIONS = [
     "us-east4",
     "northamerica-northeast1",
     "europe-central2",
-    "us-central1",
+    "us-east1",
     "europe-north1",
     "europe-west8",
     "us-south1",

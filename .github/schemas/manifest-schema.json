@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ADK Recipe Manifest",
+  "description": "Schema for manifest.yaml files in core/ and contrib/ directories",
+  "type": "object",
+  "required": [
+    "type",
+    "status",
+    "language",
+    "description",
+    "ownership"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "standalone",
+        "module"
+      ],
+      "description": "The recipe type. 'standalone': a complete, runnable recipe with its own entry point that can be run or deployed independently (e.g. a fully functioning IT Helpdesk Agent, an OAuth 2.0 multi-agent routing guide). 'module': a packaged, importable sub-agent designed to be orchestrated by a larger workflow, but lacking a standalone entry point to run on its own (e.g. a specialized BigQuery query-generator sub-agent)."
+    },
+    "deployable": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the recipe can be deployed with one click. false (default): not possible to deploy with one click. true: possible to deploy with one click."
+    },
+    "large": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the recipe opts into the relaxed size tier. false (default): the standard tier applies. true: the recipe may exceed the default limits, up to the tier's relaxed cap. Exact numeric limits depend on whether the recipe lives under core/ or contrib/ and are defined in .github/policy.yml (see recipe_size_limits)."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive"
+      ],
+      "description": "Current status of the recipe."
+    },
+    "language": {
+      "type": "string",
+      "enum": [
+        "python",
+        "java",
+        "go",
+        "kotlin",
+        "typescript"
+      ],
+      "description": "Primary programming language of the recipe."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "description": "A clear description of the recipe and the value it provides."
+    },
+    "architecture": {
+      "type": "object",
+      "description": "Optional fields describing the agent architecture of the recipe. All sub-fields are optional.",
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "string",
+          "enum": [
+            "single",
+            "multi"
+          ],
+          "description": "Whether the recipe uses a single agent or multiple agents."
+        },
+        "stateful": {
+          "type": "boolean",
+          "description": "Whether the agent maintains persistent state or memory across sessions, or performs transactional writes to external systems."
+        },
+        "datasources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "hardcoded",
+              "local",
+              "external"
+            ]
+          },
+          "uniqueItems": true,
+          "description": "The data sources used by the recipe. 'hardcoded': data is hardcoded within the recipe itself. 'local': data comes from files bundled with the recipe. 'external': data comes from a live outside system at runtime (e.g. a database, an API)."
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "libraries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Library dependencies (e.g. ADK, LangGraph)."
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "GCP or external service dependencies."
+        }
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "required": [
+        "team",
+        "poc"
+      ],
+      "additionalProperties": false,
+      "description": "Ownership information for the recipe.",
+      "properties": {
+        "team": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Team name."
+        },
+        "poc": {
+          "type": "string",
+          "minLength": 1,
+          "description": "GitHub user ID of the primary point of contact accountable for this recipe."
+        },
+        "contributors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Optional list of GitHub user IDs of additional contributors to this recipe."
+        }
+      }
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SPDX license identifier for the recipe (e.g. 'Apache-2.0', 'MIT', 'BSD-3-Clause'). See https://spdx.org/licenses/"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Classification tags for the recipe."
+    }
+  }
+}

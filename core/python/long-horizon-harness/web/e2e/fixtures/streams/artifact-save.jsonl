@@ -1,0 +1,3 @@
+{"statusUpdate": {"taskId": "task-1", "contextId": "ctx-e2e", "status": {"state": "TASK_STATE_WORKING", "message": {"messageId": "", "contextId": "ctx-e2e", "role": 2, "parts": [{"text": "Saving the generated plot now."}]}}, "final": false, "metadata": {"adk_partial": true}}}
+{"artifactUpdate": {"taskId": "task-1", "contextId": "ctx-e2e", "artifact": {"artifactId": "art-1", "name": "damped_oscillator", "parts": [{"filename": "damped_oscillator.png", "mediaType": "image/png", "raw": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="}]}}}
+{"message": {"messageId": "m-final", "contextId": "ctx-e2e", "role": 2, "parts": [{"text": "Done \u2014 file is attached."}]}}

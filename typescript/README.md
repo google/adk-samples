@@ -1,5 +1,18 @@
 # Agent Development Kit (ADK) TypeScript Samples
 
+> [!IMPORTANT]
+> **This folder is retired.** `typescript/agents/` no longer accepts new
+> recipes, or changes to the recipes already here. Recipes now live in
+> **`contrib/typescript/`**.
+>
+> - **Contributing a new recipe?** Start with the
+>   [recipe checklist](../docs/recipe-checklist.md).
+> - **Already have a recipe here?** Move it to `contrib/typescript/<name>` and
+>   follow the same checklist. See the
+>   [contributor guide](../docs/README.md).
+>
+> Pull requests that add or modify files under `typescript/agents/` fail CI.
+
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 <img src="https://github.com/google/adk-docs/blob/main/docs/assets/agent-development-kit.png" alt="Agent Development Kit Logo" width="150">

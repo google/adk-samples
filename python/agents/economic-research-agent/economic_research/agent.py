@@ -26,7 +26,10 @@ from economic_research.tools.hud_skill import (
     analyze_housing_affordability,
     fetch_hud_fmr_data,
     fetch_hud_income_limits,
+    fetch_hud_usps_crosswalk,
+    fetch_hud_chas_data,
 )
+
 from economic_research.tools.real_estate_skill import get_real_estate_roi
 from economic_research.tools.regulatory_skill import fetch_regulatory_notices
 from economic_research.tools.talent_pipeline_skill import (
@@ -34,8 +37,43 @@ from economic_research.tools.talent_pipeline_skill import (
 )
 from economic_research.tools.tax_foundation_skill import fetch_state_tax_rates
 from economic_research.tools.trade_skill import fetch_regional_trade_data
+from economic_research.tools.workforce_exposure_skill import (
+    analyze_workforce_exposure,
+)
+from economic_research.tools.economic_index_skill import (
+    fetch_anthropic_economic_index_data,
+)
+from economic_research.tools.mls_property_analysis_skill import (
+    fetch_mls_property_listings,
+)
+from economic_research.tools.labor_shift_skill import (
+    model_labor_shifts,
+)
+from economic_research.tools.fec_skill import (
+    analyze_political_stability,
+)
+from economic_research.tools.econometrics_skill import (
+    run_econometric_regression,
+)
+from economic_research.tools.underwriting_skill import (
+    underwrite_deal_leverage,
+)
+from economic_research.tools.scorecard_skill import (
+    generate_location_scorecard,
+)
+from economic_research.tools.relocation_skill import (
+    estimate_employee_relocation,
+)
+from economic_research.tools.macro_search_skill import (
+    search_macro_series,
+)
 
 from .prompt import Prompts
+
+
+
+
+
 
 load_dotenv()
 
@@ -74,7 +112,7 @@ class ERAAgent:
         """Standard container for the Reasoning Engine. State-free to ensure cloud pickling stability."""
         pass
 
-    def get_app(self) -> App:
+    def get_app(self, model_name: str = "gemini-2.5-flash") -> App:
         """Lazily instantiates the ADK App and Agent only when needed."""
         tools = [
             labor_force_stats_skill,
@@ -94,15 +132,32 @@ class ERAAgent:
             fetch_regional_trade_data,
             fetch_regulatory_notices,
             set_session_api_key,
+            analyze_workforce_exposure,
+            fetch_anthropic_economic_index_data,
+            fetch_mls_property_listings,
+            fetch_hud_usps_crosswalk,
+            fetch_hud_chas_data,
+            model_labor_shifts,
+            analyze_political_stability,
+            run_econometric_regression,
+            underwrite_deal_leverage,
+            generate_location_scorecard,
+            estimate_employee_relocation,
+            search_macro_series,
         ]
+
+
+
+
 
         era_agent = Agent(
             name="economic_research",
-            model=Gemini(model_name="gemini-2.5-flash"),
+            model=Gemini(model_name=model_name),
             instruction=ERA_INSTRUCTIONS,
             tools=tools,
         )
         return App(root_agent=era_agent, name="Economic_Research_Agent")
+
 
     def query(self, input: str) -> str:
         """Standard Reasoning Engine entry point."""
@@ -170,8 +225,44 @@ class ERAAgent:
             if v:
                 os.environ[k] = v
 
+        # Classify complexity of input query
+        model_name = "gemini-2.5-flash"
+        try:
+            from google.adk.agents import Agent
+            from google.adk.runners import InMemoryRunner
+            
+            classifier_agent = Agent(
+                name="router_supervisor",
+                model=Gemini(model_name="gemini-2.5-flash"),
+                instruction=prompts.complexity_classifier_instructions()
+            )
+            classifier_app = App(root_agent=classifier_agent, name="Router_Supervisor")
+            classifier_runner = InMemoryRunner(app=classifier_app)
+            classifier_runner.auto_create_session = True
+            
+            classifier_responses = classifier_runner.run(new_message=modified_input)
+            classifier_text = ""
+            for res in classifier_responses:
+                if hasattr(res, "content") and res.content.parts:
+                    for part in res.content.parts:
+                        if part.text:
+                            classifier_text += part.text
+            
+            import json
+            cleaned_text = classifier_text.replace("```json", "").replace("```", "").strip()
+            data = json.loads(cleaned_text)
+            complexity = data.get("complexity", "LOW")
+            if complexity == "HIGH":
+                model_name = "gemini-2.5-pro"
+                print("🧠 [Router] Detected high complexity task. Routing to gemini-2.5-pro.")
+            else:
+                print("⚡ [Router] Detected low complexity task. Routing to gemini-2.5-flash.")
+        except Exception as e:
+            print(f"⚠️ [Router] Routing failed: {e}. Falling back to gemini-2.5-flash.")
+
         # Instantiate App & Runner at runtime rather than deploy-time
-        app = self.get_app()
+        app = self.get_app(model_name=model_name)
+
 
         from google.adk.runners import InMemoryRunner
 
@@ -188,14 +279,13 @@ class ERAAgent:
 
         # ⚖️ Active Actor-Critic Loop (Self-Correction)
         try:
-            from google.adk.apps import App
-
             from .sub_agents.agent import JudgeAgent
 
             judge = JudgeAgent().get_agent()
             judge_app = App(root_agent=judge, name="Judge_Review")
             judge_runner = InMemoryRunner(app=judge_app)
             judge_runner.auto_create_session = True
+
 
             # Iteration 1: Judge the initial draft
             judge_prompt = (
@@ -232,15 +322,77 @@ class ERAAgent:
                             if part.text:
                                 corrected_text += part.text
 
-                return f"{corrected_text}\n\n---\n### ⚖️ Auditor Judge Verification (Self-Corrected v2)\n{judge_text}"
-
-            return f"{full_text}\n\n---\n### ⚖️ Auditor Judge Verification (Passed v1)\n{judge_text}"
+                final_report = f"{corrected_text}\n\n---\n### ⚖️ Auditor Judge Verification (Self-Corrected v2)\n{judge_text}"
+            else:
+                final_report = f"{full_text}\n\n---\n### ⚖️ Auditor Judge Verification (Passed v1)\n{judge_text}"
 
         except Exception as e:
-            return f"{full_text}\n\n---\n⚠️ *Judge verification failed: {e}*"
+            final_report = f"{full_text}\n\n---\n⚠️ *Judge verification failed: {e}*"
+
+        # Calculate Economic Primitives of the completed session
+        try:
+            from google.adk.agents import Agent
+            
+            evaluator_agent = Agent(
+                name="primitives_evaluator",
+                model=Gemini(model_name="gemini-2.5-flash"),
+                instruction="""
+                You are an economic operations analyst. Evaluate the completed interaction between the user and the economic research agent.
+                
+                Compute the following primitives:
+                1. "interaction_type": Classify into: directive, feedback_loop, task_iteration, validation, or learning.
+                2. "autonomy_level": Integer from 1 (active collaboration / human-in-the-loop) to 5 (fully autonomous delegation).
+                3. "human_only_time_minutes": Estimated time (in minutes) an experienced economic analyst would spend to complete this task manually (e.g., searching FRED/BLS, scraping tax rates, drafting tables, and writing reports).
+                4. "human_education_years_required": Estimated years of education/training needed to understand this request (e.g., 12 for high school, 16 for college, 18+ for grad school/PhD).
+                5. "task_success": Boolean (true/false) indicating if the agent successfully fulfilled the user request with accurate data.
+                
+                Output your evaluation as a valid JSON object. Do not include markdown formatting or additional explanation.
+                """
+            )
+            evaluator_app = App(root_agent=evaluator_agent, name="Primitives_Evaluator")
+            evaluator_runner = InMemoryRunner(app=evaluator_app)
+            evaluator_runner.auto_create_session = True
+            
+            evaluation_prompt = f"### User Query:\n{modified_input}\n\n### Agent Final Response:\n{final_report}"
+            eval_responses = evaluator_runner.run(new_message=evaluation_prompt)
+            eval_text = ""
+            for res in eval_responses:
+                if hasattr(res, "content") and res.content.parts:
+                    for part in res.content.parts:
+                        if part.text:
+                            eval_text += part.text
+            
+            # Save or log the metrics
+            import json
+            cleaned_eval = eval_text.replace("```json", "").replace("```", "").strip()
+            primitives = json.loads(cleaned_eval)
+            
+            # Write to a session metadata log file
+            log_dir = "/Users/enriq/.gemini/jetski/scratch/observability"
+            os.makedirs(log_dir, exist_ok=True)
+            import uuid
+            session_id = str(uuid.uuid4())
+            log_path = os.path.join(log_dir, f"{session_id}.json")
+            with open(log_path, "w") as f:
+                json.dump({
+                    "session_id": session_id,
+                    "query": modified_input,
+                    "primitives": primitives
+                }, f, indent=2)
+                
+            print(f"📊 [Observability] Logged Economic Primitives to {log_path}: {primitives}")
+        except Exception as e:
+            print(f"⚠️ [Observability] Failed to evaluate economic primitives: {e}")
+
+        return final_report
+
 
 
 export_agent = ERAAgent()
 
 # Also export root_agent for local CLI usage
 root_agent = export_agent.get_app().root_agent
+
+# Export the App as 'agent' for run_eval.py
+agent = export_agent.get_app()
+

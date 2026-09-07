@@ -25,7 +25,7 @@ This project provides a unified conversational agent powered by the Google ADK f
 
 The project features a `global_kyc_agent` root router that delegates to either the UK or US sub-agent based on the company's geographical location or user request context. 
 
-![Agent Architecture Diagram](./agent_pattern.png)
+![Agent Architecture Diagram](./agent_pattern.webp)
 
 ```mermaid
 graph TD

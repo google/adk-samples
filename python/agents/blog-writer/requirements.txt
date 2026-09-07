@@ -1,8 +1,0 @@
-google-adk==1.19.0
-pytest==9.0.1
-pytest-asyncio==1.3.0
-deprecated
-pandas
-tabulate
-tqdm
-scikit-learn
