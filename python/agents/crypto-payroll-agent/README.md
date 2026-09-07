@@ -128,7 +128,7 @@ batch.
 | `GOOGLE_CLOUD_LOCATION` | yes¹ | GCP region (e.g. `us-central1`) |
 | `GOOGLE_GENAI_USE_VERTEXAI` | yes¹ | `1` for Vertex AI, `0` for AI Studio |
 | `GOOGLE_API_KEY` | yes² | AI Studio key (alternative to Vertex AI) |
-| `PAYROLL_AGENT_MODEL` | no | Gemini model (default: `gemini-2.5-flash`) |
+| `PAYROLL_AGENT_MODEL` | no | Gemini model (default: `gemini-3.5-flash`) |
 | `PAYROLL_MAX_BATCH_USD` | no | Refuse batches above this total (default: `10000`) |
 
 ¹ if using Vertex AI · ² if using AI Studio

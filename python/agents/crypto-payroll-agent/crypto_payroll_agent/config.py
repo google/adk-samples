@@ -58,16 +58,29 @@ BASE_TOKEN_REGISTRY: dict[str, TokenInfo] = {
 }
 
 
+def _require_env(name: str) -> str:
+    """Read a required environment variable, failing loudly if unset."""
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(
+            f"Environment variable {name} is not set. "
+            "Copy .env.example to .env and fill in the values."
+        )
+    return value
+
+
 @dataclass(frozen=True)
 class Config:
     """Runtime config sourced from environment variables."""
 
     # Model
-    model: str = os.getenv("PAYROLL_AGENT_MODEL", "gemini-2.5-flash")
+    model: str = field(
+        default_factory=lambda: _require_env("PAYROLL_AGENT_MODEL")
+    )
 
     # Safety ceiling for a single batch run (in USD)
-    max_batch_usd: Decimal = Decimal(
-        os.getenv("PAYROLL_MAX_BATCH_USD", "10000")
+    max_batch_usd: Decimal = field(
+        default_factory=lambda: Decimal(_require_env("PAYROLL_MAX_BATCH_USD"))
     )
 
     # Agent metadata

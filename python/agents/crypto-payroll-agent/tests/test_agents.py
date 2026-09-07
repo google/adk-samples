@@ -91,9 +91,19 @@ def test_split_pool_proportional_weights():
 def test_split_pool_rounding_dust_goes_to_largest_weight():
     from crypto_payroll_agent.tools.helpers import split_pool_proportionally
 
-    # 100 / 3 with 6 decimals leaves rounding dust of 0.000001 USDC.
-    result = split_pool_proportionally("100", [1, 1, 1], decimals=6)
+    # 100 split 5:3:1 at 6 decimals floors to 55.555555 / 33.333333 /
+    # 11.111111, leaving 0.000001 of dust. The largest fractional
+    # remainder belongs to the largest weight, so the dust quantum
+    # lands on recipient 0.
+    result = split_pool_proportionally("100", [5, 3, 1], decimals=6)
     assert result["ok"] is True
+
+    amounts = [Decimal(a) for a in result["amounts"]]
+    assert amounts == [
+        Decimal("55.555556"),
+        Decimal("33.333333"),
+        Decimal("11.111111"),
+    ]
     assert Decimal(result["total_distributed"]) == Decimal("100")
 
 

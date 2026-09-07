@@ -23,10 +23,8 @@ from crypto_payroll_agent.config import CONFIG  # noqa: E402
 
 def main() -> None:
     project = os.environ["GOOGLE_CLOUD_PROJECT"]
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-    staging_bucket = os.environ.get(
-        "GOOGLE_CLOUD_STAGING_BUCKET", f"gs://{project}-adk-staging"
-    )
+    location = os.environ["GOOGLE_CLOUD_LOCATION"]
+    staging_bucket = os.environ["GOOGLE_CLOUD_STAGING_BUCKET"]
 
     vertexai.init(
         project=project, location=location, staging_bucket=staging_bucket

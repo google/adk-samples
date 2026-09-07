@@ -26,6 +26,9 @@ from ..config import BASE_TOKEN_REGISTRY
 # Decimal precision wide enough to handle 18-decimal token math.
 getcontext().prec = 50
 
+# EVM addresses are "0x" + 40 hex characters.
+ETH_ADDRESS_LENGTH = 42
+
 
 def lookup_token_info(symbol_or_address: str) -> dict[str, Any]:
     """Return canonical metadata for a Base ERC-20 token.
@@ -52,7 +55,7 @@ def lookup_token_info(symbol_or_address: str) -> dict[str, Any]:
     """
     query = (symbol_or_address or "").strip()
 
-    if query.lower().startswith("0x") and len(query) == 42:
+    if query.lower().startswith("0x") and len(query) == ETH_ADDRESS_LENGTH:
         for token in BASE_TOKEN_REGISTRY.values():
             if token["address"].lower() == query.lower():
                 return {
@@ -111,8 +114,9 @@ def split_pool_proportionally(
     """Divide a token pool across recipients by integer weights.
 
     Distribution is rounding-safe: the returned per-recipient amounts sum
-    *exactly* to `total_amount` (any rounding dust is added to the largest
-    share). Amounts are returned as decimal strings suitable to pass to
+    *exactly* to `total_amount` (any rounding dust is apportioned by
+    largest fractional remainder, ties broken by weight). Amounts are
+    returned as decimal strings suitable to pass to
     `spraay_batch_token_variable` (which expects human-unit strings).
 
     Args:
@@ -163,7 +167,7 @@ def split_pool_proportionally(
             "error": "total_amount must be positive.",
         }
 
-    weight_sum = Decimal(sum(weights))
+    weight_sum = sum(Decimal(str(w)) for w in weights)
     if weight_sum == 0:
         return {
             "ok": False,
