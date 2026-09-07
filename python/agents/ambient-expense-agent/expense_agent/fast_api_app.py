@@ -14,34 +14,79 @@
 
 """FastAPI entry point for the ambient expense agent backend.
 
-This file configures the ADK web server with Pub/Sub trigger endpoints
-enabled, allowing the agent to process expense reports autonomously
-when deployed to Cloud Run.
+Configures the ADK web server for Agent Runtime deployment with Pub/Sub
+trigger endpoints enabled, allowing the agent to process expense reports
+autonomously.
 
-The frontend service queries the ADK's built-in session APIs
-(``GET /apps/{app}/users/{user}/sessions``) to find pending approvals.
+Trigger endpoint: POST /apps/expense_agent/trigger/pubsub
+  - Receives Pub/Sub push messages
+  - Decodes base64 payload and passes it as the agent's user input
+  - Creates a session keyed by subscription name for tracking
+
+Session storage: auto-detects ``GOOGLE_CLOUD_AGENT_ENGINE_ID`` (injected by
+Agent Runtime) to use Vertex AI session service; falls back to in-memory
+for local development.
 
 Includes middleware to normalize Pub/Sub subscription names from their
 fully-qualified resource paths (``projects/.../subscriptions/NAME``)
-to short names, keeping user IDs clean and readable in session records.
+to short names, keeping user IDs clean and consistent with what the
+frontend uses when querying for pending approvals.
 """
 
 import json
 import os
 
 import uvicorn
+from dotenv import load_dotenv
 from google.adk.cli.fast_api import get_fast_api_app
+from google.cloud import logging as google_cloud_logging
 from starlette.requests import Request
 
-# The ADK needs the project root as agents_dir so it discovers
-# expense_agent/ as an agent package (contains agent.py + __init__.py).
-AGENTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from expense_agent.app_utils import services
+from expense_agent.app_utils.reasoning_engine_adapter import (
+    attach_reasoning_engine_routes,
+)
+from expense_agent.app_utils.telemetry import (
+    setup_agent_engine_telemetry,
+    setup_telemetry,
+)
+from expense_agent.app_utils.typing import Feedback
+
+load_dotenv()
+setup_telemetry()
+# Must run before get_fast_api_app to set the tracer provider resource.
+setup_agent_engine_telemetry()
+logging_client = google_cloud_logging.Client()
+logger = logging_client.logger(__name__)
+allow_origins = (
+    os.getenv("ALLOW_ORIGINS", "").split(",") if os.getenv("ALLOW_ORIGINS") else None
+)
+
+AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 app = get_fast_api_app(
-    agents_dir=AGENTS_DIR,
+    agents_dir=AGENT_DIR,
     web=False,
-    trigger_sources=["pubsub"],
+    artifact_service_uri=services.ARTIFACT_SERVICE_URI,
+    allow_origins=allow_origins,
+    session_service_uri=services.SESSION_SERVICE_URI,
+    otel_to_cloud=False,
+    trigger_sources=["pubsub"],  # exposes /apps/expense_agent/trigger/pubsub
 )
+app.title = "ambient-expense-agent"
+app.description = "Ambient expense agent — processes expense reports via Pub/Sub"
+
+
+# Proxy routes so the Vertex AI Console Playground (reasoning_engine SDK) can
+# talk to this agent alongside the native adk_api and Pub/Sub trigger routes.
+attach_reasoning_engine_routes(app)
+
+
+@app.post("/feedback")
+def collect_feedback(feedback: Feedback) -> dict[str, str]:
+    """Collect and log feedback."""
+    logger.log_struct(feedback.model_dump(), severity="INFO")
+    return {"status": "success"}
 
 
 @app.middleware("http")

@@ -13,36 +13,13 @@
 # limitations under the License.
 
 # ---------------------------------------------------------------------------
-# Cloud Run services — managed by Terraform.
+# Cloud Run — approval UI frontend only.
 #
-# The Makefile builds container images via Cloud Build, then Terraform
-# creates both services with the correct env vars, service accounts,
-# and wires BACKEND_URL automatically.
+# The backend agent runs on Agent Runtime (see agent_runtime.tf).
+# The frontend is a thin FastAPI proxy for manager approvals:
+#   GET  /pending-approvals → queries Agent Runtime API for pending HITL sessions
+#   POST /approve           → resumes a paused workflow via Agent Runtime API
 # ---------------------------------------------------------------------------
-
-resource "google_cloud_run_v2_service" "backend" {
-  name                = var.backend_service_name
-  location            = var.region
-  project             = var.project_id
-  deletion_protection = false
-
-  template {
-    scaling {
-      min_instance_count = 1
-    }
-
-    containers {
-      image = var.backend_image
-
-      resources {
-        cpu_idle = false
-      }
-
-}
-  }
-
-  depends_on = [google_project_service.apis]
-}
 
 resource "google_cloud_run_v2_service" "frontend" {
   name                = var.frontend_service_name
@@ -67,7 +44,9 @@ resource "google_cloud_run_v2_service" "frontend" {
 
       env {
         name  = "BACKEND_URL"
-        value = google_cloud_run_v2_service.backend.uri
+        # Agent Runtime API base URL — the frontend calls /apps/{agent}/users/.../sessions
+        # and /run via this passthrough endpoint.
+        value = local.agent_runtime_api_base
       }
       env {
         name  = "USE_SERVICE_AUTH"
@@ -84,5 +63,8 @@ resource "google_cloud_run_v2_service" "frontend" {
     }
   }
 
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_vertex_ai_reasoning_engine.app,
+  ]
 }

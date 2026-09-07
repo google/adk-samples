@@ -1,10 +1,8 @@
 PROJECT_ID ?= $(shell gcloud config get-value project 2>/dev/null)
 REGION ?= us-east1
-BACKEND_SERVICE ?= ambient-expense-agent
 FRONTEND_SERVICE ?= expense-approval-ui
 NOTIFICATION_EMAIL ?= your-email@example.com
 REGISTRY = $(REGION)-docker.pkg.dev/$(PROJECT_ID)/expense-agent
-BACKEND_IMAGE = $(REGISTRY)/backend
 FRONTEND_IMAGE = $(REGISTRY)/frontend
 
 # ---------------------------------------------------------------------------
@@ -12,13 +10,11 @@ FRONTEND_IMAGE = $(REGISTRY)/frontend
 # ---------------------------------------------------------------------------
 
 install:
-	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/0.6.12/install.sh | sh; source $$HOME/.local/bin/env; }
+	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/install.sh | sh; source $$HOME/.local/bin/env; }
 	uv sync
 
 install-frontend:
-	cd frontend && \
-		command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/0.6.12/install.sh | sh; source $$HOME/.local/bin/env; } && \
-		uv sync
+	cd frontend && uv sync
 
 dev:
 	uv run python expense_agent/fast_api_app.py
@@ -39,12 +35,16 @@ lint:
 		uv run mypy .
 
 # ---------------------------------------------------------------------------
-# Cloud deployment (one command)
+# Cloud deployment
 #
+# Three-step process (all handled by `make deploy`):
+#   1. Terraform creates all infrastructure including Agent Runtime (with a
+#      placeholder source) and wires Pub/Sub → Agent Runtime passthrough.
+#   2. agents-cli deploy uploads the real source code to Agent Runtime.
+#   3. gcloud builds submit builds and pushes the frontend container image.
+#
+# Usage:
 #   make deploy NOTIFICATION_EMAIL=finance@example.com
-#
-# Builds container images, then deploys everything via Terraform:
-# Cloud Run services, Pub/Sub, IAM, Cloud Monitoring.
 # ---------------------------------------------------------------------------
 
 deploy:
@@ -58,94 +58,82 @@ deploy:
 		echo "  make deploy NOTIFICATION_EMAIL=you@example.com"; \
 		echo ""; \
 	fi
-	@echo "==> [1/4] Enabling required APIs..."
+	@command -v agents-cli >/dev/null 2>&1 || { echo "Error: agents-cli is not installed. See https://goo.gle/agents-cli"; exit 1; }
+	@echo "==> [1/3] Enabling required APIs and setting up Artifact Registry..."
 	gcloud services enable \
+		aiplatform.googleapis.com \
 		artifactregistry.googleapis.com \
 		cloudbuild.googleapis.com \
 		--project=$(PROJECT_ID) --quiet
-	@echo ""
-	@echo "==> [2/4] Setting up Artifact Registry and Cloud Build permissions..."
 	-gcloud artifacts repositories create expense-agent \
 		--repository-format=docker \
 		--location=$(REGION) \
 		--project=$(PROJECT_ID) 2>/dev/null
-	@PROJECT_NUMBER=$$(gcloud projects describe $(PROJECT_ID) --format='value(projectNumber)') && \
-		gcloud projects add-iam-policy-binding $(PROJECT_ID) \
-			--member="serviceAccount:$${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-			--role="roles/artifactregistry.writer" \
-			--quiet >/dev/null && \
-		gcloud projects add-iam-policy-binding $(PROJECT_ID) \
-			--member="serviceAccount:$${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-			--role="roles/storage.objectViewer" \
-			--quiet >/dev/null
 	@echo ""
-	@echo "==> [3/4] Building container images (parallel)..."
-	gcloud builds submit . \
-		--tag $(BACKEND_IMAGE) \
-		--project=$(PROJECT_ID) --quiet & \
-	gcloud builds submit frontend/ \
-		--tag $(FRONTEND_IMAGE) \
-		--project=$(PROJECT_ID) --quiet & \
-	wait
-	@echo ""
-	@echo "==> [4/4] Deploying infrastructure (Cloud Run, Pub/Sub, IAM, monitoring)..."
+	@echo "==> [2/3] Deploying infrastructure via Terraform..."
+	@echo "   (Creates Agent Runtime skeleton, Pub/Sub, IAM, monitoring, approval UI)"
 	cd terraform && terraform init -input=false && terraform apply -auto-approve \
 		-var=project_id=$(PROJECT_ID) \
 		-var=region=$(REGION) \
-		-var=backend_service_name=$(BACKEND_SERVICE) \
 		-var=frontend_service_name=$(FRONTEND_SERVICE) \
-		-var=backend_image=$(BACKEND_IMAGE) \
+		-var=frontend_image=$(FRONTEND_IMAGE) \
+		-var=notification_email=$(NOTIFICATION_EMAIL)
+	@echo ""
+	@echo "==> [3/3] Deploying agent source to Agent Runtime..."
+	@echo "   (agents-cli deploy finds the Agent Runtime by display name and updates the source)"
+	agents-cli deploy \
+		--project $(PROJECT_ID) \
+		--region $(REGION) \
+		--no-confirm-project
+	@echo ""
+	@echo "==> Building and pushing frontend image..."
+	gcloud builds submit frontend/ \
+		--tag $(FRONTEND_IMAGE) \
+		--project=$(PROJECT_ID) --quiet
+	@echo ""
+	@echo "==> Updating frontend with built image..."
+	cd terraform && terraform apply -auto-approve \
+		-var=project_id=$(PROJECT_ID) \
+		-var=region=$(REGION) \
+		-var=frontend_service_name=$(FRONTEND_SERVICE) \
 		-var=frontend_image=$(FRONTEND_IMAGE) \
 		-var=notification_email=$(NOTIFICATION_EMAIL)
 	@echo ""
 	@echo "==> Deployment complete!"
-	@echo ""
 	@cd terraform && \
-		echo "  Backend:   $$(terraform output -raw backend_url)" && \
-		echo "  Frontend:  $$(terraform output -raw frontend_url)" && \
-		echo "  Approval:  $$(terraform output -raw frontend_url)/approval" && \
-		echo "  Topic:     expense-reports" && \
-		echo "  Alerts:    Expenses >= $$100 -> $(NOTIFICATION_EMAIL)"
+		echo "  Trigger endpoint: $$(terraform output -raw trigger_endpoint)" && \
+		echo "  Approval UI:      $$(terraform output -raw frontend_url)/approval" && \
+		echo "  Topic:            expense-reports" && \
+		echo "  Alerts:           Expenses >= \$$100 -> $(NOTIFICATION_EMAIL)"
 
 remote-test:
 	@if [ -z "$(PROJECT_ID)" ]; then \
 		echo "Error: PROJECT_ID is not set."; \
-		echo "Run: gcloud config set project <your-project-id>"; \
 		exit 1; \
 	fi
-	@echo "Publishing test expense (>= $$100, requires review)..."
+	@echo "Publishing test expense (>= \$$100, requires review)..."
 	gcloud pubsub topics publish expense-reports \
 		--project=$(PROJECT_ID) \
 		--message='{"amount":250.00,"submitter":"alice@company.com","category":"travel","description":"Flight to NYC for client meeting","date":"2026-04-10"}' \
 		--attribute=source=make-test
 	@echo ""
-	@echo "Check Cloud Logging for results:"
-	@echo "  gcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=$(BACKEND_SERVICE)' --project=$(PROJECT_ID) --limit=5 --format='table(timestamp, textPayload)'"
+	@echo "Check Cloud Logging:"
+	@echo "  gcloud logging read 'resource.type=\"aiplatform.googleapis.com/ReasoningEngine\"' --project=$(PROJECT_ID) --limit=10"
 
 clean:
-	@if [ -z "$(PROJECT_ID)" ]; then \
-		echo "Error: PROJECT_ID is not set."; \
-		echo "Run: gcloud config set project <your-project-id>"; \
-		exit 1; \
-	fi
+	@if [ -z "$(PROJECT_ID)" ]; then echo "Error: PROJECT_ID is not set."; exit 1; fi
 	@echo "==> Tearing down all infrastructure..."
 	cd terraform && terraform destroy -auto-approve \
 		-var=project_id=$(PROJECT_ID) \
 		-var=region=$(REGION) \
-		-var=backend_service_name=$(BACKEND_SERVICE) \
 		-var=frontend_service_name=$(FRONTEND_SERVICE) \
-		-var=backend_image=$(BACKEND_IMAGE) \
 		-var=frontend_image=$(FRONTEND_IMAGE) \
 		-var=notification_email=$(NOTIFICATION_EMAIL) \
-	|| (echo "" && \
-		echo "Retrying in 60s (GCP needs time to propagate alert policy deletion)..." && \
-		sleep 60 && \
+	|| (echo "Retrying in 60s..." && sleep 60 && \
 		cd terraform && terraform destroy -auto-approve \
 			-var=project_id=$(PROJECT_ID) \
 			-var=region=$(REGION) \
-			-var=backend_service_name=$(BACKEND_SERVICE) \
 			-var=frontend_service_name=$(FRONTEND_SERVICE) \
-			-var=backend_image=$(BACKEND_IMAGE) \
 			-var=frontend_image=$(FRONTEND_IMAGE) \
 			-var=notification_email=$(NOTIFICATION_EMAIL))
 	@echo "Cleanup complete."

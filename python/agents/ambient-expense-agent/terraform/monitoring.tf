@@ -13,22 +13,23 @@
 # limitations under the License.
 
 # ---------------------------------------------------------------------------
-# Cloud Monitoring: log-based metric + alert policy + notification channel
+# Cloud Monitoring: log-based metric + alert policy + notification channel.
 #
-# When the agent flags an expense >= $100 for review it emits a structured
-# JSON log. Cloud Logging ingests it, a log-based metric counts it, and
-# an alert policy sends an email notification.
+# When the agent flags an expense >= $100 for review, it emits a structured
+# JSON log with alert_type="expense_review". A log-based metric counts these
+# events and triggers an email to the manager with a link to the approval UI.
 # ---------------------------------------------------------------------------
 
 resource "google_logging_metric" "expense_reviews" {
   name    = "expense-review-alerts"
   project = var.project_id
 
-  description = "Counts expense review alerts from the expense agent."
+  description = "Counts expense review alerts from the expense agent (Agent Runtime)."
 
+  # Agent Runtime container logs appear under the ReasoningEngine resource type.
   filter = <<-EOT
-    resource.type="cloud_run_revision"
-    resource.labels.service_name="${var.backend_service_name}"
+    resource.type="aiplatform.googleapis.com/ReasoningEngine"
+    labels."aiplatform.googleapis.com/reasoning_engine_display_name"="${var.project_name}"
     jsonPayload.alert_type="expense_review"
   EOT
 
@@ -59,7 +60,7 @@ resource "google_monitoring_alert_policy" "expense_reviews" {
     display_name = "Expense review count > 0"
 
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.expense_reviews.name}\" AND resource.type=\"cloud_run_revision\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.expense_reviews.name}\" AND resource.type=\"aiplatform.googleapis.com/ReasoningEngine\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"

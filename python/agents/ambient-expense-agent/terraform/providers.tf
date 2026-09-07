@@ -12,24 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:3.12-slim
+terraform {
+  required_version = ">= 1.0.0"
 
-RUN pip install --no-cache-dir uv==0.8.13
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 7.28.0"
+    }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 7.28.0"
+    }
+  }
+}
 
-WORKDIR /code
+provider "google" {
+  project = var.project_id
+  region  = var.region
 
-COPY ./pyproject.toml ./uv.lock* ./
+  default_labels = {
+    goog-terraform-provisioned = "true"
+    app                        = "ambient-expense-agent"
+  }
+}
 
-COPY ./expense_agent ./expense_agent
-
-RUN uv sync --frozen --no-dev
-
-ARG COMMIT_SHA=""
-ENV COMMIT_SHA=${COMMIT_SHA}
-
-ARG AGENT_VERSION=0.0.0
-ENV AGENT_VERSION=${AGENT_VERSION}
-
-EXPOSE 8080
-
-CMD ["uv", "run", "uvicorn", "expense_agent.fast_api_app:app", "--host", "0.0.0.0", "--port", "8080"]
+provider "google-beta" {
+  project = var.project_id
+  region  = var.region
+}

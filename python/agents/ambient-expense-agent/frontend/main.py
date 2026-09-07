@@ -57,21 +57,23 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 async def _get_auth_headers() -> dict[str, str]:
-    """Get ID token headers for authenticated calls to the backend.
+    """Get auth headers for authenticated calls to the Agent Runtime API.
 
-    On Cloud Run, the frontend's service account must have
-    ``roles/run.invoker`` on the backend service. The metadata server
-    provides an ID token scoped to the backend URL.
+    The Agent Runtime passthrough endpoint (aiplatform.googleapis.com)
+    requires a Google OAuth2 access token with the ``cloud-platform`` scope.
+    The frontend SA must have ``roles/aiplatform.user``.
     """
     if not USE_SERVICE_AUTH:
         return {}
 
+    import google.auth
     import google.auth.transport.requests
-    import google.oauth2.id_token
 
-    auth_req = google.auth.transport.requests.Request()
-    token = google.oauth2.id_token.fetch_id_token(auth_req, BACKEND_URL)
-    return {"Authorization": f"Bearer {token}"}
+    credentials, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    credentials.refresh(google.auth.transport.requests.Request())
+    return {"Authorization": f"Bearer {credentials.token}"}
 
 
 def _extract_pending_approval(session: dict, user_id: str) -> dict | None:
@@ -169,10 +171,11 @@ async def pending_approvals():
 
             # Fetch full session details (with events) concurrently.
             async def fetch_session(sid: str) -> dict | None:
-                r = await client.get(
-                    f"{BACKEND_URL}/apps/{APP_NAME}/users/{encoded_uid}/sessions/{sid}",
-                    headers=headers,
+                url = (
+                    f"{BACKEND_URL}/apps/{APP_NAME}"
+                    f"/users/{encoded_uid}/sessions/{sid}"
                 )
+                r = await client.get(url, headers=headers)
                 return r.json() if r.status_code == 200 else None
 
             full_sessions = await asyncio.gather(

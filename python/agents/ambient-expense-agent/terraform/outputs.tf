@@ -12,29 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-output "backend_url" {
-  description = "URL of the backend Cloud Run service (ADK agent)."
-  value       = google_cloud_run_v2_service.backend.uri
+output "agent_runtime_resource_name" {
+  description = "Agent Runtime resource name (used by agents-cli deploy to update source)."
+  value       = google_vertex_ai_reasoning_engine.app.name
+}
+
+output "agent_runtime_api_base" {
+  description = "Agent Runtime API base URL (Agent Runtime passthrough). Append /apps/{agent}/... for agent endpoints."
+  value       = local.agent_runtime_api_base
+}
+
+output "trigger_endpoint" {
+  description = "Pub/Sub push endpoint — the Agent Runtime trigger URL."
+  value       = "${local.agent_runtime_api_base}/apps/${var.agent_name}/trigger/pubsub"
 }
 
 output "frontend_url" {
-  description = "URL of the frontend Cloud Run service (approval UI)."
+  description = "URL of the approval UI (Cloud Run)."
   value       = google_cloud_run_v2_service.frontend.uri
 }
 
 output "pubsub_topic" {
   description = "Pub/Sub topic for publishing expense reports."
   value       = google_pubsub_topic.expense_reports.id
-}
-
-output "dead_letter_topic" {
-  description = "Dead-letter topic for failed expense processing."
-  value       = google_pubsub_topic.dead_letter.id
-}
-
-output "trigger_endpoint" {
-  description = "Full trigger endpoint URL for Pub/Sub."
-  value       = "${google_cloud_run_v2_service.backend.uri}/apps/${var.agent_name}/trigger/pubsub"
 }
 
 output "alert_policy" {

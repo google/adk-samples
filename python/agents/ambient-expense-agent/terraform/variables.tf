@@ -18,32 +18,27 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "GCP region for Cloud Run and related resources."
+  description = "GCP region for Agent Runtime, Cloud Run, and related resources."
   type        = string
   default     = "us-east1"
 }
 
-variable "backend_service_name" {
-  description = "Name of the backend Cloud Run service (ADK agent)."
+variable "project_name" {
+  description = "Project name used as Agent Runtime display_name and base for resource naming. Must match agents-cli-manifest.yaml name."
   type        = string
   default     = "ambient-expense-agent"
+}
+
+variable "agent_name" {
+  description = "ADK agent directory name (the Python package inside the project)."
+  type        = string
+  default     = "expense_agent"
 }
 
 variable "frontend_service_name" {
   description = "Name of the frontend Cloud Run service (approval UI)."
   type        = string
   default     = "expense-approval-ui"
-}
-
-variable "agent_name" {
-  description = "ADK agent name (matches the agent directory name)."
-  type        = string
-  default     = "expense_agent"
-}
-
-variable "backend_image" {
-  description = "Container image URI for the backend Cloud Run service."
-  type        = string
 }
 
 variable "frontend_image" {
