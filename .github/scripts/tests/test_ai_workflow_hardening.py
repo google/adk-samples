@@ -11,12 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Pin the security properties of the two agy-driven workflows.
+"""Pin the security properties of the agy-driven workflows.
 
 These workflows run a model over input an anonymous contributor wrote — a
 fork PR's diff, an issue body — on a runner that holds a Google Cloud
 credential and, in one job, a token that can write to the repository. What
-keeps that safe is a handful of small facts spread across two YAML files:
+keeps that safe is a handful of small facts spread across these YAML files:
 an empty tool allowlist, a job that cannot write, a job that cannot reach
 the cloud.
 
@@ -42,9 +42,10 @@ WORKFLOWS = Path(__file__).resolve().parents[3] / ".github" / "workflows"
 
 PR_REVIEW = WORKFLOWS / "_ai-pr-review-core.yml"
 ISSUE_TRIAGE = WORKFLOWS / "_ai-issue-triage-core.yml"
+ISSUE_RESPONSE = WORKFLOWS / "_ai-issue-response-core.yml"
 
-# Both workflows that hand an untrusted string to an agy agent.
-AGENT_WORKFLOWS = [PR_REVIEW, ISSUE_TRIAGE]
+# All workflows that hand an untrusted string to an agy agent.
+AGENT_WORKFLOWS = [PR_REVIEW, ISSUE_TRIAGE, ISSUE_RESPONSE]
 
 
 def _load(path: Path) -> dict:
@@ -411,7 +412,7 @@ def test_no_job_asks_for_more_than_every_caller_grants():
                     (f"{path.name}:{job_name}", _effective(doc, job))
                 )
 
-    for callee_name in (PR_REVIEW.name, ISSUE_TRIAGE.name):
+    for callee_name in (PR_REVIEW.name, ISSUE_TRIAGE.name, ISSUE_RESPONSE.name):
         assert callers.get(callee_name), f"no caller found for {callee_name}"
         callee = _load(WORKFLOWS / callee_name)
 
