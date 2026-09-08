@@ -508,3 +508,98 @@ def test_the_diff_is_marked_untrusted_in_the_prompt():
         line for line in script.splitlines() if "Complete unified diff" in line
     )
     assert "UNTRUSTED" in diff_header
+
+
+# --------------------------------------------------------------------------
+# The lane concurrency groups
+#
+# `pull_request_target` and `issue_comment` resolve the PR number to the same
+# value, so the four lanes have to push them apart by hand or every comment on
+# a PR cancels the review that PR's own opening started (#2596, #2577, #2582).
+# GitHub evaluates the group when a run is CREATED, so the job-level `if:`
+# cannot undo it: by the time a comment run skips itself, it has already
+# evicted the real review.
+#
+# What separates them is a trailing segment that must be the exact negation of
+# the `issue_comment` branch of the job's `if:`. Get that wrong in the lax
+# direction — test the `@ai-review` mention but not the association — and any
+# user can put a comment run into the shared group and cancel all four reviews
+# on any open PR at will. Between the `if:` and the group there are eight
+# copies of the gate across the four lanes, and nothing else in CI would
+# notice them drifting apart.
+# --------------------------------------------------------------------------
+
+LANES = sorted(WORKFLOWS.glob("ai-pr-review-*.yml"))
+
+# The operands of the `issue_comment` branch of each lane's `if:`. Written as
+# the substrings that carry the meaning, so reformatting the expression does
+# not trip the test but dropping a check does.
+INVOKE_OPERANDS = (
+    "github.event.issue.pull_request",
+    "contains(github.event.comment.body, '@ai-review')",
+    "github.event.comment.author_association",
+)
+
+
+def _squash(text: str) -> str:
+    return " ".join(str(text).split())
+
+
+def test_the_lane_files_were_all_found():
+    """A glob that matches nothing turns every test below into a pass."""
+    assert len(LANES) == 4, (
+        f"expected 4 review lanes, found {[p.name for p in LANES]}"
+    )
+
+
+@pytest.mark.parametrize("path", LANES, ids=lambda p: p.name)
+def test_a_comment_run_that_cannot_review_cannot_cancel_one(path):
+    """The group's gate must match the job's, operand for operand.
+
+    The failure this prevents is not a broken workflow — it is a working one
+    that an outsider can switch off. A gate testing only for `@ai-review`
+    leaves the association check out, so a comment from anyone at all shares
+    the group with the in-flight review, cancels it, and is then skipped.
+    """
+    workflow = _load(path)
+    group = _squash(workflow["concurrency"]["group"])
+    condition = _squash(workflow["jobs"]["trigger"]["if"])
+
+    for operand in INVOKE_OPERANDS:
+        assert operand in condition, (
+            f"{path.name}: the job's `if:` no longer checks {operand!r}; if the "
+            "invoke gate moved, move the concurrency gate with it"
+        )
+        assert operand in group, (
+            f"{path.name}: the concurrency group does not check {operand!r} but "
+            "the job's `if:` does. A comment failing only that check would land "
+            "in the shared group and cancel the running review."
+        )
+
+
+@pytest.mark.parametrize("path", LANES, ids=lambda p: p.name)
+def test_a_non_reviewing_comment_run_is_keyed_to_itself(path):
+    """`github.run_id`, negated, and only for `issue_comment`.
+
+    Without the negation the gate is inverted and real invokes get the unique
+    key while bot comments keep the shared one — the original bug, silently.
+    """
+    group = _squash(_load(path)["concurrency"]["group"])
+    assert "github.run_id" in group, (
+        "nothing gives a comment run a key of its own"
+    )
+    assert "github.event_name == 'issue_comment'" in group, (
+        "the unique key is not scoped to comments, so a pull_request_target run "
+        "could get one and stop superseding its own earlier run"
+    )
+    assert "&& !(" in group, "the invoke gate is not negated"
+
+
+@pytest.mark.parametrize("path", LANES, ids=lambda p: p.name)
+def test_a_push_still_supersedes_the_review_it_replaces(path):
+    """The PR-number key survives, and in-progress runs are still cancelled."""
+    concurrency = _load(path)["concurrency"]
+    group = _squash(concurrency["group"])
+    assert "github.event.pull_request.number" in group
+    assert "github.event.issue.number" in group
+    assert concurrency["cancel-in-progress"] is True
