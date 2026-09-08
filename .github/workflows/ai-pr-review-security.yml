@@ -45,8 +45,26 @@ on: # zizmor: ignore[dangerous-triggers]
         default: true
         type: 'boolean'
 
+# The trailing segment exists because `issue_comment` and
+# `pull_request_target` resolve the PR number to the SAME value, and so
+# without it produce the SAME group — which means ANY comment on a PR
+# cancels the review that the PR's own opening started. GitHub applies
+# `cancel-in-progress` when a run is CREATED, before the job-level `if:`
+# below is evaluated, so a comment run that goes on to skip has already
+# evicted the real one by then.
+#
+# That is not a rare race. `google-cla[bot]` comments on a first-time
+# contributor's PR within ~10 seconds of it opening, well inside the
+# ~90 seconds a review takes: on #2596 all four lanes were cancelled 13
+# seconds in, and three of them stayed that way until someone re-ran
+# them by hand. Same shape on #2577 twice and on #2582.
+#
+# So a comment that is NOT an `@ai-review` invoke gets a group of its
+# own, keyed on its run id, where it can cancel nothing. An invoke keeps
+# the shared group on purpose: re-invoking should supersede a review
+# that is already running.
 concurrency:
-  group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}'
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}-${{ (github.event_name == 'issue_comment' && !contains(github.event.comment.body, '@ai-review')) && github.run_id || '' }}"
   cancel-in-progress: true
 
 permissions:
