@@ -1,0 +1,47 @@
+# ===== Testing =====
+# Invoice PDFs (sensitive client data)
+testing/invoices/
+testing/test_files/
+
+# Test results & comparison reports (generated output)
+testing/results/
+testing/results_adk/
+testing/results_adk_flash/
+testing/results_adk_pro/
+testing/results_*/
+testing/comparison_report.json
+testing/comparison_report.docx
+testing/~$*.docx
+
+# Test scripts (internal tooling, not part of the agent)
+testing/compare.py
+testing/compare_3way.py
+testing/run_comparison.py
+testing/run_flash.py
+testing/run_tests.py
+testing/script.py
+
+# ===== Environment / Secrets =====
+.env
+.env.*
+!.env.example
+invoice_processing/.env
+invoice_processing/.env.*
+!invoice_processing/.env.example
+
+# ===== Agent Output (generated at runtime) =====
+invoice_processing/data/agent_output/
+invoice_processing/data/alf_output/
+invoice_processing/data/investigation_output/
+invoice_processing/data/rule_discovery_cache.json
+
+# ===== Exemplary Data (sample invoices - may contain PII) =====
+invoice_processing/exemplary_data/
+
+# ===== Internal Docs (not for open source) =====
+BITBUCKET_SETUP_GUIDE.md
+
+# ===== Python =====
+__pycache__/
+*.pyc
+.pytest_cache/
