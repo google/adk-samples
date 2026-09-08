@@ -75,12 +75,27 @@ on: # zizmor: ignore[dangerous-triggers]
 # seconds in, and three of them stayed that way until someone re-ran
 # them by hand. Same shape on #2577 twice and on #2582.
 #
-# So a comment that is NOT an `@ai-review` invoke gets a group of its
-# own, keyed on its run id, where it can cancel nothing. An invoke keeps
+# So a comment run that will NOT start a review gets a group of its own,
+# keyed on its run id, where it can cancel nothing. A real invoke keeps
 # the shared group on purpose: re-invoking should supersede a review
-# that is already running.
+# that is already running, as should a synchronize.
+#
+# The condition below MUST stay the exact negation of the `issue_comment`
+# branch of the job's `if:`, all three operands of it. Testing only for
+# `@ai-review` is not a near-enough approximation: the association check
+# is what makes an invoke a maintainer's call, so without it ANY user can
+# put a comment run into the shared group — and cancel all four reviews
+# on any open PR, repeatably, by typing `@ai-review`. That hands an
+# outsider a switch for the Security lane, which is strictly worse than
+# the CLA-bot collision this segment was added to fix.
+#
+# `test_ai_workflow_hardening.py` pins the two conditions together, in
+# all four lanes. Between the `if:` and the group there are eight copies
+# of this gate in the repo, and nothing else would notice them drifting
+# apart.
 concurrency:
-  group: "${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}-${{ (github.event_name == 'issue_comment' && !contains(github.event.comment.body, '@ai-review')) && github.run_id || '' }}"
+  group: >-
+    ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr_number || github.ref }}-${{ (github.event_name == 'issue_comment' && !(github.event.issue.pull_request && contains(github.event.comment.body, '@ai-review') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))) && github.run_id || '' }}
   cancel-in-progress: true
 
 permissions:
