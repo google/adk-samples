@@ -188,11 +188,11 @@ wheels = [
 
 [[package]]
 name = "attenu-guard"
-version = "0.8.0"
+version = "0.10.0"
 source = { registry = "https://pypi.org/simple/" }
-sdist = { url = "https://files.pythonhosted.org/packages/2d/f6/b61a201b3cd891d0f17427b44f8463a6874aec587c253a9367bb345d5f06/attenu_guard-0.8.0.tar.gz", hash = "sha256:1d10945b9971b1914ed914ec7f1eff655b8b28cb33f839db27426cea8a0173ac", size = 1835821, upload-time = "2026-08-29T19:24:36.657Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/99/e3b60e1b6e6dfd422a92e47be44bd80c64f1046786d2dc7152a24cf10c33/attenu_guard-0.10.0.tar.gz", hash = "sha256:86c5f000f605b845bef6760463c39cdaa8a2538bac12078a65d788ba9612d2ba", size = 2038584, upload-time = "2026-08-31T17:57:48.51Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/54/4c/d17fcbc0810d6f68e1aebd37bb5d0632dba7b1e76018d533c25d6260d802/attenu_guard-0.8.0-py3-none-any.whl", hash = "sha256:3c1a72562f5d0bca841c977ba90f29d99a9b1bcb5de62b11ab2ab21830678d49", size = 211588, upload-time = "2026-08-29T19:24:35.001Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/46/f4b3d4461260e1c834c66a1be0cc93fe6617e2ff14291f40d937b1ebf0d8/attenu_guard-0.10.0-py3-none-any.whl", hash = "sha256:9baf811fea37ac943c8cead0a00644ad7b578b8369fe2b194e9a08d81d143829", size = 301028, upload-time = "2026-08-31T17:57:46.784Z" },
 ]
 
 [package.optional-dependencies]
@@ -211,6 +211,7 @@ dependencies = [
     { name = "attenu-guard", extra = ["crypto", "google-adk"] },
     { name = "google-adk" },
     { name = "google-genai" },
+    { name = "pydantic" },
     { name = "python-dotenv" },
 ]
 
@@ -221,9 +222,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "attenu-guard", extras = ["google-adk", "crypto"], specifier = ">=0.8,<0.9" },
+    { name = "attenu-guard", extras = ["google-adk", "crypto"], specifier = ">=0.10,<0.11" },
     { name = "google-adk", specifier = ">=2.7" },
     { name = "google-genai", specifier = ">=1.9.0" },
+    { name = "pydantic", specifier = ">=2" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
 ]
 

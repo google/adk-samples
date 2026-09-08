@@ -14,9 +14,8 @@
 
 """Runnability tests for the recipe."""
 
-from attenu_guard.adapters.google_adk import DelegationGuardPlugin
-
 import pytest
+from attenu_guard.adapters.google_adk import DelegationGuardPlugin
 
 import app.agent
 
@@ -36,7 +35,7 @@ def test_cli_objects_require_model_name(monkeypatch):
     monkeypatch.delenv("MODEL_NAME", raising=False)
     app.agent._cli_singletons.clear()
     with pytest.raises(RuntimeError, match="MODEL_NAME"):
-        app.agent.app
+        _ = app.agent.app
 
 
 def test_agent_runnability() -> None:

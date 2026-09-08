@@ -148,7 +148,9 @@ def __getattr__(name: str) -> Any:
             )
         application, guard, plugin = build_app(model)
         _cli_singletons.update(
-            app=application, root_agent=application.root_agent,
-            root_guard=guard, guard_plugin=plugin,
+            app=application,
+            root_agent=application.root_agent,
+            root_guard=guard,
+            guard_plugin=plugin,
         )
     return _cli_singletons[name]

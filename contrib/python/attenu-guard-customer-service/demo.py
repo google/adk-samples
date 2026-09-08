@@ -262,7 +262,11 @@ def main(argv: list[str] | None = None) -> int:
         # A bare `sys.exit()` carries `code=None`, which Python itself
         # treats as success (exit status 0) — mirror that here so the
         # `ok` check below agrees with process semantics.
-        verify_rc = 0 if exc.code is None else (exc.code if isinstance(exc.code, int) else 1)
+        verify_rc = (
+            0
+            if exc.code is None
+            else (exc.code if isinstance(exc.code, int) else 1)
+        )
 
     graph = evidence.delegation_graph(bundle)
     print(f"    reviewer view: {len(graph['nodes'])} nodes")
