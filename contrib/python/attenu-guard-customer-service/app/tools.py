@@ -41,12 +41,15 @@ def reset() -> None:
     EXECUTED.clear()
 
 
+# One order, one invoice, one amount: the demo refund is for the full invoice.
+INVOICE_TOTAL_CENTS = 48000
+
 _ORDERS = {
     "ORD-8812": {
         "customer": "Ada Ellis",
         "email": "ada@attenu-io.com",
         "invoice_id": "INV-4471",
-        "total_cents": 48000,
+        "total_cents": INVOICE_TOTAL_CENTS,
         "status": "delivered",
     }
 }
@@ -54,7 +57,7 @@ _ORDERS = {
 _INVOICES = {
     "INV-4471": {
         "order_id": "ORD-8812",
-        "total_cents": 48000,
+        "total_cents": INVOICE_TOTAL_CENTS,
         "paid": True,
         "issued": "2026-07-02",
     }

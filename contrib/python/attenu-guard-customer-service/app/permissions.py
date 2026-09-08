@@ -85,12 +85,12 @@ GREEDY_REQUEST = Authority(
 # 3. What each tool call needs.
 # --------------------------------------------------------------------
 TOOLS = {
-    "lookup_order": ToolAuthority("orders.read", lambda a: {"rows": 1}),
-    "get_invoice": ToolAuthority("billing.read", lambda a: {"rows": 1}),
+    "lookup_order": ToolAuthority("orders.read", lambda _: {"rows": 1}),
+    "get_invoice": ToolAuthority("billing.read", lambda _: {"rows": 1}),
     "issue_refund": ToolAuthority(
-        "billing.refund", lambda a: {"egress": "internal"}
+        "billing.refund", lambda _: {"egress": "internal"}
     ),
-    "email_customer": ToolAuthority("mail.send", lambda a: {"egress": "any"}),
+    "email_customer": ToolAuthority("mail.send", lambda _: {"egress": "any"}),
 }
 
 # Every hand-off is itself checked, as `agent.delegate.<target>`, against

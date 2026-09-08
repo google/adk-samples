@@ -103,7 +103,7 @@ def script() -> dict[str, list]:
             _fc(
                 "issue_refund",
                 invoice_id="INV-4471",
-                amount_cents=48000,
+                amount_cents=tools.INVOICE_TOTAL_CENTS,
             ),
             _text("The refund needs human approval."),
         ],
