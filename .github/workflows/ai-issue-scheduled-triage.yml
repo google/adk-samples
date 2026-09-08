@@ -124,7 +124,17 @@ jobs:
       # A whole batch coming back unclassifiable is the signature of a broken
       # run, not of genuinely ambiguous issues — fail loudly rather than
       # report a silent no-op as success.
+      #
+      # ...but only once the batch is big enough for that inference to hold.
+      # This sweep takes up to MAX_BATCH=15 issues, and on a quiet week it
+      # takes one or two, so batch size is not a constant the decision can
+      # ignore. A lone issue the model declines to classify is the intended
+      # answer — the prompt asks for an empty list rather than a guess — not
+      # evidence of breakage. Failing on it made this workflow red every
+      # hour for as long as one such issue stayed open and unlabelled, which
+      # is exactly the state in which a real breakage goes unnoticed.
       fail_when_none_applied: true
+      none_applied_min_batch: 3
       app_id: '${{ vars.APP_ID }}'
     secrets:
       APP_PRIVATE_KEY: '${{ secrets.APP_PRIVATE_KEY }}'

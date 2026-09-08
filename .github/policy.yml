@@ -749,3 +749,103 @@ deployability:
       - contrib/python/financial-advisor
       - core/python/rag-agent-search
       - core/python/rag-vector-search
+
+  # --------------------------------------------------------------------------
+  # PUBLISHING
+  #
+  # Which recipe container images are built and pushed to a public Artifact
+  # Registry. Read by .github/scripts/publish_matrix.py, which validates this
+  # block and turns it into the job matrix for the image build workflow.
+  #
+  # An ALLOWLIST, not a scan. Two reasons it is not derived from "the recipe
+  # has a Dockerfile":
+  #
+  #   1. `docker build` executes every RUN instruction it is handed, and these
+  #      images are published publicly under Google's name. Which Dockerfiles
+  #      earn that is an admin decision recorded here, not a side effect of a
+  #      contributor adding a file. Same reasoning as `run_allowlist` above.
+  #
+  #   2. Most Dockerfiles in the repo are not ready to publish. Several
+  #      re-resolve dependencies at build time rather than installing from a
+  #      committed lockfile, so two builds of one commit can produce different
+  #      images. Listing the conforming ones lets publishing start now instead
+  #      of blocking on every owner at once.
+  #
+  # `manifest.deployable` is deliberately NOT the selector. It means "can be
+  # deployed with one click" for ANY target, Agent Engine included, so it
+  # marks recipes that have no container at all (contrib/python/llm-auditor,
+  # core/python/oauth-user-consent-flow) while missing recipes that do have
+  # one (core/python/cross-session-memory, core/python/genmedia-for-commerce).
+  # Reconciling that field is a separate piece of work.
+  publish:
+    # Cloud Run runs amd64. Building for the target rather than for the
+    # runner keeps an arm64 host from producing an image the target cannot
+    # run — a no-op on x86, and the whole ballgame elsewhere.
+    #
+    # ADDING A SECOND PLATFORM IS NOT A ONE-LINE CHANGE. The classic docker
+    # builder rejects more than one outright, and under buildx a multi-
+    # platform build cannot be loaded into the local daemon — it has to go
+    # straight to a registry with `--push`. So a second entry here obliges
+    # the build workflow to switch to buildx and to give up anything that
+    # needs the image locally, such as probing it before publishing. Change
+    # the workflow first, this list second.
+    platforms:
+      - linux/amd64
+
+    # One entry per published image. A recipe may declare more than one.
+    #
+    #   recipe       Repo-relative recipe directory. Must be under core/ or
+    #                contrib/ and contain a manifest.yaml. That constraint is
+    #                also what keeps the pre-migration python/agents/ and
+    #                java/agents/ trees, and skills/ (out of scope for
+    #                deployability, see above), unpublishable.
+    #
+    #   dockerfile   Path to the Dockerfile, relative to `recipe`.
+    #
+    #   context      Build context, relative to `recipe`. DECLARED, not
+    #                inferred from the Dockerfile's location: several
+    #                Dockerfiles here live in a subdirectory and COPY from the
+    #                recipe root, so `dirname(dockerfile)` is the wrong answer
+    #                often enough that guessing it would be a bug generator.
+    #
+    #   image        Published image name. Becomes part of the public pull
+    #                address, so it is expensive to change once anything
+    #                references it. The convention is the recipe directory's
+    #                basename, plus a qualifier suffix for a recipe's
+    #                secondary images. Uniqueness is ENFORCED rather than
+    #                assumed: two recipes in this repo already share a
+    #                basename (llm-auditor, in Python and Kotlin), so the
+    #                collision is real and would otherwise surface as one
+    #                image silently overwriting another.
+    #
+    #   serves_http  Whether the image serves HTTP. Recorded so a later probe
+    #                step knows what it may poll — not every publishable image
+    #                is a server. The KFP base image under
+    #                multiformat-hybrid-rag has no CMD at all, and probing it
+    #                would report a healthy image as broken.
+    #
+    # Registry coordinates (project, repository, region) are deliberately
+    # absent. They arrive as repository variables at build time, so choosing
+    # or moving the hosting project never means editing this file.
+    images:
+      - recipe: core/python/long-horizon-harness
+        dockerfile: Dockerfile
+        context: .
+        image: long-horizon-harness
+        serves_http: true
+
+      # The sandbox the harness runs agent-authored code inside. Published
+      # because the recipe cannot be used without it: its quickstart makes
+      # every user build and push this image into their own project by hand
+      # before anything works (docs/quickstart.md, step 3 of 4).
+      - recipe: core/python/long-horizon-harness
+        dockerfile: horizon/sandbox/runtime/Dockerfile
+        context: horizon/sandbox/runtime
+        image: long-horizon-harness-sandbox-runtime
+        serves_http: true
+
+      - recipe: contrib/python/multiformat-hybrid-rag
+        dockerfile: Dockerfile
+        context: .
+        image: multiformat-hybrid-rag
+        serves_http: true
