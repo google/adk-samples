@@ -327,6 +327,141 @@ def test_one_bad_finding_does_not_take_the_good_ones_with_it():
 
 
 # --------------------------------------------------------------------------
+# implausible_body — the shape limits on what reaches a public PR
+#
+# The threat these answer is b/555419958: a body is model text derived from a
+# diff a fork author wrote, and it is posted verbatim through the API, where
+# log masking does not reach. The limits are not the boundary — the empty agy
+# tool allowlist in the workflow is — so what these tests pin is the
+# calibration, which is the part that rots. Both directions matter equally:
+# too loose and the channel carries a credential, too tight and it silently
+# drops real reviews.
+# --------------------------------------------------------------------------
+
+# The longest path in this repository at the time the cap was set. Quoting a
+# path is what a legitimate finding does, so this is the shape
+# MAX_UNBROKEN_RUN has to keep accepting. If a longer path ever lands, this
+# fails here rather than by dropping a contributor's review comment.
+LONGEST_REPO_PATH = (
+    "java/agents/time-series-forecasting/src/main/java/com/google/adk/"
+    "samples/agents/timeseriesforecasting/ForecastingAgent.java"
+)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Off by one.",
+        "This drops the error instead of raising it; re-raise after logging.",
+        f"`{LONGEST_REPO_PATH}` is imported here but never used.",
+        "See https://github.com/google/adk-samples/blob/main/AGENTS.md — "
+        "gemini-2.5-flash is deprecated in this repo.",
+        # Both caps exactly at their limit, which is where an off-by-one in
+        # either comparison would show up.
+        ("word " * m.MAX_BODY_CHARS)[: m.MAX_BODY_CHARS],
+        "y" * m.MAX_UNBROKEN_RUN,
+    ],
+)
+def test_a_real_review_comment_is_plausible(body):
+    assert m.implausible_body(body) is None
+
+
+def test_the_longest_repo_path_clears_the_run_cap():
+    """Pins the calibration itself, not just its effect."""
+    assert len(LONGEST_REPO_PATH) < m.MAX_UNBROKEN_RUN
+
+
+def test_an_over_long_body_is_implausible():
+    reason = m.implausible_body("x" * (m.MAX_BODY_CHARS + 1))
+    assert reason is not None
+    assert str(m.MAX_BODY_CHARS) in reason
+
+
+def test_an_unbroken_run_past_the_cap_is_implausible():
+    reason = m.implausible_body(
+        "The value is " + "A" * (m.MAX_UNBROKEN_RUN + 1)
+    )
+    assert reason is not None
+    assert "unbroken run" in reason
+
+
+def test_a_credential_shaped_payload_is_implausible():
+    """The concrete thing this exists to refuse.
+
+    Shaped like the ADC file the runner holds: an external_account config
+    whose credential_source embeds the runner's OIDC request token.
+    """
+    payload = json.dumps(
+        {
+            "type": "external_account",
+            "audience": "//iam.googleapis.com/projects/123456789/locations/"
+            "global/workloadIdentityPools/gh-pool/providers/gh-provider",
+            "token_url": "https://sts.googleapis.com/v1/token",
+            "credential_source": {
+                "url": "https://pipelinesghubeus.actions.githubusercontent.com"
+                "/abcdef/_apis/distributedtask/hubs/Actions/plans/0000/jobs"
+                "/idtoken",
+                "headers": {"Authorization": "bearer " + "e" * 400},
+            },
+        }
+    )
+    assert m.implausible_body(payload) is not None
+
+
+def test_an_implausible_body_is_dropped_before_it_can_be_posted():
+    comments, notes, skipped = m.build_comments(
+        [{"path": "x.py", "line": 10, "body": "z" * (m.MAX_BODY_CHARS + 1)}],
+        ANCHORS,
+    )
+    assert (comments, notes) == ([], [])
+    assert len(skipped) == 1
+
+
+def test_the_note_path_is_shape_checked_too():
+    """A note is not posted inline, but it does reach the review body.
+
+    Both are public, so a check covering only inline comments would leave half
+    the channel open — and the note path is the easier half to reach, since it
+    takes any window-verified line rather than only lines the PR adds.
+    """
+    diff = _diff(
+        "--- a/x.py",
+        "+++ b/x.py",
+        "@@ -1,2 +1,3 @@",
+        " def handler(req):",
+        "-    return None",
+        "+    return req",
+    )
+    anchors, text = m.walk_right_side(diff)
+    comments, notes, skipped = m.build_comments(
+        [
+            {
+                "path": "x.py",
+                "line": 1,
+                "body": "A" * (m.MAX_UNBROKEN_RUN + 1),
+                "window": "  1: def handler(req):",
+            }
+        ],
+        anchors,
+        text,
+    )
+    assert (comments, notes) == ([], [])
+    assert len(skipped) == 1
+
+
+def test_one_implausible_body_does_not_take_the_good_ones_with_it():
+    comments, _notes, skipped = m.build_comments(
+        [
+            {"path": "x.py", "line": 10, "body": "good"},
+            {"path": "x.py", "line": 11, "body": "q" * (m.MAX_BODY_CHARS + 1)},
+        ],
+        ANCHORS,
+    )
+    assert [c["line"] for c in comments] == [10]
+    assert len(skipped) == 1
+
+
+# --------------------------------------------------------------------------
 # main() — end to end, as the workflow invokes it
 # --------------------------------------------------------------------------
 
@@ -528,12 +663,16 @@ def test_workflow_invokes_this_script_with_the_flags_it_defines():
         / "workflows"
         / "_ai-pr-review-core.yml"
     )
+    # The `review` job, not `post`: building the payload and posting it are
+    # deliberately different jobs, and this script runs in the one that holds
+    # no write token. If that ever moves back into `post`, this fails — which
+    # is the point, because the split is a security boundary (b/555419958).
     steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"][
-        "review-pr"
+        "review"
     ]["steps"]
-    post = next(s for s in steps if s.get("id") == "post_review")
+    build = next(s for s in steps if s.get("id") == "build_review")
 
-    invocation = post["run"]
+    invocation = build["run"]
     assert "python3 .github/scripts/post_review_comments.py" in invocation
     for flag in ("--result", "--diff", "--label", "--out"):
         assert flag in invocation, f"workflow no longer passes {flag}"

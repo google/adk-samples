@@ -50,9 +50,22 @@ on:
           a multi-issue sweep, where "nothing was classifiable" is the
           signature of a broken run. WRONG for a single issue, where it is
           simply an issue too vague to classify — see the caller notes.
+          Only takes effect for batches of at least `none_applied_min_batch`.
         required: false
         type: 'boolean'
         default: true
+      none_applied_min_batch:
+        description: >-
+          Smallest batch for which `fail_when_none_applied` is allowed to
+          fail the run. "The model classified nothing" is an aggregate
+          signal: across a dozen issues it means the run is broken, but for
+          one or two it is the ordinary case of an issue too vague to label,
+          which the prompt explicitly asks the model to answer with an empty
+          list. Below this floor an all-empty decision is reported as a
+          notice and the issues are left for a human.
+        required: false
+        type: 'number'
+        default: 3
     secrets:
       APP_PRIVATE_KEY:
         required: false
@@ -140,11 +153,25 @@ jobs:
           curl -fsSL https://antigravity.google/cli/install.sh | bash
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
-      # The agent needs NO tools: everything it must see is inlined into the
-      # prompt, and it returns a decision rather than performing an action.
-      # `echo` and `cat` are harmless absorbers for stray improvisation,
-      # which in headless mode would otherwise be auto-denied and truncate
-      # the response.
+      # SECURITY: the allowlist is EMPTY, and it stays that way. The agent
+      # needs no tool — everything it must see is inlined into the prompt, and
+      # it returns a decision rather than performing an action — while its
+      # input is issue titles and bodies, which anyone on the internet can
+      # write.
+      #
+      # `command(cat)` used to be here, described as a harmless absorber for
+      # stray improvisation. It was not harmless: $GOOGLE_APPLICATION_CREDENTIALS
+      # is an absolute path outside the workspace, and the file at it embeds
+      # ACTIONS_ID_TOKEN_REQUEST_TOKEN, so one `cat` yields enough to
+      # impersonate the service account. This workflow gives a compromised
+      # agent no way to publish that — the response is parsed for label names
+      # and everything else is discarded — but the sibling PR reviewer, which
+      # posts model text to a public pull request, did. See b/555419958, filed
+      # against that one. The tool grant is the part both shared, so it goes
+      # from both.
+      #
+      # The improvisation this was absorbing fails loudly rather than
+      # silently: an unparseable decision is caught below and fails the job.
       #
       # Deliberately absent: `command(gh)` — see the DESIGN note at the top.
       - name: 'Configure agy (tool permissions)'
@@ -157,10 +184,7 @@ jobs:
           {
             "enableTelemetry": false,
             "permissions": {
-              "allow": [
-                "command(echo)",
-                "command(cat)"
-              ]
+              "allow": []
             }
           }
           SETTINGS_EOF
@@ -254,7 +278,21 @@ jobs:
           AGY_EXIT=$?
           set -e
 
-          echo "--- agy stdout ---"; cat agy_result.json || true
+          # SECURITY: print the envelope, never the response. The response is
+          # model text derived from issue bodies, which are untrusted, and a
+          # workflow log on a public repository is world-readable. Log masking
+          # is not a backstop here: it covers registered secrets, and the
+          # material worth exfiltrating from this runner — the contents of
+          # $GOOGLE_APPLICATION_CREDENTIALS — is not one. The empty allowlist
+          # above is what makes reaching it hard; not printing whatever came
+          # back is what keeps the log from being a way out. See b/555419958.
+          #
+          # The response is still available where it is needed: the failure
+          # branches below quote agy's own error, and the decision is parsed
+          # and validated a few lines down.
+          echo "--- agy envelope ---"
+          jq -r '{status, error} | tostring' agy_result.json 2>/dev/null \
+            || echo 'agy_result.json is not JSON'
           echo "--- agy stderr ---"; cat agy_stderr.log || true
           echo "------------------"
 
@@ -268,8 +306,11 @@ jobs:
           DECISION="$(jq -r '.response // ""' agy_result.json \
             | sed -e 's/^[[:space:]]*```json[[:space:]]*$//' -e 's/^[[:space:]]*```[[:space:]]*$//')"
 
+          # The raw response is deliberately NOT echoed here — see the envelope
+          # note above. Its shape is enough to tell a truncated reply from a
+          # fenced one without putting untrusted model text in a public log.
           if ! echo "${DECISION}" | jq -e 'has("issues")' >/dev/null 2>&1; then
-            echo "::error::agy returned no parseable decision. Raw response above."
+            echo "::error::agy returned no parseable decision (${#DECISION} chars, status=${STATUS})."
             exit 1
           fi
 
@@ -289,6 +330,7 @@ jobs:
           ISSUES_TO_TRIAGE: '${{ inputs.issues }}'
           DECISION: '${{ steps.decide.outputs.decision }}'
           FAIL_WHEN_NONE_APPLIED: '${{ inputs.fail_when_none_applied }}'
+          NONE_APPLIED_MIN_BATCH: '${{ inputs.none_applied_min_batch }}'
         run: |-
           set -euo pipefail
 
@@ -338,12 +380,24 @@ jobs:
 
           BATCH_SIZE="$(echo "${ISSUES_TO_TRIAGE}" | jq 'length')"
           if [[ "${APPLIED}" -eq 0 && "${BATCH_SIZE}" -gt 0 ]]; then
-            if [[ "${FAIL_WHEN_NONE_APPLIED}" == 'true' ]]; then
-              # A whole batch coming back unclassifiable is the signature of
-              # a broken run (a denied tool call, a truncated response)
-              # rather than a batch that genuinely defied classification.
-              echo "::error::agy returned a decision but not one of the ${BATCH_SIZE} issues could be labelled."
-              exit 1
+            # "Nothing was classifiable" only means "the run is broken" in
+            # aggregate. A genuinely broken run is already caught upstream —
+            # a non-zero agy exit, a status other than SUCCESS, or a
+            # response with no parseable decision all fail the Decide step.
+            # What reaches here is a well-formed decision that happened to
+            # label nothing, and for a small batch that is the ordinary
+            # case: the prompt explicitly instructs the model to return an
+            # empty list rather than guess, so a single vague issue produces
+            # exactly this. Failing on it turned an intended outcome into a
+            # red run every hour, for as long as that issue stayed open.
+            if [[ "${BATCH_SIZE}" -ge "${NONE_APPLIED_MIN_BATCH}" ]]; then
+              # Big enough for the aggregate signal to mean something.
+              if [[ "${FAIL_WHEN_NONE_APPLIED}" == 'true' ]]; then
+                echo "::error::agy returned a decision but not one of the ${BATCH_SIZE} issues could be labelled."
+                exit 1
+              fi
+              echo "::warning::None of the ${BATCH_SIZE} issues in this batch could be labelled; leaving them for human triage."
+            else
+              echo "::notice::No applicable labels were identified for the ${BATCH_SIZE} issue(s) in this batch; leaving them for human triage."
             fi
-            echo "::warning::No applicable labels were identified; leaving the issue(s) for human triage."
           fi
