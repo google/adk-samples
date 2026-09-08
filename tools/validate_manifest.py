@@ -31,6 +31,7 @@ Exit codes:
 import argparse
 import difflib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -55,6 +56,21 @@ MANIFEST_FILENAME = "manifest.yaml"
 # safe today and lets the validation tooling pick up skills the moment they
 # land without another code change.
 RECIPE_ROOTS = ["core", "contrib", "skills"]
+
+# Directories that are ignored during file searches in recipe subtrees.
+SKIP_DIRS = {
+    ".venv",
+    "node_modules",
+    ".gradle",
+    ".git",
+    "__pycache__",
+    ".tox",
+    ".mypy_cache",
+    "dist",
+    "build",
+    ".pytest_cache",
+    ".ruff_cache",
+}
 
 OWNERSHIP_TEAM_PLACEHOLDER = "TODO: Replace with your team name"
 OWNERSHIP_POC_PLACEHOLDER = "TODO: Replace with your GitHub user ID"
@@ -129,6 +145,29 @@ def is_recipe_dir(path: Path) -> bool:
     if all(p.is_dir() and p.name in LANGUAGE_NAMESPACE_DIRS for p in children):
         return False
     return True
+
+
+def find_dockerfiles(recipe_dir: Path) -> list[Path]:
+    """Return all Dockerfile paths found in recipe_dir, excluding ignored directories.
+
+    Matches files named 'Dockerfile', 'Dockerfile.<ext>', '<name>.Dockerfile', or 'Containerfile'.
+    """
+    dockerfiles: list[Path] = []
+    if not recipe_dir.is_dir():
+        return dockerfiles
+    for dirpath, dirnames, filenames in os.walk(recipe_dir):
+        dirnames[:] = [
+            d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS
+        ]
+        for fname in filenames:
+            if (
+                fname == "Dockerfile"
+                or fname.startswith("Dockerfile.")
+                or fname.endswith(".Dockerfile")
+                or fname == "Containerfile"
+            ):
+                dockerfiles.append(Path(dirpath) / fname)
+    return sorted(dockerfiles)
 
 
 def load_schema() -> dict:
@@ -466,6 +505,51 @@ def validate_manifest(manifest_path: Path, schema: dict) -> list[Diagnostic]:
                     how=(
                         "Replace it with one or two sentences saying what "
                         "the recipe demonstrates and what it is good for."
+                    ),
+                    doc=Doc.MANIFEST,
+                    file=file,
+                )
+            )
+
+        # Check deployable key matches Dockerfile existence
+        dockerfiles = find_dockerfiles(manifest_path.parent)
+        has_dockerfile = bool(dockerfiles)
+        is_deployable = bool(data.get("deployable", False))
+
+        if has_dockerfile and not is_deployable:
+            first_rel = repo_relative(dockerfiles[0])
+            diagnostics.append(
+                Diagnostic(
+                    check="manifest-deployable",
+                    what=(
+                        f"Recipe contains a Dockerfile ({first_rel}), "
+                        f"but {MANIFEST_FILENAME} does not set `deployable: true`."
+                    ),
+                    why=(
+                        "A recipe must set `deployable: true` if and only if it "
+                        "contains at least one Dockerfile."
+                    ),
+                    how=f"Set `deployable: true` in {file}.",
+                    doc=Doc.MANIFEST,
+                    file=file,
+                )
+            )
+        elif not has_dockerfile and is_deployable:
+            recipe_rel = repo_relative(manifest_path.parent)
+            diagnostics.append(
+                Diagnostic(
+                    check="manifest-deployable",
+                    what=(
+                        f"{MANIFEST_FILENAME} declares `deployable: true`, "
+                        f"but no Dockerfile was found in '{recipe_rel}'."
+                    ),
+                    why=(
+                        "A recipe must set `deployable: true` if and only if it "
+                        "contains at least one Dockerfile."
+                    ),
+                    how=(
+                        f"Remove `deployable: true` (or set `deployable: false`) in {file}, "
+                        f"or add a Dockerfile if this recipe is deployable."
                     ),
                     doc=Doc.MANIFEST,
                     file=file,

@@ -595,3 +595,112 @@ def test_report_inactive_annotates_without_failing(
     # The notice has to say what to do about it, not just that it is true.
     assert "status: active" in out
     assert Doc.RECIPE_INACTIVE.value in out
+
+
+# ---------------------------------------------------------------------------
+# find_dockerfiles / deployable matching
+# ---------------------------------------------------------------------------
+
+
+def test_find_dockerfiles_empty_when_no_dockerfile(tmp_path):
+    d = tmp_path / "recipe"
+    d.mkdir(parents=True)
+    _write(d / "agent.py", "# code")
+    assert m.find_dockerfiles(d) == []
+
+
+def test_find_dockerfiles_finds_root_and_nested_dockerfiles(tmp_path):
+    d = tmp_path / "recipe"
+    d.mkdir(parents=True)
+    df1 = _write(d / "Dockerfile", "FROM python:3.11-slim\n")
+    df2 = _write(d / "frontend" / "Dockerfile", "FROM node:20\n")
+    df3 = _write(d / "nested" / "server.Dockerfile", "FROM python:3.11-slim\n")
+    df4 = _write(d / "Containerfile", "FROM python:3.11-slim\n")
+    found = m.find_dockerfiles(d)
+    assert found == sorted([df1, df2, df3, df4])
+
+
+def test_find_dockerfiles_ignores_skip_dirs(tmp_path):
+    d = tmp_path / "recipe"
+    d.mkdir(parents=True)
+    _write(d / ".venv" / "Dockerfile", "FROM ignored\n")
+    _write(d / "node_modules" / "pkg" / "Dockerfile", "FROM ignored\n")
+    _write(d / ".git" / "Dockerfile", "FROM ignored\n")
+    _write(d / "__pycache__" / "Dockerfile", "FROM ignored\n")
+    assert m.find_dockerfiles(d) == []
+
+
+def test_validate_manifest_with_dockerfile_and_deployable_true_passes(tmp_path):
+    schema = m.load_schema()
+    content = VALID_MANIFEST + "deployable: true\n"
+    _write(tmp_path / "Dockerfile", "FROM python:3.11-slim\n")
+    manifest = _write(tmp_path / "manifest.yaml", content)
+    assert m.validate_manifest(manifest, schema) == []
+
+
+def test_validate_manifest_with_dockerfile_and_deployable_missing_fails(
+    tmp_path,
+):
+    schema = m.load_schema()
+    _write(tmp_path / "Dockerfile", "FROM python:3.11-slim\n")
+    manifest = _write(tmp_path / "manifest.yaml", VALID_MANIFEST)
+    diagnostics = m.validate_manifest(manifest, schema)
+    blob = _blob(diagnostics)
+    assert "manifest-deployable" in blob
+    assert "Recipe contains a Dockerfile" in blob
+    assert "deployable: true" in blob
+
+
+def test_validate_manifest_with_dockerfile_and_deployable_false_fails(tmp_path):
+    schema = m.load_schema()
+    content = VALID_MANIFEST + "deployable: false\n"
+    _write(tmp_path / "Dockerfile", "FROM python:3.11-slim\n")
+    manifest = _write(tmp_path / "manifest.yaml", content)
+    diagnostics = m.validate_manifest(manifest, schema)
+    blob = _blob(diagnostics)
+    assert "manifest-deployable" in blob
+    assert "Recipe contains a Dockerfile" in blob
+    assert "deployable: true" in blob
+
+
+def test_validate_manifest_without_dockerfile_and_deployable_true_fails(
+    tmp_path,
+):
+    schema = m.load_schema()
+    content = VALID_MANIFEST + "deployable: true\n"
+    manifest = _write(tmp_path / "manifest.yaml", content)
+    diagnostics = m.validate_manifest(manifest, schema)
+    blob = _blob(diagnostics)
+    assert "manifest-deployable" in blob
+    assert "declares `deployable: true`" in blob
+    assert "no Dockerfile was found" in blob
+
+
+def test_validate_manifest_without_dockerfile_and_deployable_false_passes(
+    tmp_path,
+):
+    schema = m.load_schema()
+    content = VALID_MANIFEST + "deployable: false\n"
+    manifest = _write(tmp_path / "manifest.yaml", content)
+    assert m.validate_manifest(manifest, schema) == []
+
+
+def test_validate_manifest_without_dockerfile_and_deployable_omitted_passes(
+    tmp_path,
+):
+    schema = m.load_schema()
+    manifest = _write(tmp_path / "manifest.yaml", VALID_MANIFEST)
+    assert m.validate_manifest(manifest, schema) == []
+
+
+def test_validate_manifest_nested_dockerfile_requires_deployable_true(tmp_path):
+    schema = m.load_schema()
+    _write(
+        tmp_path / "assets" / "export-template" / "Dockerfile", "FROM node:20\n"
+    )
+    manifest = _write(tmp_path / "manifest.yaml", VALID_MANIFEST)
+    diagnostics = m.validate_manifest(manifest, schema)
+    blob = _blob(diagnostics)
+    assert "manifest-deployable" in blob
+    assert "Recipe contains a Dockerfile" in blob
+    assert "assets/export-template/Dockerfile" in blob

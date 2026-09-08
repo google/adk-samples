@@ -75,7 +75,7 @@ Two of those are not just metadata — CI acts on them:
 
 | Field | Purpose |
 |---|---|
-| `deployable` | `true` if the recipe supports one-click deployment. Defaults to `false`. |
+| `deployable` | `true` if and only if the recipe contains at least one Dockerfile. Defaults to `false`. |
 | `license` | SPDX license identifier (e.g. `"Apache-2.0"`, `"MIT"`). Set only if explicitly declared. |
 | `ownership.contributors` | Additional GitHub user IDs |
 | `tags` | Classification strings |
