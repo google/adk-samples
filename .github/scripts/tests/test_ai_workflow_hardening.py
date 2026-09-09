@@ -11,12 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Pin the security properties of the two agy-driven workflows.
+"""Pin the security properties of the agy-driven workflows.
 
 These workflows run a model over input an anonymous contributor wrote — a
 fork PR's diff, an issue body — on a runner that holds a Google Cloud
 credential and, in one job, a token that can write to the repository. What
-keeps that safe is a handful of small facts spread across two YAML files:
+keeps that safe is a handful of small facts spread across these YAML files:
 an empty tool allowlist, a job that cannot write, a job that cannot reach
 the cloud.
 
@@ -42,9 +42,10 @@ WORKFLOWS = Path(__file__).resolve().parents[3] / ".github" / "workflows"
 
 PR_REVIEW = WORKFLOWS / "_ai-pr-review-core.yml"
 ISSUE_TRIAGE = WORKFLOWS / "_ai-issue-triage-core.yml"
+ISSUE_RESPONSE = WORKFLOWS / "_ai-issue-response-core.yml"
 
-# Both workflows that hand an untrusted string to an agy agent.
-AGENT_WORKFLOWS = [PR_REVIEW, ISSUE_TRIAGE]
+# All workflows that hand an untrusted string to an agy agent.
+AGENT_WORKFLOWS = [PR_REVIEW, ISSUE_TRIAGE, ISSUE_RESPONSE]
 
 
 def _load(path: Path) -> dict:
@@ -183,36 +184,39 @@ def test_the_job_that_can_write_holds_no_cloud_credential():
     assert "agy " not in _run_blocks(PR_REVIEW, "post")
 
 
-def test_repo_code_run_after_the_agent_is_integrity_checked():
-    """The one step that still executes the checkout in the agent's own job.
+@pytest.mark.parametrize(
+    ("path", "job", "step_id", "script_name"),
+    [
+        (PR_REVIEW, "review", "build_review", "post_review_comments.py"),
+        (ISSUE_RESPONSE, "respond", "process", "process_issue_response.py"),
+    ],
+    ids=lambda item: getattr(item, "name", str(item)),
+)
+def test_repo_code_run_after_the_agent_is_integrity_checked(
+    path, job, step_id, script_name
+):
+    """The steps that execute code from checkout in the agent's own job.
 
     Splitting the posting job off removed the report's "write to a file the
-    pipeline executes seconds later" vector from `post`, but `build_review`
-    runs `.github/scripts/post_review_comments.py` in the SAME job as the
-    agent and after it. With an empty tool allowlist nothing can write there;
+    pipeline executes seconds later" vector from `post`, but steps running
+    repository scripts in the SAME job as the agent and after it must check
+    tree integrity. With an empty tool allowlist nothing can write there;
     this pins the check that catches it if something can.
 
     `--porcelain` and not `git diff`: python puts a script's directory on
     sys.path, so a NEW untracked `.github/scripts/json.py` shadows the stdlib
     without modifying any tracked file, and `git diff` would not see it.
     """
-    # Comments stripped first: the block above the gate explains itself by
-    # naming post_review_comments.py, and partitioning on the raw text would
-    # split at the prose rather than at the invocation.
     script = _code(
-        next(
-            s["run"]
-            for s in _steps(PR_REVIEW, "review")
-            if s.get("id") == "build_review"
-        )
+        next(s["run"] for s in _steps(path, job) if s.get("id") == step_id)
     )
-    gate, _, invocation = script.partition("post_review_comments.py")
+    gate, _, invocation = script.partition(script_name)
 
     assert "git status --porcelain -- .github/scripts" in gate, (
         "the integrity check must run BEFORE the script it protects"
     )
     assert "exit 1" in gate
-    assert invocation, "build_review no longer invokes the script"
+    assert invocation, f"{step_id} no longer invokes {script_name}"
 
 
 def test_the_job_that_can_write_takes_no_checkout():
@@ -411,7 +415,7 @@ def test_no_job_asks_for_more_than_every_caller_grants():
                     (f"{path.name}:{job_name}", _effective(doc, job))
                 )
 
-    for callee_name in (PR_REVIEW.name, ISSUE_TRIAGE.name):
+    for callee_name in (PR_REVIEW.name, ISSUE_TRIAGE.name, ISSUE_RESPONSE.name):
         assert callers.get(callee_name), f"no caller found for {callee_name}"
         callee = _load(WORKFLOWS / callee_name)
 
@@ -437,7 +441,15 @@ def test_no_job_asks_for_more_than_every_caller_grants():
 # --------------------------------------------------------------------------
 
 
-def test_the_response_is_scanned_against_real_credential_material():
+@pytest.mark.parametrize(
+    ("path", "job"),
+    [
+        (PR_REVIEW, "review"),
+        (ISSUE_RESPONSE, "respond"),
+    ],
+    ids=lambda item: getattr(item, "name", str(item)),
+)
+def test_the_response_is_scanned_against_real_credential_material(path, job):
     """Not a keyword list, and not the whole ADC file either.
 
     A keyword list is one rewording away from useless. The whole ADC file is
@@ -449,7 +461,7 @@ def test_the_response_is_scanned_against_real_credential_material():
     """
     script = next(
         s["run"]
-        for s in _steps(PR_REVIEW, "review")
+        for s in _steps(path, job)
         if isinstance(s.get("run"), str) and "NEEDLES=" in s["run"]
     )
     assert "ACTIONS_ID_TOKEN_REQUEST_TOKEN" in script
@@ -461,7 +473,15 @@ def test_the_response_is_scanned_against_real_credential_material():
         assert public not in jq_filter, f"{public} is not secret"
 
 
-def test_a_response_carrying_the_credential_fails_the_job():
+@pytest.mark.parametrize(
+    ("path", "job"),
+    [
+        (PR_REVIEW, "review"),
+        (ISSUE_RESPONSE, "respond"),
+    ],
+    ids=lambda item: getattr(item, "name", str(item)),
+)
+def test_a_response_carrying_the_credential_fails_the_job(path, job):
     """The scan must stop the run, not filter and carry on.
 
     If the response contains this runner's credential, the tool allowlist did
@@ -470,7 +490,7 @@ def test_a_response_carrying_the_credential_fails_the_job():
     """
     script = next(
         s["run"]
-        for s in _steps(PR_REVIEW, "review")
+        for s in _steps(path, job)
         if isinstance(s.get("run"), str) and "grep -qFf" in s["run"]
     )
     scan = script.split("grep -qFf", 1)[1]
