@@ -11,12 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Pin the security properties of the two agy-driven workflows.
+"""Pin the security properties of the agy-driven workflows.
 
 These workflows run a model over input an anonymous contributor wrote — a
 fork PR's diff, an issue body — on a runner that holds a Google Cloud
 credential and, in one job, a token that can write to the repository. What
-keeps that safe is a handful of small facts spread across two YAML files:
+keeps that safe is a handful of small facts spread across these YAML files:
 an empty tool allowlist, a job that cannot write, a job that cannot reach
 the cloud.
 
@@ -42,9 +42,10 @@ WORKFLOWS = Path(__file__).resolve().parents[3] / ".github" / "workflows"
 
 PR_REVIEW = WORKFLOWS / "_ai-pr-review-core.yml"
 ISSUE_TRIAGE = WORKFLOWS / "_ai-issue-triage-core.yml"
+ISSUE_RESPONSE = WORKFLOWS / "_ai-issue-response-core.yml"
 
-# Both workflows that hand an untrusted string to an agy agent.
-AGENT_WORKFLOWS = [PR_REVIEW, ISSUE_TRIAGE]
+# All workflows that hand an untrusted string to an agy agent.
+AGENT_WORKFLOWS = [PR_REVIEW, ISSUE_TRIAGE, ISSUE_RESPONSE]
 
 
 def _load(path: Path) -> dict:
@@ -183,36 +184,39 @@ def test_the_job_that_can_write_holds_no_cloud_credential():
     assert "agy " not in _run_blocks(PR_REVIEW, "post")
 
 
-def test_repo_code_run_after_the_agent_is_integrity_checked():
-    """The one step that still executes the checkout in the agent's own job.
+@pytest.mark.parametrize(
+    ("path", "job", "step_id", "script_name"),
+    [
+        (PR_REVIEW, "review", "build_review", "post_review_comments.py"),
+        (ISSUE_RESPONSE, "respond", "process", "process_issue_response.py"),
+    ],
+    ids=lambda item: getattr(item, "name", str(item)),
+)
+def test_repo_code_run_after_the_agent_is_integrity_checked(
+    path, job, step_id, script_name
+):
+    """The steps that execute code from checkout in the agent's own job.
 
     Splitting the posting job off removed the report's "write to a file the
-    pipeline executes seconds later" vector from `post`, but `build_review`
-    runs `.github/scripts/post_review_comments.py` in the SAME job as the
-    agent and after it. With an empty tool allowlist nothing can write there;
+    pipeline executes seconds later" vector from `post`, but steps running
+    repository scripts in the SAME job as the agent and after it must check
+    tree integrity. With an empty tool allowlist nothing can write there;
     this pins the check that catches it if something can.
 
     `--porcelain` and not `git diff`: python puts a script's directory on
     sys.path, so a NEW untracked `.github/scripts/json.py` shadows the stdlib
     without modifying any tracked file, and `git diff` would not see it.
     """
-    # Comments stripped first: the block above the gate explains itself by
-    # naming post_review_comments.py, and partitioning on the raw text would
-    # split at the prose rather than at the invocation.
     script = _code(
-        next(
-            s["run"]
-            for s in _steps(PR_REVIEW, "review")
-            if s.get("id") == "build_review"
-        )
+        next(s["run"] for s in _steps(path, job) if s.get("id") == step_id)
     )
-    gate, _, invocation = script.partition("post_review_comments.py")
+    gate, _, invocation = script.partition(script_name)
 
     assert "git status --porcelain -- .github/scripts" in gate, (
         "the integrity check must run BEFORE the script it protects"
     )
     assert "exit 1" in gate
-    assert invocation, "build_review no longer invokes the script"
+    assert invocation, f"{step_id} no longer invokes {script_name}"
 
 
 def test_the_job_that_can_write_takes_no_checkout():
@@ -411,7 +415,7 @@ def test_no_job_asks_for_more_than_every_caller_grants():
                     (f"{path.name}:{job_name}", _effective(doc, job))
                 )
 
-    for callee_name in (PR_REVIEW.name, ISSUE_TRIAGE.name):
+    for callee_name in (PR_REVIEW.name, ISSUE_TRIAGE.name, ISSUE_RESPONSE.name):
         assert callers.get(callee_name), f"no caller found for {callee_name}"
         callee = _load(WORKFLOWS / callee_name)
 
@@ -437,7 +441,15 @@ def test_no_job_asks_for_more_than_every_caller_grants():
 # --------------------------------------------------------------------------
 
 
-def test_the_response_is_scanned_against_real_credential_material():
+@pytest.mark.parametrize(
+    ("path", "job"),
+    [
+        (PR_REVIEW, "review"),
+        (ISSUE_RESPONSE, "respond"),
+    ],
+    ids=lambda item: getattr(item, "name", str(item)),
+)
+def test_the_response_is_scanned_against_real_credential_material(path, job):
     """Not a keyword list, and not the whole ADC file either.
 
     A keyword list is one rewording away from useless. The whole ADC file is
@@ -449,7 +461,7 @@ def test_the_response_is_scanned_against_real_credential_material():
     """
     script = next(
         s["run"]
-        for s in _steps(PR_REVIEW, "review")
+        for s in _steps(path, job)
         if isinstance(s.get("run"), str) and "NEEDLES=" in s["run"]
     )
     assert "ACTIONS_ID_TOKEN_REQUEST_TOKEN" in script
@@ -461,7 +473,15 @@ def test_the_response_is_scanned_against_real_credential_material():
         assert public not in jq_filter, f"{public} is not secret"
 
 
-def test_a_response_carrying_the_credential_fails_the_job():
+@pytest.mark.parametrize(
+    ("path", "job"),
+    [
+        (PR_REVIEW, "review"),
+        (ISSUE_RESPONSE, "respond"),
+    ],
+    ids=lambda item: getattr(item, "name", str(item)),
+)
+def test_a_response_carrying_the_credential_fails_the_job(path, job):
     """The scan must stop the run, not filter and carry on.
 
     If the response contains this runner's credential, the tool allowlist did
@@ -470,7 +490,7 @@ def test_a_response_carrying_the_credential_fails_the_job():
     """
     script = next(
         s["run"]
-        for s in _steps(PR_REVIEW, "review")
+        for s in _steps(path, job)
         if isinstance(s.get("run"), str) and "grep -qFf" in s["run"]
     )
     scan = script.split("grep -qFf", 1)[1]
@@ -508,3 +528,98 @@ def test_the_diff_is_marked_untrusted_in_the_prompt():
         line for line in script.splitlines() if "Complete unified diff" in line
     )
     assert "UNTRUSTED" in diff_header
+
+
+# --------------------------------------------------------------------------
+# The lane concurrency groups
+#
+# `pull_request_target` and `issue_comment` resolve the PR number to the same
+# value, so the four lanes have to push them apart by hand or every comment on
+# a PR cancels the review that PR's own opening started (#2596, #2577, #2582).
+# GitHub evaluates the group when a run is CREATED, so the job-level `if:`
+# cannot undo it: by the time a comment run skips itself, it has already
+# evicted the real review.
+#
+# What separates them is a trailing segment that must be the exact negation of
+# the `issue_comment` branch of the job's `if:`. Get that wrong in the lax
+# direction — test the `@ai-review` mention but not the association — and any
+# user can put a comment run into the shared group and cancel all four reviews
+# on any open PR at will. Between the `if:` and the group there are eight
+# copies of the gate across the four lanes, and nothing else in CI would
+# notice them drifting apart.
+# --------------------------------------------------------------------------
+
+LANES = sorted(WORKFLOWS.glob("ai-pr-review-*.yml"))
+
+# The operands of the `issue_comment` branch of each lane's `if:`. Written as
+# the substrings that carry the meaning, so reformatting the expression does
+# not trip the test but dropping a check does.
+INVOKE_OPERANDS = (
+    "github.event.issue.pull_request",
+    "contains(github.event.comment.body, '@ai-review')",
+    "github.event.comment.author_association",
+)
+
+
+def _squash(text: str) -> str:
+    return " ".join(str(text).split())
+
+
+def test_the_lane_files_were_all_found():
+    """A glob that matches nothing turns every test below into a pass."""
+    assert len(LANES) == 4, (
+        f"expected 4 review lanes, found {[p.name for p in LANES]}"
+    )
+
+
+@pytest.mark.parametrize("path", LANES, ids=lambda p: p.name)
+def test_a_comment_run_that_cannot_review_cannot_cancel_one(path):
+    """The group's gate must match the job's, operand for operand.
+
+    The failure this prevents is not a broken workflow — it is a working one
+    that an outsider can switch off. A gate testing only for `@ai-review`
+    leaves the association check out, so a comment from anyone at all shares
+    the group with the in-flight review, cancels it, and is then skipped.
+    """
+    workflow = _load(path)
+    group = _squash(workflow["concurrency"]["group"])
+    condition = _squash(workflow["jobs"]["trigger"]["if"])
+
+    for operand in INVOKE_OPERANDS:
+        assert operand in condition, (
+            f"{path.name}: the job's `if:` no longer checks {operand!r}; if the "
+            "invoke gate moved, move the concurrency gate with it"
+        )
+        assert operand in group, (
+            f"{path.name}: the concurrency group does not check {operand!r} but "
+            "the job's `if:` does. A comment failing only that check would land "
+            "in the shared group and cancel the running review."
+        )
+
+
+@pytest.mark.parametrize("path", LANES, ids=lambda p: p.name)
+def test_a_non_reviewing_comment_run_is_keyed_to_itself(path):
+    """`github.run_id`, negated, and only for `issue_comment`.
+
+    Without the negation the gate is inverted and real invokes get the unique
+    key while bot comments keep the shared one — the original bug, silently.
+    """
+    group = _squash(_load(path)["concurrency"]["group"])
+    assert "github.run_id" in group, (
+        "nothing gives a comment run a key of its own"
+    )
+    assert "github.event_name == 'issue_comment'" in group, (
+        "the unique key is not scoped to comments, so a pull_request_target run "
+        "could get one and stop superseding its own earlier run"
+    )
+    assert "&& !(" in group, "the invoke gate is not negated"
+
+
+@pytest.mark.parametrize("path", LANES, ids=lambda p: p.name)
+def test_a_push_still_supersedes_the_review_it_replaces(path):
+    """The PR-number key survives, and in-progress runs are still cancelled."""
+    concurrency = _load(path)["concurrency"]
+    group = _squash(concurrency["group"])
+    assert "github.event.pull_request.number" in group
+    assert "github.event.issue.number" in group
+    assert concurrency["cancel-in-progress"] is True
