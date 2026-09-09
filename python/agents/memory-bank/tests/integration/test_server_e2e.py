@@ -30,9 +30,9 @@ from requests.exceptions import RequestException
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BASE_URL = "http://127.0.0.1:8000/"
-STREAM_URL = BASE_URL + "run_sse"
-FEEDBACK_URL = BASE_URL + "feedback"
+BASE_URL = "http://127.0.0.1:8000"
+STREAM_URL = BASE_URL + "/run_sse"
+FEEDBACK_URL = BASE_URL + "/feedback"
 
 HEADERS = {"Content-Type": "application/json"}
 
