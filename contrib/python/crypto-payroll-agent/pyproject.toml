@@ -10,15 +10,14 @@ authors = [
 license = { text = "Apache-2.0" }
 dependencies = [
     "google-adk>=1.0.0",
-    # Spraay tools merged in adk-python-community#95 (May 2025) but not yet
-    # in a PyPI release. Pinned to an exact commit rather than `main` so the
-    # build is reproducible — tracking a moving branch means two installs a
-    # day apart can ship different tool code. The pinned commit is what
-    # uv.lock resolves and the tests run against; swap it for a version
-    # specifier once a PyPI release carries the Spraay tools.
-    "google-adk-community @ git+https://github.com/google/adk-python-community.git@396da17a9597d8d5f96e7e1aa8c1c396c738d146",
+    # 0.5.0 is the first PyPI release carrying the Spraay tools merged in
+    # adk-python-community#95, and is the version uv.lock resolves and the
+    # tests run against. The floor is a minimum rather than an exact pin so
+    # patch releases still install, but treat 0.5.0 as the tested version.
+    # The `spraay` extra is required, not cosmetic: `web3` is declared there
+    # as an optional dependency, and the batch tools import it at call time.
+    "google-adk-community[spraay]>=0.5.0",
     "google-cloud-aiplatform[adk,agent_engines]>=1.95.0",
-    "web3>=6.0",
     "python-dotenv>=1.0",
 ]
 
@@ -35,9 +34,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["crypto_payroll_agent"]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

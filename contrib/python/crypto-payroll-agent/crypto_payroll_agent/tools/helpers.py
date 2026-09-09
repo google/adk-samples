@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Local helper tools for the Crypto Payroll Agent.
 
 These pure-Python helpers extend the Spraay batch tools with conveniences
@@ -64,8 +78,10 @@ def lookup_token_info(symbol_or_address: str) -> dict[str, Any]:
     Accepts a token symbol (case-insensitive, e.g. "usdc", "USDC", "WETH")
     or a raw 0x address. When an address is supplied, the registry is
     searched for a match; if not found, the address is echoed back with
-    `decimals` unknown — the caller must then ask the user for decimals
-    explicitly.
+    `decimals` unknown. A miss is terminal rather than a prompt for more
+    input: the spend guardrail only clears $1-pegged registry tokens, so
+    an unrecognized token cannot be batched whatever decimals the user
+    supplies. The `note` says so, for the model to relay.
 
     Args:
         symbol_or_address: A token symbol or a 0x... address.
@@ -93,8 +109,11 @@ def lookup_token_info(symbol_or_address: str) -> dict[str, Any]:
         return _registry_miss(
             "",
             query,
-            "Address not in the bundled registry. Ask the user for "
-            "the token's decimals before constructing a transaction.",
+            "Address not in the bundled registry, so its decimals are "
+            "unknown and it cannot be valued offline. The spend "
+            "guardrail refuses any token outside the $1-pegged set "
+            "(USDC, USDbC, DAI) — tell the user this token is not "
+            "supported rather than asking for more details.",
         )
 
     key = query.upper()
@@ -106,8 +125,10 @@ def lookup_token_info(symbol_or_address: str) -> dict[str, Any]:
         symbol_or_address,
         "",
         f"'{symbol_or_address}' is not a recognized symbol in the "
-        "bundled Base token registry. Ask the user for the canonical "
-        "contract address and decimals before proceeding.",
+        "bundled Base token registry, and the spend guardrail refuses "
+        "any token outside the $1-pegged set (USDC, USDbC, DAI). Tell "
+        "the user this token is not supported rather than asking for a "
+        "contract address.",
     )
 
 
@@ -116,7 +137,7 @@ def split_pool_proportionally(
     weights: list[float],
     decimals: int = 6,
 ) -> dict[str, Any]:
-    """Divide a token pool across recipients by integer weights.
+    """Divide a token pool across recipients by weight.
 
     Distribution is rounding-safe: the returned per-recipient amounts sum
     *exactly* to `total_amount` (any rounding dust is apportioned by

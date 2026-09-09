@@ -541,10 +541,9 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "google-adk" },
-    { name = "google-adk-community" },
+    { name = "google-adk-community", extra = ["spraay"] },
     { name = "google-cloud-aiplatform", extra = ["adk", "agent-engines"] },
     { name = "python-dotenv" },
-    { name = "web3" },
 ]
 
 [package.dev-dependencies]
@@ -557,10 +556,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "google-adk", specifier = ">=1.0.0" },
-    { name = "google-adk-community", git = "https://github.com/google/adk-python-community.git?rev=396da17a9597d8d5f96e7e1aa8c1c396c738d146" },
+    { name = "google-adk-community", extras = ["spraay"], specifier = ">=0.5.0" },
     { name = "google-cloud-aiplatform", extras = ["adk", "agent-engines"], specifier = ">=1.95.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "web3", specifier = ">=6.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1088,12 +1086,21 @@ wheels = [
 [[package]]
 name = "google-adk-community"
 version = "0.5.0"
-source = { git = "https://github.com/google/adk-python-community.git?rev=396da17a9597d8d5f96e7e1aa8c1c396c738d146#396da17a9597d8d5f96e7e1aa8c1c396c738d146" }
+source = { registry = "https://pypi.org/simple/" }
 dependencies = [
     { name = "google-adk" },
     { name = "httpx" },
     { name = "orjson" },
     { name = "redis" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/70/c0/63cfc1b697a75733556358655a8c93be2d3c2238c7cc1f7a2d4e09da70d6/google_adk_community-0.5.0.tar.gz", hash = "sha256:d0d364afa815c1b40b2dfdc5e847b81a28600119bacee6c5120790198ab2610f", size = 26691, upload-time = "2026-05-21T17:20:43.9Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8b/b1/025760dacc5c0b719759c8315cc378e368a5704bcce0f15160345505843f/google_adk_community-0.5.0-py3-none-any.whl", hash = "sha256:67f86000bf0d34ee31e5618b1f282228fa2abca761749d0981daf4b82dbd2a93", size = 35730, upload-time = "2026-05-21T17:20:42.873Z" },
+]
+
+[package.optional-dependencies]
+spraay = [
+    { name = "web3" },
 ]
 
 [[package]]

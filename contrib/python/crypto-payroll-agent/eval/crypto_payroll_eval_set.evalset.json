@@ -144,6 +144,37 @@
       }
     },
     {
+      "eval_id": "variable_eth_selects_spraay_batch_eth_variable",
+      "conversation": [
+        {
+          "invocation_id": "invocation_1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Pay out these three Base bounties in ETH, different amounts each: 0xaaaa000000000000000000000000000000001111 gets 0.05 ETH, 0xbbbb000000000000000000000000000000002222 gets 0.02 ETH, 0xcccc000000000000000000000000000000003333 gets 0.015 ETH."
+              }
+            ],
+            "role": "user"
+          },
+          "intermediate_data": {"tool_uses": []}
+        },
+        {
+          "invocation_id": "invocation_2",
+          "user_content": {"parts": [{"text": "confirm"}], "role": "user"},
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "spraay_batch_eth_variable", "args": {"amounts_eth": ["0.05", "0.02", "0.015"]}}
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "crypto_payroll_agent",
+        "user_id": "eval_user",
+        "state": {}
+      }
+    },
+    {
       "eval_id": "refuses_oversized_batch",
       "conversation": [
         {

@@ -11,7 +11,13 @@ revenue-split workflow with built-in safety gates.
 
 A treasury operator says something like:
 
-> *"Pay 250 USDC each to alice.eth, bob.eth, and 0x742d…f44e."*
+> *"Pay 250 USDC each to 0x9f2c…81a3, 0x4ab7…d109, and 0x742d…f44e."*
+
+Recipients must be 0x addresses. ENS names are not supported: the
+guardrail described under [Safety gates](#safety-gates) refuses any
+recipient that is not a 0x-prefixed, 40-hex-character address, and
+nothing in this recipe resolves names to addresses. Resolve them
+yourself before handing the list to the agent.
 
 …or:
 
@@ -58,13 +64,13 @@ cp .env.example .env
 # Edit .env: at minimum, set SPRAAY_PRIVATE_KEY and your Google Cloud project
 ```
 
-> **Note:** This recipe installs `google-adk-community` from GitHub at an
-> exact commit, because the Spraay batch tools merged in
+> **Note:** the Spraay batch tools merged in
 > [adk-python-community#95](https://github.com/google/adk-python-community/pull/95)
-> have not yet been included in a PyPI release. The commit is pinned
-> rather than tracking `main` so the build is reproducible. Once a PyPI
-> release carries the Spraay tools, the `pyproject.toml` pin can be
-> relaxed to a standard version constraint.
+> ship from PyPI as of `google-adk-community` 0.5.0, which is the version
+> `uv.lock` resolves and the tests run against. The dependency is declared
+> as `google-adk-community[spraay]` — the extra is required, not
+> cosmetic: `web3` is an optional dependency declared under it, and the
+> batch tools import it at call time.
 
 After `uv sync`, verify the four Spraay tools import correctly:
 
@@ -81,7 +87,7 @@ uv run python -c "from google.adk_community.tools.spraay import \
 uv run adk web
 ```
 
-Then open `http://localhost:4200`, choose **crypto_payroll_agent**, and
+Then open `http://localhost:8000`, choose **crypto_payroll_agent**, and
 try the example prompts below.
 
 ## Example interactions
@@ -130,11 +136,12 @@ batch.
 | `GOOGLE_CLOUD_LOCATION` | yes¹ | GCP region (e.g. `us-central1`) |
 | `GOOGLE_GENAI_USE_VERTEXAI` | yes¹ | `1` for Vertex AI, `0` for AI Studio |
 | `GOOGLE_API_KEY` | yes² | AI Studio key (alternative to Vertex AI) |
-| `PAYROLL_AGENT_MODEL` | no | Gemini model (default: `gemini-3.5-flash`) |
+| `GOOGLE_CLOUD_STAGING_BUCKET` | yes³ | GCS bucket for Agent Engine staging (`gs://…`) |
+| `PAYROLL_AGENT_MODEL` | yes | Gemini model. No code default — `config.py` raises if it is unset; `.env.example` ships `gemini-3.5-flash` |
 | `PAYROLL_MAX_BATCH_USD` | yes | Refuse $1-pegged token batches above this total (default: `10000`) |
 | `PAYROLL_MAX_BATCH_ETH` | yes | Refuse ETH batches above this total, in ETH (default: `5`) |
 
-¹ if using Vertex AI · ² if using AI Studio
+¹ if using Vertex AI · ² if using AI Studio · ³ for `deployment/deploy.py` only
 
 ## Safety gates
 
@@ -218,16 +225,21 @@ refusal case.
 uv run pytest tests/ -v
 ```
 
-All tests are offline. Spraay tools are mocked; helpers are tested
-directly.
+All tests are offline, and nothing is mocked. The local helpers and the
+`before_tool_callback` guardrail are called directly — both are pure
+functions of their arguments, so they need no chain, RPC endpoint, or
+signing key. The Spraay batch tools themselves are never exercised here;
+they are covered upstream in `google-adk-community`. The one test that
+touches them only asserts the assembled agent lists them as tools.
 
 ## Deployment
 
 See `deployment/deploy.py` for a reference Vertex AI Agent Engine
 deployment script.
 
-> **Note:** the script passes `PAYROLL_AGENT_MODEL` and
-> `PAYROLL_MAX_BATCH_USD` to the engine, which is enough for the agent to
+> **Note:** the script passes `PAYROLL_AGENT_MODEL`,
+> `PAYROLL_MAX_BATCH_USD` and `PAYROLL_MAX_BATCH_ETH` to the engine —
+> every variable `config.py` requires, which is enough for the agent to
 > start. It does **not** pass `SPRAAY_PRIVATE_KEY`, which the Spraay
 > tools need at tool-call time — so a deployed engine imports fine but
 > fails the moment it tries to sign a batch. Supply that key from

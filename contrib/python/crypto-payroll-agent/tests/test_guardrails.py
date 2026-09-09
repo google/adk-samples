@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Tests for the before_tool_callback spend ceilings and batch limits.
 
 All offline: the callback is a pure function of the tool name and the
@@ -148,6 +162,40 @@ def test_blocks_variable_batch_with_too_many_amounts():
     assert result is not None
     assert result["status"] == "error"
     assert "2 recipients but 3 amounts" in result["error"]
+
+
+def test_blocks_batch_with_a_missing_amounts_argument():
+    # Every tool carries its amounts in exactly one argument. Omitting it
+    # leaves nothing to measure against the ceiling, so the call is
+    # refused by name rather than reaching a signing path.
+    for tool_name, amount_key, extra in (
+        ("spraay_batch_eth", "amount_per_recipient_eth", {}),
+        ("spraay_batch_eth_variable", "amounts_eth", {}),
+        ("spraay_batch_token", "amount_per_recipient", {"token_address": USDC}),
+        (
+            "spraay_batch_token_variable",
+            "amounts",
+            {"token_address": USDC},
+        ),
+    ):
+        result = _call(tool_name, recipients=[ADDR_A, ADDR_B], **extra)
+        assert result is not None, tool_name
+        assert result["status"] == "error"
+        assert f"missing its {amount_key} argument" in result["error"]
+
+
+def test_blocks_batch_with_non_numeric_amounts():
+    # Present but unparseable is a different refusal from absent.
+    result = _call(
+        "spraay_batch_token",
+        token_address=USDC,
+        recipients=[ADDR_A, ADDR_B],
+        amount_per_recipient="two hundred fifty",
+        token_decimals=6,
+    )
+    assert result is not None
+    assert result["status"] == "error"
+    assert "not numeric" in result["error"]
 
 
 def test_accepts_uppercase_0x_prefix_but_stays_strict():

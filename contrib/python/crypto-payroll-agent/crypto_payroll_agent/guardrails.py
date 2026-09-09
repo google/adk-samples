@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Programmatic spend ceilings and batch limits for the Spraay tools.
 
 The agent instruction also states these limits, but prose is not
@@ -73,12 +87,19 @@ def _is_eth_address(value: Any) -> bool:
     return all(c in "0123456789abcdefABCDEF" for c in value[2:])
 
 
+def _amount_key(tool_name: str) -> str:
+    """The single argument a tool carries its amounts in."""
+    equal_key, per_recipient_key = _AMOUNT_KEYS[tool_name]
+    return equal_key if equal_key is not None else per_recipient_key
+
+
 def _batch_total(tool_name: str, args: dict[str, Any], count: int) -> Decimal:
     """Total amount a call would move, in the token's own human units.
 
-    Raises InvalidOperation if an amount is missing or unparseable, which
-    the caller turns into a refusal — an unreadable amount must never
-    reach a signing path.
+    The caller has already confirmed the amounts argument is present, so
+    the only failure left is an unparseable value: that raises
+    InvalidOperation, which the caller turns into a refusal — an
+    unreadable amount must never reach a signing path.
     """
     equal_key, per_recipient_key = _AMOUNT_KEYS[tool_name]
 
@@ -138,12 +159,22 @@ def enforce_batch_limits(
                 f"contract would revert."
             )
 
+    # Absence is checked here rather than left to _batch_total: a bare
+    # KeyError says nothing about which argument the model forgot, and
+    # the refusal text is what the model gets to act on.
+    amount_key = _amount_key(name)
+    if amount_key not in args:
+        return _blocked(
+            f"Refused: the call is missing its {amount_key} argument, so "
+            "the spend ceiling cannot be checked."
+        )
+
     try:
         total = _batch_total(name, args, count)
-    except (KeyError, TypeError, ValueError, InvalidOperation):
+    except (TypeError, ValueError, InvalidOperation):
         return _blocked(
-            "Refused: the batch amounts are missing or not numeric, so "
-            "the spend ceiling cannot be checked."
+            "Refused: the batch amounts are not numeric, so the spend "
+            "ceiling cannot be checked."
         )
 
     if total <= 0:

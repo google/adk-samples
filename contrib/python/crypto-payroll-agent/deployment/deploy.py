@@ -1,3 +1,17 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Deploy the Crypto Payroll Agent to Vertex AI Agent Engine.
 
 From the agent directory:
@@ -27,8 +41,9 @@ def _requirements() -> list[str]:
     """Read the engine's requirements from the recipe's pyproject.toml.
 
     Read rather than restated, so the deployed engine cannot drift from
-    what uv.lock resolves and the tests cover — including the exact
-    commit the google-adk-community dependency is pinned to.
+    what uv.lock resolves and the tests cover — including the `spraay`
+    extra on google-adk-community, without which the batch tools fail at
+    call time on a missing web3.
     """
     pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
     with open(pyproject, "rb") as f:
