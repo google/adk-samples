@@ -12,24 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:3.12-slim
+output "app_service_account_email" {
+  description = "Application service account email"
+  value       = google_service_account.app_sa.email
+}
 
-RUN pip install --no-cache-dir uv==0.8.13
-
-WORKDIR /code
-
-COPY ./pyproject.toml ./README.md ./uv.lock* ./
-
-COPY ./ambient_expense_agent ./ambient_expense_agent
-
-RUN uv sync --frozen
-
-ARG COMMIT_SHA=""
-ENV COMMIT_SHA=${COMMIT_SHA}
-
-ARG AGENT_VERSION=0.0.0
-ENV AGENT_VERSION=${AGENT_VERSION}
-
-EXPOSE 8080
-
-CMD ["uv", "run", "uvicorn", "ambient_expense_agent.agent_runtime_app:app", "--host", "0.0.0.0", "--port", "8080"]
+output "logs_bucket_name" {
+  description = "Logs storage bucket name"
+  value       = google_storage_bucket.logs_data_bucket.name
+}

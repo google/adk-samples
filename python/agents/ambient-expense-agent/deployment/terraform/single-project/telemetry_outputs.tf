@@ -12,24 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:3.12-slim
+output "telemetry_dataset_id" {
+  description = "BigQuery dataset ID for telemetry data"
+  value       = google_bigquery_dataset.telemetry_dataset.dataset_id
+}
 
-RUN pip install --no-cache-dir uv==0.8.13
-
-WORKDIR /code
-
-COPY ./pyproject.toml ./README.md ./uv.lock* ./
-
-COPY ./ambient_expense_agent ./ambient_expense_agent
-
-RUN uv sync --frozen
-
-ARG COMMIT_SHA=""
-ENV COMMIT_SHA=${COMMIT_SHA}
-
-ARG AGENT_VERSION=0.0.0
-ENV AGENT_VERSION=${AGENT_VERSION}
-
-EXPOSE 8080
-
-CMD ["uv", "run", "uvicorn", "ambient_expense_agent.agent_runtime_app:app", "--host", "0.0.0.0", "--port", "8080"]
+output "telemetry_bigquery_connection_id" {
+  description = "BigQuery connection ID for telemetry GCS access"
+  value       = google_bigquery_connection.genai_telemetry_connection.connection_id
+}
