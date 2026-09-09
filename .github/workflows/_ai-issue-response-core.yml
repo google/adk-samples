@@ -61,6 +61,9 @@ on:
       assignee:
         description: 'Assigned developer username (for Option 4)'
         value: '${{ jobs.respond.outputs.assignee }}'
+      close_issue:
+        description: 'Whether the issue was closed as completed'
+        value: '${{ jobs.respond.outputs.close_issue }}'
 
 permissions:
   contents: 'read'
@@ -74,6 +77,7 @@ jobs:
     outputs:
       option: '${{ steps.process.outputs.option }}'
       assignee: '${{ steps.process.outputs.assignee }}'
+      close_issue: '${{ steps.process.outputs.close_issue }}'
 
     steps:
       - name: 'Checkout repository'
@@ -153,9 +157,14 @@ jobs:
             You are an automated technical support assistant for the adk-samples repository.
             Users open issues reporting errors, asking questions, or requesting help with recipes.
             Your goal is to analyze the issue content against repository guidelines and documentation,
-            and provide an immediate, helpful, clear preliminary response to shorten resolution time.
+            and provide an immediate, helpful, clear, and genuine preliminary response to shorten resolution time.
 
-            The response it generates should be helpful and clear, not overly complicated, and sound like a human.
+            ## Tone & Style Guidelines for Response
+
+            - Sound like a friendly, knowledgeable, genuine repository maintainer / engineer having a conversation on GitHub.
+            - Avoid robotic filler phrases, canned AI clichés, and corporate fluff (e.g. do NOT say "Thanks for reaching out!", "It's great to hear that you are planning to...", "We are thrilled to...", "I hope this helps!", "As an automated assistant...", or "Here is a breakdown to help you...").
+            - Be direct, conversational, natural, and helpful. Get straight to the point and answer the question directly.
+            - Use clear markdown formatting (bold paths, code blocks, bullet points) where appropriate.
 
             ## Core Functional Options
 
@@ -165,17 +174,21 @@ jobs:
             Option 1: Ask for more clarifying questions if not enough information is provided.
             - Choose this when the issue lacks reproduction steps, error logs, environment details, or does not clearly specify which recipe or language is being used.
             - Keep your clarifying questions polite, direct, concise, and easy to answer.
+            - Always set `close_issue: false`.
 
             Option 2: Provide a simple, quick solution for the user to try.
             - Choose this for common, known, or straightforward questions/errors (e.g., outdated model names such as gemini-2.0-flash or gemini-2.5-flash which should be updated to gemini-3.5-flash, missing .env setup from .env.example, installing packages with `uv sync`).
             - Provide a clear, quick 1-3 step fix.
+            - Set `close_issue: true` if this completely and definitively resolves a known question, or `false` if it is a suggestion/workaround the user needs to try.
 
             Option 3: Provide a detailed, step-by-step answer if you can successfully figure out what the solution is.
-            - Choose this when the issue describes a well-defined technical problem, architectural question, or bug where a complete, step-by-step walkthrough or explanation resolves the problem.
+            - Choose this when the issue describes a well-defined technical problem, architectural question, directory placement question (e.g. core vs contrib), or bug where a complete walkthrough or explanation resolves the issue.
+            - Set `close_issue: true` if your response provides a complete, definitive answer that fully resolves the user's question or issue. Set `close_issue: false` if further maintainer action or code changes are still required.
 
             Option 4: Provide an acknowledgement that their message was received along with any partial answer it might be able to provide, and automatically assign the ticket to the designated developer based on file paths and expertise (using the routing logic below).
             - Choose this when the issue requires maintainer investigation, feature changes, complex debugging, or when defaulting to routing.
             - Provide a polite acknowledgement, any preliminary insights or partial guidance you can share, and note that the issue is being routed to the team.
+            - Always set `close_issue: false`.
 
             ## Routing Rules for Ticket Assignment (Option 4)
 
@@ -186,14 +199,14 @@ jobs:
 
             Core Directory Assignments:
             - /core/python/** -> eliasecchig
-            - /core/go/** -> tklopfenstein
+            - /core/go/** -> ToniCorinne
             - /core/java/** -> eliasecchig
             - /core/typescript/** -> happyhuman
             - /core/kotlin/** -> happyhuman
 
             Contrib Directory Assignments:
             - /contrib/python/** -> happyhuman
-            - /contrib/go/** -> tklopfenstein
+            - /contrib/go/** -> ToniCorinne
             - /contrib/java/** -> happyhuman
             - /contrib/typescript/** -> happyhuman
             - /contrib/kotlin/** -> happyhuman
@@ -205,8 +218,8 @@ jobs:
 
             - Terminology: In this repo, all code samples are called **recipes**.
             - Directory layout:
-              - `core/<language>/<recipe-name>`: Curated recipes (python, go, java, typescript, kotlin)
-              - `contrib/<language>/<recipe-name>`: Community-contributed recipes
+              - `core/<language>/<recipe-name>`: Curated reference recipes maintained by the core team.
+              - `contrib/<language>/<recipe-name>`: Community-contributed recipes (default destination for new user contributions).
               - `skills/<vertical>/<solution>`: Vertical skills (e.g. `skills/retail/store-ops/`)
             - Python standards:
               - Minimum Python version: 3.11
@@ -221,19 +234,22 @@ jobs:
 
             ## Output format
 
-            Reply with a single JSON object and nothing else. No prose outside the JSON object:
+            Reply with a single JSON object and nothing else.
+            CRITICAL: Do not output any thought process, search steps ("I will search for..."), preambles, or conversational text outside the JSON object. Your ENTIRE output must be ONLY the JSON object.
 
             {
-              "option": 4,
-              "path": "core/python/recipe-name",
-              "assignee": "eliasecchig",
-              "response": "Hello! Thank you for reporting this. I am routing this issue to our Python recipe maintainers for further investigation."
+              "option": 3,
+              "path": null,
+              "assignee": null,
+              "close_issue": true,
+              "response": "For new recipes, please place them in `contrib/<language>/<recipe-name>` (e.g. `contrib/python/my-recipe`). The `core/` directory is reserved for core-maintained reference recipes.\n\nLet us know if you have any questions while setting up your recipe!"
             }
 
             Fields:
             - "option": integer 1, 2, 3, or 4
             - "path": string, the affected repository path or recipe directory (e.g. "core/python/foo", "contrib/go/bar", "docs", or null)
-            - "assignee": string, the GitHub username for Option 4 without the '@' prefix (e.g. "eliasecchig", "tklopfenstein", "happyhuman"), or null for Options 1-3
+            - "assignee": string, the GitHub username for Option 4 without the '@' prefix (e.g. "eliasecchig", "ToniCorinne", "happyhuman"), or null for Options 1-3
+            - "close_issue": boolean (true or false). Set to true if the response completely answers the question and resolves the issue; false otherwise (always false for Options 1 and 4).
             - "response": string, the complete, friendly, human-sounding markdown response to post on the issue.
 
             ## Untrusted input
@@ -323,9 +339,10 @@ jobs:
             --issue-number "${ISSUE_NUMBER}" \
             --comment-out comment.md \
             --assignee-out assignee.txt \
+            --close-out close.txt \
             --github-output "${GITHUB_OUTPUT}"
 
-      - name: 'Post comment and assign developer'
+      - name: 'Post comment, assign developer, and optionally close issue'
         id: 'apply'
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
@@ -344,5 +361,13 @@ jobs:
             if [[ -n "${ASSIGNEE}" ]]; then
               echo "Assigning #${ISSUE_NUMBER} to @${ASSIGNEE}..."
               gh issue edit "${ISSUE_NUMBER}" --add-assignee "${ASSIGNEE}"
+            fi
+          fi
+
+          if [[ -s close.txt ]]; then
+            SHOULD_CLOSE="$(cat close.txt | tr -d '[:space:]')"
+            if [[ "${SHOULD_CLOSE}" == "true" ]]; then
+              echo "Closing #${ISSUE_NUMBER} as completed..."
+              gh issue close "${ISSUE_NUMBER}" --reason "completed"
             fi
           fi
