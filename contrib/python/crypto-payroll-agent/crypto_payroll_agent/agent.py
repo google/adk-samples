@@ -1,4 +1,4 @@
-"""Root agent for the Crypto Payroll Agent sample."""
+"""Root agent for the Crypto Payroll Agent recipe."""
 
 from google.adk.agents import LlmAgent
 

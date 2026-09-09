@@ -50,6 +50,13 @@ def main() -> None:
             "python-dotenv>=1.0",
         ],
         extra_packages=["./crypto_payroll_agent"],
+        # config.py raises on a missing PAYROLL_* variable, and the engine
+        # reads it at import time — without these the deployed agent fails
+        # to start.
+        env_vars={
+            "PAYROLL_AGENT_MODEL": os.environ["PAYROLL_AGENT_MODEL"],
+            "PAYROLL_MAX_BATCH_USD": os.environ["PAYROLL_MAX_BATCH_USD"],
+        },
     )
 
     print(f"Deployed: {remote_app.resource_name}")

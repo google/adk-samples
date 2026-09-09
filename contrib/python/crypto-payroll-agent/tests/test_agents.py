@@ -143,6 +143,40 @@ def test_split_pool_rejects_zero_total():
     assert "positive" in result["error"]
 
 
+def test_split_pool_rejects_non_finite_total():
+    from crypto_payroll_agent.tools.helpers import split_pool_proportionally
+
+    # Decimal parses these happily, and comparing a Decimal NaN against a
+    # bound raises rather than returning False — so they have to be caught
+    # before the positivity check.
+    for bad in ("NaN", "Infinity", "-Infinity"):
+        result = split_pool_proportionally(bad, [1, 1], decimals=6)
+        assert result["ok"] is False, bad
+        assert result["error"] == "total_amount must be a finite number."
+
+
+def test_split_pool_rejects_total_finer_than_token_decimals():
+    from crypto_payroll_agent.tools.helpers import split_pool_proportionally
+
+    # 7 fractional digits cannot be represented at 6 decimals, so the
+    # shares could never reconcile to the total.
+    result = split_pool_proportionally("100.1234567", [1, 1], decimals=6)
+    assert result["ok"] is False
+    assert result["error"] == (
+        "total_amount has more decimal places than the token supports."
+    )
+
+
+def test_split_pool_accepts_total_at_exactly_token_decimals():
+    from crypto_payroll_agent.tools.helpers import split_pool_proportionally
+
+    # 6 fractional digits is exactly representable at 6 decimals, and
+    # still distributes to the cent.
+    result = split_pool_proportionally("100.123456", [1, 1], decimals=6)
+    assert result["ok"] is True
+    assert Decimal(result["total_distributed"]) == Decimal("100.123456")
+
+
 def test_split_pool_rejects_zero_weight_sum():
     from crypto_payroll_agent.tools.helpers import split_pool_proportionally
 

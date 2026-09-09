@@ -168,12 +168,39 @@ def split_pool_proportionally(
             "error": f"total_amount '{total_amount}' is not a valid number.",
         }
 
+    # Decimal("NaN") and Decimal("Infinity") both parse cleanly, so they
+    # reach here. This guard must precede the `total <= 0` check below:
+    # an ordering comparison against a Decimal NaN raises InvalidOperation
+    # rather than returning False.
+    if not total.is_finite():
+        return {
+            "ok": False,
+            "amounts": [],
+            "total_distributed": "0",
+            "error": "total_amount must be a finite number.",
+        }
+
     if total <= 0:
         return {
             "ok": False,
             "amounts": [],
             "total_distributed": "0",
             "error": "total_amount must be positive.",
+        }
+
+    # A total finer than the token's precision cannot be distributed
+    # exactly: every share is floored to `decimals`, so the remainder is
+    # unrepresentable and total_distributed would silently disagree with
+    # total_amount. Reject rather than quantize — this is payment math.
+    exponent = total.as_tuple().exponent
+    if -exponent > decimals:
+        return {
+            "ok": False,
+            "amounts": [],
+            "total_distributed": "0",
+            "error": (
+                "total_amount has more decimal places than the token supports."
+            ),
         }
 
     weight_sum = sum(Decimal(str(w)) for w in weights)

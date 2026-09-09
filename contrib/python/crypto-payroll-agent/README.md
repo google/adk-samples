@@ -1,6 +1,6 @@
 # Crypto Payroll Agent
 
-A Google ADK sample agent that batch-pays multiple recipients in ETH or
+A Google ADK recipe that batch-pays multiple recipients in ETH or
 ERC-20 tokens on [Base](https://base.org) in a single transaction.
 
 Built on the [Spraay batch payment tools](https://github.com/google/adk-python-community/pull/95)
@@ -33,7 +33,7 @@ The agent:
 
 ## Why this is interesting
 
-Most sample agents demo one or two narrow capabilities. This one shows
+Most recipes demo one or two narrow capabilities. This one shows
 ADK's tool-selection in action: the model must pick the correct one of
 four batch tools (eth vs. token × equal vs. variable) from free-form user
 input, plus chain a helper tool when the user provides weights instead of
@@ -52,13 +52,13 @@ multi-tool composition.
 
 ```bash
 git clone https://github.com/google/adk-samples.git
-cd adk-samples/python/agents/crypto-payroll-agent
+cd adk-samples/contrib/python/crypto-payroll-agent
 uv sync
 cp .env.example .env
 # Edit .env: at minimum, set SPRAAY_PRIVATE_KEY and your Google Cloud project
 ```
 
-> **Note:** This sample installs `google-adk-community` directly from
+> **Note:** This recipe installs `google-adk-community` directly from
 > the GitHub `main` branch because the Spraay batch tools merged in
 > [adk-python-community#95](https://github.com/google/adk-python-community/pull/95)
 > have not yet been included in a PyPI release. Once a release later
@@ -187,7 +187,7 @@ deployment script.
 - 0.3% protocol fee
 - More info: [spraay.app](https://spraay.app)
 
-This is a community sample. Spraay is not an official Google product.
+This is a community recipe. Spraay is not an official Google product.
 
 ## License
 
