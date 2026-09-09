@@ -14,7 +14,11 @@
 
 """Unit tests for the SDLC Workflow Suite configuration, prompts, and agent structure."""
 
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from google.adk.agents import SequentialAgent
+from google.adk.tools.tool_context import ToolContext
 
 from sdlc_workflow_suite.agent import (
     root_agent,
@@ -24,10 +28,13 @@ from sdlc_workflow_suite.agent import (
 )
 from sdlc_workflow_suite.config import AgentConfig
 from sdlc_workflow_suite.prompt import (
+    _get_spanner_config_instruction,
     get_task_planner_prompt,
     get_technical_designer_prompt,
     get_user_story_refiner_prompt,
 )
+from sdlc_workflow_suite.tools.artifact_tools import save_artifact
+from sdlc_workflow_suite.tools.spanner_query_tools import SpannerQueryTools
 
 
 def test_agent_config_defaults():
@@ -85,3 +92,38 @@ def test_agent_composition():
     assert root_agent.sub_agents[0] == user_story_refiner_agent
     assert root_agent.sub_agents[1] == technical_designer_agent
     assert root_agent.sub_agents[2] == task_planner_agent
+
+
+def test_spanner_config_instruction():
+    """Test that the shared Spanner config instruction is included in prompts."""
+    instruction = _get_spanner_config_instruction()
+    assert "When using Spanner tools" in instruction
+    assert instruction in get_user_story_refiner_prompt(tools_enabled=True)
+    assert instruction in get_technical_designer_prompt(tools_enabled=True)
+
+
+def test_task_planner_has_save_artifact():
+    """Verify task planner has the save_artifact tool registered."""
+    assert save_artifact in task_planner_agent.tools
+
+
+def test_spanner_query_tools_unconfigured():
+    """Verify get_toolset returns an empty list when Spanner config is unset."""
+    assert SpannerQueryTools.get_toolset() == []
+
+
+@pytest.mark.asyncio
+async def test_save_artifact_tool():
+    """Test save_artifact tool executes and returns formatted response."""
+    mock_context = MagicMock(spec=ToolContext)
+    mock_context.save_artifact = AsyncMock(return_value=1)
+
+    result = await save_artifact(
+        tool_context=mock_context,
+        content="# Plan\nTasks here",
+        filename="execution_plan",
+    )
+    assert result["status"] == "success"
+    assert result["filename"] == "execution_plan.md"
+    assert result["version"] == 1
+    mock_context.save_artifact.assert_awaited_once()

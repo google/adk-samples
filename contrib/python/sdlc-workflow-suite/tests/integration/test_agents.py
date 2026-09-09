@@ -35,20 +35,29 @@ def load_env():
     dotenv.load_dotenv()
 
 
+@pytest.fixture
+def create_runner_and_session():
+    """Creates an InMemoryRunner and establishes an active test session for an agent."""
+
+    async def _create(agent):
+        runner = InMemoryRunner(agent=agent)
+        session = await runner.session_service.create_session(
+            app_name=runner.app_name, user_id="test_user"
+        )
+        return runner, session
+
+    return _create
+
+
 @pytest.mark.asyncio
-async def test_technical_designer_happy_path():
+async def test_technical_designer_happy_path(create_runner_and_session):
     """Runs the technical designer agent on a simple input and expects a valid RFC design."""
-    user_input = textwrap.dedent(
-        """
+    user_input = textwrap.dedent("""
         I want to build a simple user authentication service with Flask and PostgreSQL.
         Please provide a high-level technical design for this.
-        """
-    ).strip()
+        """).strip()
 
-    runner = InMemoryRunner(agent=technical_designer_agent)
-    session = await runner.session_service.create_session(
-        app_name=runner.app_name, user_id="test_user"
-    )
+    runner, session = await create_runner_and_session(technical_designer_agent)
     content = UserContent(parts=[Part(text=user_input)])
     response = ""
     async for event in runner.run_async(
@@ -68,7 +77,7 @@ async def test_technical_designer_happy_path():
 
 
 @pytest.mark.asyncio
-async def test_task_planner_happy_path():
+async def test_task_planner_happy_path(create_runner_and_session):
     """Runs the task planner agent and verifies the comprehensive task table output."""
     user_input = textwrap.dedent(
         """Here is the user story and technical design document:
@@ -81,10 +90,7 @@ async def test_task_planner_happy_path():
         """
     ).strip()
 
-    runner = InMemoryRunner(agent=task_planner_agent)
-    session = await runner.session_service.create_session(
-        app_name=runner.app_name, user_id="test_user"
-    )
+    runner, session = await create_runner_and_session(task_planner_agent)
     content = UserContent(parts=[Part(text=user_input)])
     response = ""
     artifact_content = ""
@@ -114,18 +120,13 @@ async def test_task_planner_happy_path():
 
 
 @pytest.mark.asyncio
-async def test_sequential_agent_happy_path():
+async def test_sequential_agent_happy_path(create_runner_and_session):
     """Runs the full SDLC SequentialAgent pipeline."""
-    user_input = textwrap.dedent(
-        """
+    user_input = textwrap.dedent("""
         We need an audit log endpoint for compliance that records user sign-in events.
-        """
-    ).strip()
+        """).strip()
 
-    runner = InMemoryRunner(agent=root_agent)
-    session = await runner.session_service.create_session(
-        app_name=runner.app_name, user_id="test_user"
-    )
+    runner, session = await create_runner_and_session(root_agent)
     content = UserContent(parts=[Part(text=user_input)])
     events = []
     async for event in runner.run_async(

@@ -15,6 +15,16 @@
 from .config import config
 
 
+def _get_spanner_config_instruction() -> str:
+    """Returns the standardized Spanner configuration instruction line."""
+    return (
+        f"When using Spanner tools, you must use the following configuration: "
+        f"project_id: {config.spanner_project_id}, "
+        f"instance_id: {config.spanner_instance_id}, "
+        f"database_id: {config.spanner_database_id}"
+    )
+
+
 def get_user_story_refiner_prompt(tools_enabled: bool = True) -> str:
     tool_usage = (
         f"""
@@ -24,7 +34,7 @@ You have access to a rich repository of historical data via Spanner Query Tools.
 2. If the user provides a very sparse or incomplete story draft, proactively search for prior stories to suggest standard acceptance criteria or to identify missing edge cases.
 3. Use semantic similarity search or standard queries to find related historical records.
 4. Always verify your assumptions by searching first before asking the user.
-5. When utilizing Spanner tools, you must use the following configuration: project_id: {config.spanner_project_id}, instance_id: {config.spanner_instance_id}, database_id: {config.spanner_database_id}
+5. {_get_spanner_config_instruction()}
 """
         if tools_enabled
         else """
@@ -121,7 +131,7 @@ Use Spanner tools to gather:
 2. The current codebase structure and content via the knowledge graph (e.g., retrieving file contents, finding function definitions, tracing dependencies).
 3. Similar historical components or patterns through semantic search.
 4. Available tools include `execute_sql`, `similarity_search`, `get_table_schema`, etc.
-5. When using spanner tools, use the following configuration: project_id: {config.spanner_project_id}, instance_id: {config.spanner_instance_id}, database_id: {config.spanner_database_id}
+5. {_get_spanner_config_instruction()}
 """
         if tools_enabled
         else """

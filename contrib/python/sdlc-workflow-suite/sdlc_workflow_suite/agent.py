@@ -24,6 +24,7 @@ from .prompt import (
     get_technical_designer_prompt,
     get_user_story_refiner_prompt,
 )
+from .tools.artifact_tools import save_artifact
 from .tools.spanner_query_tools import SpannerQueryTools
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ else:
 
 user_story_refiner_agent = LlmAgent(
     name="user_story_refiner",
-    model=config.model_name,
+    model=config.model_name or "",
     description=(
         "Analyzes requirements or draft stories and refines them into"
         " comprehensive, standardized agile user story work items."
@@ -52,7 +53,6 @@ user_story_refiner_agent = LlmAgent(
     planner=BuiltInPlanner(
         thinking_config=types.ThinkingConfig(
             include_thoughts=True,
-            thinking_budget=-1,
         )
     ),
     tools=spanner_tools,
@@ -60,7 +60,7 @@ user_story_refiner_agent = LlmAgent(
 
 technical_designer_agent = LlmAgent(
     name="technical_designer",
-    model=config.model_name,
+    model=config.model_name or "",
     description=(
         "Analyzes refined user stories and generates concrete, structured RFC"
         " technical designs with Mermaid diagrams and ADRs."
@@ -69,7 +69,6 @@ technical_designer_agent = LlmAgent(
     planner=BuiltInPlanner(
         thinking_config=types.ThinkingConfig(
             include_thoughts=True,
-            thinking_budget=-1,
         )
     ),
     tools=spanner_tools,
@@ -77,13 +76,13 @@ technical_designer_agent = LlmAgent(
 
 task_planner_agent = LlmAgent(
     name="task_planner",
-    model=config.model_name,
+    model=config.model_name or "",
     description=(
         "Translates technical design documents and user stories into a"
         " granular, dependency-linked task execution plan."
     ),
     instruction=get_task_planner_prompt(),
-    tools=[],
+    tools=[save_artifact],
 )
 
 root_agent = SequentialAgent(

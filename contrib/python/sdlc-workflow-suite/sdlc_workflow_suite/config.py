@@ -21,8 +21,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class AgentConfig(BaseSettings):
     """Configuration for the SDLC Workflow Suite agents."""
 
-    model_name: str = Field(
-        default_factory=lambda: os.getenv("MODEL_NAME", "gemini-3.5-flash"),
+    model_name: str | None = Field(
+        default_factory=lambda: os.getenv("MODEL_NAME"),
         validation_alias=AliasChoices(
             "MODEL_NAME", "AGENT_DEFAULT_LLM", "DEFAULT_LLM"
         ),
@@ -56,7 +56,7 @@ class AgentConfig(BaseSettings):
     )
 
     @property
-    def default_llm(self) -> str:
+    def default_llm(self) -> str | None:
         """Backward-compatible alias for model_name."""
         return self.model_name
 

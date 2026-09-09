@@ -19,11 +19,19 @@ from google.adk.tools.spanner.spanner_credentials import (
     SpannerCredentialsConfig,
 )
 
+from ..config import config
+
 
 class SpannerQueryTools:
     @classmethod
     def get_toolset(cls) -> list:
         """Provides a list containing the available SpannerToolset to be consumed by an agent."""
+        if not (
+            config.spanner_project_id
+            and config.spanner_instance_id
+            and config.spanner_database_id
+        ):
+            return []
         return [
             SpannerToolset(
                 credentials_config=cls.get_credentials_config(),
