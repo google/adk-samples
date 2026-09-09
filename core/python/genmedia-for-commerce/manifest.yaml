@@ -4,8 +4,6 @@ language: "python"   # Options: [python | java | go | kotlin | typescript]
 description: "ADK agent generating retail media (Virtual Try-On videos, 360°
   product spins) using Gemini and Veo"                                                                                # TODO: review and expand this draft description
 
-deployable: true
-
 architecture:
   agent: "multi"        # Options: [single | multi]
   stateful: true        # Options: [true | false]

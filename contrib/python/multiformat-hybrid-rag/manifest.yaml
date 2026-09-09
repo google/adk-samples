@@ -3,8 +3,6 @@ status: "active"      # Options: [active | inactive]
 language: "python"    # Options: [python | java | go | kotlin | typescript]
 description: "Production RAG system with multi-format ingestion, contextual chunking, and hybrid search on GCP"
 
-deployable: true
-
 # large: true — 99 countable files, over the 70-file contrib cap.
 # This is a full-stack reference, not a snippet: 16 Terraform files, a
 # three-service ingestion pipeline (preprocess, chunk-index, KFP orchestrator)

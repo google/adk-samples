@@ -23,7 +23,7 @@
     "deployable": {
       "type": "boolean",
       "default": false,
-      "description": "Whether the recipe can be deployed with one click (must be true if and only if the recipe contains at least one Dockerfile). false (default): not possible to deploy with one click. true: possible to deploy with one click."
+      "description": "Whether the recipe can be deployed with one click. false (default): not possible to deploy with one click. true: possible to deploy with one click."
     },
     "large": {
       "type": "boolean",
