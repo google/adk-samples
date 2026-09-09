@@ -2,7 +2,7 @@
 name: Recipe Request
 about: Request a new recipe
 title: "[RECIPE]"
-labels: kind/recipe-request
+labels: ''
 assignees: ''
 
 ---

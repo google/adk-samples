@@ -7,9 +7,9 @@ assignees: ''
 
 ---
 
-### Name of sample affected
+### Name of recipe affected
 
-<!-- e.g. python/agents/RAG, java/agents/software-bug-assistant -->
+<!-- e.g. contrib/python/financial-advisor, core/kotlin/llm-auditor -->
 
 ### Description of issue
 
