@@ -53,6 +53,11 @@ def main() -> None:
         # config.py raises on a missing PAYROLL_* variable, and the engine
         # reads it at import time — without these the deployed agent fails
         # to start.
+        #
+        # SPRAAY_PRIVATE_KEY is deliberately absent: the Spraay tools need
+        # it at tool-call time, but an env var here is readable by anyone
+        # who can describe the engine, and this key controls real funds.
+        # Wire it up from Secret Manager before deploying for real.
         env_vars={
             "PAYROLL_AGENT_MODEL": os.environ["PAYROLL_AGENT_MODEL"],
             "PAYROLL_MAX_BATCH_USD": os.environ["PAYROLL_MAX_BATCH_USD"],

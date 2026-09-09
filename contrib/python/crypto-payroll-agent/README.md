@@ -178,6 +178,15 @@ directly.
 See `deployment/deploy.py` for a reference Vertex AI Agent Engine
 deployment script.
 
+> **Note:** the script passes `PAYROLL_AGENT_MODEL` and
+> `PAYROLL_MAX_BATCH_USD` to the engine, which is enough for the agent to
+> start. It does **not** pass `SPRAAY_PRIVATE_KEY`, which the Spraay
+> tools need at tool-call time — so a deployed engine imports fine but
+> fails the moment it tries to sign a batch. Supply that key from
+> [Secret Manager](https://cloud.google.com/secret-manager) rather than
+> as a plaintext `env_vars` entry: an Agent Engine env var is readable by
+> anyone who can describe the resource, and this key controls real funds.
+
 ## Protocol details
 
 - Spraay batch contract: `0x1646452F98E36A3c9Cfc3eDD8868221E207B5eEC`
