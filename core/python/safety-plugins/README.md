@@ -1,5 +1,9 @@
 # Agent-Agnostic Safety Plugins
 
+> **Note (ADK 2.8+):** For production input and model-output screening, use the first-party [`ModelArmorPlugin`](https://github.com/google/adk-python/blob/main/docs/guides/integrations/model_armor/index.md) (`google.adk.integrations.model_armor`). A dedicated adk.dev page is tracked in [google/adk-docs#2179](https://github.com/google/adk-docs/issues/2179).
+>
+> This sample remains a **reference** for custom plugin hooks, including **`after_tool_callback` tool-output screening**, which the first-party plugin does not cover today. Do not copy this sample wholesale as your production guardrail.
+
 ## Overview
 
 This repository provides an example of a multi-agent system built with the Agent Development Kit (ADK), focusing on how to implement global safety guardrails using ADK's plugin feature. The system includes two distinct safety plugins: one that uses an agent as a judge and another that leverages the Model Armor API.
