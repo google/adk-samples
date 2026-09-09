@@ -1,23 +1,22 @@
 # Copyright 2025 Google LLC. This software is provided as-is, without warranty or representation.
 """Live API Testing Script to verify real configured credentials and endpoints."""
 
-import sys
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from economic_research.tools.bea_skill import fetch_bea_regional_data
+from economic_research.tools.bls_api_skill import analyze_labor_force_quality
+from economic_research.tools.eia_skill import fetch_state_electricity_rates
+from economic_research.tools.fec_skill import analyze_political_stability
+from economic_research.tools.fred_skill import fetch_regional_macro_stats
 from economic_research.tools.hud_skill import (
+    fetch_hud_chas_data,
     fetch_hud_fmr_data,
     fetch_hud_income_limits,
     fetch_hud_usps_crosswalk,
-    fetch_hud_chas_data
 )
-from economic_research.tools.bea_skill import fetch_bea_regional_data
-from economic_research.tools.eia_skill import fetch_state_electricity_rates
-from economic_research.tools.fred_skill import fetch_regional_macro_stats
 from economic_research.tools.tax_foundation_skill import fetch_state_tax_rates
-from economic_research.tools.fec_skill import analyze_political_stability
-from economic_research.tools.bls_api_skill import analyze_labor_force_quality
 
 
 def main():

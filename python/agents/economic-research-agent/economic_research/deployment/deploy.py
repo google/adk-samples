@@ -3,17 +3,17 @@
 Modernized Deployment script for Economic Research Agent using Vertex AI Agent Engine (ADK 2.1+).
 """
 
+import datetime
+import json
 import logging
 import os
+from typing import Any
 
 import cloudpickle
 import vertexai
+from dotenv import set_key
 from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
-import json
-import datetime
-from typing import Any
-from dotenv import set_key
 
 import economic_research
 from economic_research.agent import ERAAgent

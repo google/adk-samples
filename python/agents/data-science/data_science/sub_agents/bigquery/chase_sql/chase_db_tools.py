@@ -72,7 +72,7 @@ def parse_response(response: str) -> str:
     query = response
     try:
         if "```sql" in response and "```" in response:
-            query = response.split("```sql")[1].split("```")[0]
+            query = response.split("```sql")[1].split("```", maxsplit=1)[0]
     except ValueError as e:
         print(f"Error in parsing response: {e}")
         query = response

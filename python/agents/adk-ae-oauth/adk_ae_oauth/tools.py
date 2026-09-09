@@ -21,9 +21,9 @@ https://fmind.medium.com/powering-up-your-agent-in-production-with-adk-oauth-and
 import json
 import logging
 
+from google.adk.tools import ToolContext
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google.adk.tools import ToolContext
 from googleapiclient.discovery import build
 
 from adk_ae_oauth import auths
@@ -194,5 +194,5 @@ def read_drive_file(file_id: str, tool_context: ToolContext) -> dict:
         logger.error(f"Error reading Drive file: {e}")
         return {
             "status": "error",
-            "message": f"Failed to read file: {str(e)}",
+            "message": f"Failed to read file: {e!s}",
         }

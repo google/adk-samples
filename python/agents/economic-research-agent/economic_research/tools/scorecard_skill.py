@@ -2,9 +2,10 @@
 """ADK Skill: Multi-Variable Location Scorecard for Site Selection."""
 
 import json
-from economic_research.tools.tax_foundation_skill import fetch_state_tax_rates
-from economic_research.tools.eia_skill import fetch_state_electricity_rates
+
 from economic_research.tools.bls_api_skill import analyze_labor_force_quality
+from economic_research.tools.eia_skill import fetch_state_electricity_rates
+from economic_research.tools.tax_foundation_skill import fetch_state_tax_rates
 
 
 def generate_location_scorecard(
@@ -172,4 +173,4 @@ def generate_location_scorecard(
         }, indent=2)
 
     except Exception as e:
-        return json.dumps({"ERROR": f"Scorecard generation failed: {str(e)}"}, indent=2)
+        return json.dumps({"ERROR": f"Scorecard generation failed: {e!s}"}, indent=2)

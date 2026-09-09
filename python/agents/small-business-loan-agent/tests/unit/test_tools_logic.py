@@ -14,14 +14,13 @@
 
 """Unit tests for pure business logic functions (no GCP dependencies)."""
 
+from small_business_loan_agent.callbacks.before_tool_callback import (
+    determine_halt_action,
+)
 from small_business_loan_agent.sub_agents.pricing.tools import (
     _determine_risk_tier,
     _parse_dollar_amount,
 )
-from small_business_loan_agent.callbacks.before_tool_callback import (
-    determine_halt_action,
-)
-
 
 # --- _parse_dollar_amount ---
 

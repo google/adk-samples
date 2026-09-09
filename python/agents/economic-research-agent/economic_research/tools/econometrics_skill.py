@@ -2,9 +2,8 @@
 """ADK Skill: Econometrics Sandbox. Runs regressions, correlations, and ADF tests."""
 
 import json
-import numpy as np
+
 import pandas as pd
-import scipy.stats as stats
 import statsmodels.api as sm
 from statsmodels.tsa.stattools import adfuller
 
@@ -140,4 +139,4 @@ def run_econometric_regression(
             }, indent=2)
 
     except Exception as e:
-        return json.dumps({"ERROR": f"Econometric computation failed: {str(e)}"}, indent=2)
+        return json.dumps({"ERROR": f"Econometric computation failed: {e!s}"}, indent=2)

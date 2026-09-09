@@ -293,7 +293,7 @@ def schedule_planting_service(
     logger.info("Details: %s", details)
     # MOCK API RESPONSE - Replace with actual API call to your scheduling system
     # Calculate confirmation time based on date and time_range
-    start_time_str = time_range.split("-")[0]  # Get the start time (e.g., "9")
+    start_time_str = time_range.split("-", maxsplit=1)[0]  # Get the start time (e.g., "9")
     confirmation_time_str = (
         f"{date} {start_time_str}:00"  # e.g., "2024-07-29 9:00"
     )

@@ -68,7 +68,7 @@ def get_llm_project_id():
     )
     if not project:
         try:
-            import google.auth  # noqa: PLC0415
+            import google.auth
 
             _, project = google.auth.default()
         except Exception:

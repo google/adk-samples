@@ -35,7 +35,6 @@ from pydantic import BaseModel, Field
 
 from .config import config
 
-
 # ---------------------------------------------------------------------------
 # Pydantic schemas for structured data flow between nodes
 # ---------------------------------------------------------------------------

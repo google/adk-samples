@@ -3,11 +3,11 @@ from youtube_analyst.tools import get_date_range, parse_timestamp_to_seconds
 
 def test_parse_timestamp_to_seconds():
     """Test various timestamp formats."""
-    assert parse_timestamp_to_seconds('322') == 322 # noqa: PLR2004
-    assert parse_timestamp_to_seconds('05:22') == 322 # noqa: PLR2004
-    assert parse_timestamp_to_seconds('5:22') == 322 # noqa: PLR2004
-    assert parse_timestamp_to_seconds('1:05:22') == 3922 # noqa: PLR2004
-    assert parse_timestamp_to_seconds('01:05:22') == 3922 # noqa: PLR2004
+    assert parse_timestamp_to_seconds('322') == 322
+    assert parse_timestamp_to_seconds('05:22') == 322
+    assert parse_timestamp_to_seconds('5:22') == 322
+    assert parse_timestamp_to_seconds('1:05:22') == 3922
+    assert parse_timestamp_to_seconds('01:05:22') == 3922
     assert parse_timestamp_to_seconds('invalid') == 0
     assert parse_timestamp_to_seconds('') == 0
 

@@ -23,6 +23,7 @@ import base64
 
 from google.adk.agents.callback_context import CallbackContext
 from google.genai import types
+
 from small_business_loan_agent.shared_libraries.logging_config import get_logger
 from small_business_loan_agent.shared_libraries.request_id_utils import (
     extract_request_id_from_text,

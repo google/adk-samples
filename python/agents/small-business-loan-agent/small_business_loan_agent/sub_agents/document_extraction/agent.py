@@ -16,6 +16,7 @@
 
 from google.adk.agents import LlmAgent
 from google.genai.types import GenerateContentConfig, HttpOptions, HttpRetryOptions
+
 from small_business_loan_agent.gemini_custom import GeminiPreview
 from small_business_loan_agent.shared_libraries.firestore_utils.state_callbacks import (
     after_agent_callback_with_state_logging,
@@ -30,7 +31,6 @@ from small_business_loan_agent.sub_agents.document_extraction.prompt import (
 from small_business_loan_agent.sub_agents.document_extraction.tools import (
     inject_document_into_request,
 )
-
 
 MODEL_NAME = "gemini-3.1-pro-preview"
 

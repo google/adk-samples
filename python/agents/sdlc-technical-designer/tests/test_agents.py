@@ -20,7 +20,6 @@ import dotenv
 import pytest
 from google.adk.runners import InMemoryRunner
 from google.genai.types import Part, UserContent
-
 from sdlc_technical_designer.agent import root_agent
 
 pytest_plugins = ("pytest_asyncio",)

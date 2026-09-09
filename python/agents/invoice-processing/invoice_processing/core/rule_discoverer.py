@@ -63,8 +63,8 @@ class _LLMClient:
     @classmethod
     def get_model(cls):
         if cls._model is None:
-            from google.cloud import aiplatform  # noqa: PLC0415
-            from vertexai.generative_models import (  # noqa: PLC0415
+            from google.cloud import aiplatform
+            from vertexai.generative_models import (
                 GenerativeModel,
             )
 

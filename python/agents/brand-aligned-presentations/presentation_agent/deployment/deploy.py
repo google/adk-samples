@@ -23,8 +23,8 @@ from typing import Any
 
 import vertexai
 from dotenv import load_dotenv, set_key
-from vertexai import agent_engines
 from google.cloud import storage
+from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
 
 # Add the project root to sys.path
@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 from presentation_agent.agent import root_agent
+
 
 # Function to update the .env file
 def update_env_file(agent_engine_id, env_file_path):

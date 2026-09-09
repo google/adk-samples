@@ -2,6 +2,7 @@
 """ADK Skill: HR Employee Relocation Cost-of-Living Estimator."""
 
 import json
+
 from economic_research.tools.hud_skill import fetch_hud_fmr_data
 
 # Simple top-bracket state individual income tax rates for key tech/finance hub states
@@ -114,4 +115,4 @@ def estimate_employee_relocation(
         }, indent=2)
 
     except Exception as e:
-        return json.dumps({"ERROR": f"Relocation estimation failed: {str(e)}"}, indent=2)
+        return json.dumps({"ERROR": f"Relocation estimation failed: {e!s}"}, indent=2)

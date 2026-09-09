@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
 from unittest.mock import MagicMock, patch
-
-import pytest
-from pydantic_settings import BaseSettings
 
 import presentation_agent.shared_libraries.config as config_module
 

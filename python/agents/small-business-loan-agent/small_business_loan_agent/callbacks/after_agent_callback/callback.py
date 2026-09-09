@@ -21,14 +21,15 @@ Validates agent responses before they are shown to users by checking:
 3. Response quality — Is the response complete and actionable?
 """
 
-import os
 import json
-
+import os
 from typing import Any
 
 from google.adk.agents.callback_context import CallbackContext
-from google.genai import Client, types as genai_types
+from google.genai import Client
+from google.genai import types as genai_types
 from google.genai.types import GenerateContentConfig
+
 from small_business_loan_agent.callbacks.after_agent_callback.models import JudgeVerdict
 from small_business_loan_agent.callbacks.after_agent_callback.prompt import JUDGE_PROMPT
 from small_business_loan_agent.shared_libraries.logging_config import get_logger

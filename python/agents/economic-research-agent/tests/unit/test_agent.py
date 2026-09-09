@@ -1,6 +1,7 @@
 import os
-import pytest
+
 from economic_research.agent import set_session_api_key
+
 
 def test_set_session_api_key_valid():
     key_name = "FRED_API_KEY"
