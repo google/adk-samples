@@ -17,11 +17,11 @@ on:
       #     tools/tests/test_check_frozen_paths.py::
       #       test_real_policy_file_declares_the_retired_roots calls
       #       load_frozen_paths() with no argument, which falls back to
-      #       POLICY_PATH (tools/check_frozen_paths.py:38).
+      #       POLICY_PATH (tools/check_frozen_paths.py:39).
       #   .github/schemas/manifest-schema.json
       #     test_validate_manifest.py and test_validate_structure.py call
       #     load_schema(), which hardcodes SCHEMA_PATH and takes no override
-      #     parameter (tools/validate_manifest.py:40,113).
+      #     parameter (tools/validate_manifest.py:50,134).
       #   .github/dependabot.yml
       #     .github/scripts/tests/test_dependabot_config.py loads it from
       #     CONFIG_PATH to check every recipe ecosystem is still configured
@@ -57,13 +57,13 @@ on:
       #     alike — and a PR editing only the workflow is exactly the PR that
       #     breaks the contract, so without this entry the pin cannot fire on
       #     the change it exists to catch.
-      #   .github/workflows/_ai-issue-triage-core.yml
+      #   .github/workflows/_ai-issue-triage-core.yml & _ai-issue-response-core.yml
       #     Same reasoning, for the security invariants in
-      #     .github/scripts/tests/test_ai_workflow_hardening.py. Both agy
+      #     .github/scripts/tests/test_ai_workflow_hardening.py. All three agy
       #     workflows are pinned there — an empty tool allowlist above all —
       #     and the PR that would undo one of them is a PR that touches only
       #     that workflow. b/555419958 is what those pins exist for; leaving
-      #     this entry out would make half of them unable to fire.
+      #     these entries out would make them unable to fire.
       # Without these entries such a PR merges green and the failure only
       # surfaces later, on an unrelated PR that happens to touch tools/.
       - ".github/policy.yml"

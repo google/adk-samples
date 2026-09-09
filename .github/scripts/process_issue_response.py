@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-# Copyright 2026 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Process the AI issue responder's output and determine ticket actions.
 
 Used by .github/workflows/_ai-issue-response-core.yml. Parses the JSON output
@@ -130,24 +117,13 @@ def resolve_assignee_from_path(path: str | None) -> str:
     return DEFAULT_ASSIGNEE
 
 
-def resolve_assignee_from_text(text: str | None) -> str:
-    """Scan text for mentioned paths or language indicators."""
-    if not text:
-        return DEFAULT_ASSIGNEE
-
-    lower = text.lower()
-    for prefix, assignee in ROUTING_RULES:
-        # Match "/core/python" or "core/python"
-        if f"/{prefix}" in lower or prefix in lower:
-            return assignee
-
-    return DEFAULT_ASSIGNEE
-
-
 def parse_option(raw_option: Any) -> Option:
     """Parse raw option value into an Option enum member."""
-    if isinstance(raw_option, int) and raw_option in (1, 2, 3, 4):
-        return Option(raw_option)
+    if isinstance(raw_option, int):
+        try:
+            return Option(raw_option)
+        except ValueError:
+            return Option.ACKNOWLEDGE_AND_ASSIGN
 
     if isinstance(raw_option, str):
         cleaned = raw_option.strip().lower()
@@ -195,9 +171,9 @@ def parse_option(raw_option: Any) -> Option:
         ):
             return Option.ACKNOWLEDGE_AND_ASSIGN
 
-        for num in (1, 2, 3, 4):
-            if str(num) in cleaned:
-                return Option(num)
+        for opt in Option:
+            if str(opt.value) in cleaned:
+                return opt
 
     return Option.ACKNOWLEDGE_AND_ASSIGN
 
@@ -238,8 +214,6 @@ def extract_decision_json(raw_text: str) -> dict[str, Any]:
 
 def process_response(
     decision: dict[str, Any],
-    *,
-    fallback_text: str | None = None,
 ) -> tuple[Option, str, str | None]:
     """Process decision dict and return (option, response_body, assignee)."""
     raw_opt = decision.get("option")
@@ -266,14 +240,20 @@ def process_response(
             assignee = resolve_assignee_from_path(path)
         elif raw_assignee and raw_assignee in VALID_ASSIGNEES:
             assignee = raw_assignee
-        elif fallback_text:
-            assignee = resolve_assignee_from_text(fallback_text)
         else:
             assignee = DEFAULT_ASSIGNEE
     else:
         assignee = None
 
     return option, response_body, assignee
+
+
+def _safe_write_text(path: Path, content: str) -> None:
+    """Write text to a destination file, wrapping OSError with filename."""
+    try:
+        path.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(f"cannot write {path}: {exc}") from exc
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -335,19 +315,10 @@ def main() -> int:
     option, response_body, assignee = process_response(decision)
 
     try:
-        args.comment_out.write_text(response_body + "\n", encoding="utf-8")
+        _safe_write_text(args.comment_out, response_body + "\n")
+        _safe_write_text(args.assignee_out, (assignee or "") + "\n")
     except OSError as exc:
-        return report_infra_fault(
-            infra_fault(CHECKER, f"cannot write {args.comment_out}: {exc}")
-        )
-
-    try:
-        assignee_text = (assignee or "") + "\n"
-        args.assignee_out.write_text(assignee_text, encoding="utf-8")
-    except OSError as exc:
-        return report_infra_fault(
-            infra_fault(CHECKER, f"cannot write {args.assignee_out}: {exc}")
-        )
+        return report_infra_fault(infra_fault(CHECKER, str(exc)))
 
     print(
         f"Issue #{args.issue_number}: selected Option {option.value} ({option.name})"

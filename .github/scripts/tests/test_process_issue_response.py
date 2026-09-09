@@ -1,16 +1,3 @@
-# Copyright 2026 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Unit tests for process_issue_response.py."""
 
 import json
@@ -19,13 +6,13 @@ from pathlib import Path
 import pytest
 from process_issue_response import (
     DEFAULT_ASSIGNEE,
+    ROUTING_RULES,
     Option,
     extract_decision_json,
     normalize_path,
     parse_option,
     process_response,
     resolve_assignee_from_path,
-    resolve_assignee_from_text,
 )
 
 # ---------------------------------------------------------------------------
@@ -113,18 +100,72 @@ def test_resolve_assignee_from_path(path, expected_assignee):
     assert resolve_assignee_from_path(path) == expected_assignee
 
 
-def test_resolve_assignee_from_text():
-    text_python = "I am getting an error in /core/python/long-horizon-harness"
-    assert resolve_assignee_from_text(text_python) == "eliasecchig"
+# ---------------------------------------------------------------------------
+# Routing synchronization tests (CODEOWNERS vs script vs workflow prompt)
+# ---------------------------------------------------------------------------
 
-    text_go = "Issue in core/go/sample when running tests"
-    assert resolve_assignee_from_text(text_go) == "tklopfenstein"
 
-    text_contrib_go = "Problem in contrib/go/foo"
-    assert resolve_assignee_from_text(text_contrib_go) == "tklopfenstein"
+def parse_codeowners_routing(
+    codeowners_path: Path,
+) -> tuple[list[tuple[str, str]], str]:
+    rules = []
+    default = ""
+    for raw_line in codeowners_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            pattern, assignee = parts[0], parts[1].lstrip("@")
+            if pattern == "*":
+                default = assignee
+            else:
+                prefix = pattern.strip("/").rstrip("/*").rstrip("*")
+                while prefix.endswith("/"):
+                    prefix = prefix[:-1]
+                rules.append((prefix, assignee))
+    return rules, default
 
-    text_unmatched = "General documentation question"
-    assert resolve_assignee_from_text(text_unmatched) == DEFAULT_ASSIGNEE
+
+def parse_workflow_prompt_routing(
+    workflow_path: Path,
+) -> tuple[list[tuple[str, str]], str]:
+    content = workflow_path.read_text(encoding="utf-8")
+    rules = []
+    default = ""
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if "Assign to:" in line:
+            default = line.split("Assign to:", 1)[1].strip().lstrip("@")
+        elif line.startswith("- /") and "->" in line:
+            left, right = line.split("->", 1)
+            pattern = left.lstrip("- ").strip()
+            assignee = right.strip().lstrip("@")
+            prefix = pattern.strip("/").rstrip("/*").rstrip("*")
+            while prefix.endswith("/"):
+                prefix = prefix[:-1]
+            rules.append((prefix, assignee))
+    return rules, default
+
+
+def test_routing_rules_sync_with_codeowners_and_workflow():
+    repo_root = Path(__file__).resolve().parents[3]
+    codeowners_path = repo_root / ".github" / "CODEOWNERS"
+    workflow_path = (
+        repo_root / ".github" / "workflows" / "_ai-issue-response-core.yml"
+    )
+
+    codeowners_rules, codeowners_default = parse_codeowners_routing(
+        codeowners_path
+    )
+    workflow_rules, workflow_default = parse_workflow_prompt_routing(
+        workflow_path
+    )
+
+    assert DEFAULT_ASSIGNEE == codeowners_default
+    assert DEFAULT_ASSIGNEE == workflow_default
+    assert ROUTING_RULES == codeowners_rules
+    assert ROUTING_RULES == workflow_rules
 
 
 # ---------------------------------------------------------------------------
@@ -318,8 +359,8 @@ def test_cli_execution_option_4(tmp_path):
         str(github_output),
     ]
 
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    assert res.returncode == 0
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    assert res.returncode == 0, res.stderr
     assert "eliasecchig" in res.stdout
 
     assert comment_out.read_text(encoding="utf-8").strip() == (
@@ -374,8 +415,8 @@ def test_cli_execution_option_2(tmp_path):
         str(github_output),
     ]
 
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    assert res.returncode == 0
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    assert res.returncode == 0, res.stderr
 
     assert comment_out.read_text(encoding="utf-8").strip() == (
         "Please use `uv sync` to install dependencies."

@@ -224,10 +224,10 @@ jobs:
             Reply with a single JSON object and nothing else. No prose outside the JSON object:
 
             {
-              "option": 1,
+              "option": 4,
               "path": "core/python/recipe-name",
               "assignee": "eliasecchig",
-              "response": "Hello! Thanks for opening this issue. Could you please share the full error traceback and Python version you are running?"
+              "response": "Hello! Thank you for reporting this. I am routing this issue to our Python recipe maintainers for further investigation."
             }
 
             Fields:
@@ -250,10 +250,27 @@ jobs:
             printf 'Body:\n%s\n' "${ISSUE_BODY}"
           } > full_prompt.txt
 
+          MAX_PROMPT_BYTES=125000
           PROMPT_BYTES="$(wc -c < full_prompt.txt)"
           echo "prompt bytes: ${PROMPT_BYTES}"
-          if [[ "${PROMPT_BYTES}" -gt 125000 ]]; then
-            echo "::error::Assembled prompt is ${PROMPT_BYTES} bytes, over the 131072-byte single-argument limit."
+          if [[ "${PROMPT_BYTES}" -gt "${MAX_PROMPT_BYTES}" ]]; then
+            echo "::error::Assembled prompt is ${PROMPT_BYTES} bytes, over the ${MAX_PROMPT_BYTES}-byte budget (MAX_ARG_STRLEN = 131072 bytes)."
+            exit 1
+          fi
+
+          # SECURITY: extract credential material this runner holds so that
+          # agy output can be scanned before downstream processing.
+          NEEDLES="${RUNNER_TEMP}/credential_needles.txt"
+          {
+            if [[ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
+              printf '%s\n' "${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"
+            fi
+            jq -r '[.credential_source?, .private_key?, .refresh_token?, .client_secret?] | .. | strings' \
+              "${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}" 2>/dev/null || true
+          } | awk 'length($0) >= 32' | sort -u > "${NEEDLES}"
+
+          if [[ ! -s "${NEEDLES}" ]]; then
+            echo "::error::Could not build the credential scan needle list; refusing to run an unscannable response."
             exit 1
           fi
 
@@ -278,12 +295,28 @@ jobs:
             exit 1
           fi
 
+          # SECURITY: ensure response contains no credential material.
+          if grep -qFf "${NEEDLES}" agy_result.json; then
+            echo "::error::The response contains this runner's credential material. Refusing to emit it. The agy tool allowlist is empty, so this should be unreachable — treat it as a live security incident, preserve the run, and see b/555419958."
+            rm -f agy_result.json
+            exit 1
+          fi
+
+          rm -f "${NEEDLES}"
+
       - name: 'Process response and determine action'
         id: 'process'
         env:
           ISSUE_NUMBER: '${{ inputs.issue_number }}'
         run: |-
           set -euo pipefail
+
+          TAMPER="$(git status --porcelain -- .github/scripts)"
+          if [[ -n "${TAMPER}" ]]; then
+            echo "::error::.github/scripts changed after checkout; refusing to execute it. The agy tool allowlist is empty, so this should be unreachable — treat it as a live security incident, preserve the run, and see b/555419958."
+            printf '%s\n' "${TAMPER}" | cut -c1-120
+            exit 1
+          fi
 
           python3 .github/scripts/process_issue_response.py \
             --result agy_result.json \

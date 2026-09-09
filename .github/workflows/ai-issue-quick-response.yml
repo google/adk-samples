@@ -63,10 +63,11 @@ jobs:
             exit 1
           fi
 
+          MAX_BODY_CHARS=4000
           ISSUE_DATA="$(gh issue view "${ISSUE_NUMBER}" --json number,title,body,author)"
           NUMBER="$(echo "${ISSUE_DATA}" | jq -r '.number')"
           TITLE="$(echo "${ISSUE_DATA}" | jq -r '.title // ""')"
-          BODY="$(echo "${ISSUE_DATA}" | jq -r '(.body // "")[0:4000]')"
+          BODY="$(echo "${ISSUE_DATA}" | jq -r --argjson max "${MAX_BODY_CHARS}" '(.body // "")[0:$max]')"
           AUTHOR="$(echo "${ISSUE_DATA}" | jq -r '.author.login // ""')"
 
           echo "issue_number=${NUMBER}" >> "${GITHUB_OUTPUT}"
