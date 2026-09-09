@@ -9,7 +9,9 @@ from process_issue_response import (
     ROUTING_RULES,
     Option,
     extract_decision_json,
+    find_json_objects,
     normalize_path,
+    parse_close_issue,
     parse_option,
     process_response,
     resolve_assignee_from_path,
@@ -65,8 +67,8 @@ def test_normalize_path():
         # Core directory assignments
         ("/core/python/my-recipe", "eliasecchig"),
         ("core/python/gemini-live", "eliasecchig"),
-        ("core/go/agent-sample", "tklopfenstein"),
-        ("/core/go/tool-calling", "tklopfenstein"),
+        ("core/go/agent-sample", "ToniCorinne"),
+        ("/core/go/tool-calling", "ToniCorinne"),
         ("core/java/spring-ai", "eliasecchig"),
         ("/core/java/sample", "eliasecchig"),
         ("core/typescript/express-agent", "happyhuman"),
@@ -76,8 +78,8 @@ def test_normalize_path():
         # Contrib directory assignments
         ("contrib/python/custom-tool", "happyhuman"),
         ("/contrib/python/recipe", "happyhuman"),
-        ("contrib/go/rag-search", "tklopfenstein"),
-        ("/contrib/go/sample", "tklopfenstein"),
+        ("contrib/go/rag-search", "ToniCorinne"),
+        ("/contrib/go/sample", "ToniCorinne"),
         ("contrib/java/micronaut", "happyhuman"),
         ("/contrib/java/sample", "happyhuman"),
         ("contrib/typescript/nextjs", "happyhuman"),
@@ -169,8 +171,65 @@ def test_routing_rules_sync_with_codeowners_and_workflow():
 
 
 # ---------------------------------------------------------------------------
+# Close issue parsing tests
+# ---------------------------------------------------------------------------
+
+
+def test_parse_close_issue_rules():
+    # Option 1 (clarify): always False
+    assert parse_close_issue({"close_issue": True}, Option.CLARIFY) is False
+
+    # Option 4 (acknowledge and assign): always False
+    assert (
+        parse_close_issue({"close_issue": True}, Option.ACKNOWLEDGE_AND_ASSIGN)
+        is False
+    )
+
+    # Option 2 (simple solution): follows close_issue
+    assert (
+        parse_close_issue({"close_issue": True}, Option.SIMPLE_SOLUTION) is True
+    )
+    assert (
+        parse_close_issue({"close_issue": False}, Option.SIMPLE_SOLUTION)
+        is False
+    )
+    assert (
+        parse_close_issue({"close_issue": "true"}, Option.SIMPLE_SOLUTION)
+        is True
+    )
+    assert parse_close_issue({"close": "yes"}, Option.SIMPLE_SOLUTION) is True
+    assert parse_close_issue({}, Option.SIMPLE_SOLUTION) is False
+
+    # Option 3 (detailed solution): follows close_issue
+    assert (
+        parse_close_issue({"close_issue": True}, Option.DETAILED_SOLUTION)
+        is True
+    )
+    assert (
+        parse_close_issue({"close_issue": False}, Option.DETAILED_SOLUTION)
+        is False
+    )
+    assert (
+        parse_close_issue({"close_issue": "false"}, Option.DETAILED_SOLUTION)
+        is False
+    )
+    assert parse_close_issue({"close": True}, Option.DETAILED_SOLUTION) is True
+
+
+# ---------------------------------------------------------------------------
 # Decision JSON extraction tests
 # ---------------------------------------------------------------------------
+
+
+def test_find_json_objects_multiple_in_text():
+    text = (
+        'Here is item 1: {"a": 1, "nested": {"b": 2}} and '
+        'item 2: {"c": "hello \\"world\\""} trailing.'
+    )
+    objs = find_json_objects(text)
+    assert len(objs) == 2
+    assert objs[0] == {"a": 1, "nested": {"b": 2}}
+    assert objs[1] == {"c": 'hello "world"'}
 
 
 def test_extract_decision_json_from_raw():
@@ -179,11 +238,13 @@ def test_extract_decision_json_from_raw():
             "option": 2,
             "response": "Try setting MODEL_NAME to gemini-3.5-flash.",
             "path": "core/python/sample",
+            "close_issue": True,
         }
     )
     extracted = extract_decision_json(raw)
     assert extracted["option"] == 2
     assert "gemini-3.5-flash" in extracted["response"]
+    assert extracted["close_issue"] is True
 
 
 def test_extract_decision_json_from_fence():
@@ -192,7 +253,8 @@ def test_extract_decision_json_from_fence():
 {
   "option": 1,
   "response": "Could you provide steps to reproduce?",
-  "path": null
+  "path": null,
+  "close_issue": false
 }
 ```
 """
@@ -210,7 +272,7 @@ def test_extract_decision_json_from_agy_envelope():
   "option": 4,
   "response": "We have assigned this to the team.",
   "path": "core/go/sample",
-  "assignee": "tklopfenstein"
+  "assignee": "ToniCorinne"
 }
 ```""",
         }
@@ -218,6 +280,49 @@ def test_extract_decision_json_from_agy_envelope():
     extracted = extract_decision_json(raw)
     assert extracted["option"] == 4
     assert extracted["path"] == "core/go/sample"
+
+
+def test_extract_decision_json_with_thought_preamble():
+    """Reproduces the issue #2604 failure where thought preamble preceded JSON."""
+    raw_thought_text = (
+        "I will search for any relevant files or documentation in the workspace to see "
+        "if there are any specific guidelines on `core` vs `contrib` directories.\n"
+        "{\n"
+        '  "option": 3,\n'
+        '  "path": null,\n'
+        '  "assignee": null,\n'
+        '  "close_issue": true,\n'
+        '  "response": "For new recipes, please place them in contrib/python/your-recipe."\n'
+        "}\n"
+    )
+    envelope = json.dumps({"status": "SUCCESS", "response": raw_thought_text})
+
+    extracted = extract_decision_json(envelope)
+    assert extracted["option"] == 3
+    assert extracted["close_issue"] is True
+    assert (
+        extracted["response"]
+        == "For new recipes, please place them in contrib/python/your-recipe."
+    )
+
+
+def test_extract_decision_json_with_nested_json_in_response():
+    raw = (
+        "Here is the solution:\n"
+        "{\n"
+        '  "option": 2,\n'
+        '  "close_issue": true,\n'
+        '  "response": "You can configure your settings with {\\"timeout\\": 30}."\n'
+        "}"
+    )
+    extracted = extract_decision_json(raw)
+    assert extracted["option"] == 2
+    assert '{"timeout": 30}' in extracted["response"]
+
+
+def test_extract_decision_json_invalid_raises():
+    with pytest.raises(ValueError, match="No valid JSON decision"):
+        extract_decision_json("Just random text with no JSON object at all.")
 
 
 # ---------------------------------------------------------------------------
@@ -231,31 +336,37 @@ def test_process_response_options_1_to_3():
         "option": 1,
         "response": "Please share more information.",
         "path": "core/python/sample",
+        "close_issue": True,  # should be overridden to False for clarify
     }
-    opt, resp, assignee = process_response(d1)
+    opt, resp, assignee, close_issue = process_response(d1)
     assert opt == Option.CLARIFY
     assert resp == "Please share more information."
     assert assignee is None
+    assert close_issue is False
 
     # Option 2: Quick solution
     d2 = {
         "option": 2,
         "response": "Use `uv sync` to install dependencies.",
+        "close_issue": True,
     }
-    opt, resp, assignee = process_response(d2)
+    opt, resp, assignee, close_issue = process_response(d2)
     assert opt == Option.SIMPLE_SOLUTION
     assert "uv sync" in resp
     assert assignee is None
+    assert close_issue is True
 
     # Option 3: Detailed solution
     d3 = {
         "option": 3,
         "response": "Step 1: ... Step 2: ...",
+        "close_issue": True,
     }
-    opt, resp, assignee = process_response(d3)
+    opt, resp, assignee, close_issue = process_response(d3)
     assert opt == Option.DETAILED_SOLUTION
     assert "Step 1" in resp
     assert assignee is None
+    assert close_issue is True
 
 
 def test_process_response_option_4_with_path():
@@ -264,10 +375,12 @@ def test_process_response_option_4_with_path():
         "option": 4,
         "response": "Received. Routing to the Python team.",
         "path": "/core/python/my-recipe",
+        "close_issue": True,  # should be overridden to False for Option 4
     }
-    opt, _resp, assignee = process_response(d4_py)
+    opt, _resp, assignee, close_issue = process_response(d4_py)
     assert opt == Option.ACKNOWLEDGE_AND_ASSIGN
     assert assignee == "eliasecchig"
+    assert close_issue is False
 
     # Option 4: Acknowledge and Assign with core/go path
     d4_go = {
@@ -275,9 +388,10 @@ def test_process_response_option_4_with_path():
         "response": "Received. Routing to Go maintainer.",
         "path": "core/go/search",
     }
-    opt, _resp, assignee = process_response(d4_go)
+    opt, _resp, assignee, close_issue = process_response(d4_go)
     assert opt == Option.ACKNOWLEDGE_AND_ASSIGN
-    assert assignee == "tklopfenstein"
+    assert assignee == "ToniCorinne"
+    assert close_issue is False
 
     # Option 4: Acknowledge and Assign with skills path
     d4_skills = {
@@ -285,21 +399,23 @@ def test_process_response_option_4_with_path():
         "response": "Received. Routing to skills maintainer.",
         "path": "skills/retail/store-ops",
     }
-    opt, _resp, assignee = process_response(d4_skills)
+    opt, _resp, assignee, close_issue = process_response(d4_skills)
     assert opt == Option.ACKNOWLEDGE_AND_ASSIGN
     assert assignee == "happyhuman"
+    assert close_issue is False
 
 
 def test_process_response_option_4_fallback():
-    # Option 4 with no path but valid assignee
+    # Option 4 with no path but valid assignee (case-insensitive)
     d4_raw = {
         "option": 4,
         "response": "Routing ticket.",
-        "assignee": "eliasecchig",
+        "assignee": "tonicorinne",
     }
-    opt, _resp, assignee = process_response(d4_raw)
+    opt, _resp, assignee, close_issue = process_response(d4_raw)
     assert opt == Option.ACKNOWLEDGE_AND_ASSIGN
-    assert assignee == "eliasecchig"
+    assert assignee == "ToniCorinne"
+    assert close_issue is False
 
     # Option 4 with no path and unknown assignee -> catch-all default
     d4_unknown = {
@@ -307,9 +423,10 @@ def test_process_response_option_4_fallback():
         "response": "Routing ticket.",
         "assignee": "some_random_user",
     }
-    opt, _resp, assignee = process_response(d4_unknown)
+    opt, _resp, assignee, close_issue = process_response(d4_unknown)
     assert opt == Option.ACKNOWLEDGE_AND_ASSIGN
     assert assignee == "happyhuman"
+    assert close_issue is False
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +456,7 @@ def test_cli_execution_option_4(tmp_path):
     )
     comment_out = tmp_path / "comment.md"
     assignee_out = tmp_path / "assignee.txt"
+    close_out = tmp_path / "close.txt"
     github_output = tmp_path / "github_output.txt"
 
     script_path = (
@@ -355,6 +473,8 @@ def test_cli_execution_option_4(tmp_path):
         str(comment_out),
         "--assignee-out",
         str(assignee_out),
+        "--close-out",
+        str(close_out),
         "--github-output",
         str(github_output),
     ]
@@ -367,34 +487,40 @@ def test_cli_execution_option_4(tmp_path):
         "Thank you! Routing this to the Python maintainer."
     )
     assert assignee_out.read_text(encoding="utf-8").strip() == "eliasecchig"
+    assert close_out.read_text(encoding="utf-8").strip() == "false"
 
     output_lines = github_output.read_text(encoding="utf-8").splitlines()
     assert "option=4" in output_lines
     assert "assignee=eliasecchig" in output_lines
     assert "has_assignee=true" in output_lines
+    assert "close_issue=false" in output_lines
 
 
-def test_cli_execution_option_2(tmp_path):
+def test_cli_execution_option_3_with_close(tmp_path):
     import subprocess
     import sys
 
     result_file = tmp_path / "agy_result.json"
+    thought_and_json = (
+        "I will search for any relevant guidelines on core vs contrib.\n"
+        "{\n"
+        '  "option": 3,\n'
+        '  "close_issue": true,\n'
+        '  "response": "Please place your new recipe in `contrib/python/your-recipe`."\n'
+        "}"
+    )
     result_file.write_text(
         json.dumps(
             {
                 "status": "SUCCESS",
-                "response": json.dumps(
-                    {
-                        "option": 2,
-                        "response": "Please use `uv sync` to install dependencies.",
-                    }
-                ),
+                "response": thought_and_json,
             }
         ),
         encoding="utf-8",
     )
     comment_out = tmp_path / "comment.md"
     assignee_out = tmp_path / "assignee.txt"
+    close_out = tmp_path / "close.txt"
     github_output = tmp_path / "github_output.txt"
 
     script_path = (
@@ -406,11 +532,13 @@ def test_cli_execution_option_2(tmp_path):
         "--result",
         str(result_file),
         "--issue-number",
-        "99",
+        "2604",
         "--comment-out",
         str(comment_out),
         "--assignee-out",
         str(assignee_out),
+        "--close-out",
+        str(close_out),
         "--github-output",
         str(github_output),
     ]
@@ -419,10 +547,12 @@ def test_cli_execution_option_2(tmp_path):
     assert res.returncode == 0, res.stderr
 
     assert comment_out.read_text(encoding="utf-8").strip() == (
-        "Please use `uv sync` to install dependencies."
+        "Please place your new recipe in `contrib/python/your-recipe`."
     )
     assert assignee_out.read_text(encoding="utf-8").strip() == ""
+    assert close_out.read_text(encoding="utf-8").strip() == "true"
 
     output_lines = github_output.read_text(encoding="utf-8").splitlines()
-    assert "option=2" in output_lines
+    assert "option=3" in output_lines
     assert "has_assignee=false" in output_lines
+    assert "close_issue=true" in output_lines
