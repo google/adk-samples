@@ -11,12 +11,17 @@ from google.adk_community.tools.spraay import (  # type: ignore[import]
 )
 
 from .config import CONFIG
+from .guardrails import enforce_batch_limits
 from .prompt import ROOT_AGENT_INSTRUCTION
 from .tools import lookup_token_info, split_pool_proportionally
 
 root_agent = LlmAgent(
     name=CONFIG.agent_name,
     model=CONFIG.model,
+    # The spend ceilings and batch limits are enforced here, in Python,
+    # before any Spraay tool can sign. The instruction states them too,
+    # but only this callback can actually stop a call.
+    before_tool_callback=enforce_batch_limits,
     description=(
         "Batch-pays multiple recipients in ETH or ERC-20 tokens on Base "
         "via the Spraay protocol. Supports equal-amount payroll, variable-"
@@ -25,6 +30,7 @@ root_agent = LlmAgent(
     ),
     instruction=ROOT_AGENT_INSTRUCTION.format(
         max_batch_usd=str(CONFIG.max_batch_usd),
+        max_batch_eth=str(CONFIG.max_batch_eth),
     ),
     tools=[
         # Local helpers (must be called before the batch tools when needed).

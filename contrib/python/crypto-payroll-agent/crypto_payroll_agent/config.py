@@ -83,6 +83,13 @@ class Config:
         default_factory=lambda: Decimal(_require_env("PAYROLL_MAX_BATCH_USD"))
     )
 
+    # Safety ceiling for a single ETH batch, denominated in ETH. ETH has
+    # no offline USD valuation, so it is bounded in its own units rather
+    # than converted.
+    max_batch_eth: Decimal = field(
+        default_factory=lambda: Decimal(_require_env("PAYROLL_MAX_BATCH_ETH"))
+    )
+
     # Agent metadata
     agent_name: str = "crypto_payroll_agent"
     app_name: str = "Crypto Payroll Agent"

@@ -58,12 +58,13 @@ cp .env.example .env
 # Edit .env: at minimum, set SPRAAY_PRIVATE_KEY and your Google Cloud project
 ```
 
-> **Note:** This recipe installs `google-adk-community` directly from
-> the GitHub `main` branch because the Spraay batch tools merged in
+> **Note:** This recipe installs `google-adk-community` from GitHub at an
+> exact commit, because the Spraay batch tools merged in
 > [adk-python-community#95](https://github.com/google/adk-python-community/pull/95)
-> have not yet been included in a PyPI release. Once a release later
-> than `0.4.1` ships, the `pyproject.toml` pin can be relaxed to a
-> standard version constraint.
+> have not yet been included in a PyPI release. The commit is pinned
+> rather than tracking `main` so the build is reproducible. Once a PyPI
+> release carries the Spraay tools, the `pyproject.toml` pin can be
+> relaxed to a standard version constraint.
 
 After `uv sync`, verify the four Spraay tools import correctly:
 
@@ -97,8 +98,9 @@ and `token_decimals=6`.
 
 > *Send 0.01 ETH each to these 12 bounty hunters: [list of 12 addresses].*
 
-The agent rejects amounts over the configured safety ceiling, otherwise
-calls `spraay_batch_eth` with `amount_per_recipient_eth="0.01"`.
+The agent calls `spraay_batch_eth` with
+`amount_per_recipient_eth="0.01"`, unless the total breaches
+`PAYROLL_MAX_BATCH_ETH` — see [Safety gates](#safety-gates).
 
 ### 3. Variable token amounts (`spraay_batch_token_variable`)
 
@@ -129,9 +131,50 @@ batch.
 | `GOOGLE_GENAI_USE_VERTEXAI` | yes¹ | `1` for Vertex AI, `0` for AI Studio |
 | `GOOGLE_API_KEY` | yes² | AI Studio key (alternative to Vertex AI) |
 | `PAYROLL_AGENT_MODEL` | no | Gemini model (default: `gemini-3.5-flash`) |
-| `PAYROLL_MAX_BATCH_USD` | no | Refuse batches above this total (default: `10000`) |
+| `PAYROLL_MAX_BATCH_USD` | yes | Refuse $1-pegged token batches above this total (default: `10000`) |
+| `PAYROLL_MAX_BATCH_ETH` | yes | Refuse ETH batches above this total, in ETH (default: `5`) |
 
 ¹ if using Vertex AI · ² if using AI Studio
+
+## Safety gates
+
+The spend ceilings and batch limits are enforced in
+`crypto_payroll_agent/guardrails.py`, wired in as the agent's
+`before_tool_callback`. It runs before any `spraay_batch_*` tool can
+sign, so a call that breaches a limit never reaches the chain — the
+callback returns an error dict and ADK hands that back to the model in
+place of the tool result. The system instruction states the same limits,
+but only the callback enforces them: prose alone would not survive a
+prompt-injected recipient list or an ordinary model mistake.
+
+Every `spraay_batch_*` call is checked for:
+
+| Check | Limit |
+| --- | --- |
+| Recipient count | ≤ 200 (Spraay protocol limit) |
+| Recipient addresses | every entry `0x` + 40 hex characters |
+| Amounts | present, numeric, total > 0 |
+| ETH batches | total ≤ `PAYROLL_MAX_BATCH_ETH` |
+| $1-pegged token batches | total ≤ `PAYROLL_MAX_BATCH_USD` |
+| Any other token | **blocked** |
+
+**Why non-pegged tokens are blocked.** Valuation is deliberately
+offline. `USDC`, `USDbC` and `DAI` are valued at $1 each, which needs no
+price feed. ETH is bounded by its own ceiling in ETH rather than
+converted. Every other ERC-20 — `WETH`, `cbETH`, `cbBTC`, `AERO`, or any
+address outside the bundled registry — has no offline USD value, so the
+USD ceiling cannot be applied to it and the batch is refused rather than
+waved through unchecked.
+
+That is a deliberate trade: this recipe would rather refuse a legitimate
+`cbBTC` payroll run than let an unbounded one through. If you need those
+tokens, `enforce_batch_limits` is the single customization point — add a
+price source there and value the batch before comparing it to the
+ceiling.
+
+Two gates remain the model's alone, because no code can check them:
+showing a plan and obtaining explicit confirmation before executing, and
+re-presenting the plan when an input changes mid-conversation.
 
 ## Agent structure
 
@@ -140,6 +183,7 @@ crypto_payroll_agent/
 ├── agent.py          # LlmAgent wired to 4 Spraay tools + 2 helpers
 ├── prompt.py         # System instruction governing tool selection
 ├── config.py         # Model + safety + token registry
+├── guardrails.py     # before_tool_callback enforcing the spend ceilings
 └── tools/
     └── helpers.py    # lookup_token_info, split_pool_proportionally
 ```
