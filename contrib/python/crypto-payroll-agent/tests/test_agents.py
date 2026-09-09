@@ -123,6 +123,18 @@ def test_split_pool_rejects_negative_weights():
     assert "non-negative" in result["error"]
 
 
+def test_split_pool_rejects_non_finite_weights():
+    from crypto_payroll_agent.tools.helpers import split_pool_proportionally
+
+    # NaN compares False against every bound, so it slips past the
+    # non-negative guard; infinity poisons the proportional share. Both
+    # must be rejected before any Decimal math runs.
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        result = split_pool_proportionally("100", [1, bad, 2], decimals=6)
+        assert result["ok"] is False, bad
+        assert result["error"] == "weights must be finite numbers."
+
+
 def test_split_pool_rejects_zero_total():
     from crypto_payroll_agent.tools.helpers import split_pool_proportionally
 

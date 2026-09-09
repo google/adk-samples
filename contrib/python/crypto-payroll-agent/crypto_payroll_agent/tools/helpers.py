@@ -18,6 +18,7 @@ they are listed in `Agent(tools=[...])`.
 
 from __future__ import annotations
 
+import math
 from decimal import ROUND_DOWN, Decimal, getcontext
 from typing import Any
 
@@ -64,9 +65,7 @@ def lookup_token_info(symbol_or_address: str) -> dict[str, Any]:
                     "address": token["address"],
                     "decimals": token["decimals"],
                     "source": "registry",
-                    "note": (
-                        f"Matched address to {token['symbol']} on Base."
-                    ),
+                    "note": (f"Matched address to {token['symbol']} on Base."),
                 }
         return {
             "found": False,
@@ -121,7 +120,7 @@ def split_pool_proportionally(
 
     Args:
         total_amount: Pool total in human units (e.g. "10000" for 10,000 USDC).
-        weights: List of non-negative weights, one per recipient.
+        weights: List of finite, non-negative weights, one per recipient.
         decimals: Token decimals used to clamp precision (default 6 for USDC).
 
     Returns:
@@ -141,6 +140,16 @@ def split_pool_proportionally(
             "error": "weights must be a non-empty list.",
         }
 
+    # NaN and infinity slip past the `w < 0` guard below (every comparison
+    # with NaN is False) and would blow up later in Decimal.quantize().
+    if any(not math.isfinite(w) for w in weights):
+        return {
+            "ok": False,
+            "amounts": [],
+            "total_distributed": "0",
+            "error": "weights must be finite numbers.",
+        }
+
     if any(w < 0 for w in weights):
         return {
             "ok": False,
@@ -151,7 +160,7 @@ def split_pool_proportionally(
 
     try:
         total = Decimal(total_amount)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {
             "ok": False,
             "amounts": [],
@@ -185,9 +194,7 @@ def split_pool_proportionally(
     # largest-remainder method.
     raw_shares = [Decimal(str(w)) / weight_sum * total for w in weights]
     floored = [s.quantize(quant, rounding=ROUND_DOWN) for s in raw_shares]
-    remainders = [
-        (i, raw_shares[i] - floored[i]) for i in range(len(weights))
-    ]
+    remainders = [(i, raw_shares[i] - floored[i]) for i in range(len(weights))]
 
     shares = list(floored)
     dust = total - sum(shares)

@@ -1,7 +1,7 @@
 [project]
 name = "crypto-payroll-agent"
 version = "0.1.0"
-description = "ADK sample agent for batch stablecoin payroll on Base using Spraay community tools."
+description = "Batch-pays many recipients in ETH or ERC-20 tokens on Base in a single transaction using the Spraay tools from google-adk-community, splitting a pool proportionally by weight and gating every on-chain batch behind a human-in-the-loop USD ceiling."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -38,3 +38,7 @@ allow-direct-references = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true

@@ -17,8 +17,8 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 )
 
-from crypto_payroll_agent import root_agent  # noqa: E402
-from crypto_payroll_agent.config import CONFIG  # noqa: E402
+from crypto_payroll_agent import root_agent
+from crypto_payroll_agent.config import CONFIG
 
 
 def main() -> None:
