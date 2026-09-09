@@ -313,6 +313,18 @@ jobs:
             echo "max_diff_files=${MAX_DIFF_FILES}"
           } >> "${GITHUB_OUTPUT}"
 
+          # A PR that changes nothing is a legitimate state, not a fault. It
+          # has to be caught HERE rather than at the diff fetch below, because
+          # that step cannot tell "this PR changes nothing" apart from "the API
+          # returned nothing" — it sees an empty pr_diff.txt either way and
+          # fails the lane. #2600 (a draft opened with 0 changed files) failed
+          # all four lanes that way, mailing the author four times per push.
+          if (( TOTAL_COUNT == 0 )); then
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            echo "PR has no changed files; nothing to review."
+            exit 0
+          fi
+
           if (( TOTAL_COUNT > MAX_DIFF_FILES )); then
             echo "skip=true" >> "${GITHUB_OUTPUT}"
             echo "${TOTAL_COUNT} files changed, above the ${MAX_DIFF_FILES}-file diff API limit; skipping."
@@ -1253,8 +1265,12 @@ jobs:
     # Both reasons this job exists, and nothing else. A clean PR that produced
     # no findings is the common case, and spinning a runner up to discover
     # that every step is skipped costs four runners per push across the lanes.
+    # The `total_files != 0` guard keeps an empty PR from spinning four
+    # runners up to say nothing: a 0-file PR also sets `skip`, but it has no
+    # comment to post (see the report step below).
     if: |-
-      needs.review.outputs.skip == 'true' ||
+      (needs.review.outputs.skip == 'true' &&
+       needs.review.outputs.total_files != '0') ||
       needs.review.outputs.has_payload == 'true'
     timeout-minutes: 10
     runs-on: 'ubuntu-latest'
@@ -1279,8 +1295,12 @@ jobs:
       # Worked out in `review`, said here, because that job holds no token
       # that can say anything.
       - name: 'Report a PR too large to diff'
+        # `skip` covers two cases and only one of them has anything to say
+        # here. A 0-file PR would otherwise be told it is "above the 300 files
+        # the diff API will serve", which is both false and confusing.
         if: |-
-          needs.review.outputs.skip == 'true'
+          needs.review.outputs.skip == 'true' &&
+          needs.review.outputs.total_files != '0'
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           # REQUIRED, not tidiness. This job takes no checkout, so there is no
