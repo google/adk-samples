@@ -41,9 +41,12 @@ def main() -> None:
         ),
         requirements=[
             "google-adk>=1.0.0",
+            # Same exact-commit pin as pyproject.toml — keep the two in
+            # step so the deployed engine runs the code the tests locked.
             (
                 "google-adk-community @ "
-                "git+https://github.com/google/adk-python-community.git@main"
+                "git+https://github.com/google/adk-python-community.git"
+                "@396da17a9597d8d5f96e7e1aa8c1c396c738d146"
             ),
             "google-cloud-aiplatform[adk,agent_engines]>=1.95.0",
             "web3>=6.0",

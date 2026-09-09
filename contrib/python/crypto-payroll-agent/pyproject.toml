@@ -11,8 +11,12 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "google-adk>=1.0.0",
     # Spraay tools merged in adk-python-community#95 (May 2025) but not yet
-    # in a PyPI release. Pin to git main until a release > 0.4.1 ships.
-    "google-adk-community @ git+https://github.com/google/adk-python-community.git@main",
+    # in a PyPI release. Pinned to an exact commit rather than `main` so the
+    # build is reproducible — tracking a moving branch means two installs a
+    # day apart can ship different tool code. The pinned commit is what
+    # uv.lock resolves and the tests run against; swap it for a version
+    # specifier once a PyPI release carries the Spraay tools.
+    "google-adk-community @ git+https://github.com/google/adk-python-community.git@396da17a9597d8d5f96e7e1aa8c1c396c738d146",
     "google-cloud-aiplatform[adk,agent_engines]>=1.95.0",
     "web3>=6.0",
     "python-dotenv>=1.0",

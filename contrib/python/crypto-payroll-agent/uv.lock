@@ -557,7 +557,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "google-adk", specifier = ">=1.0.0" },
-    { name = "google-adk-community", git = "https://github.com/google/adk-python-community.git?rev=main" },
+    { name = "google-adk-community", git = "https://github.com/google/adk-python-community.git?rev=396da17a9597d8d5f96e7e1aa8c1c396c738d146" },
     { name = "google-cloud-aiplatform", extras = ["adk", "agent-engines"], specifier = ">=1.95.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "web3", specifier = ">=6.0" },
@@ -1087,11 +1087,10 @@ wheels = [
 
 [[package]]
 name = "google-adk-community"
-version = "0.4.1"
-source = { git = "https://github.com/google/adk-python-community.git?rev=main#437675b0e5cdfb0470edc898abe5e306590de1e9" }
+version = "0.5.0"
+source = { git = "https://github.com/google/adk-python-community.git?rev=396da17a9597d8d5f96e7e1aa8c1c396c738d146#396da17a9597d8d5f96e7e1aa8c1c396c738d146" }
 dependencies = [
     { name = "google-adk" },
-    { name = "google-genai" },
     { name = "httpx" },
     { name = "orjson" },
     { name = "redis" },

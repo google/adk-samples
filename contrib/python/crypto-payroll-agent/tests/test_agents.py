@@ -107,6 +107,17 @@ def test_split_pool_rounding_dust_goes_to_largest_weight():
     assert Decimal(result["total_distributed"]) == Decimal("100")
 
 
+def test_split_pool_rejects_out_of_range_decimals():
+    from crypto_payroll_agent.tools.helpers import split_pool_proportionally
+
+    # A negative value inverts the quantum; >18 exceeds the precision of
+    # any token on Base.
+    for bad in (-1, 19):
+        result = split_pool_proportionally("100", [1, 1], decimals=bad)
+        assert result["ok"] is False, bad
+        assert result["error"] == "decimals must be between 0 and 18."
+
+
 def test_split_pool_rejects_empty_weights():
     from crypto_payroll_agent.tools.helpers import split_pool_proportionally
 

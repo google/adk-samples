@@ -22,13 +22,40 @@ import math
 from decimal import ROUND_DOWN, Decimal, getcontext
 from typing import Any
 
-from ..config import BASE_TOKEN_REGISTRY
+from ..config import BASE_TOKEN_REGISTRY, TokenInfo
 
 # Decimal precision wide enough to handle 18-decimal token math.
 getcontext().prec = 50
 
 # EVM addresses are "0x" + 40 hex characters.
 ETH_ADDRESS_LENGTH = 42
+
+# No ERC-20 on Base carries more precision than ETH itself.
+MAX_TOKEN_DECIMALS = 18
+
+
+def _registry_hit(token: TokenInfo, note: str) -> dict[str, Any]:
+    """Build the `lookup_token_info` reply for a token in the registry."""
+    return {
+        "found": True,
+        "symbol": token["symbol"],
+        "address": token["address"],
+        "decimals": token["decimals"],
+        "source": "registry",
+        "note": note,
+    }
+
+
+def _registry_miss(symbol: str, address: str, note: str) -> dict[str, Any]:
+    """Build the `lookup_token_info` reply for an unrecognized token."""
+    return {
+        "found": False,
+        "symbol": symbol,
+        "address": address,
+        "decimals": None,
+        "source": "unknown",
+        "note": note,
+    }
 
 
 def lookup_token_info(symbol_or_address: str) -> dict[str, Any]:
@@ -59,50 +86,29 @@ def lookup_token_info(symbol_or_address: str) -> dict[str, Any]:
     if query.lower().startswith("0x") and len(query) == ETH_ADDRESS_LENGTH:
         for token in BASE_TOKEN_REGISTRY.values():
             if token["address"].lower() == query.lower():
-                return {
-                    "found": True,
-                    "symbol": token["symbol"],
-                    "address": token["address"],
-                    "decimals": token["decimals"],
-                    "source": "registry",
-                    "note": (f"Matched address to {token['symbol']} on Base."),
-                }
-        return {
-            "found": False,
-            "symbol": "",
-            "address": query,
-            "decimals": None,
-            "source": "unknown",
-            "note": (
-                "Address not in the bundled registry. Ask the user for "
-                "the token's decimals before constructing a transaction."
-            ),
-        }
+                return _registry_hit(
+                    token,
+                    f"Matched address to {token['symbol']} on Base.",
+                )
+        return _registry_miss(
+            "",
+            query,
+            "Address not in the bundled registry. Ask the user for "
+            "the token's decimals before constructing a transaction.",
+        )
 
     key = query.upper()
     token = BASE_TOKEN_REGISTRY.get(key)
     if token is not None:
-        return {
-            "found": True,
-            "symbol": token["symbol"],
-            "address": token["address"],
-            "decimals": token["decimals"],
-            "source": "registry",
-            "note": f"Resolved {token['symbol']} on Base.",
-        }
+        return _registry_hit(token, f"Resolved {token['symbol']} on Base.")
 
-    return {
-        "found": False,
-        "symbol": symbol_or_address,
-        "address": "",
-        "decimals": None,
-        "source": "unknown",
-        "note": (
-            f"'{symbol_or_address}' is not a recognized symbol in the "
-            "bundled Base token registry. Ask the user for the canonical "
-            "contract address and decimals before proceeding."
-        ),
-    }
+    return _registry_miss(
+        symbol_or_address,
+        "",
+        f"'{symbol_or_address}' is not a recognized symbol in the "
+        "bundled Base token registry. Ask the user for the canonical "
+        "contract address and decimals before proceeding.",
+    )
 
 
 def split_pool_proportionally(
@@ -121,7 +127,8 @@ def split_pool_proportionally(
     Args:
         total_amount: Pool total in human units (e.g. "10000" for 10,000 USDC).
         weights: List of finite, non-negative weights, one per recipient.
-        decimals: Token decimals used to clamp precision (default 6 for USDC).
+        decimals: Token decimals used to clamp precision, 0-18 (default 6
+            for USDC).
 
     Returns:
         A dict:
@@ -132,6 +139,17 @@ def split_pool_proportionally(
                 "error": str | None,
             }
     """
+    # Everything below quantizes against `decimals`, so bound it first.
+    # A negative value inverts the quantum and anything above 18 exceeds
+    # the precision of any token on Base.
+    if not 0 <= decimals <= MAX_TOKEN_DECIMALS:
+        return {
+            "ok": False,
+            "amounts": [],
+            "total_distributed": "0",
+            "error": (f"decimals must be between 0 and {MAX_TOKEN_DECIMALS}."),
+        }
+
     if not weights:
         return {
             "ok": False,
