@@ -1,8 +1,9 @@
 import json
+import logging
 import os
 
 from google.adk.agents import Agent
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 
 # Define the Structured Output Schema
@@ -21,9 +22,7 @@ class ScoringResult(BaseModel):
 # Initialize the Agent with structured output
 scoring_agent = Agent(
     name="multimodal_scoring_agent",
-    model=os.getenv(
-        "MODEL_NAME", "gemini-3.5-flash"
-    ),  # Strong multimodal capabilities
+    model=os.getenv("MODEL_NAME"),  # Strong multimodal capabilities
     description="Evaluates images against a strict scoring rubric and outputs deterministic grades.",
     instruction="""You are an expert visual quality assurance inspector. 
 You will be provided with an image and a JSON-defined scoring rubric. 
@@ -84,11 +83,14 @@ def evaluate_image(image_path: str, rubric_path: str):
                 and event.message
                 and event.message.parts
             ):
-                text = event.message.parts[0].text
-                try:
-                    result = ScoringResult.model_validate_json(text)
-                except Exception:
-                    pass
+                part = event.message.parts[0]
+                if hasattr(part, "text") and part.text is not None:
+                    try:
+                        result = ScoringResult.model_validate_json(part.text)
+                    except ValidationError as e:
+                        logging.error(f"Validation failure: {e}")
+                    except Exception as e:
+                        logging.error(f"Unexpected error parsing response: {e}")
         return result
 
     return asyncio.run(run_agent())
@@ -109,8 +111,11 @@ if __name__ == "__main__":
     try:
         result = evaluate_image(args.image, args.rubric)
         print("\n=== Scoring Result ===")
-        print(f"Grade: {result.grade}")
-        print(f"Confidence: {result.confidence}")
-        print(f"Reasoning:\n{result.reasoning}")
+        if result is None:
+            print("Evaluation failed. Result is None.")
+        else:
+            print(f"Grade: {result.grade}")
+            print(f"Confidence: {result.confidence}")
+            print(f"Reasoning:\n{result.reasoning}")
     except Exception as e:
         print(f"Error during evaluation: {e}")
