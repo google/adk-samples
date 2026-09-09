@@ -188,6 +188,19 @@ def test_split_pool_accepts_total_at_exactly_token_decimals():
     assert Decimal(result["total_distributed"]) == Decimal("100.123456")
 
 
+def test_split_pool_accepts_trailing_zeros_beyond_decimals():
+    from crypto_payroll_agent.tools.helpers import split_pool_proportionally
+
+    # "100.0000000" has 7 fractional digits but only 2 significant ones
+    # past the point, so it is representable at 6 decimals.
+    result = split_pool_proportionally("100.0000000", [1, 1], decimals=6)
+    assert result["ok"] is True
+    assert Decimal(result["total_distributed"]) == Decimal("100")
+    # Amounts stay in plain decimal form — no scientific notation leaks
+    # out of normalize() into the strings handed to the batch tools.
+    assert result["amounts"] == ["50.000000", "50.000000"]
+
+
 def test_split_pool_rejects_zero_weight_sum():
     from crypto_payroll_agent.tools.helpers import split_pool_proportionally
 

@@ -15,6 +15,7 @@ WETH = "0x4200000000000000000000000000000000000006"
 
 ADDR_A = "0x9f2c000000000000000000000000000000000000"
 ADDR_B = "0x4ab7000000000000000000000000000000000000"
+ADDR_C = "0x8eee000000000000000000000000000000000000"
 
 
 def _tool(name: str) -> SimpleNamespace:
@@ -121,6 +122,44 @@ def test_blocks_malformed_recipient_address():
     assert result is not None
     assert result["status"] == "error"
     assert "alice.eth" in result["error"]
+
+
+def test_blocks_variable_batch_with_too_few_amounts():
+    # 3 recipients, 2 amounts — the contract would revert on-chain.
+    result = _call(
+        "spraay_batch_token_variable",
+        token_address=USDC,
+        recipients=[ADDR_A, ADDR_B, ADDR_C],
+        amounts=["10", "20"],
+        token_decimals=6,
+    )
+    assert result is not None
+    assert result["status"] == "error"
+    assert "3 recipients but 2 amounts" in result["error"]
+
+
+def test_blocks_variable_batch_with_too_many_amounts():
+    # The mismatch is caught in the other direction too.
+    result = _call(
+        "spraay_batch_eth_variable",
+        recipients=[ADDR_A, ADDR_B],
+        amounts_eth=["0.1", "0.2", "0.3"],
+    )
+    assert result is not None
+    assert result["status"] == "error"
+    assert "2 recipients but 3 amounts" in result["error"]
+
+
+def test_accepts_uppercase_0x_prefix_but_stays_strict():
+    from crypto_payroll_agent.guardrails import _is_eth_address
+
+    # An uppercase prefix is still a valid address, as in helpers.py.
+    assert _is_eth_address("0X" + ADDR_A[2:])
+    # Everything else stays strict: wrong length, non-hex, no prefix.
+    assert not _is_eth_address(ADDR_A[:-1])
+    assert not _is_eth_address("0x" + "z" * 40)
+    assert not _is_eth_address(ADDR_A[2:])
+    assert not _is_eth_address(None)
 
 
 def test_ignores_tools_that_are_not_spraay_batches():

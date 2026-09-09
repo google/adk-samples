@@ -158,6 +158,10 @@ Every `spraay_batch_*` call is checked for:
 | $1-pegged token batches | total ≤ `PAYROLL_MAX_BATCH_USD` |
 | Any other token | **blocked** |
 
+The ceilings bound the amount reaching recipients. Spraay's 0.3%
+protocol fee is charged on top of that, so actual spend can exceed the
+ceiling by up to 0.3%.
+
 **Why non-pegged tokens are blocked.** Valuation is deliberately
 offline. `USDC`, `USDbC` and `DAI` are valued at $1 each, which needs no
 price feed. ETH is bounded by its own ceiling in ETH rather than

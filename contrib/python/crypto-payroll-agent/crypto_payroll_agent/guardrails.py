@@ -26,15 +26,11 @@ from typing import Any
 
 from google.adk.tools.base_tool import BaseTool
 
-from .config import CONFIG
+from .config import CONFIG, PEGGED_USD_SYMBOLS
 from .tools.helpers import ETH_ADDRESS_LENGTH
 
 # Spraay's per-transaction recipient cap.
 MAX_RECIPIENTS = 200
-
-# Registry symbols that hold a $1 peg. Valuing these at 1.0 USD needs no
-# price feed; every other token does, so it cannot be checked offline.
-PEGGED_USD_SYMBOLS = ("USDC", "USDBC", "DAI")
 
 ETH_TOOLS = frozenset({"spraay_batch_eth", "spraay_batch_eth_variable"})
 TOKEN_TOOLS = frozenset({"spraay_batch_token", "spraay_batch_token_variable"})
@@ -72,7 +68,7 @@ def _is_eth_address(value: Any) -> bool:
     """True when `value` is a 0x-prefixed, 40-hex-character address."""
     if not isinstance(value, str) or len(value) != ETH_ADDRESS_LENGTH:
         return False
-    if not value.startswith("0x"):
+    if not value.lower().startswith("0x"):
         return False
     return all(c in "0123456789abcdefABCDEF" for c in value[2:])
 
@@ -131,6 +127,16 @@ def enforce_batch_limits(
             f"0x-prefixed 40-hex-character addresses, starting with "
             f"{malformed[0]!r}. Resolve names to addresses first."
         )
+
+    per_recipient_key = _AMOUNT_KEYS[name][1]
+    if per_recipient_key is not None:
+        amounts = args.get(per_recipient_key)
+        if isinstance(amounts, (list, tuple)) and len(amounts) != count:
+            return _blocked(
+                f"Refused: {count} recipients but {len(amounts)} amounts. "
+                f"A variable batch needs one amount per recipient — the "
+                f"contract would revert."
+            )
 
     try:
         total = _batch_total(name, args, count)

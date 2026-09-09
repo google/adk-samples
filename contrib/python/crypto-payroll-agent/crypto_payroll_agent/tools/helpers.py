@@ -206,6 +206,12 @@ def split_pool_proportionally(
             "error": "total_amount must be positive.",
         }
 
+    # Strip trailing zeros first, so "100.0000000" is not mistaken for
+    # 7 digits of precision. normalize() can return an exponent form
+    # (Decimal("100.0000000") -> Decimal("1E+2")); that is fine here,
+    # because every amount below is quantized before being stringified.
+    total = total.normalize()
+
     # A total finer than the token's precision cannot be distributed
     # exactly: every share is floored to `decimals`, so the remainder is
     # unrepresentable and total_distributed would silently disagree with

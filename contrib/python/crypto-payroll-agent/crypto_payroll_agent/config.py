@@ -57,6 +57,11 @@ BASE_TOKEN_REGISTRY: dict[str, TokenInfo] = {
     },
 }
 
+# Registry symbols that hold a $1 peg. These are the only tokens this
+# recipe can value in USD without a price feed, which is what the batch
+# ceiling in guardrails.py is applied against.
+PEGGED_USD_SYMBOLS: tuple[str, ...] = ("USDC", "USDBC", "DAI")
+
 
 def _require_env(name: str) -> str:
     """Read a required environment variable, failing loudly if unset."""
