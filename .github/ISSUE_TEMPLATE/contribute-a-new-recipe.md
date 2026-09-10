@@ -1,7 +1,7 @@
 ---
 name: Contribute a New Recipe
 about: Use this to submit your recipe idea
-title: "[RECIPE]"
+title: "[RECIPE PROPOSAL]"
 labels: contribute
 assignees: pierpaolo28
 type: Feature
