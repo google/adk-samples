@@ -168,9 +168,9 @@ def main() -> None:
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(sources + _TOOLS, encoding="utf-8")
-    print(f"Generated {OUTPUT}")
-    print(f"  Neo4j URI:      {os.getenv('NEO4J_URI')}")
-    print(f"  Neo4j Database: {os.getenv('NEO4J_DATABASE')}")
+    # Confirm the write without echoing the URI, which may embed inline
+    # credentials. The database name is not sensitive.
+    print(f"Generated {OUTPUT} (database: {os.getenv('NEO4J_DATABASE')})")
 
 
 if __name__ == "__main__":
