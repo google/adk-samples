@@ -16,29 +16,35 @@ import os
 
 import google.auth
 
-_, project_id = google.auth.default()
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
+try:
+    _, project_id = google.auth.default()
+    if project_id:
+        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
+except Exception:
+    pass
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+os.environ.setdefault("GEMINI_MODEL_NAME", "gemini-3.6-flash")
+os.environ.setdefault("IMAGE_GENERATION_MODEL", "gemini-3.1-flash-image")
 
-from google.adk.agents import LlmAgent  # noqa: E402
-from google.adk.apps import App  # noqa: E402
-from google.adk.artifacts import (  # noqa: E402
+from google.adk.agents import LlmAgent
+from google.adk.apps import App
+from google.adk.artifacts import (
     GcsArtifactService,
     InMemoryArtifactService,
 )
-from google.adk.memory import InMemoryMemoryService  # noqa: E402
-from google.adk.runners import Runner  # noqa: E402
-from google.adk.sessions import (  # noqa: E402
+from google.adk.memory import InMemoryMemoryService
+from google.adk.runners import Runner
+from google.adk.sessions import (
     InMemorySessionService,
     VertexAiSessionService,
 )
 
-from presentation_agent.prompt import final_instruction  # noqa: E402
+from presentation_agent.prompt import final_instruction
 
 # Local Application Imports from the 'presentation_agent' package
 # If need to include MODEL_ARMOR_TEMPLATE_ID and related imports, they would go here as well.
-from presentation_agent.shared_libraries.config import (  # noqa: E402
+from presentation_agent.shared_libraries.config import (
     ENABLE_DEEP_RESEARCH,
     ENABLE_RAG,
     GCS_BUCKET_NAME,
@@ -47,7 +53,7 @@ from presentation_agent.shared_libraries.config import (  # noqa: E402
     get_logger,
     initialize_genai_client,
 )
-from presentation_agent.sub_agents import (  # noqa: E402
+from presentation_agent.sub_agents import (
     batch_slide_writer_tool,
     deep_research_agent_tool,
     generate_outline_and_save_tool,
@@ -56,7 +62,7 @@ from presentation_agent.sub_agents import (  # noqa: E402
     outline_specialist_tool,
     slide_writer_specialist_tool,
 )
-from presentation_agent.tools import ALL_STANDARD_TOOLS  # noqa: E402
+from presentation_agent.tools import ALL_STANDARD_TOOLS
 
 
 class PresentationExpertApp:
@@ -139,11 +145,14 @@ class PresentationExpertApp:
             artifact_service = InMemoryArtifactService()
 
         # Configure Session Service (Persistent Vertex AI or Local In-Memory)
-        is_local = os.getenv("LOCAL_DEV", "false").lower() == "true"
+        is_local = (os.getenv("LOCAL_DEV") or "").lower() == "true"
+        session_location = os.getenv("GOOGLE_CLOUD_LOCATION") or "us-east1"
+        if session_location == "global":
+            session_location = "us-east1"
         if not is_local and os.getenv("GOOGLE_CLOUD_PROJECT"):
             session_service = VertexAiSessionService(
                 project=os.getenv("GOOGLE_CLOUD_PROJECT"),
-                location=os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
+                location=session_location,
             )
             get_logger("agent").info(
                 f"Using VertexAiSessionService (Project: {os.getenv('GOOGLE_CLOUD_PROJECT')})"

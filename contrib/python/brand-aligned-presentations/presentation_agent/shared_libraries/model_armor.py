@@ -40,7 +40,7 @@ async def _call_model_armor_api(
         credentials.refresh(AuthRequest())
 
         # 2. Build the Model Armor REST URL
-        project = os.getenv("GOOGLE_CLOUD_PROJECT", default_project_id)
+        project = os.getenv("GOOGLE_CLOUD_PROJECT") or default_project_id
 
         if not project:
             logger.warning("Project ID not found. Skipping Model Armor.")
@@ -104,7 +104,7 @@ async def model_armor_interceptor(
 
     if not data:
         # Fail-closed logic
-        if os.getenv("USE_IN_MEMORY_FOR_TESTS", "false").lower() == "true":
+        if (os.getenv("USE_IN_MEMORY_FOR_TESTS") or "").lower() == "true":
             return None
         return types.Content(
             role="model",
@@ -166,7 +166,7 @@ async def model_armor_response_interceptor(
 
     if not data:
         # Fail-closed logic for response
-        if os.getenv("USE_IN_MEMORY_FOR_TESTS", "false").lower() == "true":
+        if (os.getenv("USE_IN_MEMORY_FOR_TESTS") or "").lower() == "true":
             return None
         return LlmResponse(
             content=types.Content(

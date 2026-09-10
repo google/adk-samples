@@ -40,22 +40,20 @@ log = get_logger("config")
 
 # Exported Config Variables (Directly read from environment)
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
-GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-ROOT_MODEL = os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash")
-IMAGE_GENERATION_MODEL = os.getenv(
-    "IMAGE_GENERATION_MODEL", "gemini-3.1-flash-image"
-)
-PROJECT_NUMBER = os.getenv("GOOGLE_CLOUD_PROJECT_NUMBER", "")
-DATASTORE_ID = os.getenv("DATASTORE_ID", "")
-DEFAULT_TEMPLATE_URI = os.getenv("DEFAULT_TEMPLATE_URI", "")
-ENABLE_RAG = os.getenv("ENABLE_RAG", "false")
-ENABLE_DEEP_RESEARCH = os.getenv("ENABLE_DEEP_RESEARCH", "false")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
+ROOT_MODEL = os.getenv("GEMINI_MODEL_NAME")
+IMAGE_GENERATION_MODEL = os.getenv("IMAGE_GENERATION_MODEL")
+PROJECT_NUMBER = os.getenv("GOOGLE_CLOUD_PROJECT_NUMBER")
+DATASTORE_ID = os.getenv("DATASTORE_ID")
+DEFAULT_TEMPLATE_URI = os.getenv("DEFAULT_TEMPLATE_URI")
+ENABLE_RAG = (os.getenv("ENABLE_RAG") or "").lower() == "true"
+ENABLE_DEEP_RESEARCH = (
+    os.getenv("ENABLE_DEEP_RESEARCH") or ""
+).lower() == "true"
 MODEL_ARMOR_TEMPLATE_ID = os.getenv("MODEL_ARMOR_TEMPLATE_ID")
 
 # Format GCS Bucket Name
-GCS_BUCKET_NAME = os.getenv(
-    "GCP_STAGING_BUCKET", f"{GOOGLE_CLOUD_PROJECT}-staging-bucket"
-)
+GCS_BUCKET_NAME = os.getenv("GCP_STAGING_BUCKET")
 
 
 if GCS_BUCKET_NAME:
