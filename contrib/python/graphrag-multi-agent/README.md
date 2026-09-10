@@ -147,6 +147,23 @@ The runnability test imports the agent and asserts `root_agent` is defined.
 It needs no network access: the Neo4j driver connects lazily on the first
 tool call, and the MCP Toolbox is contacted only when configured.
 
+## Security
+
+The agent runs against the graph **read-only**, enforced at two layers:
+
+- **Database-level (primary):** every query executes with
+  `routing_=RoutingControl.READ`, so the server rejects any write in the
+  transaction regardless of the query text.
+- **Application-level (defense-in-depth):** a keyword pre-check rejects
+  obvious mutating statements and `LOAD CSV` with a clear message.
+
+A query-string filter alone cannot fully sandbox LLM-generated Cypher (for
+example, some procedures can perform network I/O). For production or
+untrusted input, connect with a **database user that has only read
+privileges**, and restrict procedure allowlists (APOC) and network egress at
+the database — that is the definitive control. This recipe targets a public,
+read-only demo database, so those controls are already in place upstream.
+
 ## Credits
 
 Based on the

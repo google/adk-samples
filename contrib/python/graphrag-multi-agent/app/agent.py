@@ -41,7 +41,7 @@ import re
 from typing import Any
 
 from google.adk.agents import Agent
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, RoutingControl
 from neo4j.exceptions import Neo4jError
 from neo4j.graph import Node, Path, Relationship
 from neo4j.time import Date, DateTime, Duration, Time
@@ -52,11 +52,22 @@ logger = logging.getLogger(__name__)
 # hardcoded. .env is loaded by app/__init__.py before this module is imported.
 MODEL = os.getenv("MODEL_NAME")
 
-# Any of these keywords in a statement marks it as a write. This agent is
-# strictly read-only, so such statements are rejected before execution.
+# A fast pre-check that rejects obvious mutating statements (and LOAD CSV)
+# with a friendly message before they reach the database. This is only
+# defense-in-depth: read-only execution is ENFORCED at the database through
+# routing_=RoutingControl.READ (see execute_read_query). A keyword filter
+# alone cannot make LLM-generated Cypher safe — for untrusted input, also
+# connect with a database user that has read-only privileges (see the
+# README "Security" note).
 _WRITE_QUERY_RE = re.compile(
-    r"\b(MERGE|CREATE|SET|DELETE|REMOVE|ADD)\b", re.IGNORECASE
+    r"\b(MERGE|CREATE|SET|DELETE|REMOVE|ADD|LOAD)\b", re.IGNORECASE
 )
+
+# Neo4j driver timeouts (seconds). Bounding every outbound call keeps a slow
+# or dead server from hanging the agent indefinitely.
+_CONNECTION_TIMEOUT_S = 15
+_CONNECTION_ACQUISITION_TIMEOUT_S = 30
+_MAX_CONNECTION_LIFETIME_S = 3600
 
 
 def serialize_neo4j_value(value: Any) -> Any:
@@ -112,11 +123,17 @@ class Neo4jDatabase:
         driver = GraphDatabase.driver(
             uri,
             auth=(username, password),
-            connection_timeout=15,
-            connection_acquisition_timeout=30,
-            max_connection_lifetime=3600,
+            connection_timeout=_CONNECTION_TIMEOUT_S,
+            connection_acquisition_timeout=_CONNECTION_ACQUISITION_TIMEOUT_S,
+            max_connection_lifetime=_MAX_CONNECTION_LIFETIME_S,
         )
-        driver.verify_connectivity()
+        # Close the driver if the initial handshake fails, so a bad
+        # connection does not leak the pool and its background threads.
+        try:
+            driver.verify_connectivity()
+        except Exception:
+            driver.close()
+            raise
         self.driver = driver
         self.database = database
 
@@ -132,8 +149,13 @@ class Neo4jDatabase:
             raise ValueError(
                 "Write queries are not supported by this read-only agent."
             )
+        # routing_=READ enforces read-only at the database: the server
+        # rejects any write in this transaction, regardless of the query text.
         result = self.driver.execute_query(
-            query, params or {}, database_=self.database
+            query,
+            params or {},
+            database_=self.database,
+            routing_=RoutingControl.READ,
         )
         return [serialize_neo4j_value(dict(r)) for r in result.records]
 
@@ -296,9 +318,10 @@ def _investment_research_tools() -> list[Any]:
         )
         return [toolset, get_schema]
     except Exception as exc:
-        print(
-            f"[graphrag-multi-agent] MCP Toolbox unavailable ({exc}); "
-            "falling back to schema + Cypher tools."
+        logger.warning(
+            "MCP Toolbox unavailable (%s); falling back to schema + Cypher "
+            "tools.",
+            exc,
         )
         return fallback
 
@@ -394,7 +417,6 @@ investment_research_agent = Agent(
 root_agent = Agent(
     model=MODEL,
     name="investment_agent",
-    global_instruction="",
     instruction="""
     You have access to a knowledge graph of companies (organizations), the
     people involved with them, articles about companies, and industry

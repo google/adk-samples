@@ -26,6 +26,7 @@ serves through the MCP Toolbox; only the Neo4j source block is filled from the
 environment.
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -153,13 +154,16 @@ def main() -> None:
             "this script."
         )
 
+    # json.dumps produces a correctly quoted/escaped scalar. JSON is a subset
+    # of YAML, so this is valid YAML and safe even if a credential contains a
+    # quote or backslash.
     sources = f"""sources:
   companies-graph:
     kind: "neo4j"
-    uri: "{os.getenv("NEO4J_URI")}"
-    user: "{os.getenv("NEO4J_USERNAME")}"
-    password: "{os.getenv("NEO4J_PASSWORD")}"
-    database: "{os.getenv("NEO4J_DATABASE")}"
+    uri: {json.dumps(os.getenv("NEO4J_URI"))}
+    user: {json.dumps(os.getenv("NEO4J_USERNAME"))}
+    password: {json.dumps(os.getenv("NEO4J_PASSWORD"))}
+    database: {json.dumps(os.getenv("NEO4J_DATABASE"))}
 """
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

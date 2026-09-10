@@ -24,31 +24,38 @@ from dotenv import load_dotenv
 # agent-import time (e.g. MODEL_NAME) see the values from .env.
 load_dotenv()
 
+
 # Choose the auth backend. GOOGLE_GENAI_USE_VERTEXAI=1 uses Vertex AI (needs a
 # project + location); anything else uses the Google AI (ML Developer) API
 # with an API key. The relevant credential is validated up front so a
 # misconfiguration fails with a clear message rather than deep inside a call.
+def _is_unset(name: str) -> bool:
+    """True if a variable is missing or still the .env.example placeholder."""
+    value = os.getenv(name)
+    return not value or value.startswith("<TODO")
+
+
 _use_vertex_ai = os.getenv("GOOGLE_GENAI_USE_VERTEXAI") == "1"
 
 if _use_vertex_ai:
     os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
-    if not os.getenv("GOOGLE_CLOUD_PROJECT"):
+    if _is_unset("GOOGLE_CLOUD_PROJECT"):
         raise ValueError(
-            "GOOGLE_CLOUD_PROJECT is not set. Add it to your .env file: "
-            "GOOGLE_CLOUD_PROJECT=your-gcp-project-id"
+            "GOOGLE_CLOUD_PROJECT is not set. Set it in your .env file "
+            "(see .env.example)."
         )
-    if not os.getenv("GOOGLE_CLOUD_LOCATION"):
+    if _is_unset("GOOGLE_CLOUD_LOCATION"):
         raise ValueError(
-            "GOOGLE_CLOUD_LOCATION is not set. Add it to your .env file: "
-            "GOOGLE_CLOUD_LOCATION=us-central1"
+            "GOOGLE_CLOUD_LOCATION is not set. Set it in your .env file "
+            "(see .env.example)."
         )
 else:
     os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "0"
-    if not os.getenv("GOOGLE_API_KEY"):
+    if _is_unset("GOOGLE_API_KEY"):
         raise ValueError(
             "GOOGLE_API_KEY is not set. Get one from "
-            "https://aistudio.google.com/app/apikey and add it to your .env "
-            "file: GOOGLE_API_KEY=your_api_key_here"
+            "https://aistudio.google.com/app/apikey and set it in your .env "
+            "file (see .env.example)."
         )
 
 from . import agent  # noqa: E402 -- must come after configuration above
