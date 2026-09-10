@@ -35,14 +35,18 @@ real endpoint. Importing this module therefore performs no network I/O,
 which is what keeps ``tests/test_runnability.py`` fast and offline.
 """
 
+import logging
 import os
 import re
 from typing import Any
 
 from google.adk.agents import Agent
 from neo4j import GraphDatabase
+from neo4j.exceptions import Neo4jError
 from neo4j.graph import Node, Path, Relationship
 from neo4j.time import Date, DateTime, Duration, Time
+
+logger = logging.getLogger(__name__)
 
 # Model id is read from the environment (declared in .env.example), never
 # hardcoded. .env is loaded by app/__init__.py before this module is imported.
@@ -95,10 +99,26 @@ def serialize_neo4j_value(value: Any) -> Any:
 class Neo4jDatabase:
     """A thin, read-only wrapper around a Neo4j driver."""
 
-    def __init__(self, uri: str, username: str, password: str) -> None:
-        driver = GraphDatabase.driver(uri, auth=(username, password))
+    def __init__(
+        self,
+        uri: str,
+        username: str,
+        password: str,
+        database: str | None = None,
+    ) -> None:
+        # Bound every outbound call: cap connection setup, pool-acquisition
+        # wait, and connection lifetime so a slow or dead server cannot hang
+        # the agent indefinitely.
+        driver = GraphDatabase.driver(
+            uri,
+            auth=(username, password),
+            connection_timeout=15,
+            connection_acquisition_timeout=30,
+            max_connection_lifetime=3600,
+        )
         driver.verify_connectivity()
         self.driver = driver
+        self.database = database
 
     def is_write_query(self, query: str) -> bool:
         """Return True if the statement would modify the graph."""
@@ -112,7 +132,9 @@ class Neo4jDatabase:
             raise ValueError(
                 "Write queries are not supported by this read-only agent."
             )
-        result = self.driver.execute_query(query, params or {})
+        result = self.driver.execute_query(
+            query, params or {}, database_=self.database
+        )
         return [serialize_neo4j_value(dict(r)) for r in result.records]
 
 
@@ -131,8 +153,28 @@ def _get_db() -> Neo4jDatabase:
             os.getenv("NEO4J_URI"),
             os.getenv("NEO4J_USERNAME"),
             os.getenv("NEO4J_PASSWORD"),
+            os.getenv("NEO4J_DATABASE"),
         )
     return _db
+
+
+def _error_result(exc: Exception) -> list[dict[str, Any]]:
+    """Turn an exception into an agent-facing error row without leaking
+    connection details.
+
+    Query-level Neo4j errors (syntax, unknown label) and our own
+    ``ValueError`` carry no connection info and are returned as-is, so the
+    graph_database_agent can read the message and self-correct its Cypher.
+    Anything else — connection, auth, or driver failures that may contain
+    hostnames, ports or credentials — is logged in full server-side and
+    replaced with a generic message.
+    """
+    if isinstance(exc, (Neo4jError, ValueError)):
+        code = getattr(exc, "code", None)
+        message = getattr(exc, "message", None) or str(exc)
+        return [{"error": f"{code}: {message}" if code else message}]
+    logger.exception("Neo4j operation failed")
+    return [{"error": "Database operation failed; see server logs."}]
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +216,7 @@ def get_schema() -> list[dict[str, Any]]:
             """
         )
     except Exception as exc:
-        return [{"error": str(exc)}]
+        return _error_result(exc)
 
 
 def execute_read_query(
@@ -195,7 +237,7 @@ def execute_read_query(
     try:
         return _get_db().execute_read_query(query, params or {})
     except Exception as exc:
-        return [{"error": str(exc)}]
+        return _error_result(exc)
 
 
 def get_investors(company: str) -> list[dict[str, Any]]:
@@ -220,7 +262,7 @@ def get_investors(company: str) -> list[dict[str, Any]]:
             {"company": company},
         )
     except Exception as exc:
-        return [{"error": str(exc)}]
+        return _error_result(exc)
 
 
 # ---------------------------------------------------------------------------

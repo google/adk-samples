@@ -35,16 +35,15 @@ load_dotenv()
 
 OUTPUT = Path(__file__).parent / "app" / ".adk" / "tools.yaml"
 
-# The Neo4j source block — the only part that varies per environment. Values
-# come from .env (see .env.example for the demo defaults).
-_SOURCES = f"""sources:
-  companies-graph:
-    kind: "neo4j"
-    uri: "{os.getenv("NEO4J_URI")}"
-    user: "{os.getenv("NEO4J_USERNAME")}"
-    password: "{os.getenv("NEO4J_PASSWORD")}"
-    database: "{os.getenv("NEO4J_DATABASE")}"
-"""
+# Values come from .env (see .env.example for the demo defaults). All four are
+# required: a missing one would otherwise be written to the config as the
+# literal string "None".
+_REQUIRED = (
+    "NEO4J_URI",
+    "NEO4J_USERNAME",
+    "NEO4J_PASSWORD",
+    "NEO4J_DATABASE",
+)
 
 # The pre-validated query tools. A plain (non-f) string: the Cypher contains
 # literal ``{`` / ``}`` and ``$param`` tokens that must reach the file verbatim.
@@ -145,8 +144,26 @@ tools:
 
 
 def main() -> None:
+    missing = [name for name in _REQUIRED if not os.getenv(name)]
+    if missing:
+        raise SystemExit(
+            "Missing required environment variable(s): "
+            + ", ".join(missing)
+            + ".\nCopy .env.example to .env and fill them in before running "
+            "this script."
+        )
+
+    sources = f"""sources:
+  companies-graph:
+    kind: "neo4j"
+    uri: "{os.getenv("NEO4J_URI")}"
+    user: "{os.getenv("NEO4J_USERNAME")}"
+    password: "{os.getenv("NEO4J_PASSWORD")}"
+    database: "{os.getenv("NEO4J_DATABASE")}"
+"""
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(_SOURCES + _TOOLS, encoding="utf-8")
+    OUTPUT.write_text(sources + _TOOLS, encoding="utf-8")
     print(f"Generated {OUTPUT}")
     print(f"  Neo4j URI:      {os.getenv('NEO4J_URI')}")
     print(f"  Neo4j Database: {os.getenv('NEO4J_DATABASE')}")
