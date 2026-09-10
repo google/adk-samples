@@ -7,7 +7,7 @@ license = { text = "Apache License 2.0" }
 requires-python = ">=3.11"
 
 dependencies = [
-    "google-adk>=1.21.0",
+    "google-adk[mcp]>=1.21.0",
     "neo4j>=6.0.3",
     "python-dotenv>=1.0.0",
 ]
@@ -28,3 +28,7 @@ packages = ["app"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true

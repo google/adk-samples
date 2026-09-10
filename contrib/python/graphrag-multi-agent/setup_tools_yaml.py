@@ -35,14 +35,15 @@ load_dotenv()
 
 OUTPUT = Path(__file__).parent / "app" / ".adk" / "tools.yaml"
 
-# The Neo4j source block — the only part that varies per environment.
+# The Neo4j source block — the only part that varies per environment. Values
+# come from .env (see .env.example for the demo defaults).
 _SOURCES = f"""sources:
   companies-graph:
     kind: "neo4j"
-    uri: "{os.getenv("NEO4J_URI", "neo4j+s://demo.neo4jlabs.com")}"
-    user: "{os.getenv("NEO4J_USERNAME", "companies")}"
-    password: "{os.getenv("NEO4J_PASSWORD", "companies")}"
-    database: "{os.getenv("NEO4J_DATABASE", "companies")}"
+    uri: "{os.getenv("NEO4J_URI")}"
+    user: "{os.getenv("NEO4J_USERNAME")}"
+    password: "{os.getenv("NEO4J_PASSWORD")}"
+    database: "{os.getenv("NEO4J_DATABASE")}"
 """
 
 # The pre-validated query tools. A plain (non-f) string: the Cypher contains
@@ -147,10 +148,8 @@ def main() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(_SOURCES + _TOOLS, encoding="utf-8")
     print(f"Generated {OUTPUT}")
-    print(
-        f"  Neo4j URI:      {os.getenv('NEO4J_URI', 'neo4j+s://demo.neo4jlabs.com')}"
-    )
-    print(f"  Neo4j Database: {os.getenv('NEO4J_DATABASE', 'companies')}")
+    print(f"  Neo4j URI:      {os.getenv('NEO4J_URI')}")
+    print(f"  Neo4j Database: {os.getenv('NEO4J_DATABASE')}")
 
 
 if __name__ == "__main__":

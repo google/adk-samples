@@ -28,7 +28,7 @@ load_dotenv()
 # project + location); anything else uses the Google AI (ML Developer) API
 # with an API key. The relevant credential is validated up front so a
 # misconfiguration fails with a clear message rather than deep inside a call.
-_use_vertex_ai = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "0") == "1"
+_use_vertex_ai = os.getenv("GOOGLE_GENAI_USE_VERTEXAI") == "1"
 
 if _use_vertex_ai:
     os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"

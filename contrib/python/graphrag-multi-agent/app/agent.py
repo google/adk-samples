@@ -35,23 +35,18 @@ real endpoint. Importing this module therefore performs no network I/O,
 which is what keeps ``tests/test_runnability.py`` fast and offline.
 """
 
-import asyncio
 import os
 import re
 from typing import Any
 
-from dotenv import load_dotenv
 from google.adk.agents import Agent
 from neo4j import GraphDatabase
+from neo4j.graph import Node, Path, Relationship
 from neo4j.time import Date, DateTime, Duration, Time
 
-# app/__init__.py already calls load_dotenv() before importing this module.
-# Calling it again is cheap and idempotent, and keeps the module usable when
-# imported directly by tooling that bypasses the package __init__.
-load_dotenv()
-
-# Model id is read from the environment, never hardcoded. See .env.example.
-MODEL = os.getenv("MODEL_NAME", "gemini-3.5-flash")
+# Model id is read from the environment (declared in .env.example), never
+# hardcoded. .env is loaded by app/__init__.py before this module is imported.
+MODEL = os.getenv("MODEL_NAME")
 
 # Any of these keywords in a statement marks it as a write. This agent is
 # strictly read-only, so such statements are rejected before execution.
@@ -71,6 +66,25 @@ def serialize_neo4j_value(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, Duration):
         return str(value)
+    if isinstance(value, Node):
+        return {
+            "_labels": sorted(value.labels),
+            "_element_id": value.element_id,
+            **{k: serialize_neo4j_value(v) for k, v in dict(value).items()},
+        }
+    if isinstance(value, Relationship):
+        return {
+            "_type": value.type,
+            "_element_id": value.element_id,
+            **{k: serialize_neo4j_value(v) for k, v in dict(value).items()},
+        }
+    if isinstance(value, Path):
+        return {
+            "nodes": [serialize_neo4j_value(n) for n in value.nodes],
+            "relationships": [
+                serialize_neo4j_value(r) for r in value.relationships
+            ],
+        }
     if isinstance(value, dict):
         return {k: serialize_neo4j_value(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -216,37 +230,29 @@ def get_investors(company: str) -> list[dict[str, Any]]:
 MCP_TOOLBOX_URL = os.getenv("MCP_TOOLBOX_URL")
 
 
-def _load_mcp_tools(url: str) -> list[Any]:
-    """Load pre-validated query tools from a running MCP Toolbox server."""
-    from google.adk.tools.mcp_tool.mcp_toolset import (
-        MCPToolset,
-        SseConnectionParams,
-    )
-
-    async def _load() -> list[Any]:
-        async with MCPToolset(
-            connection_params=SseConnectionParams(url=url)
-        ) as toolset:
-            tools = await toolset.load_tools()
-            tools.append(get_schema)
-            return tools
-
-    return asyncio.run(_load())
-
-
 def _investment_research_tools() -> list[Any]:
-    """MCP Toolbox tools when configured and reachable, else a fallback.
+    """Attach the MCP Toolbox as a lazy toolset, else a plain-tool fallback.
 
     The MCP Toolbox is optional: it requires the ``genai-toolbox`` binary
-    running separately (see README). When ``MCP_TOOLBOX_URL`` is unset or
-    still a placeholder, or the server is unreachable, this agent falls back
-    to the generic schema + Cypher tools so the recipe always runs.
+    running separately (see README). When ``MCP_TOOLBOX_URL`` is unset or is
+    still a placeholder, this agent uses the generic schema + Cypher tools so
+    the recipe always runs. When a real URL is set, the ``MCPToolset`` is
+    handed to the agent as-is and ADK connects to it lazily at run time — no
+    blocking network I/O at import.
     """
     fallback = [get_schema, execute_read_query]
-    if not MCP_TOOLBOX_URL or MCP_TOOLBOX_URL.startswith("your_"):
+    if not MCP_TOOLBOX_URL or MCP_TOOLBOX_URL.startswith("<"):
         return fallback
     try:
-        return _load_mcp_tools(MCP_TOOLBOX_URL)
+        from google.adk.tools.mcp_tool.mcp_toolset import (
+            MCPToolset,
+            SseConnectionParams,
+        )
+
+        toolset = MCPToolset(
+            connection_params=SseConnectionParams(url=MCP_TOOLBOX_URL)
+        )
+        return [toolset, get_schema]
     except Exception as exc:
         print(
             f"[graphrag-multi-agent] MCP Toolbox unavailable ({exc}); "
