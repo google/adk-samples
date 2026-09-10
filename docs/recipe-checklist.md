@@ -1,4 +1,4 @@
-<!-- word count: 930 (target 900, cap 1200) -->
+<!-- word count: 948 (target 900, cap 1200) -->
 
 # Recipe Checklist
 
@@ -7,12 +7,13 @@ Deep detail lives in [`recipe-handbook/`](./recipe-handbook/README.md).
 
 ---
 
-## Before you start
+## Proposing a new recipe
 
-Open a
+If this is a **new** recipe, open a
 [Propose a New Recipe](https://github.com/google/adk-samples/issues/new?template=propose-a-new-recipe.md)
-issue and wait for approval before adding your recipe to `contrib/`
-and opening a PR.
+issue and wait for approval before adding it to `contrib/` and
+opening a PR. Updating an existing recipe? Skip this and go
+straight to the checklist.
 
 ---
 
