@@ -1,5 +1,5 @@
 ---
-name: Contribute a New Recipe
+name: Propose a New Recipe
 about: Use this to submit your recipe idea
 title: "[RECIPE PROPOSAL]"
 labels: contribute
