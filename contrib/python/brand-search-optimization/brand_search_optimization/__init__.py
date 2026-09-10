@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,23 +13,21 @@
 # limitations under the License.
 
 import os
-import types as builtin_types
-import google.auth
+from pathlib import Path
 
-import typing
+from dotenv import load_dotenv
 
-typing._UnionGenericAlias = builtin_types.UnionType  # type: ignore[attr-defined]
+# Environment bootstrap for the whole package. Real values come from .env
+# (gitignored) or the ambient environment. The committed .env.example is the
+# fallback so the unit tests and the runnability test import cleanly with no
+# .env present. override=False throughout, so a real environment variable wins.
+_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_ROOT / ".env", override=False)
+load_dotenv(_ROOT / ".env.example", override=False)
 
-project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-if not project_id and os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-    _, project_id = google.auth.default()
-
-os.environ.setdefault(
-    "GOOGLE_CLOUD_PROJECT", project_id or "your-default-project"
-)
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
-from .agent import root_agent
+from .agent import root_agent  # noqa: E402 -- must come after load_dotenv()
 
 __all__ = ["root_agent"]
