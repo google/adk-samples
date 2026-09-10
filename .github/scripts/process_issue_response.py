@@ -214,12 +214,22 @@ def find_json_objects(text: str) -> list[dict[str, Any]]:
                             break
             if end_idx != -1:
                 candidate = text[start_idx : end_idx + 1]
+                parsed_obj = None
                 try:
-                    parsed = json.loads(candidate)
+                    parsed = json.loads(candidate, strict=False)
                     if isinstance(parsed, dict):
-                        results.append(parsed)
+                        parsed_obj = parsed
                 except json.JSONDecodeError:
-                    pass
+                    # Clean trailing commas and retry
+                    cleaned_candidate = re.sub(r",\s*([}\]])", r"\1", candidate)
+                    try:
+                        parsed = json.loads(cleaned_candidate, strict=False)
+                        if isinstance(parsed, dict):
+                            parsed_obj = parsed
+                    except json.JSONDecodeError:
+                        pass
+                if parsed_obj is not None:
+                    results.append(parsed_obj)
                 i = end_idx + 1
                 continue
         i += 1

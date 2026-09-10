@@ -320,6 +320,38 @@ def test_extract_decision_json_with_nested_json_in_response():
     assert '{"timeout": 30}' in extracted["response"]
 
 
+def test_extract_decision_json_with_trailing_commas():
+    raw = """```json
+{
+  "option": 1,
+  "response": "Could you share reproduction steps and error logs?",
+  "path": null,
+  "assignee": null,
+  "close_issue": false,
+}
+```"""
+    extracted = extract_decision_json(raw)
+    assert extracted["option"] == 1
+    assert "reproduction" in extracted["response"]
+    assert extracted["close_issue"] is False
+
+
+def test_extract_decision_json_with_raw_control_chars_in_response():
+    # Raw literal newline inside a JSON string
+    raw = (
+        "{\n"
+        '  "option": 1,\n'
+        '  "path": null,\n'
+        '  "assignee": null,\n'
+        '  "close_issue": false,\n'
+        '  "response": "Line 1\nLine 2"\n'
+        "}"
+    )
+    extracted = extract_decision_json(raw)
+    assert extracted["option"] == 1
+    assert "Line 1\nLine 2" in extracted["response"]
+
+
 def test_extract_decision_json_invalid_raises():
     with pytest.raises(ValueError, match="No valid JSON decision"):
         extract_decision_json("Just random text with no JSON object at all.")

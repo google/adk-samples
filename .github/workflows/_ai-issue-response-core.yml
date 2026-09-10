@@ -159,6 +159,8 @@ jobs:
             Your goal is to analyze the issue content against repository guidelines and documentation,
             and provide an immediate, helpful, clear, and genuine preliminary response to shorten resolution time.
 
+            Do NOT call any tool. Do not run shell commands, do not read or search files from the filesystem or working directory, and do not try to reach GitHub. You have no tools: the permission allowlist is empty, so every such call is denied, and one denied call ends the response with nothing to show for it. Everything you need is already inlined in this prompt. Evaluate the issue based solely on the prompt context and guidelines.
+
             ## Tone & Style Guidelines for Response
 
             - Sound like a friendly, knowledgeable, genuine repository maintainer / engineer having a conversation on GitHub.
@@ -173,7 +175,7 @@ jobs:
             and perform EXACTLY ONE of the following four actions:
 
             Option 1: Ask for more clarifying questions if not enough information is provided.
-            - Choose this when the issue lacks reproduction steps, error logs, environment details, or does not clearly specify which recipe or language is being used.
+            - Choose this when the issue lacks reproduction steps, error logs, environment details, or does not clearly specify which recipe or language is being used (e.g. bug reports that mention a recipe or crash without stack traces, environment details, or code snippets).
             - Keep your clarifying questions polite, direct, concise, and easy to answer.
             - Always set `close_issue: false`.
 
@@ -259,7 +261,7 @@ jobs:
             ## Output format
 
             Reply with a single JSON object and nothing else.
-            CRITICAL: Do not output any thought process, search steps ("I will search for..."), preambles, or conversational text outside the JSON object. Your ENTIRE output must be ONLY the JSON object.
+            CRITICAL: Do NOT call any tool, and do not output any thought process, search steps ("I will search for..."), preambles, or conversational text outside the JSON object. Your ENTIRE output must be ONLY the JSON object.
 
             {
               "option": 3,
@@ -314,22 +316,50 @@ jobs:
             exit 1
           fi
 
-          set +e
-          agy -p "$(cat full_prompt.txt)" \
-            --model "${AGY_MODEL}" \
-            --effort "${AGY_EFFORT}" \
-            --output-format json \
-            --print-timeout "${PRINT_TIMEOUT}" > agy_result.json 2> agy_stderr.log
-          AGY_EXIT=$?
-          set -e
+          # agy reports failures as JSON on STDOUT, not stderr, so the result
+          # must be written to disk and echoed back explicitly — otherwise a
+          # failure leaves a bare "exit 1" in the log with no reason attached.
+          for attempt in 1 2; do
+            set +e
+            agy -p "$(cat full_prompt.txt)" \
+              --model "${AGY_MODEL}" \
+              --effort "${AGY_EFFORT}" \
+              --output-format json \
+              --print-timeout "${PRINT_TIMEOUT}" > agy_result.json 2> agy_stderr.log
+            AGY_EXIT=$?
+            set -e
 
-          echo "--- agy envelope ---"
-          jq -r '{status, error} | tostring' agy_result.json 2>/dev/null \
-            || echo 'agy_result.json is not JSON'
-          echo "--- agy stderr ---"; cat agy_stderr.log || true
-          echo "------------------"
+            echo "--- agy envelope (attempt ${attempt}) ---"
+            jq -r '{status, error} | tostring' agy_result.json 2>/dev/null \
+              || echo 'agy_result.json is not JSON'
+            echo "--- agy stderr (attempt ${attempt}) ---"; cat agy_stderr.log || true
+            echo "------------------"
 
-          STATUS="$(jq -r '.status // "MISSING"' agy_result.json 2>/dev/null || echo 'MISSING')"
+            STATUS="$(jq -r '.status // "MISSING"' agy_result.json 2>/dev/null || echo 'MISSING')"
+            AGY_ERROR="$(jq -r '.error // ""' agy_result.json 2>/dev/null || echo '')"
+            RESPONSE="$(jq -r '.response // ""' agy_result.json 2>/dev/null || echo '')"
+
+            if [[ -n "${RESPONSE}" ]]; then
+              if [[ -n "${AGY_ERROR}" ]]; then
+                echo "::warning::agy reported an error after producing a response; using the response. Error: ${AGY_ERROR}"
+              fi
+              break
+            fi
+
+            echo "::warning::agy attempt ${attempt} produced no response (exit ${AGY_EXIT}, status=${STATUS}): ${AGY_ERROR:-unknown}"
+          done
+
+          if [[ -z "${RESPONSE}" ]]; then
+            echo "--- agy permission decisions ---"
+            grep -hiE 'grant|permission|denied|auto-deny|tool_name' \
+              "${HOME}"/.gemini/antigravity-cli/log/*.log 2>/dev/null \
+              | sed 's/^ERROR: logging before google.Init: //' \
+              | grep -vFf "${NEEDLES}" | tail -30 || true
+            echo "--------------------------------"
+            echo "::error::agy produced no response after 2 attempts (exit ${AGY_EXIT}, status=${STATUS}): ${AGY_ERROR:-unknown}"
+            exit 1
+          fi
+
           if [[ "${AGY_EXIT}" -ne 0 || "${STATUS}" != "SUCCESS" ]]; then
             echo "::error::agy exited ${AGY_EXIT} with status=${STATUS}: $(jq -r '.error // "unknown"' agy_result.json 2>/dev/null || echo 'no JSON output')"
             exit 1
