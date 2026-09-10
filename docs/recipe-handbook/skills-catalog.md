@@ -1,9 +1,10 @@
-<!-- word count: 848 (target 800, cap 1200) -->
+<!-- word count: 1112 (target 800, cap 1200) -->
 
 # Repo Skills Catalog
 
-**Repo skills** your AI coding assistant invokes to help you prepare a
-recipe. Source lives at
+**Repo skills** your AI coding assistant invokes while working in this
+repo — preparing a recipe, answering questions about how the repo
+works, authoring more skills. Source lives at
 [`.agents/skills/`](../../.agents/skills/); each has a `SKILL.md`
 with a full description. This catalog summarises them and maps
 them to the [checklist](../recipe-checklist.md).
@@ -27,6 +28,28 @@ Say the skill's name or its trigger phrase to your assistant:
 ```
 
 The assistant loads the skill on demand and runs it.
+
+## Ask the repo oracle
+
+### `repo-oracle`
+
+Answers questions about how this repo works — CI and workflow behavior,
+the limits in [`.github/policy.yml`](../../.github/policy.yml) and why
+they are set that way, who reviews which paths, what the bots do, and
+how a recipe is prepared and validated. It reads the repo and cites the
+file it answered from.
+
+**Read-only.** It never edits, commits, comments, or does the work
+itself. Ask it to prepare your recipe and you get the steps plus the
+name of the skill that does it — never the work.
+
+- **When to use:** you have a question about the repo rather than a
+  task to run — including "which skill do I need?"
+- **Not for:** your failing check, your working tree, or your branch.
+  It cannot see your machine.
+- **Trigger:** "oracle, what's the file limit for a contrib recipe?",
+  "oracle, who reviews core/go?", "ask the oracle how to add a
+  language".
 
 ## Universal skills
 

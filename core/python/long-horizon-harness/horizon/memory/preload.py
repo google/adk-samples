@@ -12,17 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Memory preload that does not defeat the context cache.
+"""Memory preload with a bounded block.
 
-ADK's stock ``PreloadMemoryTool`` appends ``<PAST_CONVERSATIONS>`` to
-``system_instruction``, rebuilt every turn from a similarity search, so it's
-rarely byte-identical twice; since the cache fingerprint hashes the whole
-``system_instruction``, the cache never validates for any user with memories.
-This subclass writes the same text into the trailing ``role="user"``
-contents instead, the region ADK's own cache-window calculation excludes.
-
-It also caps the block: ``BaseMemoryService.search_memory`` takes no
-``top_k``, so it otherwise grows without bound as memories accumulate.
+``BaseMemoryService.search_memory`` takes no ``top_k``, so ADK's stock
+``PreloadMemoryTool`` block grows without bound as memories accumulate. This
+subclass renders the same text under a count and character cap. Placement stays
+ADK's (``_insert_transient_user_content`` keeps the block out of the cached
+prefix); only the caps are ours.
 """
 
 from __future__ import annotations
@@ -57,7 +53,7 @@ def _int_env(name: str, default: int) -> int:
 
 
 class HorizonPreloadMemoryTool(PreloadMemoryTool):
-    """PreloadMemoryTool that rides the cache-excluded contents tail."""
+    """PreloadMemoryTool with a capped recall block."""
 
     @override
     async def process_llm_request(
@@ -111,16 +107,18 @@ class HorizonPreloadMemoryTool(PreloadMemoryTool):
         if dropped:
             logger.info("preload: trimmed %d memory entries", dropped)
 
-        llm_request.contents.append(
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part(
-                        text=f"{_HEADER}\n<PAST_CONVERSATIONS>\n{body}\n"
-                        "</PAST_CONVERSATIONS>"
-                    )
-                ],
-            )
+        llm_request._insert_transient_user_content(
+            [
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part(
+                            text=f"{_HEADER}\n<PAST_CONVERSATIONS>\n{body}\n"
+                            "</PAST_CONVERSATIONS>"
+                        )
+                    ],
+                )
+            ]
         )
 
 

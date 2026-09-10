@@ -63,6 +63,7 @@ Exit codes:
 """
 
 import argparse
+import itertools
 import json
 import re
 import subprocess
@@ -95,6 +96,40 @@ FENCED_BLOCK = re.compile(r"```(?:json)?\s*(\[.*?)```", re.DOTALL)
 # separator, and the leading whitespace is the model aligning its numbers.
 WINDOW_LINE = re.compile(r"^\s*(\d+)\s*[:|]\s?(.*)$")
 
+# The keys a finding is built from. Used to find where a string value ENDS
+# when the model has left raw quotes inside it — see _repair_string_values.
+FINDING_KEYS = "path|line|body|window|verify_steps"
+
+# The opener of a string-valued field: '"window": "'.
+STRING_FIELD_OPEN = re.compile(rf'"(?:{FINDING_KEYS})"\s*:\s*"')
+
+# Where such a value ends: a quote followed by the next key, or by the end of
+# the object. Anything else that looks like a terminator is part of the value.
+STRING_FIELD_END = re.compile(rf'"(?=\s*(?:,\s*"(?:{FINDING_KEYS})"\s*:|\}}))')
+
+# How much work to spend reading a malformed block before giving up on it.
+# The choices multiply per field, so this is a ceiling on a combinatorial walk.
+# Proving a reading UNIQUE means exhausting the walk, so the cap has to clear
+# a real block with room to spare: the three-finding block in
+# fixtures/malformed_findings_response.txt spends 6091 of it and the
+# two-finding #2566 block 383. Exhausting the cap is treated as "ambiguous",
+# never as "unique" — see _repaired_findings.
+MAX_REPAIR_STEPS = 16384
+
+# How many candidate ends to weigh for a single field. Every later field
+# boundary is a candidate end for an earlier field, so this is what stops a
+# many-finding block fanning out by its own width. The correct end is the
+# first in every real case seen; the rest are only there to expose ambiguity,
+# and a reading only reachable past the eighth is one this declines to make.
+MAX_ENDS_PER_FIELD = 8
+
+# String fields past which a block is not a findings array a review produced,
+# and is not worth reading. A lane is asked for about five findings of four
+# string fields each; the two real blocks here carry 8 and 12. Checked before
+# the walk starts, because the walk holds a copy of the reading so far per
+# branch: a runaway thousand-finding block cost 400MB of them before this.
+MAX_REPAIR_FIELDS = 64
+
 # Literal escape text a model writes where the diff holds the real character.
 ESCAPE_SEQ = re.compile(
     r"\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|\\x[0-9a-fA-F]{2}"
@@ -109,6 +144,39 @@ NOT_CHEAP_MARKERS = re.compile(
     r"\bgrep the repo\b|across (the )?(repo|codebase)",
     re.IGNORECASE,
 )
+
+# SECURITY (b/555419958). A finding's `body` is written by a model whose only
+# input is the PR diff, and on a fork PR every byte of that diff is chosen by
+# its author. The body is then posted verbatim to a public pull request through
+# the API, where GitHub's log masking does not reach. So the body is an
+# attacker-influenced string on a public channel, and something has to say what
+# shape it is allowed to be.
+#
+# These two limits say it. They are NOT the boundary — the empty agy tool
+# allowlist in the workflow is, and the credential scan there is the precise
+# check. What they do is make the channel too narrow to carry a credential
+# without the model first chopping it up, which is the difference between an
+# exfiltration that works on the first try and one that has to be engineered.
+# Treat them as a speed bump with a second job, not as a proof.
+#
+# The second job is the honest one: the prompt asks for "1-2 plain sentences"
+# and nothing enforced it. A model that returns an essay is misbehaving whether
+# or not anyone is attacking, and a review comment nobody will read is not
+# worth posting either.
+#
+# 600 characters is roughly 100 words — four or five sentences, well clear of
+# the two the prompt asks for, and clear too of a grouped finding that has to
+# say how many instances it covers.
+MAX_BODY_CHARS = 600
+
+# The longest unbroken non-whitespace run a body may contain. Calibrated
+# against real data, not guessed: the longest path in this repository is 123
+# characters (java/agents/time-series-forecasting/...ForecastingAgent.java),
+# and quoting a path is exactly what a legitimate finding does. So the cap has
+# to clear that with room, or the check costs real reviews. 160 does, while
+# still refusing a credential pasted in one piece — the ADC file this runner
+# holds is ~1KB and its embedded token alone runs past 200.
+MAX_UNBROKEN_RUN = 160
 
 # How far an anchor may be wrong before a window match stops being believable.
 MAX_DRIFT = 3
@@ -271,14 +339,23 @@ def extract_findings(response: str) -> list:
     answer — the prompt says the findings block comes last, and this reads it
     from the same end.
 
-    A block that will not parse AT ALL is salvaged finding by finding rather
-    than thrown away whole. Findings now quote source verbatim in `window`,
-    and source is full of double quotes: a reviewer emitted
+    A block that will not parse AT ALL is repaired, and failing that salvaged
+    finding by finding, rather than thrown away whole. Findings quote source
+    verbatim in `window`, and source is full of double quotes: a reviewer
+    emitted
 
         "window": "  211:     assert res["success"] is True\\n ..."
 
     which is one unescaped pair away from valid and killed an entire review
-    of three good findings. One malformed finding should cost that finding.
+    of three good findings.
+
+    Repair runs first because it recovers the WHOLE block, where salvage keeps
+    only the findings that happened to be well-formed already. Salvage alone
+    is not enough: the same quoting habit corrupts every window drawn from the
+    same file, so on a quote-dense diff there are no well-formed siblings left
+    to keep. Repair declines anything it cannot read one single way, so salvage
+    remains the fallback for a block that is malformed in some other way, and
+    one malformed finding still costs only that finding.
     """
     matches = list(FENCED_BLOCK.finditer(response))
     # Both branches guarantee a block starting at "[", so the scan below
@@ -300,6 +377,15 @@ def extract_findings(response: str) -> list:
         except json.JSONDecodeError as exc:
             if parsed_any:
                 break
+            # Repair before salvage: it recovers every finding in the block,
+            # where salvage keeps only the ones that were already well-formed.
+            repaired = _repaired_findings(block)
+            if repaired is not None:
+                print(
+                    f"  findings block is malformed JSON ({exc}); "
+                    f"repaired {len(repaired)} finding(s) in it"
+                )
+                return _dedupe(repaired)
             salvaged = _salvage_findings(block, decoder)
             if salvaged:
                 print(
@@ -328,6 +414,126 @@ def _dedupe(findings: list) -> list:
             seen.add(key)
             unique.append(finding)
     return unique
+
+
+def _escape_value(value: str) -> str:
+    """Re-escape a value's double quotes, normalising first so it is idempotent."""
+    return value.replace('\\"', '"').replace('"', '\\"')
+
+
+def _repair_readings(block: str, budget: list[int]):
+    """Every way of escaping the block, one per choice of where values end.
+
+    A value's end is looked for from the SCHEMA — the quote that precedes the
+    next known key, or the one that closes the object — because the obvious
+    cheap rule, "a quote followed by `,`, `]` or `}`", is wrong on the very
+    input this exists for: `[ -f "yarn.lock" ]` puts a `]` right after the
+    stray quote and would end the array mid-string.
+
+    The schema rule is not unambiguous either, so the first MAX_ENDS_PER_FIELD
+    candidate ends are branched on rather than just the first, and the caller
+    decides between the readings they produce.
+
+    Depth-first over an explicit stack, not recursion: one field is one frame,
+    and a runaway model answering with hundreds of findings would exceed the
+    interpreter's limit. That mattered — a RecursionError escapes the caller
+    entirely, so a block salvage could have read went to a CI fault instead.
+    `budget` is charged for every reading completed and every branch taken, so
+    the walk is capped whatever shape it takes: the combinations multiply per
+    field, and a block nobody can read is not worth an unbounded search.
+    """
+    stack: list[tuple[int, str]] = [(0, "")]
+
+    while stack:
+        if budget[0] <= 0:
+            return
+        index, prefix = stack.pop()
+
+        opener = STRING_FIELD_OPEN.search(block, index)
+        if opener is None:
+            budget[0] -= 1
+            yield prefix + block[index:]
+            continue
+
+        head = prefix + block[index : opener.end()]
+        ends = list(
+            itertools.islice(
+                STRING_FIELD_END.finditer(block, opener.end()),
+                MAX_ENDS_PER_FIELD,
+            )
+        )
+        if not ends:
+            # No end to find, so there is nothing to repair past this point.
+            budget[0] -= 1
+            yield head + block[opener.end() :]
+            continue
+
+        # Reversed, so the earliest end is popped first and the cheapest
+        # reading is the one a budget-limited walk is most likely to reach.
+        #
+        # Each push copies the reading so far, so pushes are charged to the
+        # budget as well. Counting only the steps that reached a leaf let a
+        # wide block spend minutes building readings it never finished: every
+        # later field boundary is a candidate end for every earlier field, so
+        # a 400-finding block pushed ~1600 copies per step and ran for over
+        # two minutes before this.
+        for end in reversed(ends):
+            budget[0] -= 1
+            value = block[opener.end() : end.start()]
+            stack.append((end.end(), f'{head}{_escape_value(value)}"'))
+
+
+def _repaired_findings(block: str) -> list | None:
+    """The findings a malformed block yields, when exactly one reading fits.
+
+    Findings quote source verbatim in `window`, and source is full of double
+    quotes, so the model regularly emits
+
+        "window": "  252:   elif [ -f "yarn.lock" ]; then\\n ..."
+
+    which is not JSON. `_salvage_findings` cannot help: it drops a finding it
+    cannot decode, and one quoting habit corrupts EVERY window drawn from the
+    same file, so a quote-dense diff loses the whole review rather than one
+    finding of it. That is what happened on #2566, where both findings quoted
+    shell out of a workflow file and the run died as a CI fault.
+
+    Escaping alone is not enough, because where a value ENDS can be genuinely
+    ambiguous. A window that quotes findings-shaped source — which this repo's
+    own tests contain — offers a second reading in which the value stops early
+    and the source's own `"line":` and `"body":` become the finding's fields:
+
+        "window": "  919: [{"path": "a.py", "line": 1, "body": "real"}]"
+
+    reads just as well as a finding anchored at line 1 with the body "real".
+    That parses, so parsing cannot be the test. Posting source scraped out of
+    a window as though it were a review comment is worse than posting nothing,
+    so a block is repaired ONLY when exactly one reading survives; anything
+    else falls through to salvage and, failing that, to the CI fault. The two
+    real regressions this exists for both have exactly one reading.
+    """
+    fields = sum(1 for _ in STRING_FIELD_OPEN.finditer(block))
+    if fields > MAX_REPAIR_FIELDS:
+        return None
+
+    readings: dict[str, list] = {}
+    decoder = json.JSONDecoder()
+    budget = [MAX_REPAIR_STEPS]
+
+    for candidate in _repair_readings(block, budget):
+        try:
+            array, _ = decoder.raw_decode(candidate, candidate.find("["))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(array, list) and array:
+            readings.setdefault(json.dumps(array, sort_keys=True), array)
+            if len(readings) > 1:
+                return None
+
+    # An exhausted budget means readings beyond the ones seen may exist, so
+    # "exactly one" has not actually been established.
+    if budget[0] <= 0 or len(readings) != 1:
+        return None
+    return next(iter(readings.values()))
 
 
 def _salvage_findings(block: str, decoder: json.JSONDecoder) -> list[dict]:
@@ -454,6 +660,32 @@ def _snap_to_window(line: int, rows: list[tuple[int, str]], offset: int) -> int:
     return min(
         claimed, key=lambda candidate: (abs(candidate - line), candidate)
     )
+
+
+def implausible_body(body: str) -> str | None:
+    """Why this body is not shaped like a review comment, or None if it is.
+
+    See MAX_BODY_CHARS. Deliberately says nothing about what a body may
+    CONTAIN: a keyword deny-list ("external_account", "Bearer", ...) reads as
+    security and is not, because the thing being filtered is written by a model
+    that the same input can instruct to reword, encode or spell out whatever
+    the list names. Shape is the property an attacker cannot negotiate away —
+    a credential is long, or it is chopped into pieces small enough that
+    reassembling it is its own problem.
+    """
+    if len(body) > MAX_BODY_CHARS:
+        return (
+            f"body is {len(body)} chars, over the {MAX_BODY_CHARS}-char limit"
+        )
+
+    longest = max((len(run) for run in body.split()), default=0)
+    if longest > MAX_UNBROKEN_RUN:
+        return (
+            f"body contains a {longest}-char unbroken run, over the "
+            f"{MAX_UNBROKEN_RUN}-char limit"
+        )
+
+    return None
 
 
 def check_window(
@@ -655,6 +887,13 @@ def build_comments(
             continue
         if not path or not body:
             skipped.append(f"{path or '<no path>'}:{line}: empty path or body")
+            continue
+
+        # Before anything that could promote this body onto the PR — inline or
+        # as a note in the review body, both of which are public.
+        malformed = implausible_body(body)
+        if malformed:
+            skipped.append(f"{path}:{line}: {malformed}")
             continue
 
         steps = str(finding.get("verify_steps") or "")

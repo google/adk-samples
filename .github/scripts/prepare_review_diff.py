@@ -215,7 +215,14 @@ def filter_diff(diff: str) -> tuple[str, dict]:
         churn = _section_churn(section)
 
         if path is None:
-            skipped.append((section[0][11:] or "<unknown>", "deleted", churn))
+            # `_section_path` returns None for a deletion, so recover the name
+            # from the `diff --git` header. Slicing off "diff --git " left the
+            # raw "a/x b/x" pair in the log, which reads as a path containing
+            # a space and hides which file was actually dropped.
+            header = GIT_HEADER_PATHS.match(section[0]) if section else None
+            skipped.append(
+                (header.group(2) if header else "<unknown>", "deleted", churn)
+            )
             continue
         # A section with no churn is a pure rename or a mode change. There is
         # nothing in it to comment on, and on a migration PR it can be most of

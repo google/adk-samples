@@ -286,7 +286,7 @@ def test_workflow_invokes_this_script_with_the_flags_it_defines():
         / "_ai-pr-review-core.yml"
     )
     steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"][
-        "review-pr"
+        "review"
     ]["steps"]
     prepare = next(s for s in steps if s.get("id") == "prepare_diff")
 

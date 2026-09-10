@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The preload block must stay out of the cache fingerprint.
+"""The preload block must stay out of the cached prefix, and stay bounded.
 
-GeminiContextCacheManager hashes the whole system_instruction. A block
-rebuilt per turn from a similarity search can never be byte-stable, so
-putting it there means the cache never validates.
+GeminiContextCacheManager hashes the whole system_instruction, so a block
+rebuilt per turn from a similarity search can never be byte-stable there. ADK
+owns the placement; the caps are ours.
 """
 
 from __future__ import annotations
@@ -26,6 +26,9 @@ from dataclasses import dataclass
 
 import pytest
 from google.adk.models import LlmRequest
+from google.adk.models.gemini_context_cache_manager import (
+    GeminiContextCacheManager,
+)
 from google.genai import types
 
 from horizon.memory.preload import HorizonPreloadMemoryTool
@@ -76,14 +79,27 @@ async def test_block_lands_in_contents_not_system_instruction():
     assert "your name is Sam" in text
 
 
-async def test_block_is_the_trailing_user_content():
-    # _find_count_of_contents_to_cache excludes the trailing run of user
-    # contents; the block only escapes the fingerprint if it lands there.
+async def test_block_lands_outside_the_cached_prefix():
     req = _request()
+    req.contents = [
+        types.Content(role="user", parts=[types.Part(text="hi")]),
+        types.Content(role="model", parts=[types.Part(text="hello")]),
+        types.Content(role="user", parts=[types.Part(text="and now?")]),
+    ]
     await HorizonPreloadMemoryTool().process_llm_request(
         tool_context=_Ctx([_memory("fact")]), llm_request=req
     )
-    assert req.contents[-1].role == "user"
+
+    manager = GeminiContextCacheManager(
+        genai_client=pytypes.SimpleNamespace(vertexai=True)
+    )
+    cached = manager._find_count_of_contents_to_cache(req.contents)
+    block = next(
+        i
+        for i, c in enumerate(req.contents)
+        if "<PAST_CONVERSATIONS>" in (c.parts[0].text or "")
+    )
+    assert block >= cached
 
 
 async def test_memory_count_is_capped(monkeypatch):
