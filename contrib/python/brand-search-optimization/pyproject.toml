@@ -31,7 +31,7 @@ deployment = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 ignore_missing_imports = true
 files = ["brand_search_optimization", "tests", "eval"]
 exclude = ["^deployment/", "^\\.venv/", "__pycache__"]
@@ -54,5 +54,5 @@ example_question = "Can you help optimize my brand product title for search?"
 agent_directory = "brand_search_optimization"
 
 [[tool.uv.index]]
-url = "https://pypi.org/simple/"
+url = "https://pypi.org/simple"
 default = true
