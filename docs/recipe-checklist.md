@@ -1,9 +1,18 @@
-<!-- word count: 906 (target 900, cap 1200) -->
+<!-- word count: 930 (target 900, cap 1200) -->
 
 # Recipe Checklist
 
 Everything you need to submit a `contrib/` recipe, on one page.
 Deep detail lives in [`recipe-handbook/`](./recipe-handbook/README.md).
+
+---
+
+## Before you start
+
+Open a
+[Propose a New Recipe](https://github.com/google/adk-samples/issues/new?template=propose-a-new-recipe.md)
+issue and wait for approval before adding your recipe to `contrib/`
+and opening a PR.
 
 ---
 
