@@ -1,6 +1,6 @@
 # Brand Search Optimization
 
-This sample is an Agent Development Kit (ADK) multi-agent workflow that helps optimize retail product titles for brand search performance.
+This recipe is an Agent Development Kit (ADK) multi-agent workflow that helps optimize retail product titles for brand search performance.
 
 ## What This Agent Does
 
@@ -19,7 +19,7 @@ The root agent routes work to specialized sub-agents:
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.11+
 - `uv` installed: https://docs.astral.sh/uv/
 - Google Cloud project access
 - Application Default Credentials:
@@ -30,11 +30,11 @@ gcloud auth application-default login
 
 ## Setup
 
-1. Clone the repository and open this agent directory:
+1. Clone the repository and open this recipe directory:
 
 ```bash
 git clone https://github.com/google/adk-samples.git
-cd adk-samples/python/agents/brand-search-optimization
+cd adk-samples/contrib/python/brand-search-optimization
 ```
 
 2. Create your environment file:
@@ -128,4 +128,4 @@ See `tests/example_interaction.md` for a full sample session.
 
 ## Disclaimer
 
-This sample is for educational and prototyping use. It is not production hardened and should be reviewed, tested, and secured before production deployment.
+This recipe is for educational and prototyping use. It is not production hardened and should be reviewed, tested, and secured before production deployment.

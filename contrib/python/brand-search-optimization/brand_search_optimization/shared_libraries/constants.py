@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,15 +16,11 @@
 
 import os
 
-import dotenv
-
-dotenv.load_dotenv()
-
 AGENT_NAME = "brand_search_optimization"
 DESCRIPTION = "A helpful assistant for brand search optimization."
 PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "EMPTY")
 LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-MODEL = os.getenv("MODEL", "gemini-2.5-flash")
+MODEL = os.getenv("MODEL", "gemini-3.5-flash")
 DATASET_ID = os.getenv("DATASET_ID", "products_data_agent")
 TABLE_ID = os.getenv("TABLE_ID", "shoe_items")
 DISABLE_WEB_DRIVER = int(os.getenv("DISABLE_WEB_DRIVER", "0"))

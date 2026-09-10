@@ -1,17 +1,19 @@
 [project]
 name = "brand-search-optimization"
 version = "0.1.0"
-description = "Brand Search Optimization ADK Agent Designed to enhance product titles for retail brand search. It retrieves top keywords, performs searches, and analyzes top results to provide suggestions for enriching product titles"
+description = "Optimizes retail product titles for brand search performance using a multi-agent workflow"
 authors = [{ name = "Nikhil Kulkarni", email = "nikhilkul@google.com" }]
 license = "Apache-2.0"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 
 dependencies = [
     "selenium>=4.30.0,<5.0.0",
     "webdriver-manager>=4.0.2,<5.0.0",
     "pillow>=12.2.0,<13.0.0",
     "google-adk>=1.31.0,<2.0.0",
+    "google-cloud-bigquery>=3.25.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [dependency-groups]
@@ -28,17 +30,6 @@ deployment = [
     "absl-py>=2.2.2,<3.0.0",
 ]
 
-[tool.ruff]
-# Point back to the Master template in the root
-extend = "../../../pyproject.toml"
-
-[tool.ruff.lint]
-# Ignores function complication rule
-ignore = ["C901"]
-
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["E402", "F401", "I001"]
-
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
@@ -46,21 +37,22 @@ files = ["brand_search_optimization", "tests", "eval"]
 exclude = ["^deployment/", "^\\.venv/", "__pycache__"]
 
 
-[tool.ruff.lint.isort]
-known-first-party = ["brand_search_optimization"]
-
 [tool.pytest.ini_options]
 pythonpath = "."
 
-[build-system]
-requires = ["uv_build>=0.8.14,<0.9.0"]
-build-backend = "uv_build"
+[tool.hatch.build.targets.wheel]
+packages = ["brand_search_optimization"]
 
-[tool.uv.build-backend]
-module-root = ""
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.agent-starter-pack]
 example_question = "Can you help optimize my brand product title for search?"
 
 [tool.agent-starter-pack.settings]
 agent_directory = "brand_search_optimization"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple/"
+default = true
