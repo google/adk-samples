@@ -485,7 +485,7 @@ async def generate_and_render_deck(
 
         validated_spec = DeckSpec(**spec_dict)
 
-        all_content = [validated_spec.cover] + validated_spec.slides
+        all_content = [validated_spec.cover, *validated_spec.slides]
 
         # Allow up to 5 visuals per presentation
         hard_limit = 5
@@ -520,7 +520,7 @@ async def generate_and_render_deck(
                 slides.append(item)
 
         images = await asyncio.gather(*tasks, return_exceptions=True)
-        for s, img in zip(slides, images):
+        for s, img in zip(slides, images, strict=True):
             if not isinstance(img, Exception):
                 s.image_data = img
 

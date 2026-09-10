@@ -30,7 +30,7 @@ load_dotenv()
 os.environ["GCP_STAGING_BUCKET"] = ""
 os.environ["LOCAL_DEV"] = "true"
 
-from presentation_agent.agent import PresentationExpertApp
+from presentation_agent.agent import PresentationExpertApp  # noqa: E402
 
 
 def create_valid_mock_pptx():
@@ -181,7 +181,8 @@ async def evaluate_scenario(client, app, test_case, session_id):
     """
     try:
         match_resp = client.models.generate_content(
-            model="gemini-2.5-flash", contents=judge_match_prompt
+            model=os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash"),
+            contents=judge_match_prompt,
         )
         match = re.search(r"(\d\.\d+)", match_resp.text)
         if not match:
@@ -280,7 +281,7 @@ async def run_evaluation_with_metrics():
     print("=========================================\n")
 
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-east1")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
 
     if not project_id:
         print("Skipping: GOOGLE_CLOUD_PROJECT not set.")

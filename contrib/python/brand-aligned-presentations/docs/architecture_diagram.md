@@ -6,7 +6,7 @@ This document illustrates the high-level multi-agent architecture of the Present
 graph TD
     %% User Interaction & Security Layer
     User((User)) <-->|Prompt, Approval, & Edits| ModelArmor{Google Cloud\nModel Armor\nSecurity Interceptor}
-    ModelArmor <-->|Sanitized I/O| Orchestrator[Orchestrator Agent\nGemini 2.5 Flash\nSelf-Correction Logic]
+    ModelArmor <-->|Sanitized I/O| Orchestrator[Orchestrator Agent\nGemini 3.6 Flash\nSelf-Correction Logic]
     
     %% Persistence Layer (The "Memory" of the Stateless Agent)
     Orchestrator <-->|Save/Load State| ArtifactStore[[ADK Artifact Store\n& Session State\nResearch Anchor]]

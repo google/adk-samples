@@ -70,6 +70,7 @@ def _extract_grounding_metadata(event: Any) -> list[dict[str, str]]:
                 sources.append({"title": title, "url": url})
     return sources
 
+
 async def google_research_grounded_tool(query: str) -> str:
     """
     Executes research and appends verified URLs extracted from grounding metadata.

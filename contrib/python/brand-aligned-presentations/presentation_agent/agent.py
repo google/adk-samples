@@ -21,25 +21,24 @@ os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
-from google.adk.agents import LlmAgent
-from google.adk.apps import App
-from google.adk.artifacts import (
+from google.adk.agents import LlmAgent  # noqa: E402
+from google.adk.apps import App  # noqa: E402
+from google.adk.artifacts import (  # noqa: E402
     GcsArtifactService,
     InMemoryArtifactService,
 )
-from google.adk.memory import InMemoryMemoryService
-from google.adk.runners import Runner
-from google.adk.sessions import (
+from google.adk.memory import InMemoryMemoryService  # noqa: E402
+from google.adk.runners import Runner  # noqa: E402
+from google.adk.sessions import (  # noqa: E402
     InMemorySessionService,
     VertexAiSessionService,
 )
 
-from presentation_agent.prompt import final_instruction
+from presentation_agent.prompt import final_instruction  # noqa: E402
 
 # Local Application Imports from the 'presentation_agent' package
 # If need to include MODEL_ARMOR_TEMPLATE_ID and related imports, they would go here as well.
-
-from presentation_agent.shared_libraries.config import (
+from presentation_agent.shared_libraries.config import (  # noqa: E402
     ENABLE_DEEP_RESEARCH,
     ENABLE_RAG,
     GCS_BUCKET_NAME,
@@ -48,7 +47,7 @@ from presentation_agent.shared_libraries.config import (
     get_logger,
     initialize_genai_client,
 )
-from presentation_agent.sub_agents import (
+from presentation_agent.sub_agents import (  # noqa: E402
     batch_slide_writer_tool,
     deep_research_agent_tool,
     generate_outline_and_save_tool,
@@ -57,7 +56,7 @@ from presentation_agent.sub_agents import (
     outline_specialist_tool,
     slide_writer_specialist_tool,
 )
-from presentation_agent.tools import ALL_STANDARD_TOOLS
+from presentation_agent.tools import ALL_STANDARD_TOOLS  # noqa: E402
 
 
 class PresentationExpertApp:
@@ -70,7 +69,8 @@ class PresentationExpertApp:
         initialize_genai_client()
 
         # 1. Start with the core tools that are always needed
-        agent_tools = ALL_STANDARD_TOOLS + [
+        agent_tools = [
+            *ALL_STANDARD_TOOLS,
             # Specialist / Research Tools
             outline_specialist_tool,
             generate_outline_and_save_tool,
@@ -143,7 +143,7 @@ class PresentationExpertApp:
         if not is_local and os.getenv("GOOGLE_CLOUD_PROJECT"):
             session_service = VertexAiSessionService(
                 project=os.getenv("GOOGLE_CLOUD_PROJECT"),
-                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-east1"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
             )
             get_logger("agent").info(
                 f"Using VertexAiSessionService (Project: {os.getenv('GOOGLE_CLOUD_PROJECT')})"

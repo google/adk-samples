@@ -30,35 +30,41 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 
+
 def get_logger(name: str):
     """Returns a standard Python logger."""
     return logging.getLogger(name)
 
+
 log = get_logger("config")
 
 # Exported Config Variables (Directly read from environment)
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT") 
-GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-east1") 
-ROOT_MODEL = os.getenv("GEMINI_MODEL_NAME","gemini-2.5-flash")
-IMAGE_GENERATION_MODEL = os.getenv("IMAGE_GENERATION_MODEL", "imagen-3.0-generate-002")
-PROJECT_NUMBER = os.getenv("GOOGLE_CLOUD_PROJECT_NUMBER","")
-DATASTORE_ID = os.getenv("DATASTORE_ID","")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
+ROOT_MODEL = os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash")
+IMAGE_GENERATION_MODEL = os.getenv(
+    "IMAGE_GENERATION_MODEL", "gemini-3.1-flash-image"
+)
+PROJECT_NUMBER = os.getenv("GOOGLE_CLOUD_PROJECT_NUMBER", "")
+DATASTORE_ID = os.getenv("DATASTORE_ID", "")
 DEFAULT_TEMPLATE_URI = os.getenv("DEFAULT_TEMPLATE_URI", "")
 ENABLE_RAG = os.getenv("ENABLE_RAG", "false")
 ENABLE_DEEP_RESEARCH = os.getenv("ENABLE_DEEP_RESEARCH", "false")
 MODEL_ARMOR_TEMPLATE_ID = os.getenv("MODEL_ARMOR_TEMPLATE_ID")
 
 # Format GCS Bucket Name
-GCS_BUCKET_NAME = os.getenv("GCP_STAGING_BUCKET",f"{GOOGLE_CLOUD_PROJECT}-staging-bucket")
+GCS_BUCKET_NAME = os.getenv(
+    "GCP_STAGING_BUCKET", f"{GOOGLE_CLOUD_PROJECT}-staging-bucket"
+)
 
-    
+
 if GCS_BUCKET_NAME:
     # Safely strip prefix and trailing slashes
     GCS_BUCKET_NAME = GCS_BUCKET_NAME.replace("gs://", "").strip("/")
-    
+
     # Ensure we only take the root bucket name if a path was provided
     GCS_BUCKET_NAME = GCS_BUCKET_NAME.split("/")[0]
-    
+
 
 PRESENTATION_SPEC_ARTIFACT = "presentation_spec.json"
 RESEARCH_SUMMARY_ARTIFACT = "research_summary.txt"
@@ -70,13 +76,16 @@ _genai_client = None
 # Client Initialization and Logging Utilities
 # ==============================================================================
 
+
 def initialize_genai_client():
     """Initializes and returns the global Vertex AI GenAI client."""
     global _genai_client
     if _genai_client is None:
         try:
             _genai_client = genai.Client(
-                vertexai=True, project=GOOGLE_CLOUD_PROJECT, location=GOOGLE_CLOUD_LOCATION
+                vertexai=True,
+                project=GOOGLE_CLOUD_PROJECT,
+                location=GOOGLE_CLOUD_LOCATION,
             )
             log.info(
                 f"Vertex AI client initialized for project '{GOOGLE_CLOUD_PROJECT}' in location '{GOOGLE_CLOUD_LOCATION}'."

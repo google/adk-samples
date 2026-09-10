@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import os
 import tempfile
 import uuid
 
@@ -23,6 +24,7 @@ from ..shared_libraries.config import (
     GCS_BUCKET_NAME,
     GOOGLE_CLOUD_LOCATION,
     GOOGLE_CLOUD_PROJECT,
+    IMAGE_GENERATION_MODEL,
     _genai_client,
     get_gcs_client,
     get_logger,
@@ -59,10 +61,12 @@ async def generate_visual(prompt: str) -> str:
                 "Global genai client was None. Re-initializing for Vertex AI."
             )
             _genai_client = genai.Client(
-                vertexai=True, project=GOOGLE_CLOUD_PROJECT, location=GOOGLE_CLOUD_LOCATION
+                vertexai=True,
+                project=GOOGLE_CLOUD_PROJECT,
+                location=GOOGLE_CLOUD_LOCATION,
             )
 
-        model_name = "gemini-2.5-flash-image"
+        model_name = os.getenv("IMAGE_GENERATION_MODEL", IMAGE_GENERATION_MODEL)
         log.info(f"Calling {model_name} to generate visual...")
         response = await asyncio.to_thread(
             _genai_client.models.generate_content,

@@ -18,19 +18,21 @@ import json
 import logging
 import os
 import sys
-import tomllib
 from typing import Any
 
+import tomllib
 import vertexai
 from dotenv import load_dotenv, set_key
-from vertexai import agent_engines
 from google.cloud import storage
+from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
 
 # Add the project root to sys.path
-# Since we are now in root/presentation_agent/deployment/deploy.py, 
+# Since we are now in root/presentation_agent/deployment/deploy.py,
 # the project root is two levels up.
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+project_root = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)
 
 ENV_FILE_PATH = os.path.abspath(os.path.join(project_root, ".env"))
 # Force override from .env, loaded BEFORE importing agent to ensure correct config
@@ -41,16 +43,20 @@ logger = logging.getLogger(__name__)
 
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-from presentation_agent.agent import root_agent
+from presentation_agent.agent import root_agent  # noqa: E402
+
 
 # Function to update the .env file
 def update_env_file(agent_engine_id, env_file_path):
     """Updates the .env file with the agent engine ID."""
     try:
         set_key(env_file_path, "AGENT_ENGINE_ID", agent_engine_id)
-        print(f"Updated AGENT_ENGINE_ID in {env_file_path} to {agent_engine_id}")
+        print(
+            f"Updated AGENT_ENGINE_ID in {env_file_path} to {agent_engine_id}"
+        )
     except Exception as e:
         print(f"Error updating .env file: {e}")
+
 
 def write_deployment_metadata(
     remote_agent: Any,
@@ -69,6 +75,7 @@ def write_deployment_metadata(
 
     logging.info(f"Agent Engine ID written to {metadata_file}")
 
+
 def load_requirements():
     """Loads requirements from pyproject.toml."""
     pyproject_path = os.path.abspath(
@@ -79,7 +86,9 @@ def load_requirements():
     return pyproject_data["project"]["dependencies"]
 
 
-def setup_staging_bucket(project_id: str, location: str, bucket_name: str) -> str:
+def setup_staging_bucket(
+    project_id: str, location: str, bucket_name: str
+) -> str:
     """Checks if the staging bucket exists, creates it if not."""
     storage_client = storage.Client(project=project_id)
     bucket_name_without_prefix = bucket_name.replace("gs://", "")
@@ -87,11 +96,19 @@ def setup_staging_bucket(project_id: str, location: str, bucket_name: str) -> st
     try:
         bucket = storage_client.lookup_bucket(bucket_name_without_prefix)
         if bucket:
-            logger.info("Staging bucket gs://%s already exists.", bucket_name_without_prefix)
+            logger.info(
+                "Staging bucket gs://%s already exists.",
+                bucket_name_without_prefix,
+            )
         else:
-            logger.info("Staging bucket gs://%s not found. Creating...", bucket_name_without_prefix)
+            logger.info(
+                "Staging bucket gs://%s not found. Creating...",
+                bucket_name_without_prefix,
+            )
             new_bucket = storage_client.create_bucket(
-                bucket_name_without_prefix, project=project_id, location=location
+                bucket_name_without_prefix,
+                project=project_id,
+                location=location,
             )
             logger.info(
                 "Successfully created staging bucket gs://%s in %s.",
@@ -107,10 +124,13 @@ def setup_staging_bucket(project_id: str, location: str, bucket_name: str) -> st
                 new_bucket.name,
             )
     except Exception as e:
-        logger.error(f"Failed to create or access bucket gs://{bucket_name_without_prefix}. Error: {e}")
+        logger.error(
+            f"Failed to create or access bucket gs://{bucket_name_without_prefix}. Error: {e}"
+        )
         raise
 
     return f"gs://{bucket_name_without_prefix}"
+
 
 def handle_default_template(project_id, bucket_name):
     """Checks for DEFAULT_TEMPLATE_URI, uploads the default template if not set."""
@@ -118,17 +138,21 @@ def handle_default_template(project_id, bucket_name):
         logger.info("DEFAULT_TEMPLATE_URI is already set.")
         return os.getenv("DEFAULT_TEMPLATE_URI")
 
-    logger.info("DEFAULT_TEMPLATE_URI not set, handling default template upload...")
+    logger.info(
+        "DEFAULT_TEMPLATE_URI not set, handling default template upload..."
+    )
     storage_client = storage.Client(project=project_id)
     bucket_name_without_prefix = bucket_name.replace("gs://", "")
     bucket = storage_client.bucket(bucket_name_without_prefix)
-    
+
     source_file_name = "docs/Proposal_Template.pptx"
     destination_blob_name = "Proposal_Template.pptx"
     blob = bucket.blob(destination_blob_name)
 
     if not blob.exists():
-        logger.info(f"Uploading {source_file_name} to gs://{bucket_name_without_prefix}/{destination_blob_name}...")
+        logger.info(
+            f"Uploading {source_file_name} to gs://{bucket_name_without_prefix}/{destination_blob_name}..."
+        )
         blob.upload_from_filename(source_file_name)
         logger.info("Upload complete.")
     else:
@@ -136,39 +160,48 @@ def handle_default_template(project_id, bucket_name):
 
     return f"gs://{bucket_name_without_prefix}/{destination_blob_name}"
 
+
 def main(mode):
     GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
     GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
     if not GOOGLE_CLOUD_LOCATION or GOOGLE_CLOUD_LOCATION == "global":
         GOOGLE_CLOUD_LOCATION = "us-east1"
     # Ensure GCP_STAGING_BUCKET is just the name, setup_staging_bucket will add gs:// prefix
-    GCP_STAGING_BUCKET_NAME = os.getenv("GCP_STAGING_BUCKET", "").replace("gs://", "")
+    GCP_STAGING_BUCKET_NAME = os.getenv("GCP_STAGING_BUCKET", "").replace(
+        "gs://", ""
+    )
     if not GCP_STAGING_BUCKET_NAME:
-        logger.warning("GCP_STAGING_BUCKET is not set or is empty. Defaulting to '{GOOGLE_CLOUD_PROJECT}-staging-bucket'.")
+        logger.warning(
+            "GCP_STAGING_BUCKET is not set or is empty. Defaulting to '{GOOGLE_CLOUD_PROJECT}-staging-bucket'."
+        )
         GCP_STAGING_BUCKET_NAME = f"{GOOGLE_CLOUD_PROJECT}-staging-bucket"
 
     AGENT_ENGINE_ID = os.getenv("AGENT_ENGINE_ID")
 
     # Set up staging bucket
-    GCP_STAGING_BUCKET = setup_staging_bucket(GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GCP_STAGING_BUCKET_NAME)
-    
-    vertexai.init(
-        project=GOOGLE_CLOUD_PROJECT, location=GOOGLE_CLOUD_LOCATION, staging_bucket=GCP_STAGING_BUCKET
+    GCP_STAGING_BUCKET = setup_staging_bucket(
+        GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GCP_STAGING_BUCKET_NAME
     )
 
-    default_template_uri = handle_default_template(GOOGLE_CLOUD_PROJECT, GCP_STAGING_BUCKET)
+    vertexai.init(
+        project=GOOGLE_CLOUD_PROJECT,
+        location=GOOGLE_CLOUD_LOCATION,
+        staging_bucket=GCP_STAGING_BUCKET,
+    )
+
+    default_template_uri = handle_default_template(
+        GOOGLE_CLOUD_PROJECT, GCP_STAGING_BUCKET
+    )
 
     # Build env_vars dynamically, ensuring all values are strings
     env_vars = {
         "GCP_PROJECT": str(os.getenv("GOOGLE_CLOUD_PROJECT")),
-        "GCP_LOCATION": str(
-            os.getenv("GOOGLE_CLOUD_LOCATION") or "us-east1"
-        ),
+        "GCP_LOCATION": str(os.getenv("GOOGLE_CLOUD_LOCATION") or "us-east1"),
         "GEMINI_MODEL_NAME": str(
-            os.getenv("GEMINI_MODEL_NAME") or "gemini-2.5-flash"
+            os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash")
         ),
         "IMAGE_GENERATION_MODEL": str(
-            os.getenv("IMAGE_GENERATION_MODEL") or "imagen-3.0-generate-002"
+            os.getenv("IMAGE_GENERATION_MODEL", "gemini-3.1-flash-image")
         ),
         "GCP_STAGING_BUCKET": str(GCP_STAGING_BUCKET or ""),
         "DEFAULT_TEMPLATE_URI": default_template_uri,
@@ -247,4 +280,3 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     main(args.mode)
-

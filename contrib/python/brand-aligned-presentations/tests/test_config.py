@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
 from unittest.mock import MagicMock, patch
-
-import pytest
-from pydantic_settings import BaseSettings
 
 import presentation_agent.shared_libraries.config as config_module
 
@@ -24,7 +20,10 @@ import presentation_agent.shared_libraries.config as config_module
 def test_app_config_no_project_does_not_raise_exception():
     config_module._genai_client = None
     with patch("os.getenv", return_value=None):
-        with patch("presentation_agent.shared_libraries.config.genai.Client", side_effect=Exception("Test Exception")):
+        with patch(
+            "presentation_agent.shared_libraries.config.genai.Client",
+            side_effect=Exception("Test Exception"),
+        ):
             # We are testing that initialize_genai_client does not raise an exception,
             # but returns None. The try/except block in the function handles the
             # exception.
