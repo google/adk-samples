@@ -2,14 +2,14 @@
 name: Bug Report
 about: Create a report to help us identify and fix a problem.
 title: "[BUG]: A brief, descriptive title"
-labels: bug
-assignees: ''
+labels: bug, contribute
+assignees: pierpaolo28
 
 ---
 
-### Name of sample affected
+### Name of recipe affected
 
-<!-- e.g. python/agents/RAG, java/agents/software-bug-assistant -->
+<!-- e.g. contrib/python/financial-advisor, core/kotlin/llm-auditor -->
 
 ### Description of issue
 
