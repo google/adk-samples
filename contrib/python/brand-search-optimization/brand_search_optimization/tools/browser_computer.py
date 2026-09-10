@@ -1,0 +1,393 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Defines Computer Use browser controller and toolset for visual search navigation."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any, Literal
+
+from google.adk.tools.computer_use.base_computer import (
+    BaseComputer,
+    ComputerEnvironment,
+    ComputerState,
+)
+from google.adk.tools.computer_use.computer_use_toolset import (
+    ComputerUseToolset,
+)
+
+from ..shared_libraries import constants
+
+logger = logging.getLogger(__name__)
+
+# Default standard viewport resolution for retail browser search
+DEFAULT_SCREEN_SIZE: tuple[int, int] = (1280, 800)
+
+
+class MockBrowserComputer(BaseComputer):
+    """Deterministic mock browser environment for offline testing and CI execution."""
+
+    # 1x1 transparent PNG image bytes
+    MOCK_SCREENSHOT_BYTES: bytes = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06"
+        b"\x00\x00\x00\x1f\x15c4\x00\x00\x00\rIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf"
+        b"\xa4q\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+
+    def __init__(
+        self,
+        screen_size: tuple[int, int] = DEFAULT_SCREEN_SIZE,
+        initial_url: str = "https://www.google.com/search?tbm=shop&q=running+shoes",
+    ) -> None:
+        self._screen_size = screen_size
+        self._url = initial_url
+        self._history: list[str] = [initial_url]
+        self._history_idx: int = 0
+
+    async def screen_size(self) -> tuple[int, int]:
+        return self._screen_size
+
+    async def environment(self) -> ComputerEnvironment:
+        return ComputerEnvironment.ENVIRONMENT_BROWSER
+
+    async def open_web_browser(self) -> ComputerState:
+        return await self.current_state()
+
+    async def click_at(self, x: int, y: int) -> ComputerState:
+        return await self.current_state()
+
+    async def hover_at(self, x: int, y: int) -> ComputerState:
+        return await self.current_state()
+
+    async def type_text_at(
+        self,
+        x: int,
+        y: int,
+        text: str,
+        press_enter: bool = True,
+        clear_before_typing: bool = True,
+    ) -> ComputerState:
+        clean_query = text.strip().replace(" ", "+")
+        self._url = f"https://www.google.com/search?tbm=shop&q={clean_query}"
+        self._history.append(self._url)
+        self._history_idx = len(self._history) - 1
+        return await self.current_state()
+
+    async def scroll_document(
+        self, direction: Literal["up", "down", "left", "right"]
+    ) -> ComputerState:
+        return await self.current_state()
+
+    async def scroll_at(
+        self,
+        x: int,
+        y: int,
+        direction: Literal["up", "down", "left", "right"],
+        magnitude: int,
+    ) -> ComputerState:
+        return await self.current_state()
+
+    async def wait(self, seconds: int) -> ComputerState:
+        return await self.current_state()
+
+    async def go_back(self) -> ComputerState:
+        if self._history_idx > 0:
+            self._history_idx -= 1
+            self._url = self._history[self._history_idx]
+        return await self.current_state()
+
+    async def go_forward(self) -> ComputerState:
+        if self._history_idx < len(self._history) - 1:
+            self._history_idx += 1
+            self._url = self._history[self._history_idx]
+        return await self.current_state()
+
+    async def search(self) -> ComputerState:
+        self._url = "https://www.google.com/search?tbm=shop"
+        self._history.append(self._url)
+        self._history_idx = len(self._history) - 1
+        return await self.current_state()
+
+    async def navigate(self, url: str) -> ComputerState:
+        self._url = url
+        self._history.append(self._url)
+        self._history_idx = len(self._history) - 1
+        return await self.current_state()
+
+    async def key_combination(self, keys: list[str]) -> ComputerState:
+        return await self.current_state()
+
+    async def drag_and_drop(
+        self, x: int, y: int, destination_x: int, destination_y: int
+    ) -> ComputerState:
+        return await self.current_state()
+
+    async def current_state(self) -> ComputerState:
+        return ComputerState(
+            screenshot=self.MOCK_SCREENSHOT_BYTES,
+            url=self._url,
+        )
+
+
+class PlaywrightBrowserComputer(BaseComputer):
+    """Controls a browser session using Playwright for Gemini Computer Use."""
+
+    def __init__(
+        self,
+        screen_size: tuple[int, int] = DEFAULT_SCREEN_SIZE,
+        headless: bool = True,
+    ) -> None:
+        self._screen_size = screen_size
+        self._headless = headless
+        self._playwright: Any | None = None
+        self._browser: Any | None = None
+        self._context: Any | None = None
+        self._page: Any | None = None
+
+    async def screen_size(self) -> tuple[int, int]:
+        return self._screen_size
+
+    async def environment(self) -> ComputerEnvironment:
+        return ComputerEnvironment.ENVIRONMENT_BROWSER
+
+    async def _ensure_browser(self) -> None:
+        if self._page is None:
+            try:
+                from playwright.async_api import async_playwright
+
+                if self._playwright is None:
+                    self._playwright = await async_playwright().start()
+                if self._browser is None:
+                    self._browser = await self._playwright.chromium.launch(
+                        headless=self._headless,
+                        args=["--no-sandbox", "--disable-setuid-sandbox"],
+                    )
+                if self._context is None:
+                    self._context = await self._browser.new_context(
+                        viewport={
+                            "width": self._screen_size[0],
+                            "height": self._screen_size[1],
+                        }
+                    )
+                self._page = await self._context.new_page()
+            except Exception as e:
+                logger.warning(
+                    "Playwright initialization failed (%s); falling back to dummy state",
+                    e,
+                )
+
+    async def open_web_browser(self) -> ComputerState:
+        await self._ensure_browser()
+        if self._page and (
+            not self._page.url or self._page.url == "about:blank"
+        ):
+            await self._page.goto(
+                "https://www.google.com", wait_until="domcontentloaded"
+            )
+        return await self.current_state()
+
+    async def click_at(self, x: int, y: int) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            await self._page.mouse.click(x, y)
+            try:
+                await self._page.wait_for_load_state(
+                    "domcontentloaded", timeout=5000
+                )
+            except Exception:
+                pass
+        return await self.current_state()
+
+    async def hover_at(self, x: int, y: int) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            await self._page.mouse.move(x, y)
+        return await self.current_state()
+
+    async def type_text_at(
+        self,
+        x: int,
+        y: int,
+        text: str,
+        press_enter: bool = True,
+        clear_before_typing: bool = True,
+    ) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            await self._page.mouse.click(x, y)
+            if clear_before_typing:
+                await self._page.keyboard.press("Control+A")
+                await self._page.keyboard.press("Backspace")
+            await self._page.keyboard.type(text)
+            if press_enter:
+                await self._page.keyboard.press("Enter")
+                try:
+                    await self._page.wait_for_load_state(
+                        "domcontentloaded", timeout=5000
+                    )
+                except Exception:
+                    pass
+        return await self.current_state()
+
+    async def scroll_document(
+        self, direction: Literal["up", "down", "left", "right"]
+    ) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            delta_x, delta_y = 0, 0
+            if direction == "up":
+                delta_y = -500
+            elif direction == "down":
+                delta_y = 500
+            elif direction == "left":
+                delta_x = -500
+            elif direction == "right":
+                delta_x = 500
+            await self._page.mouse.wheel(delta_x, delta_y)
+            await asyncio.sleep(0.3)
+        return await self.current_state()
+
+    async def scroll_at(
+        self,
+        x: int,
+        y: int,
+        direction: Literal["up", "down", "left", "right"],
+        magnitude: int,
+    ) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            await self._page.mouse.move(x, y)
+            delta_x, delta_y = 0, 0
+            if direction == "up":
+                delta_y = -magnitude
+            elif direction == "down":
+                delta_y = magnitude
+            elif direction == "left":
+                delta_x = -magnitude
+            elif direction == "right":
+                delta_x = magnitude
+            await self._page.mouse.wheel(delta_x, delta_y)
+            await asyncio.sleep(0.3)
+        return await self.current_state()
+
+    async def wait(self, seconds: int) -> ComputerState:
+        await self._ensure_browser()
+        await asyncio.sleep(min(seconds, 5))
+        return await self.current_state()
+
+    async def go_back(self) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            try:
+                await self._page.go_back(timeout=5000)
+            except Exception:
+                pass
+        return await self.current_state()
+
+    async def go_forward(self) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            try:
+                await self._page.go_forward(timeout=5000)
+            except Exception:
+                pass
+        return await self.current_state()
+
+    async def search(self) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            await self._page.goto(
+                "https://www.google.com/search?tbm=shop",
+                wait_until="domcontentloaded",
+            )
+        return await self.current_state()
+
+    async def navigate(self, url: str) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            await self._page.goto(url, wait_until="domcontentloaded")
+        return await self.current_state()
+
+    async def key_combination(self, keys: list[str]) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            for key in keys:
+                await self._page.keyboard.press(key)
+        return await self.current_state()
+
+    async def drag_and_drop(
+        self, x: int, y: int, destination_x: int, destination_y: int
+    ) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            await self._page.mouse.move(x, y)
+            await self._page.mouse.down()
+            await self._page.mouse.move(destination_x, destination_y)
+            await self._page.mouse.up()
+        return await self.current_state()
+
+    async def current_state(self) -> ComputerState:
+        await self._ensure_browser()
+        if self._page:
+            try:
+                screenshot_bytes = await self._page.screenshot(type="png")
+                return ComputerState(
+                    screenshot=screenshot_bytes,
+                    url=self._page.url or "about:blank",
+                )
+            except Exception as e:
+                logger.warning(
+                    "Screenshot capture failed (%s); using fallback bytes", e
+                )
+        return ComputerState(
+            screenshot=MockBrowserComputer.MOCK_SCREENSHOT_BYTES,
+            url="about:blank",
+        )
+
+    async def close(self) -> None:
+        if self._page is not None:
+            await self._page.close()
+            self._page = None
+        if self._context is not None:
+            await self._context.close()
+            self._context = None
+        if self._browser is not None:
+            await self._browser.close()
+            self._browser = None
+        if self._playwright is not None:
+            await self._playwright.stop()
+            self._playwright = None
+
+
+def get_browser_computer() -> BaseComputer:
+    """Returns PlaywrightBrowserComputer if enabled, otherwise MockBrowserComputer."""
+    if constants.DISABLE_WEB_DRIVER:
+        return MockBrowserComputer()
+    try:
+        import playwright  # noqa: F401
+
+        return PlaywrightBrowserComputer()
+    except ImportError:
+        logger.info(
+            "Playwright is not installed. Using MockBrowserComputer for offline mode."
+        )
+        return MockBrowserComputer()
+
+
+def get_computer_use_toolset() -> ComputerUseToolset:
+    """Creates a ComputerUseToolset wrapping the configured browser computer."""
+    computer = get_browser_computer()
+    return ComputerUseToolset(computer=computer)

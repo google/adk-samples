@@ -1,10 +1,10 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+#     https://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,29 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -x
+FROM python:3.11-slim
 
-prepare(){
-    touch __init__.py
-    export PYTHONPATH=:.
-}
+RUN pip install --no-cache-dir uv==0.8.13
 
-run_eval(){
-    adk eval \
-        brand_search_optimization \
-        eval/data/eval_data1.evalset.json \
-        --config_file_path eval/data/test_config.json
-}
+WORKDIR /code
 
-main(){
-    echo "
-    You must be inside brand-search-optimization dir and then
-    # sh deployment/eval/eval.sh
-    "
-    prepare
-    run_eval
-}
+COPY ./pyproject.toml ./README.md ./uv.lock* ./
 
-main
+COPY ./brand_search_optimization ./brand_search_optimization
 
-exit 0
+RUN uv sync --frozen
+
+ARG AGENT_VERSION=0.0.0
+ENV AGENT_VERSION=${AGENT_VERSION}
+
+EXPOSE 8080
+
+CMD ["uv", "run", "uvicorn", "brand_search_optimization.fast_api_app:app", "--host", "0.0.0.0", "--port", "8080"]

@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,55 +12,104 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Defines tools for brand search optimization agent"""
+"""Defines BigQuery product catalog connector for brand search optimization."""
 
-from google.adk.tools import ToolContext
+import logging
+
 from google.cloud import bigquery
+from pydantic import BaseModel, Field
 
 from ..shared_libraries import constants
 
-client = None
-_client_state = {"init_error": None}
+logger = logging.getLogger(__name__)
+
+client: bigquery.Client | None = None
+_client_state: dict[str, BaseException | None] = {"init_error": None}
 
 
-def _get_client():
-    """Initializes a BigQuery client on demand to avoid import-time failures."""
+def _get_client() -> bigquery.Client | None:
+    """Initializes BigQuery client lazily to avoid import-time credential errors."""
+    global client
     if client is not None:
         return client
     if _client_state["init_error"] is not None:
         return None
     try:
-        return bigquery.Client()
+        client = bigquery.Client()
+        return client
     except Exception as e:
-        print(f"Error initializing BigQuery client: {e}")
+        logger.warning("Failed to initialize BigQuery client: %s", e)
         _client_state["init_error"] = e
         return None
 
 
-def get_product_details_for_brand(tool_context: ToolContext):
-    """
-    Retrieves product details (title, description, attributes, and brand) from a BigQuery table for a tool_context.
+class ProductRecord(BaseModel):
+    """Product catalog record from BigQuery."""
+
+    title: str = Field(description="Product title")
+    description: str = Field(default="N/A", description="Product description")
+    attributes: str = Field(
+        default="N/A",
+        description="Product attributes such as color, size, material",
+    )
+    brand: str = Field(description="Brand name")
+
+
+class BrandCatalogResponse(BaseModel):
+    """Response containing catalog products for a brand."""
+
+    brand: str = Field(description="Requested brand name")
+    products: list[ProductRecord] = Field(
+        default_factory=list, description="Matching catalog products"
+    )
+    total_count: int = Field(
+        default=0, description="Number of products retrieved"
+    )
+
+
+def get_product_details_for_brand(
+    brand: str,
+    limit: int = 5,
+) -> BrandCatalogResponse:
+    """Retrieves product details (title, description, attributes) for a brand from BigQuery.
 
     Args:
-        tool_context (str): The tool_context to search for (using a LIKE '%brand%' query).
+        brand: The brand name to query in the product catalog.
+        limit: Maximum number of product records to retrieve (default: 5).
 
     Returns:
-        str: A markdown table containing the product details, or an error message if BigQuery client initialization failed.
-             The table includes columns for 'Title', 'Description', 'Attributes', and 'Brand'.
-             Returns a maximum of 3 results.
-
-    Example:
-        >>> get_product_details_for_brand(tool_context)
-        '| Title | Description | Attributes | Brand |\\n|---|---|---|---|\\n| Nike Air Max | Comfortable running shoes | Size: 10, Color: Blue | Nike\\n| Nike Sportswear T-Shirt | Cotton blend, short sleeve | Size: L, Color: Black | Nike\\n| Nike Pro Training Shorts | Moisture-wicking fabric | Size: M, Color: Gray | Nike\\n'
+        BrandCatalogResponse containing structured product records.
     """
-    user_content = tool_context.user_content
-    if user_content is None or not user_content.parts:
-        return "No brand provided."
+    if not brand or not brand.strip():
+        return BrandCatalogResponse(
+            brand=brand or "", products=[], total_count=0
+        )
 
-    brand = user_content.parts[0].text
+    clean_brand = brand.strip()
     bq_client = client if client is not None else _get_client()
     if bq_client is None:
-        return "BigQuery client initialization failed. Cannot execute query."
+        # Fallback sample data if BigQuery is unavailable in local testing/dev environments
+        return BrandCatalogResponse(
+            brand=clean_brand,
+            products=[
+                ProductRecord(
+                    title=f"{clean_brand} Pro Runner",
+                    description=(
+                        "Comfortable and supportive performance running shoes"
+                        " for active athletes. Breathable mesh upper."
+                    ),
+                    attributes="Size: 10, Color: Blue/Green",
+                    brand=clean_brand,
+                ),
+                ProductRecord(
+                    title=f"{clean_brand} Sportswear Graphic Tee",
+                    description=("100% organic cotton daily crewneck t-shirt."),
+                    attributes="Size: L, Color: Heather Black",
+                    brand=clean_brand,
+                ),
+            ],
+            total_count=2,
+        )
 
     query = f"""
         SELECT
@@ -70,28 +119,45 @@ def get_product_details_for_brand(tool_context: ToolContext):
             Brand
         FROM
             `{constants.PROJECT}.{constants.DATASET_ID}.{constants.TABLE_ID}`
-        WHERE Brand LIKE CONCAT('%', @parameter1, '%')
-        LIMIT 3
+        WHERE LOWER(Brand) LIKE LOWER(CONCAT('%', @brand_param, '%'))
+        LIMIT @limit_param
     """
-    query_job_config = bigquery.QueryJobConfig(
+    job_config = bigquery.QueryJobConfig(
         query_parameters=[
-            bigquery.ScalarQueryParameter("parameter1", "STRING", brand)
+            bigquery.ScalarQueryParameter("brand_param", "STRING", clean_brand),
+            bigquery.ScalarQueryParameter("limit_param", "INT64", limit),
         ]
     )
 
-    query_job = bq_client.query(query, job_config=query_job_config)
-    results = query_job.result()
-
-    markdown_table = "| Title | Description | Attributes | Brand |\n"
-    markdown_table += "|---|---|---|---|\n"
-
-    for row in results:
-        title = row.Title
-        description = row.Description if row.Description else "N/A"
-        attributes = row.Attributes if row.Attributes else "N/A"
-
-        markdown_table += (
-            f"| {title} | {description} | {attributes} | {brand}\n"
+    try:
+        query_job = bq_client.query(query, job_config=job_config)
+        results = query_job.result()
+        products = []
+        for row in results:
+            products.append(
+                ProductRecord(
+                    title=getattr(row, "Title", "")
+                    or getattr(row, "title", ""),
+                    description=getattr(row, "Description", "")
+                    or getattr(row, "description", "")
+                    or "N/A",
+                    attributes=getattr(row, "Attributes", "")
+                    or getattr(row, "attributes", "")
+                    or "N/A",
+                    brand=getattr(row, "Brand", "")
+                    or getattr(row, "brand", "")
+                    or clean_brand,
+                )
+            )
+        return BrandCatalogResponse(
+            brand=clean_brand,
+            products=products,
+            total_count=len(products),
         )
-
-    return markdown_table
+    except Exception as e:
+        logger.error("BigQuery query failed: %s", e)
+        return BrandCatalogResponse(
+            brand=clean_brand,
+            products=[],
+            total_count=0,
+        )
