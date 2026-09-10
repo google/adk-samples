@@ -352,6 +352,20 @@ def test_extract_decision_json_with_raw_control_chars_in_response():
     assert "Line 1\nLine 2" in extracted["response"]
 
 
+def test_parse_json_dict_helper():
+    from process_issue_response import _parse_json_dict
+
+    assert _parse_json_dict("") is None
+    assert _parse_json_dict("not json") is None
+    assert _parse_json_dict('["not", "a", "dict"]') is None
+    assert _parse_json_dict('{"key": "val"}') == {"key": "val"}
+    assert _parse_json_dict('{"key": "val",}') == {"key": "val"}
+    assert _parse_json_dict('{"arr": [1, 2,], "key": "val",}') == {
+        "arr": [1, 2],
+        "key": "val",
+    }
+
+
 def test_extract_decision_json_invalid_raises():
     with pytest.raises(ValueError, match="No valid JSON decision"):
         extract_decision_json("Just random text with no JSON object at all.")
