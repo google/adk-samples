@@ -208,6 +208,7 @@ async def test_model_armor_interceptor_fail_closed_memory(
     mock_post, mock_auth, mock_callback_context, monkeypatch
 ):
     monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
+    monkeypatch.setenv("LOCAL_DEV", "true")
     mock_auth.return_value = (MagicMock(), "test-project")
     mock_post.side_effect = Exception("API failed")
 
@@ -322,6 +323,7 @@ async def test_model_armor_response_interceptor_fail_closed_memory(
 ):
     mock_auth.side_effect = Exception("Auth failed")
     monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
+    monkeypatch.setenv("LOCAL_DEV", "true")
 
     result = await model_armor_response_interceptor(
         mock_callback_context, mock_llm_response
