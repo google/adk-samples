@@ -30,12 +30,14 @@ name: 📦 Recipe Images
 # Three triggers, two different questions
 # ---------------------------------------
 # `push` asks "did this change break its own image?" and rebuilds only the
-# recipes the push touched. `schedule` asks a question no push can: the
-# Dockerfiles pin python:3.12-slim and resolve dependencies at build time, so
-# an image that built cleanly last month may pick up a patched base layer or
-# fail against a yanked release today. Weekly is frequent enough to surface
-# that while it is still someone's working memory, and cheap because the
-# matrix is small.
+# recipes the push touched. `schedule` asks a question no push can. Every one
+# of these Dockerfiles resolves its dependencies at build time, and they do
+# not even agree on a base: python:3.11-slim, python:3.12-slim,
+# python:3.13-slim and ghcr.io/astral-sh/uv:python3.11-bookworm-slim are all
+# in use today. An image that built cleanly last month can pick up a patched
+# base layer, or fail outright against a yanked release, without a single
+# commit landing. Weekly is frequent enough to surface that while it is still
+# someone's working memory, and cheap because the matrix is small.
 #
 # Images are never deleted here. Tag hygiene and retention belong to a
 # registry policy, not to the job that writes them.
@@ -97,6 +99,9 @@ jobs:
     outputs:
       matrix: ${{ steps.build.outputs.matrix }}
       count: ${{ steps.build.outputs.count }}
+      # Computed once here rather than per matrix leg, so every image from a
+      # given run carries the same tag even if the legs straddle midnight UTC.
+      build_tag: ${{ steps.tag.outputs.value }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
@@ -110,6 +115,14 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # ratchet:actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
+
+      - name: Compute build tag
+        id: tag
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo "value=$(date -u +%Y%m%d)-${SHA:0:12}" >> "${GITHUB_OUTPUT}"
 
       - name: Discover recipes with a root Dockerfile
         id: build
@@ -179,13 +192,19 @@ jobs:
         with:
           context: ${{ matrix.path }}
           file: ${{ matrix.path }}/Dockerfile
-          # `latest` for humans and for docs that cannot chase a digest;
-          # the commit tag so a deployed image can be traced to the source
-          # that produced it. A dry run builds both and pushes neither.
+          # `latest` for humans and for docs that cannot chase a digest.
+          #
+          # The pinnable tag is date-and-commit, not commit alone. The weekly
+          # rebuild runs against an unchanged HEAD and produces a genuinely
+          # different image — that is the whole point of it, since these
+          # Dockerfiles resolve dependencies and base layers at build time —
+          # so a bare `:<sha>` would be rewritten every Tuesday and would not
+          # mean what a commit-shaped tag implies. Dating it keeps every
+          # published image immutable and still traceable to its source.
           push: ${{ !inputs.dry_run }}
           tags: |
             ${{ matrix.image }}:latest
-            ${{ matrix.image }}:${{ github.sha }}
+            ${{ matrix.image }}:${{ needs.matrix.outputs.build_tag }}
           build-args: |
             AGENT_VERSION=${{ github.sha }}
           provenance: false
@@ -198,7 +217,7 @@ jobs:
       - name: Report
         env:
           IMAGE: ${{ matrix.image }}
-          SHA: ${{ github.sha }}
+          BUILD_TAG: ${{ needs.matrix.outputs.build_tag }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
@@ -209,7 +228,7 @@ jobs:
             else
               echo '```'
               echo "${IMAGE}:latest"
-              echo "${IMAGE}:${SHA}"
+              echo "${IMAGE}:${BUILD_TAG}"
               echo '```'
             fi
           } >> "${GITHUB_STEP_SUMMARY}"

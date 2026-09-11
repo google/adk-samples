@@ -16,7 +16,7 @@ half of that later step: it turns the tree into a build matrix.
 Recipe-root Dockerfiles only
 ----------------------------
 A recipe can contain more than one Dockerfile. contrib/python/multiformat-
-hybrid-rag ships three — one for the recipe, two for data-ingestion
+hybrid-rag ships four — one for the recipe, three for data-ingestion
 sub-services it stands up. Only the file at the recipe root serves the agent
 and satisfies the Agent Engine container contract; the others are backing
 infrastructure with their own lifecycles. Publishing those under a recipe
@@ -67,7 +67,20 @@ from recipe_manifests import REPO_ROOT, SCAN_ROOTS, SKIP_DIRS
 # Every image lands here. The repository is public-read (allUsers has
 # roles/artifactregistry.reader), which is what lets Agent Engine pull an
 # image into a customer tenant without a per-consumer IAM grant.
-REGISTRY = "us-west1-docker.pkg.dev/adk-samples-repo-gcp-support/adk-recipes-registry"
+REGISTRY = (
+    "us-west1-docker.pkg.dev/adk-samples-repo-gcp-support/adk-recipes-registry"
+)
+
+# Changing the matrix or the workflow that consumes it invalidates the
+# incremental answer: a push touching only these files matches no recipe
+# prefix, so filtering would return nothing and the change would merge having
+# never built anything. They rebuild the full set instead.
+SELF_PATHS = frozenset(
+    {
+        ".github/scripts/recipe_images_matrix.py",
+        ".github/workflows/recipe-images.yml",
+    }
+)
 
 
 def _category_and_name(recipe: Path) -> tuple[str, str]:
@@ -96,8 +109,9 @@ def discover(repo_root: Path) -> list[dict[str, str]]:
         # sorting by name does not guarantee that: 'foo/Bar/Dockerfile' sorts
         # ahead of 'foo/Dockerfile' because 'B' < 'D'. Depth does guarantee
         # it, and the secondary sort keeps the output stable.
-        for dockerfile in sorted(base.rglob("Dockerfile"),
-                                 key=lambda p: (len(p.parts), p)):
+        for dockerfile in sorted(
+            base.rglob("Dockerfile"), key=lambda p: (len(p.parts), p)
+        ):
             recipe = dockerfile.parent
             rel = recipe.relative_to(repo_root)
             if any(part in SKIP_DIRS for part in rel.parts):
@@ -139,8 +153,10 @@ def _changed_paths(ref: str, repo_root: Path) -> set[str] | None:
         # A missing or unrelated ref is not worth failing the build over:
         # falling back to "everything changed" is wasteful but never leaves a
         # recipe published from stale source.
-        print(f"warning: git diff against {ref} failed, treating all recipes as changed",
-              file=sys.stderr)
+        print(
+            f"warning: git diff against {ref} failed, treating all recipes as changed",
+            file=sys.stderr,
+        )
         return None
     return {line.strip() for line in out.stdout.splitlines() if line.strip()}
 
@@ -165,7 +181,10 @@ def main() -> int:
         wanted = args.recipe.rstrip("/")
         recipes = [r for r in recipes if r["path"] == wanted]
         if not recipes:
-            print(f"error: no recipe with a root Dockerfile at {wanted!r}", file=sys.stderr)
+            print(
+                f"error: no recipe with a root Dockerfile at {wanted!r}",
+                file=sys.stderr,
+            )
             return 1
 
     if args.changed_from:
@@ -173,9 +192,12 @@ def main() -> int:
         # None is a failed diff: rebuild everything rather than skip silently.
         # An empty set is a successful diff that found nothing, which
         # correctly narrows the matrix to nothing.
-        if changed is not None:
-            recipes = [r for r in recipes
-                       if any(f.startswith(r["path"] + "/") for f in changed)]
+        if changed is not None and not (changed & SELF_PATHS):
+            recipes = [
+                r
+                for r in recipes
+                if any(f.startswith(r["path"] + "/") for f in changed)
+            ]
 
     print(json.dumps({"include": recipes}))
     return 0
