@@ -14,6 +14,7 @@
 """Runnability tests for the recipe."""
 
 import os
+import sys
 from unittest.mock import MagicMock, patch
 
 
@@ -22,6 +23,9 @@ def test_agent_runnability() -> None:
     # provide a dummy GCP project and patch google.auth.default() so import-time
     # credential lookups don't need ADC — the setup must happen before the import.
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test-project")
+
+    # Clear cached agent module so credential patch is active during module execution
+    sys.modules.pop("presentation_agent.agent", None)
 
     with patch(
         "google.auth.default", return_value=(MagicMock(), "test-project")
