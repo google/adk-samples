@@ -41,7 +41,9 @@ _AGENT_DIR = os.path.dirname(
 @functools.cache
 def get_session_service():
     """Process-wide session service shared across every serving surface."""
-    if uri := os.environ.get("SESSION_SERVICE_URI"):
+    if (uri := os.environ.get("SESSION_SERVICE_URI")) and not uri.startswith(
+        "shared://"
+    ):
         return create_session_service_from_options(
             base_dir=_AGENT_DIR, session_service_uri=uri
         )
@@ -68,6 +70,16 @@ def get_session_service():
 @functools.cache
 def get_artifact_service():
     """Process-wide artifact service: GCS when a bucket is set, else in-memory."""
+    if (uri := os.environ.get("ARTIFACT_SERVICE_URI")) and not uri.startswith(
+        "shared://"
+    ):
+        from google.adk.cli.utils.service_factory import (
+            create_artifact_service_from_options,
+        )
+
+        return create_artifact_service_from_options(
+            base_dir=_AGENT_DIR, artifact_service_uri=uri
+        )
     if bucket := os.environ.get("LOGS_BUCKET_NAME"):
         return GcsArtifactService(bucket_name=bucket)
     return InMemoryArtifactService()

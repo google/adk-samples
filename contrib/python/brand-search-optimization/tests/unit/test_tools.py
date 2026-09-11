@@ -24,7 +24,13 @@ from google.adk.tools.computer_use.base_computer import (
 from google.adk.tools.computer_use.computer_use_toolset import (
     ComputerUseToolset,
 )
+from starlette.datastructures import Headers
 
+from brand_search_optimization.app_utils import (
+    a2a,
+    reasoning_engine_adapter,
+    services,
+)
 from brand_search_optimization.shared_libraries import constants
 from brand_search_optimization.sub_agents.comparison.models import (
     TitleOptimizationReport,
@@ -33,6 +39,8 @@ from brand_search_optimization.sub_agents.comparison.models import (
 from brand_search_optimization.tools import bq_connector
 from brand_search_optimization.tools.browser_computer import (
     MockBrowserComputer,
+    _calculate_scroll_deltas,
+    _validate_navigation_url,
     get_browser_computer,
     get_computer_use_toolset,
 )
@@ -126,6 +134,41 @@ class TestBigQueryConnector:
 class TestBrowserComputer:
     """Tests for Computer Use browser automation."""
 
+    def test_calculate_scroll_deltas(self):
+        assert _calculate_scroll_deltas("up", 100) == (0, -100)
+        assert _calculate_scroll_deltas("down", 100) == (0, 100)
+        assert _calculate_scroll_deltas("left", 50) == (-50, 0)
+        assert _calculate_scroll_deltas("right", 50) == (50, 0)
+
+    def test_validate_navigation_url(self):
+        # Valid URLs
+        assert (
+            _validate_navigation_url("https://www.google.com/search?q=shoes")
+            is True
+        )
+        assert _validate_navigation_url("http://example.com/products") is True
+
+        # Invalid / SSRF targets
+        assert _validate_navigation_url("file:///etc/passwd") is False
+        assert _validate_navigation_url("javascript:alert(1)") is False
+        assert _validate_navigation_url("http://localhost:8080/secret") is False
+        assert (
+            _validate_navigation_url("http://127.0.0.1:8000/internal") is False
+        )
+        assert (
+            _validate_navigation_url("http://169.254.169.254/latest/meta-data/")
+            is False
+        )
+        assert (
+            _validate_navigation_url(
+                "http://metadata.google.internal/computeMetadata/v1/"
+            )
+            is False
+        )
+        assert _validate_navigation_url("http://10.0.0.1/admin") is False
+        assert _validate_navigation_url("http://192.168.1.1/") is False
+        assert _validate_navigation_url("invalid-url") is False
+
     @pytest.mark.asyncio
     async def test_mock_browser_computer_operations(self):
         computer = MockBrowserComputer()
@@ -144,6 +187,10 @@ class TestBrowserComputer:
             "https://www.google.com/search?tbm=shop&q=running+shoes"
         )
         assert "running+shoes" in nav_state.url
+
+        # Disallowed navigation is rejected
+        rejected_nav = await computer.navigate("http://127.0.0.1:8080/admin")
+        assert "running+shoes" in rejected_nav.url
 
         type_state = await computer.type_text_at(
             x=100, y=200, text="kids sneakers"
@@ -198,3 +245,73 @@ class TestModels:
         )
         assert report.brand == "Brand"
         assert report.recommendations[0].searchability_score == 94.5
+
+
+class TestAppUtils:
+    """Tests for app serving adapters, services, and A2A helpers."""
+
+    def test_no_op_instrumentor_builder(self):
+        assert (
+            reasoning_engine_adapter._no_op_instrumentor_builder("test-proj")
+            is None
+        )
+
+    @pytest.mark.asyncio
+    async def test_invoke_method_sync_and_async(self):
+        def sync_fn(x: int, y: int = 1) -> int:
+            return x + y
+
+        async def async_fn(x: int, y: int = 2) -> int:
+            return x * y
+
+        sync_res = await reasoning_engine_adapter._invoke_method(
+            sync_fn, {"input": {"x": 5, "y": 3}}
+        )
+        assert sync_res == 8
+
+        async_res = await reasoning_engine_adapter._invoke_method(
+            async_fn, {"input": {"x": 4, "y": 3}}
+        )
+        assert async_res == 12
+
+    def test_services_shared_recursion_prevention(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "SESSION_SERVICE_URI": "shared://session",
+                "ARTIFACT_SERVICE_URI": "shared://artifact",
+            },
+            clear=False,
+        ):
+            services.get_session_service.cache_clear()
+            services.get_artifact_service.cache_clear()
+            session_svc = services.get_session_service()
+            artifact_svc = services.get_artifact_service()
+            assert session_svc is not None
+            assert artifact_svc is not None
+
+    def test_a2a_context_builder_version_resolution(self):
+        builder = a2a._A2AServerCallContextBuilder()
+
+        # When headers contain version
+        mock_req_with_header = MagicMock()
+        mock_req_with_header.scope = {}
+        mock_req_with_header.headers = Headers({"A2A-Version": "0.3"})
+        ctx1 = builder.build(mock_req_with_header)
+        assert ctx1.state["headers"]["A2A-Version"] == "0.3"
+
+        # When header missing but method has '/'
+        mock_req_03 = MagicMock()
+        mock_req_03.scope = {}
+        mock_req_03.headers = Headers({})
+        mock_req_03._json = {"method": "message/send"}
+        ctx2 = builder.build(mock_req_03)
+        assert ctx2.state["headers"]["A2A-Version"] == "0.3"
+
+        # When header missing and method is 1.0 format
+        mock_req_10 = MagicMock()
+        mock_req_10.scope = {}
+        mock_req_10.headers = Headers({})
+        mock_req_10._json = {"method": "SendMessage"}
+        ctx3 = builder.build(mock_req_10)
+        assert ctx3.state["headers"]["A2A-Version"] == "1.0"

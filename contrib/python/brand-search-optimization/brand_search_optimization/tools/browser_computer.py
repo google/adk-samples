@@ -17,7 +17,9 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
+import urllib.parse
 from typing import Any, Literal
 
 from google.adk.tools.computer_use.base_computer import (
@@ -43,6 +45,57 @@ GOOGLE_SHOPPING_SEARCH_URL: str = "https://www.google.com/search?tbm=shop"
 DEFAULT_INITIAL_SEARCH_URL: str = (
     f"{GOOGLE_SHOPPING_SEARCH_URL}&q=running+shoes"
 )
+
+_ALLOWED_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+_DISALLOWED_HOSTS: frozenset[str] = frozenset(
+    {"localhost", "127.0.0.1", "metadata.google.internal", "instance-data"}
+)
+
+
+def _validate_navigation_url(url: str) -> bool:
+    """Validates navigation URLs to prevent SSRF against internal/metadata endpoints."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme.lower() not in _ALLOWED_URL_SCHEMES:
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        hostname_lower = hostname.lower()
+        if hostname_lower in _DISALLOWED_HOSTS or hostname_lower.endswith(
+            (".internal", ".local")
+        ):
+            return False
+        try:
+            ip = ipaddress.ip_address(hostname_lower)
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+            ):
+                return False
+        except ValueError:
+            # Not an IP literal, valid public hostname format
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def _calculate_scroll_deltas(
+    direction: Literal["up", "down", "left", "right"], magnitude: int
+) -> tuple[int, int]:
+    """Maps directional scroll names to (delta_x, delta_y) offsets."""
+    if direction == "up":
+        return 0, -magnitude
+    elif direction == "down":
+        return 0, magnitude
+    elif direction == "left":
+        return -magnitude, 0
+    elif direction == "right":
+        return magnitude, 0
+    return 0, 0
 
 
 class MockBrowserComputer(BaseComputer):
@@ -130,6 +183,9 @@ class MockBrowserComputer(BaseComputer):
         return await self.current_state()
 
     async def navigate(self, url: str) -> ComputerState:
+        if not _validate_navigation_url(url):
+            logger.warning("Rejected navigation to disallowed URL: %s", url)
+            return await self.current_state()
         self._url = url
         self._history.append(self._url)
         self._history_idx = len(self._history) - 1
@@ -271,15 +327,9 @@ class PlaywrightBrowserComputer(BaseComputer):
     ) -> ComputerState:
         await self._ensure_browser()
         if self._page:
-            delta_x, delta_y = 0, 0
-            if direction == "up":
-                delta_y = -DEFAULT_SCROLL_OFFSET
-            elif direction == "down":
-                delta_y = DEFAULT_SCROLL_OFFSET
-            elif direction == "left":
-                delta_x = -DEFAULT_SCROLL_OFFSET
-            elif direction == "right":
-                delta_x = DEFAULT_SCROLL_OFFSET
+            delta_x, delta_y = _calculate_scroll_deltas(
+                direction, DEFAULT_SCROLL_OFFSET
+            )
             await self._page.mouse.wheel(delta_x, delta_y)
             await asyncio.sleep(POST_SCROLL_WAIT_SECONDS)
         return await self.current_state()
@@ -294,15 +344,7 @@ class PlaywrightBrowserComputer(BaseComputer):
         await self._ensure_browser()
         if self._page:
             await self._page.mouse.move(x, y)
-            delta_x, delta_y = 0, 0
-            if direction == "up":
-                delta_y = -magnitude
-            elif direction == "down":
-                delta_y = magnitude
-            elif direction == "left":
-                delta_x = -magnitude
-            elif direction == "right":
-                delta_x = magnitude
+            delta_x, delta_y = _calculate_scroll_deltas(direction, magnitude)
             await self._page.mouse.wheel(delta_x, delta_y)
             await asyncio.sleep(POST_SCROLL_WAIT_SECONDS)
         return await self.current_state()
@@ -340,6 +382,9 @@ class PlaywrightBrowserComputer(BaseComputer):
         return await self.current_state()
 
     async def navigate(self, url: str) -> ComputerState:
+        if not _validate_navigation_url(url):
+            logger.warning("Rejected navigation to disallowed URL: %s", url)
+            return await self.current_state()
         await self._ensure_browser()
         if self._page:
             await self._page.goto(url, wait_until="domcontentloaded")

@@ -22,6 +22,7 @@ registration.
 
 from __future__ import annotations
 
+import json
 import os
 from typing import TYPE_CHECKING
 
@@ -67,10 +68,20 @@ class _A2AServerCallContextBuilder(DefaultServerCallContextBuilder):
 
         # 0.3 uses method names that include a '/' like "message/send"
         # 1.0 uses PascalCase like "SendMessage"
-        json_body = getattr(request, "_json", {}) or {}
-        method = (
-            json_body.get("method") if isinstance(json_body, dict) else None
-        )
+        method = context.state.get("method")
+        if not method:
+            json_body = getattr(request, "_json", None)
+            if (
+                json_body is None
+                and hasattr(request, "_body")
+                and request._body
+            ):
+                try:
+                    json_body = json.loads(request._body)
+                except Exception:
+                    json_body = None
+            if isinstance(json_body, dict):
+                method = json_body.get("method")
 
         if method and "/" in str(method):
             headers["A2A-Version"] = "0.3"

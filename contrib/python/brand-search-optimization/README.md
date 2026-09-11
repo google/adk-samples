@@ -132,6 +132,7 @@ Environment variables are declared in `.env.example`:
 - `GOOGLE_CLOUD_AGENT_ENGINE_LOCATION`: Agent Engine location/region (e.g., `us-central1`)
 - `LOGS_BUCKET_NAME`: GCS bucket for remote artifact storage
 - `SESSION_SERVICE_URI`: URI for ADK session service (e.g., `shared://session`)
+- `ARTIFACT_SERVICE_URI`: URI for ADK artifact service (e.g., `shared://artifact`)
 - `PORT`: HTTP port for FastAPI server (default: `8080`)
 
 ## Example Interaction

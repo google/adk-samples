@@ -32,9 +32,19 @@ from fastapi import FastAPI, HTTPException, Request, encoders, responses
 from brand_search_optimization.app_utils import services
 
 
-def _no_op_instrumentor_builder(project_id: str) -> None:
+def _no_op_instrumentor_builder(_project_id: str) -> None:
     """No-op so set_up() keeps the startup instrumentor and generate_content spans."""
     return None
+
+
+async def _invoke_method(method, body: dict):
+    """Dispatches a dynamic reasoning engine method handling sync/async callables."""
+    kwargs = body.get("input") or {}
+    return (
+        await method(**kwargs)
+        if inspect.iscoroutinefunction(method)
+        else method(**kwargs)
+    )
 
 
 def attach_reasoning_engine_routes(app: FastAPI) -> None:
@@ -90,12 +100,7 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
             # the callable, so a sync method returning an async iterable also
             # works. The sync route below draws the same distinction for the
             # `""` and `async` buckets via iscoroutinefunction.
-            kwargs = body.get("input") or {}
-            stream = (
-                await method(**kwargs)
-                if inspect.iscoroutinefunction(method)
-                else method(**kwargs)
-            )
+            stream = await _invoke_method(method, body)
             if hasattr(stream, "__aiter__"):
                 async for event in stream:
                     yield json.dumps(event) + "\n"
@@ -111,12 +116,7 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
     async def query(request: Request) -> responses.JSONResponse:
         body = await request.json()
         method = resolve_method(body["class_method"], streaming=False)
-        kwargs = body.get("input") or {}
-        output = (
-            await method(**kwargs)
-            if inspect.iscoroutinefunction(method)
-            else method(**kwargs)
-        )
+        output = await _invoke_method(method, body)
         return responses.JSONResponse(
             content=encoders.jsonable_encoder({"output": output})
         )
