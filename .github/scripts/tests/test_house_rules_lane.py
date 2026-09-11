@@ -243,21 +243,46 @@ def test_ci_failures_are_ordered_first(tmp_path):
     assert [f["body"] for f in translated] == ["blocker", "nit"]
 
 
+@pytest.mark.skipif(not CHECKER.exists(), reason="checker not in this checkout")
 def test_h42_is_reported_once_for_the_whole_pr(tmp_path):
     """H42 is a property of the pull request, not of a recipe. Called inside
     the per-recipe loop it produced one identical comment per recipe on one
-    line — and at exactly three recipes the grouping pass collapsed them into
+    line — and at exactly THREE recipes the grouping pass collapsed them into
     "the same thing in 2 other places", which is false: it is the same place,
-    three times. The checker's own once-guard cannot see across recipes
-    because `out` is fresh for each."""
-    import inspect
+    three times. Three recipes here for exactly that reason.
 
-    assert "module.check_pr_shape(" not in inspect.getsource(
-        lane.run_checker
-    ), "the per-recipe path still calls it, so it fires once per recipe"
-    assert "module.check_pr_shape(" in inspect.getsource(lane.main), (
-        "nothing calls it at all, so H42 never fires"
+    Driven through the CLI rather than through inspect.getsource: a test that
+    reads source stays green when the call is merely relocated, and moving
+    that call is what the fix did."""
+    for name in ("alpha", "beta", "gamma"):
+        _recipe(tmp_path, f"contrib/python/{name}",
+                **{"manifest.yaml": MANIFEST})
+    changed = tmp_path / "changed.txt"
+    changed.write_text(
+        "".join(
+            f"contrib/python/{n}/manifest.yaml\n"
+            for n in ("alpha", "beta", "gamma")
+        )
+        + ".agents/skills/some-skill/SKILL.md\n"
     )
+    out = tmp_path / "findings.json"
+    rc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parents[1] / "house_rules_lane.py"),
+            "--checker", str(CHECKER),
+            "--repo-root", str(tmp_path),
+            "--changed-files", str(changed),
+            "--out", str(out),
+        ],
+        capture_output=True, text=True, check=False,
+        env={**os.environ, "PYTHONPATH": str(
+            Path(__file__).resolve().parents[3] / "tools"
+        )},
+    )
+    assert rc.returncode == 0, rc.stderr
+    h42 = [f for f in json.loads(out.read_text()) if f["_rule"] == "H42"]
+    assert len(h42) == 1, f"expected one H42 across three recipes, got {len(h42)}"
 
 
 @pytest.mark.skipif(not CHECKER.exists(), reason="checker not in this checkout")
@@ -277,16 +302,50 @@ def test_a_mistyped_project_table_does_not_delete_a_recipes_review(tmp_path):
 
 
 @pytest.mark.skipif(not CHECKER.exists(), reason="checker not in this checkout")
-def test_the_schema_comes_from_the_base_checkout(tmp_path):
-    """A PR that edits its own manifest schema must not thereby edit the rule
-    that judges it."""
-    assert lane.SCHEMA_PATH.is_file()
-    assert "pr-head" not in str(lane.SCHEMA_PATH)
-    import inspect
+def test_a_pr_cannot_edit_the_schema_that_judges_it(tmp_path):
+    """The real question, asked by planting a hostile schema in the tree under
+    review: does H19 still fire?
 
-    source = inspect.getsource(lane.run_checker)
-    assert "SCHEMA_PATH" in source
-    assert 'repo_root) / ".github/schemas' not in source
+    A neutered schema — one that permits every key — makes H19 report nothing,
+    so a PR could legalise its own manifest. The previous version of this test
+    asserted on the source text of run_checker and stayed green with the fix
+    reverted, which is the pattern that let three earlier defects ship."""
+    rel = "contrib/python/hostile"
+    _recipe(
+        tmp_path,
+        rel,
+        **{
+            "manifest.yaml": MANIFEST + 'not_a_real_key: "smuggled"\n',
+            # A schema that permits anything at all.
+            ".github/schemas/manifest-schema.json": json.dumps(
+                {
+                    "additionalProperties": True,
+                    "properties": {"not_a_real_key": {}},
+                    "required": [],
+                }
+            ),
+        },
+    )
+    # The planted schema sits where run_checker used to read it from.
+    (tmp_path / ".github" / "schemas").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".github/schemas/manifest-schema.json").write_text(
+        json.dumps(
+            {
+                "additionalProperties": True,
+                "properties": {"not_a_real_key": {}},
+                "required": [],
+            }
+        )
+    )
+
+    module = lane.load_checker(CHECKER)
+    findings, _ = lane.run_checker(module, str(tmp_path), rel, None)
+    assert any(
+        f["rule"] == "H19" and "not_a_real_key" in f["what"] for f in findings
+    ), (
+        "the smuggled manifest key was not reported: the schema came from the "
+        "tree under review, so a PR can edit the rule that judges it"
+    )
 
 
 def test_an_all_recipes_failed_run_is_not_reported_as_clean(tmp_path, capsys):
