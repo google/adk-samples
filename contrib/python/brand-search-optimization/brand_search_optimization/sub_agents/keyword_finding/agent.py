@@ -12,21 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Defines keyword finding agent."""
+"""Defines keyword finding agent for brand catalog analysis."""
 
-import os
+from google.adk.agents import LlmAgent
 
-from google.adk.agents.llm_agent import Agent
-
-from ...tools import bq_connector
+from ...shared_libraries import constants
+from ...tools.bq_connector import get_product_details_for_brand
 from . import prompt
 
-keyword_finding_agent = Agent(
-    model=os.getenv("MODEL_NAME"),
+keyword_finding_agent = LlmAgent(
+    model=constants.MODEL,
     name="keyword_finding_agent",
-    description="A helpful agent to find keywords",
+    description="Extracts and ranks high-intent shopper search keywords from brand catalog data.",
     instruction=prompt.KEYWORD_FINDING_AGENT_PROMPT,
     tools=[
-        bq_connector.get_product_details_for_brand,
+        get_product_details_for_brand,
     ],
+    output_key="extracted_keywords",
 )

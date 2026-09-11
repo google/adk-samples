@@ -12,21 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Defines Brand Search Optimization Agent."""
+"""Defines the root Brand Search Optimization Agent."""
 
-import os
-
-from google.adk.agents.llm_agent import Agent
+from google.adk.agents import LlmAgent
+from google.adk.apps import App
 
 from . import prompt
-from .sub_agents.comparison.agent import comparison_root_agent
-from .sub_agents.keyword_finding.agent import keyword_finding_agent
-from .sub_agents.search_results.agent import search_results_agent
+from .shared_libraries import constants
+from .sub_agents import (
+    comparison_root_agent,
+    keyword_finding_agent,
+    search_results_agent,
+)
 
-root_agent = Agent(
-    model=os.getenv("MODEL_NAME"),
-    name="brand_search_optimization",
-    description="A helpful assistant for brand search optimization using Computer Use.",
+root_agent = LlmAgent(
+    model=constants.MODEL,
+    name=constants.AGENT_NAME,
+    description=constants.DESCRIPTION,
     instruction=prompt.ROOT_PROMPT,
     sub_agents=[
         keyword_finding_agent,
@@ -34,3 +36,5 @@ root_agent = Agent(
         comparison_root_agent,
     ],
 )
+
+app = App(root_agent=root_agent, name="brand_search_optimization")

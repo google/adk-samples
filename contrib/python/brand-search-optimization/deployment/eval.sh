@@ -13,14 +13,11 @@
 # limitations under the License.
 
 set -x
+set -e
 
 prepare(){
     touch __init__.py
-    export PYTHONPATH=:.
-}
-
-remove_selenium(){
-    rm -rf selenium
+    export PYTHONPATH="$PYTHONPATH:."
 }
 
 run_eval(){
@@ -33,10 +30,9 @@ run_eval(){
 main(){
     echo "
     You must be inside brand-search-optimization dir and then
-    # sh deployment/eval/eval.sh
+    # sh deployment/eval.sh
     "
     prepare
-    remove_selenium
     run_eval
 }
 

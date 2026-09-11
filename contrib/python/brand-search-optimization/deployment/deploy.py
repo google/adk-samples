@@ -14,14 +14,13 @@
 
 """Deployment script for Brand Search Optimization agent."""
 
-import os
-
 import vertexai
 from absl import app, flags
 from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
 
 from brand_search_optimization.agent import root_agent
+from brand_search_optimization.shared_libraries import constants
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("project_id", None, "GCP project ID.")
@@ -44,9 +43,9 @@ def create(env_vars: dict) -> None:
     remote_agent = agent_engines.create(
         adk_app,
         requirements=[
-            "google-adk>=1.0.0,<2.0.0",
+            "google-adk>=2.6.0,<3.0.0",
             "google-cloud-aiplatform[agent_engines]>=1.93.0",
-            "pydantic",
+            "pydantic>=2.10.0",
             "requests",
             "python-dotenv",
             "google-genai",
@@ -68,19 +67,9 @@ def delete(resource_id: str) -> None:
 
 
 def main(argv: list[str]) -> None:
-    project_id = (
-        FLAGS.project_id
-        if FLAGS.project_id
-        else os.getenv("GOOGLE_CLOUD_PROJECT")
-    )
-    location = (
-        FLAGS.location if FLAGS.location else os.getenv("GOOGLE_CLOUD_LOCATION")
-    )
-    bucket = (
-        FLAGS.bucket
-        if FLAGS.bucket
-        else os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET")
-    )
+    project_id = FLAGS.project_id if FLAGS.project_id else constants.PROJECT
+    location = FLAGS.location if FLAGS.location else constants.LOCATION
+    bucket = FLAGS.bucket if FLAGS.bucket else constants.STAGING_BUCKET
     env_vars = {}
 
     print(f"PROJECT: {project_id}")
@@ -97,7 +86,9 @@ def main(argv: list[str]) -> None:
         print("Missing required environment variable: STAGING_BUCKET")
         return
 
-    env_vars["DISABLE_WEB_DRIVER"] = "1"
+    env_vars["DISABLE_WEB_DRIVER"] = (
+        "1" if constants.DISABLE_WEB_DRIVER else "0"
+    )
 
     vertexai.init(
         project=project_id,

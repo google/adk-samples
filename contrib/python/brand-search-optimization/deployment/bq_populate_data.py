@@ -12,40 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Script to create and populate sample BigQuery catalog tables."""
-
-import os
-
-from dotenv import load_dotenv
 from google.cloud import bigquery
 
-load_dotenv()
+from brand_search_optimization.shared_libraries import constants
 
-PROJECT = (os.getenv("GOOGLE_CLOUD_PROJECT") or "").strip()
-DATASET_ID = (os.getenv("DATASET_ID") or "").strip()
-TABLE_ID = (os.getenv("TABLE_ID") or "").strip()
-LOCATION = (os.getenv("GOOGLE_CLOUD_LOCATION") or "").strip()
-
-if not PROJECT:
-    raise ValueError(
-        "GOOGLE_CLOUD_PROJECT environment variable is required. "
-        "Please set it in your .env file."
-    )
-if not DATASET_ID:
-    raise ValueError(
-        "DATASET_ID environment variable is required. "
-        "Please set it in your .env file."
-    )
-if not TABLE_ID:
-    raise ValueError(
-        "TABLE_ID environment variable is required. "
-        "Please set it in your .env file."
-    )
-if not LOCATION:
-    raise ValueError(
-        "GOOGLE_CLOUD_LOCATION environment variable is required. "
-        "Please set it in your .env file."
-    )
+PROJECT = constants.PROJECT
+TABLE_ID = constants.TABLE_ID
+LOCATION = constants.LOCATION
+DATASET_ID = constants.DATASET_ID
+TABLE_ID = constants.TABLE_ID
 
 client = bigquery.Client(project=PROJECT)
 
@@ -74,11 +49,14 @@ data_to_insert = [
 
 def create_dataset_if_not_exists():
     """Creates a BigQuery dataset if it does not already exist."""
+    # Construct a BigQuery client object.
     dataset_id = f"{client.project}.{DATASET_ID}"
     dataset = bigquery.Dataset(dataset_id)
-    dataset.location = LOCATION
-    client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
-    dataset = client.create_dataset(dataset)
+    dataset.location = "US"
+    client.delete_dataset(
+        dataset_id, delete_contents=True, not_found_ok=True
+    )  # Make an API request.
+    dataset = client.create_dataset(dataset)  # Make an API request.
     print(f"Created dataset {client.project}.{dataset.dataset_id}")
     return dataset
 
@@ -89,6 +67,7 @@ def populate_bigquery_table():
     if not dataset_ref:
         return
 
+    # Define the schema based on your CREATE TABLE statement
     schema = [
         bigquery.SchemaField("Title", "STRING"),
         bigquery.SchemaField("Description", "STRING"),
@@ -97,14 +76,14 @@ def populate_bigquery_table():
     ]
     table_id = f"{PROJECT}.{DATASET_ID}.{TABLE_ID}"
     table = bigquery.Table(table_id, schema=schema)
-    client.delete_table(table_id, not_found_ok=True)
+    client.delete_table(table_id, not_found_ok=True)  # Make an API request.
     print(f"Deleted table '{table_id}'.")
-    table = client.create_table(table)
+    table = client.create_table(table)  # Make an API request.
     print(f"Created table {PROJECT}.{table.dataset_id}.{table.table_id}")
 
     errors = client.insert_rows_json(table=table, json_rows=data_to_insert)
 
-    if not errors:
+    if errors == []:
         print(
             f"Successfully inserted {len(data_to_insert)} rows into {PROJECT}.{DATASET_ID}.{TABLE_ID}"
         )
@@ -116,4 +95,6 @@ def populate_bigquery_table():
 
 if __name__ == "__main__":
     populate_bigquery_table()
-    print("\n--- BigQuery catalog initialized successfully ---")
+    print(
+        "\n--- Instructions on how to add permissions to BQ Table are in the customiztion.md file ---"
+    )

@@ -12,17 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Sub-agents package for brand search optimization."""
+"""Comparison sub-agents and models for brand search optimization."""
 
-from .comparison import (
-    TitleOptimizationReport,
-    TitleRecommendation,
+from .agent import (
     comparison_critic_agent,
     comparison_generator_agent,
     comparison_root_agent,
 )
-from .keyword_finding.agent import keyword_finding_agent
-from .search_results.agent import search_results_agent
+from .models import TitleOptimizationReport, TitleRecommendation
 
 __all__ = [
     "TitleOptimizationReport",
@@ -30,6 +27,4 @@ __all__ = [
     "comparison_critic_agent",
     "comparison_generator_agent",
     "comparison_root_agent",
-    "keyword_finding_agent",
-    "search_results_agent",
 ]

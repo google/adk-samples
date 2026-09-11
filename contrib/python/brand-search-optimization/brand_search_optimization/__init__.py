@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Brand Search Optimization Recipe — enhances retail product titles using Gemini Computer Use."""
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load variables from .env if present. In production the environment is
-# already populated by the platform (Cloud Run, GKE, etc.), so a missing
-# .env is expected and not an error.
-load_dotenv()
+# Environment bootstrap for the whole package. Real values come from .env
+# (gitignored) or the ambient environment. The committed .env.example is the
+# fallback so the unit tests and the runnability test import cleanly with no
+# .env present. override=False throughout, so a real environment variable wins.
+_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_ROOT / ".env", override=False)
+load_dotenv(_ROOT / ".env.example", override=False)
 
 from .agent import root_agent  # noqa: E402 -- must come after load_dotenv()
 

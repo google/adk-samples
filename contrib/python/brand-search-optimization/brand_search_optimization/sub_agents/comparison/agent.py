@@ -12,34 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Defines comparison agent."""
+"""Defines title comparison and evaluation agents."""
 
-import os
+from google.adk.agents import LlmAgent
 
-from google.adk.agents.llm_agent import Agent
-
+from ...shared_libraries import constants
 from . import prompt
+from .models import TitleOptimizationReport
 
-model_name = os.getenv("MODEL_NAME")
-
-comparison_generator_agent = Agent(
-    model=model_name,
+comparison_generator_agent = LlmAgent(
+    model=constants.MODEL,
     name="comparison_generator_agent",
-    description="A helpful agent to generate comparison.",
+    description="Generates detailed title comparison and search optimization proposals.",
     instruction=prompt.COMPARISON_AGENT_PROMPT,
+    output_schema=TitleOptimizationReport,
+    output_key="comparison_proposals",
 )
 
-comparison_critic_agent = Agent(
-    model=model_name,
+comparison_critic_agent = LlmAgent(
+    model=constants.MODEL,
     name="comparison_critic_agent",
-    description="A helpful agent to critique comparison.",
+    description="Critiques title optimization proposals for quality, brand accuracy, and search intent alignment.",
     instruction=prompt.COMPARISON_CRITIC_AGENT_PROMPT,
+    output_key="critique_feedback",
 )
 
-comparison_root_agent = Agent(
-    model=model_name,
+comparison_root_agent = LlmAgent(
+    model=constants.MODEL,
     name="comparison_root_agent",
-    description="A helpful agent to compare titles",
+    description="Coordinates comparison generation and critique to produce the final optimization report.",
     instruction=prompt.COMPARISON_ROOT_AGENT_PROMPT,
     sub_agents=[comparison_generator_agent, comparison_critic_agent],
+    output_schema=TitleOptimizationReport,
+    output_key="final_optimization_report",
 )

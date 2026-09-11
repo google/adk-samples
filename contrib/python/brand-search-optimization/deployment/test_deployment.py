@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Test deployment of Brand Search Optimization Agent to Agent Engine."""
+"""Test deployment of FOMC Research Agent to Agent Engine."""
 
 import asyncio
 import os
