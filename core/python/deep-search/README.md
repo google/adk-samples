@@ -107,7 +107,7 @@ If you've already cloned the repository and want to use Vertex AI instead of AI 
 ```bash
 echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE" >> app/.env
 echo "GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID" >> app/.env
-echo "GOOGLE_CLOUD_LOCATION=us-central1" >> app/.env
+echo "GOOGLE_CLOUD_LOCATION=us-east1" >> app/.env
 ```
 
 Make sure you're authenticated with Google Cloud:
