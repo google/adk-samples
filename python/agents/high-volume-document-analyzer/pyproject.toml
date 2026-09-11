@@ -15,8 +15,9 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 
 dependencies = [
-    "google-adk>=1.28.0",
+    "google-adk>=1.31.0",
     "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",
+    "google-cloud-secret-manager>=2.16.0",
     "opentelemetry-instrumentation-google-genai==0.4b0",
     "python-dotenv>=1.0.1",
     "reportlab==4.2.0",
@@ -29,7 +30,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "google-adk[eval]>=1.28.0",
+    "google-adk[eval]>=1.31.0",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
     "agent-starter-pack>=0.15.4",

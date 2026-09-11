@@ -96,7 +96,7 @@ Would you like me to continue reading the older documents?
 Edit the `.env` file with your GCP project details
 ```env
 GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_CLOUD_LOCATION=us-east1
 ```
 
 Depending on your deployment, you may also need to configure the following variables in your `.env` file:
