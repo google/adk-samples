@@ -506,21 +506,21 @@ async def generate_and_render_deck(
                     # Strip excess visuals programmatically
                     slide.visual_prompt = None
 
-        tasks = []
-        slides = []
+        visual_tasks = []
+        slides_with_visuals = []
         for item in all_content:
             if hasattr(item, "visual_prompt") and item.visual_prompt:
-                tasks.append(
+                visual_tasks.append(
                     asyncio.create_task(
                         asyncio.wait_for(
                             generate_visual(item.visual_prompt), timeout=60.0
                         )
                     )
                 )
-                slides.append(item)
+                slides_with_visuals.append(item)
 
-        images = await asyncio.gather(*tasks, return_exceptions=True)
-        for s, img in zip(slides, images, strict=True):
+        images = await asyncio.gather(*visual_tasks, return_exceptions=True)
+        for s, img in zip(slides_with_visuals, images, strict=True):
             if not isinstance(img, Exception):
                 s.image_data = img
 

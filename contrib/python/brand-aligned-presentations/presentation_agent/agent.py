@@ -14,20 +14,6 @@
 
 import os
 
-import google.auth
-import google.auth.exceptions
-
-try:
-    _, project_id = google.auth.default()
-    if project_id:
-        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
-except google.auth.exceptions.DefaultCredentialsError:
-    pass
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
-os.environ.setdefault("GEMINI_MODEL_NAME", "gemini-3.6-flash")
-os.environ.setdefault("IMAGE_GENERATION_MODEL", "gemini-3.1-flash-image")
-
 from google.adk.agents import LlmAgent
 from google.adk.apps import App
 from google.adk.artifacts import (

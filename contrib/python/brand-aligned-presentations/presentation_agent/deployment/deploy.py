@@ -177,7 +177,7 @@ def main(mode):
     )
     if not GCP_STAGING_BUCKET_NAME:
         logger.warning(
-            "GCP_STAGING_BUCKET is not set or is empty. Defaulting to '{GOOGLE_CLOUD_PROJECT}-staging-bucket'."
+            f"GCP_STAGING_BUCKET is not set or is empty. Defaulting to '{GOOGLE_CLOUD_PROJECT}-staging-bucket'."
         )
         GCP_STAGING_BUCKET_NAME = f"{GOOGLE_CLOUD_PROJECT}-staging-bucket"
 
@@ -204,10 +204,6 @@ def main(mode):
         "GCP_LOCATION": str(deployment_location),
         "GOOGLE_CLOUD_PROJECT": str(GOOGLE_CLOUD_PROJECT or ""),
         "GOOGLE_CLOUD_LOCATION": str(GOOGLE_CLOUD_LOCATION or "global"),
-        "GEMINI_MODEL_NAME": str(os.getenv("GEMINI_MODEL_NAME") or ""),
-        "IMAGE_GENERATION_MODEL": str(
-            os.getenv("IMAGE_GENERATION_MODEL") or ""
-        ),
         "GCP_STAGING_BUCKET": str(GCP_STAGING_BUCKET or ""),
         "DEFAULT_TEMPLATE_URI": default_template_uri,
         "ENABLE_RAG": str(os.getenv("ENABLE_RAG") or "false"),
@@ -218,6 +214,14 @@ def main(mode):
             os.getenv("GOOGLE_GENAI_USE_VERTEXAI") or "True"
         ),
     }
+
+    # Only set model overrides if explicitly defined in the local environment
+    if os.getenv("GEMINI_MODEL_NAME"):
+        env_vars["GEMINI_MODEL_NAME"] = str(os.getenv("GEMINI_MODEL_NAME"))
+    if os.getenv("IMAGE_GENERATION_MODEL"):
+        env_vars["IMAGE_GENERATION_MODEL"] = str(
+            os.getenv("IMAGE_GENERATION_MODEL")
+        )
 
     # Only add optional variables if they actually contain a value
     if os.getenv("DATASTORE_ID"):
