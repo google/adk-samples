@@ -70,11 +70,13 @@ from recipe_manifests import REPO_ROOT, SCAN_ROOTS, SKIP_DIRS
 REGISTRY = "us-west1-docker.pkg.dev/adk-samples-repo-gcp-support/adk-recipes-registry"
 
 
-def _language_and_name(recipe: Path) -> tuple[str, str]:
-    """Split a recipe path into (language, name).
+def _category_and_name(recipe: Path) -> tuple[str, str]:
+    """Split a recipe path into (category, name).
 
-    Recipes live at <root>/<language>/<name>. Anything shallower than that has
-    no language segment to report, so the root stands in for it.
+    Recipes live at <root>/<category>/<name>. The segment is a language under
+    core/ and contrib/ (python, kotlin) but a vertical under skills/ (retail),
+    so it is named for what it is positionally rather than for what it usually
+    holds. Anything shallower has no such segment, and the root stands in.
     """
     parts = recipe.parts
     if len(parts) >= 3:
@@ -83,13 +85,19 @@ def _language_and_name(recipe: Path) -> tuple[str, str]:
 
 
 def discover(repo_root: Path) -> list[dict[str, str]]:
-    """Every live recipe with a Dockerfile at its root, sorted by path."""
+    """Every live recipe with a Dockerfile at its root, shallowest first."""
     found: list[dict[str, str]] = []
     for root in SCAN_ROOTS:
         base = repo_root / root
         if not base.is_dir():
             continue
-        for dockerfile in sorted(base.rglob("Dockerfile")):
+        # Depth first, not lexicographic. The nested-Dockerfile test below
+        # only works if a recipe is recorded before anything beneath it, and
+        # sorting by name does not guarantee that: 'foo/Bar/Dockerfile' sorts
+        # ahead of 'foo/Dockerfile' because 'B' < 'D'. Depth does guarantee
+        # it, and the secondary sort keeps the output stable.
+        for dockerfile in sorted(base.rglob("Dockerfile"),
+                                 key=lambda p: (len(p.parts), p)):
             recipe = dockerfile.parent
             rel = recipe.relative_to(repo_root)
             if any(part in SKIP_DIRS for part in rel.parts):
@@ -98,37 +106,42 @@ def discover(repo_root: Path) -> list[dict[str, str]]:
                 continue
             # A Dockerfile nested under another recipe belongs to a
             # sub-service, not to a recipe of its own.
-            if any(entry["path"] != str(rel) and str(rel).startswith(entry["path"] + "/")
-                   for entry in found):
+            if any(str(rel).startswith(entry["path"] + "/") for entry in found):
                 continue
-            language, name = _language_and_name(rel)
+            category, name = _category_and_name(rel)
             found.append(
                 {
                     "path": str(rel),
                     "name": name,
-                    "language": language,
-                    "image": f"{REGISTRY}/{language}/{name}",
+                    "category": category,
+                    "image": f"{REGISTRY}/{category}/{name}",
                 }
             )
     return found
 
 
-def _changed_paths(ref: str) -> set[str]:
-    """Files touched between `ref` and HEAD, as repo-relative paths."""
+def _changed_paths(ref: str, repo_root: Path) -> set[str] | None:
+    """Files touched between `ref` and HEAD, or None if the diff failed.
+
+    None and the empty set mean different things and the caller acts on the
+    difference: an empty set is a successful diff that found nothing, so
+    nothing needs rebuilding, while None means the question could not be
+    answered and every recipe should be rebuilt rather than silently skipped.
+    """
     out = subprocess.run(
         ["git", "diff", "--name-only", f"{ref}...HEAD"],
-        cwd=REPO_ROOT,
+        cwd=repo_root,
         capture_output=True,
         text=True,
         check=False,
     )
     if out.returncode != 0:
         # A missing or unrelated ref is not worth failing the build over:
-        # falling back to "everything changed" errs toward rebuilding, which
-        # is wasteful but never publishes a stale image.
+        # falling back to "everything changed" is wasteful but never leaves a
+        # recipe published from stale source.
         print(f"warning: git diff against {ref} failed, treating all recipes as changed",
               file=sys.stderr)
-        return set()
+        return None
     return {line.strip() for line in out.stdout.splitlines() if line.strip()}
 
 
@@ -156,8 +169,11 @@ def main() -> int:
             return 1
 
     if args.changed_from:
-        changed = _changed_paths(args.changed_from)
-        if changed:
+        changed = _changed_paths(args.changed_from, REPO_ROOT)
+        # None is a failed diff: rebuild everything rather than skip silently.
+        # An empty set is a successful diff that found nothing, which
+        # correctly narrows the matrix to nothing.
+        if changed is not None:
             recipes = [r for r in recipes
                        if any(f.startswith(r["path"] + "/") for f in changed)]
 
