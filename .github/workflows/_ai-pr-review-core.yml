@@ -347,11 +347,67 @@ jobs:
       # thing this job handles and two later steps need it verbatim, and a
       # step output round-trips through the environment, where Linux caps a
       # single variable at the same 131072 bytes that caps an argv string.
-      - name: 'Fetch the PR diff for the reviewer'
+      # How much may this lane say on this push?
+      #
+      # THE PROBLEM. Every push re-reviewed the whole PR, and duplicate
+      # suppression drops anything already said — so each round was FORCED to
+      # return findings nobody had seen yet. On a large PR the pool of
+      # available findings is far bigger than one round's budget, so the
+      # reviewer produced new comments indefinitely and authors reported the
+      # obvious consequence: fix everything, push, receive a fresh batch.
+      #
+      # review_budget.py reads the PR's own review history — no stored state —
+      # and returns the round number, the commit the last round reviewed, a
+      # hard ceiling for this lane, and whether this lane should run at all.
+      # Every constant it uses is in .github/policy.yml (`pr_review_budget`).
+      - name: 'Decide this round''s comment budget'
+        id: 'budget'
         if: steps.diff_size_guard.outputs.skip != 'true'
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          GH_REPO: '${{ github.repository }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
+          REVIEW_LABEL: '${{ inputs.review_label }}'
+          EVENT_NAME: '${{ inputs.event_name }}'
+          HEAD_SHA: '${{ github.event.pull_request.head.sha }}'
+        run: |-
+          set -euo pipefail
+
+          # A maintainer typing `@ai-review`, or dispatching by hand, is asking
+          # for the whole PR to be looked at again. That widens the SCOPE; it
+          # does not lift the caps, or the invoke would be a way to re-flood a
+          # pull request.
+          FULL=''
+          if [[ "${EVENT_NAME}" == 'issue_comment' || "${EVENT_NAME}" == 'workflow_dispatch' ]]; then
+            FULL='--full-review'
+          fi
+
+          # shellcheck disable=SC2086  # FULL is a flag or empty, never a path
+          uv run --with pyyaml python3 .github/scripts/review_budget.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pr "${PR_NUMBER}" \
+            --lane "${REVIEW_LABEL}" \
+            --head-sha "${HEAD_SHA}" \
+            --github-output ${FULL}
+
+      - name: 'Report a lane that has nothing left to spend'
+        if: |-
+          steps.diff_size_guard.outputs.skip != 'true' &&
+          steps.budget.outputs.skip == 'true'
+        env:
+          REASON: '${{ steps.budget.outputs.reason }}'
+        run: 'echo "Not reviewing: ${REASON}"'
+
+      - name: 'Fetch the PR diff for the reviewer'
+        id: 'fetch_diff'
+        if: |-
+          steps.diff_size_guard.outputs.skip != 'true' &&
+          steps.budget.outputs.skip != 'true'
+        env:
+          GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
+          LAST_REVIEWED_SHA: '${{ steps.budget.outputs.last_reviewed_sha }}'
+          HEAD_SHA: '${{ github.event.pull_request.head.sha }}'
         run: |-
           set -euo pipefail
 
@@ -379,19 +435,77 @@ jobs:
           # error, so an exhausted retry loop would fall through with an empty
           # pr_diff.txt and hand the reviewer a prompt containing no diff —
           # which the model answers by finding nothing and exiting 0.
+          # INCREMENTAL REVIEW. If a previous round reviewed commit X, this
+          # round reads X...head rather than base...head. That is what makes
+          # the process converge: a push that only fixes earlier comments has
+          # almost nothing new in it, so there is almost nothing new to say.
+          # Reviewing base...head every time meant each round re-read code
+          # that had already been through five reviews, and — because anything
+          # already said is suppressed — was forced to find something else.
+          #
+          # A finding missed in round 1 is therefore never reported. That is
+          # the cost of terminating, and it is the right trade: a BAD FIX is
+          # still caught, because the fix is itself new code in the next
+          # delta.
+          #
+          # Falls back to the whole PR when there is no previous round, when a
+          # force-push has orphaned the commit it reviewed, or when a
+          # maintainer asked for a full re-review.
+          SCOPE='full'
+          if [[ -n "${LAST_REVIEWED_SHA}" && -n "${HEAD_SHA}" ]]; then
+            if gh api "repos/${GITHUB_REPOSITORY}/compare/${LAST_REVIEWED_SHA}...${HEAD_SHA}" \
+                 --jq '.status' > compare_status.txt 2>/dev/null; then
+              STATUS="$(tr -d '[:space:]' < compare_status.txt)"
+              case "${STATUS}" in
+                ahead)
+                  SCOPE='incremental'
+                  ;;
+                *)
+                  echo "::warning::history diverged since the last review (${STATUS}); reviewing the whole PR"
+                  ;;
+              esac
+            else
+              echo "::warning::cannot compare against ${LAST_REVIEWED_SHA} (force-push?); reviewing the whole PR"
+            fi
+          fi
+
           FETCHED='false'
           for attempt in 1 2 3; do
-            if gh pr diff "${PR_NUMBER}" > pr_diff.txt; then
+            if [[ "${SCOPE}" == 'incremental' ]]; then
+              # The compare endpoint's diff media type returns a normal
+              # unified diff, with NEW-file line numbers identical to the
+              # ones base...head would give — so anchors need no translation.
+              if gh api \
+                   -H 'Accept: application/vnd.github.v3.diff' \
+                   "repos/${GITHUB_REPOSITORY}/compare/${LAST_REVIEWED_SHA}...${HEAD_SHA}" \
+                   > pr_diff.txt; then
+                FETCHED='true'
+                break
+              fi
+              echo "::warning::compare diff failed (attempt ${attempt}/3); retrying in 5s..."
+            elif gh pr diff "${PR_NUMBER}" > pr_diff.txt; then
               FETCHED='true'
               break
+            else
+              echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
             fi
-            echo "::warning::gh pr diff failed (attempt ${attempt}/3); retrying in 5s..."
             sleep 5
           done
 
           if [[ "${FETCHED}" != 'true' ]]; then
             echo "::error::gh pr diff failed for PR #${PR_NUMBER} after 3 attempts; refusing to review without a diff."
             exit 1
+          fi
+
+          # An incremental diff can legitimately be empty — a merge commit
+          # from the base branch, or a push whose whole content was filtered
+          # out. Falling back to the full PR is wrong (it re-reviews
+          # everything) and erroring is worse (a red check for a no-op push),
+          # so treat it as "nothing to review" and stop.
+          if [[ "${SCOPE}" == 'incremental' && ! -s pr_diff.txt ]]; then
+            echo "Nothing new since ${LAST_REVIEWED_SHA}; nothing to review."
+            echo "empty=true" >> "${GITHUB_OUTPUT}"
+            exit 0
           fi
 
           # The new-file-only guard has already run, so a reviewable PR always
@@ -401,7 +515,10 @@ jobs:
             exit 1
           fi
 
-          echo "diff bytes: $(wc -c < pr_diff.txt)"
+          echo "diff scope: ${SCOPE}; bytes: $(wc -c < pr_diff.txt)"
+          if [[ "${SCOPE}" == 'incremental' ]]; then
+            echo "reviewing only what changed since ${LAST_REVIEWED_SHA}"
+          fi
 
       # Drop what nobody reviews, and size the review from what is left.
       #
@@ -418,13 +535,19 @@ jobs:
       # from reviewable churn is something a model can actually aim at.
       - name: 'Filter the diff and size the review'
         id: 'prepare_diff'
-        if: steps.diff_size_guard.outputs.skip != 'true'
+        if: |-
+          steps.diff_size_guard.outputs.skip != 'true' &&
+          steps.budget.outputs.skip != 'true' &&
+          steps.fetch_diff.outputs.empty != 'true'
+        env:
+          BUDGET_CEILING: '${{ steps.budget.outputs.max_comments }}'
         run: |-
           set -euo pipefail
 
           python3 .github/scripts/prepare_review_diff.py \
             --diff pr_diff.txt \
             --out pr_diff_reviewable.txt \
+            --budget-ceiling "${BUDGET_CEILING}" \
             --github-output "${GITHUB_OUTPUT}"
 
       # A Dependabot PR is not a broken PR. Every step below keys off this as
@@ -443,7 +566,7 @@ jobs:
         id: 'auth'
         if: |-
           steps.diff_size_guard.outputs.skip != 'true' &&
-          steps.prepare_diff.outputs.reviewable != 'false'
+          steps.prepare_diff.outputs.reviewable == 'true'
         uses: 'google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093' # ratchet:google-github-actions/auth@v3.0.0
         with:
           project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
@@ -461,7 +584,7 @@ jobs:
       - name: 'Add the quota project to the ADC credential'
         if: |-
           steps.diff_size_guard.outputs.skip != 'true' &&
-          steps.prepare_diff.outputs.reviewable != 'false'
+          steps.prepare_diff.outputs.reviewable == 'true'
         env:
           GOOGLE_CLOUD_PROJECT: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
         run: |-
@@ -476,7 +599,7 @@ jobs:
       - name: 'Install Antigravity CLI (agy)'
         if: |-
           steps.diff_size_guard.outputs.skip != 'true' &&
-          steps.prepare_diff.outputs.reviewable != 'false'
+          steps.prepare_diff.outputs.reviewable == 'true'
         run: |-
           set -euo pipefail
           curl -fsSL https://antigravity.google/cli/install.sh | bash
@@ -539,7 +662,7 @@ jobs:
       - name: 'Configure agy (tool permissions)'
         if: |-
           steps.diff_size_guard.outputs.skip != 'true' &&
-          steps.prepare_diff.outputs.reviewable != 'false'
+          steps.prepare_diff.outputs.reviewable == 'true'
         run: |-
           set -euo pipefail
 
@@ -557,7 +680,7 @@ jobs:
       - name: 'Run AI PR Review'
         if: |-
           steps.diff_size_guard.outputs.skip != 'true' &&
-          steps.prepare_diff.outputs.reviewable != 'false'
+          steps.prepare_diff.outputs.reviewable == 'true'
         id: 'agy_pr_review'
         env:
           AGY_ADC_AUTH: 'true'
@@ -1224,12 +1347,14 @@ jobs:
       - name: 'Build the review payload'
         if: |-
           steps.diff_size_guard.outputs.skip != 'true' &&
-          steps.prepare_diff.outputs.reviewable != 'false'
+          steps.prepare_diff.outputs.reviewable == 'true'
         id: 'build_review'
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
           REVIEW_LABEL: '${{ inputs.review_label }}'
+          MAX_COMMENTS: '${{ steps.budget.outputs.max_comments }}'
+          PROGRESS: '${{ steps.budget.outputs.progress }}'
         run: |-
           set -euo pipefail
 
@@ -1284,6 +1409,8 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --pr "${PR_NUMBER}" \
             --unreviewed unreviewed_files.txt \
+            --max-comments "${MAX_COMMENTS}" \
+            --progress "${PROGRESS}" \
             --out review_payload.json
 
           if [[ -f review_payload.json ]]; then
@@ -1319,7 +1446,7 @@ jobs:
           always() &&
           inputs.dry_run == 'true' &&
           steps.diff_size_guard.outputs.skip != 'true' &&
-          steps.prepare_diff.outputs.reviewable != 'false'
+          steps.prepare_diff.outputs.reviewable == 'true'
         uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' # ratchet:actions/upload-artifact@v7.0.1
         with:
           name: 'ai-review-dryrun-${{ inputs.review_label }}'

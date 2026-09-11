@@ -91,6 +91,13 @@ CHECKER = "post_review_comments.py"
 # model writes.
 TRUSTED_SOURCE = "checker"
 
+# The invisible signature every review we post carries, so a later run can
+# recognise its own work and know which round it is on. Defined in
+# review_budget.py, which is the reader; duplicated as a literal rather than
+# imported because these two scripts run in different jobs and one must not
+# start importing the other for a single constant.
+REVIEW_MARKER = "<!-- adk-ai-review -->"
+
 # Group 2 is the old-side length, groups 3/4 the new-side start and length.
 # A length is absent for a one-line side ("@@ -1 +1 @@"), which means 1.
 HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -1181,6 +1188,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="PR number; with --repo, suppresses comments already on the PR",
     )
     parser.add_argument(
+        "--max-comments",
+        type=int,
+        default=0,
+        help="hard ceiling on inline comments, from review_budget.py. 0 means "
+        "no ceiling. Until this existed the budget reached the model as prose "
+        "and nothing downstream checked it",
+    )
+    parser.add_argument(
+        "--progress",
+        default="",
+        help="one line telling the author which review round this is and how "
+        "much budget the PR has left",
+    )
+    parser.add_argument(
         "--unreviewed",
         type=Path,
         default=None,
@@ -1200,10 +1221,15 @@ def build_payload(
     comments: list[dict],
     notes: list[dict],
     unreviewed: list[str] | None = None,
+    progress: str = "",
 ) -> dict:
     """The review payload. `body` is required whenever `event` is COMMENT."""
     header = f"Automated **{label}** review — {len(comments)} finding(s)."
-    lines = [header]
+    # An invisible signature, so a later run can recognise its own reviews and
+    # work out which round it is on. The header below is the fallback for
+    # reviews posted before this existed, but prose gets edited and a marker
+    # nobody reads does not. review_budget.py is the reader.
+    lines = [REVIEW_MARKER, header]
 
     if notes:
         # These sit on lines the PR does not add, so GitHub will not take them
@@ -1228,6 +1254,11 @@ def build_payload(
                 f"- …and {len(unreviewed) - MAX_UNREVIEWED_LISTED} more"
             )
         lines += ["", "Splitting the PR up would get them reviewed."]
+
+    if progress:
+        # Last, and set apart: the author has just read the findings and this
+        # is the answer to "is this ever going to stop".
+        lines += ["", "---", "", f"_{progress}_"]
 
     return {
         "event": "COMMENT",
@@ -1333,6 +1364,25 @@ def _post(args, findings: list) -> int:
         f"{len(notes)} on unchanged lines."
     )
 
+    # The ceiling, applied last. Until this existed the per-run budget reached
+    # the model as prose ("Aim for that number") and nothing downstream ever
+    # checked it, so a lane that felt talkative simply was. The model is told
+    # to emit findings most serious first, so keeping the head of the list
+    # keeps the most serious ones.
+    #
+    # Notes are deliberately NOT capped: they are lines in one review body
+    # rather than separate comments, and they carry the findings that have
+    # nowhere else to go.
+    limit = getattr(args, "max_comments", 0) or 0
+    if limit and len(comments) > limit:
+        print(
+            f"  budget is {limit} comment(s); dropping "
+            f"{len(comments) - limit} past it"
+        )
+        for dropped in comments[limit:]:
+            print(f"  over budget — {dropped['path']}:{dropped['line']}")
+        comments = comments[:limit]
+
     unreviewed: list[str] = []
     if getattr(args, "unreviewed", None) and args.unreviewed.exists():
         unreviewed = [
@@ -1352,7 +1402,11 @@ def _post(args, findings: list) -> int:
         return EXIT_OK
 
     args.out.write_text(
-        json.dumps(build_payload(args.label, comments, notes, unreviewed)),
+        json.dumps(
+            build_payload(
+                args.label, comments, notes, unreviewed, args.progress
+            )
+        ),
         encoding="utf-8",
     )
     return EXIT_OK

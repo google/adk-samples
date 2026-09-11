@@ -1683,3 +1683,163 @@ def test_the_workflow_passes_the_unreviewed_list():
     assert ": > unreviewed_files.txt" in assemble, (
         "the untruncated branch does not create the file the flag names"
     )
+
+
+# --------------------------------------------------- the enforced ceiling
+
+# Deliberately unrelated vocabulary per finding: the grouping pass collapses
+# three or more findings that share tokens, which would otherwise hide whether
+# the CEILING did anything.
+_SUBJECTS = [
+    "subprocess call carries no timeout argument",
+    "docstring claims milliseconds while seconds are passed",
+    "loop rebinds the iteration variable inside itself",
+    "regex compiles on every request rather than once",
+    "boolean parameter defaults differently from its sibling",
+    "exception swallows the original traceback silently",
+    "sleep blocks the event loop for two seconds",
+    "path joins with a slash instead of pathlib",
+    "counter increments after the early return statement",
+]
+
+
+def _many_findings(n):
+    return [
+        {
+            "path": "contrib/python/x/pyproject.toml",
+            "line": 1,
+            "body": _SUBJECTS[i],
+            "verify_steps": "read line 1",
+        }
+        for i in range(n)
+    ]
+
+
+def test_the_budget_is_now_enforced_not_suggested(tmp_path):
+    """It used to reach the model as prose and nothing downstream checked it."""
+    findings = tmp_path / "f.json"
+    findings.write_text(json.dumps(_many_findings(9)), encoding="utf-8")
+    diff = tmp_path / "d.txt"
+    diff.write_text(_diff_one_added_line(), encoding="utf-8")
+    out = tmp_path / "p.json"
+    rc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--findings",
+            str(findings),
+            "--diff",
+            str(diff),
+            "--label",
+            "House Rules",
+            "--max-comments",
+            "3",
+            "--out",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rc.returncode == 0, rc.stderr
+    assert len(json.loads(out.read_text())["comments"]) == 3
+
+
+def test_the_most_serious_findings_are_the_ones_kept(tmp_path):
+    """The model is told to emit most serious first, so the ceiling keeps the
+    head of the list rather than an arbitrary slice."""
+    findings = tmp_path / "f.json"
+    findings.write_text(json.dumps(_many_findings(5)), encoding="utf-8")
+    diff = tmp_path / "d.txt"
+    diff.write_text(_diff_one_added_line(), encoding="utf-8")
+    out = tmp_path / "p.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--findings",
+            str(findings),
+            "--diff",
+            str(diff),
+            "--label",
+            "House Rules",
+            "--max-comments",
+            "1",
+            "--out",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    kept = json.loads(out.read_text())["comments"]
+    assert kept[0]["body"] == _SUBJECTS[0]
+
+
+def test_no_ceiling_means_no_ceiling(tmp_path):
+    findings = tmp_path / "f.json"
+    findings.write_text(json.dumps(_many_findings(7)), encoding="utf-8")
+    diff = tmp_path / "d.txt"
+    diff.write_text(_diff_one_added_line(), encoding="utf-8")
+    out = tmp_path / "p.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--findings",
+            str(findings),
+            "--diff",
+            str(diff),
+            "--label",
+            "House Rules",
+            "--max-comments",
+            "0",
+            "--out",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert len(json.loads(out.read_text())["comments"]) == 7
+
+
+# --------------------------------------------- the marker and the progress line
+
+
+def test_every_review_carries_the_marker():
+    """review_budget.py counts rounds by finding our own reviews. If the
+    marker goes missing the round counter restarts at 1 on every push, and the
+    author gets a full-size batch forever — the exact bug this all fixes."""
+    body = m.build_payload("Correctness", [], [], [])["body"]
+    assert body.startswith(m.REVIEW_MARKER)
+
+
+def test_the_marker_matches_the_one_the_reader_looks_for():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import review_budget
+
+    assert m.REVIEW_MARKER == review_budget.REVIEW_MARKER
+
+
+def test_the_legacy_header_still_identifies_a_review():
+    """PRs already under review when this ships have no marker, and must not
+    all restart at round 1 on the same day."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import review_budget
+
+    body = m.build_payload("Correctness", [], [], [])["body"]
+    without_marker = body.replace(m.REVIEW_MARKER, "").lstrip()
+    assert review_budget.is_ours({"body": without_marker})
+
+
+def test_the_progress_line_is_last_and_set_apart():
+    body = m.build_payload(
+        "Correctness", [], [], [], "Round 3 · 4 of 25 used."
+    )["body"]
+    assert body.rstrip().endswith("_Round 3 · 4 of 25 used._")
+
+
+def test_no_progress_line_when_there_is_nothing_to_say():
+    body = m.build_payload("Correctness", [], [], [], "")["body"]
+    assert "---" not in body

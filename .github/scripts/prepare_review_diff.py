@@ -103,8 +103,10 @@ BULK_DATA_EXT = {
 }
 BULK_DATA_CHURN = 500
 
-# How many lanes run against one PR. Used only to divide the budget below;
-# the lanes themselves never learn about each other.
+# How many THROTTLED lanes run against one PR. Used only to divide the budget
+# below; the lanes themselves never learn about each other. The deterministic
+# house-rules lane is exempt from the budget and is not counted here.
+# `test_review_budget.py` pins this against policy.yml's `lanes` list.
 LANE_COUNT = 4
 
 # The interactive skill budgets 2-20 comments for a whole review, scaled by
@@ -264,6 +266,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--out", required=True, type=Path, help="filtered diff destination"
     )
     parser.add_argument(
+        "--budget-ceiling",
+        type=int,
+        default=0,
+        help="hard ceiling for this lane from review_budget.py; the budget "
+        "this script prints is the smaller of that and its own churn-based "
+        "number, so the figure the model aims at cannot exceed the figure "
+        "the poster enforces. 0 means no ceiling",
+    )
+    parser.add_argument(
         "--github-output",
         type=Path,
         default=None,
@@ -299,6 +310,10 @@ def main() -> int:
 
     lines = stats["reviewable_lines"]
     budget = budget_for(lines)
+    # Later rounds shrink. Telling the model to aim for 5 while the poster
+    # will keep 1 wastes four findings and makes the log a puzzle.
+    if args.budget_ceiling:
+        budget = min(budget, args.budget_ceiling)
     reviewable = "true" if stats["kept_files"] and lines else "false"
     print(
         f"{stats['kept_files']} file(s) / {lines} lines reviewable, "
