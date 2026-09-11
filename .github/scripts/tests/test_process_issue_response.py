@@ -8,6 +8,8 @@ from process_issue_response import (
     DEFAULT_ASSIGNEE,
     ROUTING_RULES,
     Option,
+    _parse_json_dict,
+    _strip_trailing_commas,
     extract_decision_json,
     find_json_objects,
     normalize_path,
@@ -318,6 +320,77 @@ def test_extract_decision_json_with_nested_json_in_response():
     extracted = extract_decision_json(raw)
     assert extracted["option"] == 2
     assert '{"timeout": 30}' in extracted["response"]
+
+
+def test_extract_decision_json_with_trailing_commas():
+    raw = """```json
+{
+  "option": 1,
+  "response": "Could you share reproduction steps and error logs?",
+  "path": null,
+  "assignee": null,
+  "close_issue": false,
+}
+```"""
+    extracted = extract_decision_json(raw)
+    assert extracted["option"] == 1
+    assert "reproduction" in extracted["response"]
+    assert extracted["close_issue"] is False
+
+
+def test_extract_decision_json_with_raw_control_chars_in_response():
+    # Raw literal newline inside a JSON string
+    raw = (
+        "{\n"
+        '  "option": 1,\n'
+        '  "path": null,\n'
+        '  "assignee": null,\n'
+        '  "close_issue": false,\n'
+        '  "response": "Line 1\nLine 2"\n'
+        "}"
+    )
+    extracted = extract_decision_json(raw)
+    assert extracted["option"] == 1
+    assert "Line 1\nLine 2" in extracted["response"]
+
+
+def test_strip_trailing_commas():
+    assert _strip_trailing_commas("") == ""
+    assert _strip_trailing_commas('{"a": 1,}') == '{"a": 1}'
+    assert _strip_trailing_commas('{"a": 1, \n }') == '{"a": 1 \n }'
+    assert _strip_trailing_commas("[1, 2, ]") == "[1, 2 ]"
+    # Preserves trailing comma patterns inside string literals
+    assert (
+        _strip_trailing_commas('{"code": "int arr[] = {1, 2, };", "opt": 1,}')
+        == '{"code": "int arr[] = {1, 2, };", "opt": 1}'
+    )
+    # Handles escaped quotes in strings
+    assert (
+        _strip_trailing_commas(
+            r'{"text": "quote: \"hello, }\", rest", "opt": 2,}'
+        )
+        == r'{"text": "quote: \"hello, }\", rest", "opt": 2}'
+    )
+
+
+def test_parse_json_dict_helper():
+    assert _parse_json_dict("") is None
+    assert _parse_json_dict("not json") is None
+    assert _parse_json_dict('["not", "a", "dict"]') is None
+    assert _parse_json_dict('{"key": "val"}') == {"key": "val"}
+    assert _parse_json_dict('{"key": "val",}') == {"key": "val"}
+    assert _parse_json_dict('{"arr": [1, 2,], "key": "val",}') == {
+        "arr": [1, 2],
+        "key": "val",
+    }
+    # String literal containing ', }' must not be rewritten
+    parsed = _parse_json_dict(
+        '{"response": "Valid syntax: {1, 2, } in C", "option": 1,}'
+    )
+    assert parsed == {
+        "response": "Valid syntax: {1, 2, } in C",
+        "option": 1,
+    }
 
 
 def test_extract_decision_json_invalid_raises():
