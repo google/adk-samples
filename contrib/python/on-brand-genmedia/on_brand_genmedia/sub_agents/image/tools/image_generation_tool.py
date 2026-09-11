@@ -13,6 +13,9 @@ from .... import config
 
 logger = logging.getLogger(__name__)
 
+CLIENT_RETRY_ATTEMPTS = 5
+CLIENT_TIMEOUT_MS = 120 * 1000
+
 
 async def generate_images(
     image_gen_prompt: str,
@@ -26,10 +29,10 @@ async def generate_images(
         http_options=types.HttpOptions(
             retry_options=types.HttpRetryOptions(
                 initial_delay=1.0,
-                attempts=5,
+                attempts=CLIENT_RETRY_ATTEMPTS,
                 http_status_codes=[408, 429, 500, 502, 503, 504],
             ),
-            timeout=120 * 1000,
+            timeout=CLIENT_TIMEOUT_MS,
         ),
     )
     logger.info("Entered generate_images tool.")
@@ -133,7 +136,7 @@ async def generate_images(
             await tool_context.save_artifact(artifact_name, report_artifact)
 
             # --- Save to GCS ---
-            # Below block is helpful for productinizing the code and save the artifacts to GCS.
+            # Below block is helpful for productionizing the code and save the artifacts to GCS.
             """
             if config.GCS_BUCKET_NAME:
                 try:

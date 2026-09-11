@@ -3,14 +3,12 @@ import logging
 import os
 import re
 import warnings
-
-from dotenv import load_dotenv
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 warnings.filterwarnings("ignore")
 
-load_dotenv()
+
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +31,9 @@ def search_asset_bank(query: str) -> str:
         "data",
         "brand_assets_metadata.json",
     )
-    dataset = json.load(open(dataset_path))
+    #dataset = json.load(open(dataset_path))
+    with open(dataset_path, encoding="utf-8") as f:
+        dataset = json.load(f)
     documents = []
     ids = []
     for item in dataset:

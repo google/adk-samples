@@ -3,7 +3,7 @@ import os
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 SCORE_THRESHOLD = int(os.getenv("SCORE_THRESHOLD", "45"))
 MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "2"))
-IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "gemini-2.5-flash-image")
+IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "gemini-3-pro-imagee")
 GENAI_MODEL = os.getenv("GENAI_MODEL", "gemini-3.5-flash")
 
 BADGE_EXTRACTION_INSTRUCTION = """ 
