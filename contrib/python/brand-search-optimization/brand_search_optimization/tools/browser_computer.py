@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from google.adk.tools.computer_use.base_computer import (
     BaseComputer,
@@ -45,6 +46,17 @@ DEFAULT_INITIAL_SEARCH_URL: str = (
 )
 
 
+def _format_url(url: str) -> str:
+    """Validate and normalize an HTTP(S) URL."""
+    parsed = urlparse(url)
+    if not parsed.scheme:
+        url = f"https://{url}"
+        parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid URL scheme: {parsed.scheme}")
+    return url
+
+
 class MockBrowserComputer(BaseComputer):
     """Deterministic mock browser environment for offline testing and CI execution."""
 
@@ -61,8 +73,8 @@ class MockBrowserComputer(BaseComputer):
         initial_url: str = DEFAULT_INITIAL_SEARCH_URL,
     ) -> None:
         self._screen_size = screen_size
-        self._url = initial_url
-        self._history: list[str] = [initial_url]
+        self._url = _format_url(initial_url)
+        self._history: list[str] = [self._url]
         self._history_idx: int = 0
 
     async def screen_size(self) -> tuple[int, int]:
@@ -72,6 +84,7 @@ class MockBrowserComputer(BaseComputer):
         return ComputerEnvironment.ENVIRONMENT_BROWSER
 
     async def open_web_browser(self) -> ComputerState:
+        self._url = _format_url(self._url or DEFAULT_INITIAL_SEARCH_URL)
         return await self.current_state()
 
     async def click_at(self, x: int, y: int) -> ComputerState:
@@ -89,7 +102,7 @@ class MockBrowserComputer(BaseComputer):
         clear_before_typing: bool = True,
     ) -> ComputerState:
         clean_query = text.strip().replace(" ", "+")
-        self._url = f"{GOOGLE_SHOPPING_SEARCH_URL}&q={clean_query}"
+        self._url = _format_url(f"{GOOGLE_SHOPPING_SEARCH_URL}&q={clean_query}")
         self._history.append(self._url)
         self._history_idx = len(self._history) - 1
         return await self.current_state()
@@ -124,13 +137,13 @@ class MockBrowserComputer(BaseComputer):
         return await self.current_state()
 
     async def search(self) -> ComputerState:
-        self._url = GOOGLE_SHOPPING_SEARCH_URL
+        self._url = _format_url(GOOGLE_SHOPPING_SEARCH_URL)
         self._history.append(self._url)
         self._history_idx = len(self._history) - 1
         return await self.current_state()
 
     async def navigate(self, url: str) -> ComputerState:
-        self._url = url
+        self._url = _format_url(url)
         self._history.append(self._url)
         self._history_idx = len(self._history) - 1
         return await self.current_state()
@@ -218,9 +231,8 @@ class PlaywrightBrowserComputer(BaseComputer):
         if self._page and (
             not self._page.url or self._page.url == "about:blank"
         ):
-            await self._page.goto(
-                "https://www.google.com", wait_until="domcontentloaded"
-            )
+            target_url = _format_url("https://www.google.com")
+            await self._page.goto(target_url, wait_until="domcontentloaded")
         return await self.current_state()
 
     async def click_at(self, x: int, y: int) -> ComputerState:
@@ -333,23 +345,24 @@ class PlaywrightBrowserComputer(BaseComputer):
     async def search(self) -> ComputerState:
         await self._ensure_browser()
         if self._page:
+            target_url = _format_url(GOOGLE_SHOPPING_SEARCH_URL)
             await self._page.goto(
-                GOOGLE_SHOPPING_SEARCH_URL,
+                target_url,
                 wait_until="domcontentloaded",
             )
         return await self.current_state()
 
     async def navigate(self, url: str) -> ComputerState:
+        formatted_url = _format_url(url)
         await self._ensure_browser()
         if self._page:
-            await self._page.goto(url, wait_until="domcontentloaded")
+            await self._page.goto(formatted_url, wait_until="domcontentloaded")
         return await self.current_state()
 
     async def key_combination(self, keys: list[str]) -> ComputerState:
         await self._ensure_browser()
-        if self._page:
-            for key in keys:
-                await self._page.keyboard.press(key)
+        if self._page and keys:
+            await self._page.keyboard.press("+".join(keys))
         return await self.current_state()
 
     async def drag_and_drop(

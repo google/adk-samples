@@ -33,6 +33,8 @@ from brand_search_optimization.sub_agents.comparison.models import (
 from brand_search_optimization.tools import bq_connector
 from brand_search_optimization.tools.browser_computer import (
     MockBrowserComputer,
+    PlaywrightBrowserComputer,
+    _format_url,
     get_browser_computer,
     get_computer_use_toolset,
 )
@@ -155,6 +157,40 @@ class TestBrowserComputer:
 
         scroll_state = await computer.scroll_document(direction="down")
         assert scroll_state.screenshot is not None
+
+    def test_format_url_valid(self):
+        url = _format_url("google.com/search?q=shoes")
+        assert url == "https://google.com/search?q=shoes"
+        assert _format_url("http://example.com") == "http://example.com"
+        assert _format_url("https://example.com") == "https://example.com"
+
+    def test_format_url_blocks_unsafe_schemes(self):
+        with pytest.raises(ValueError, match="Invalid URL scheme"):
+            _format_url("file:///etc/passwd")
+        with pytest.raises(ValueError, match="Invalid URL scheme"):
+            _format_url("javascript:alert(1)")
+
+    @pytest.mark.asyncio
+    async def test_mock_browser_computer_rejects_unsafe_schemes(self):
+        computer = MockBrowserComputer()
+        with pytest.raises(ValueError, match="Invalid URL scheme"):
+            await computer.navigate("file:///etc/passwd")
+
+    @pytest.mark.asyncio
+    async def test_playwright_browser_computer_key_combination(self):
+        computer = PlaywrightBrowserComputer()
+        mock_page = MagicMock()
+        mock_page.keyboard.press = MagicMock()
+        computer._pages["default"] = mock_page
+
+        from unittest.mock import AsyncMock
+
+        mock_page.keyboard.press = AsyncMock()
+        mock_page.screenshot = AsyncMock(return_value=b"fake_screenshot")
+        mock_page.url = "https://www.google.com"
+
+        await computer.key_combination(["Control", "A"])
+        mock_page.keyboard.press.assert_awaited_once_with("Control+A")
 
     def test_get_browser_computer_offline_flag(self):
         with patch.object(constants, "DISABLE_WEB_DRIVER", 1):
