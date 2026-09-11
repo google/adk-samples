@@ -34,6 +34,9 @@ DEFAULT_SCREEN_SIZE = (1440, 900)
 START_URL = "https://www.google.com"
 
 
+MAX_WAIT_SECONDS = 30
+
+
 def _format_url(url: str) -> str:
     """Validate and normalize an HTTP(S) URL."""
     parsed = urlparse(url)
@@ -54,7 +57,7 @@ class PlaywrightComputer(BaseComputer):
         start_url: str = START_URL,
     ) -> None:
         self._screen_size = screen_size
-        self._start_url = start_url
+        self._start_url = _format_url(start_url)
         self._playwright: Playwright | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
@@ -82,7 +85,7 @@ class PlaywrightComputer(BaseComputer):
             ),
         )
         self._page = await self._context.new_page()
-        await self._page.goto(self._start_url)
+        await self._page.goto(_format_url(self._start_url))
 
     async def _get_page(self) -> Page:
         if self._page is None:
@@ -113,7 +116,7 @@ class PlaywrightComputer(BaseComputer):
 
     async def open_web_browser(self) -> ComputerState:
         page = await self._get_page()
-        await page.goto(self._start_url)
+        await page.goto(_format_url(self._start_url))
         return await self._capture_state()
 
     async def click_at(
@@ -209,6 +212,7 @@ class PlaywrightComputer(BaseComputer):
             if seconds != 5
             else (duration if duration != 5 else duration_seconds)
         )
+        sec = max(0, min(int(sec), MAX_WAIT_SECONDS))
         await asyncio.sleep(sec)
         return await self._capture_state()
 
@@ -238,7 +242,7 @@ class PlaywrightComputer(BaseComputer):
             )
             await page.goto(target_url)
         else:
-            await page.goto(self._start_url)
+            await page.goto(_format_url(self._start_url))
         return await self._capture_state()
 
     async def navigate(self, url: str = START_URL) -> ComputerState:

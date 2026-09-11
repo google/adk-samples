@@ -33,7 +33,7 @@ from .prompt import SEARCH_RESULT_AGENT_PROMPT
 
 
 async def adapt_computer_use_tools_callback(
-    callback_context: Any,
+    _callback_context: Any,
     llm_request: LlmRequest,
 ) -> None:
     """Adapts BaseComputer tool names to standard Gemini Computer Use action names."""

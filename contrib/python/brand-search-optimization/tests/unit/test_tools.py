@@ -122,6 +122,13 @@ class TestBrandSearchOptimization:
         search_state = await comp.search()
         assert search_state.url == "https://www.google.com"
 
+        wait_state = await comp.wait(seconds=100)
+        assert wait_state.url == "https://www.google.com"
+
+    def test_playwright_computer_invalid_start_url(self):
+        with pytest.raises(ValueError, match="Invalid URL scheme"):
+            PlaywrightComputer(start_url="javascript:alert(1)")
+
     def test_search_results_agent_toolset(self):
         assert search_results_agent.name == "search_results_agent"
         assert len(search_results_agent.tools) > 0
