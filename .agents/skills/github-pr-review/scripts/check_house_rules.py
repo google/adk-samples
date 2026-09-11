@@ -1355,16 +1355,42 @@ def _required_files(root, rel, recipe_abs):
     return sorted(set(required))
 
 
-def _load_policy_required_files(root):
-    """policy.yml's `required_files`, or {} when it cannot be read."""
-    try:
-        import yaml
+# This file lives at <repo>/.agents/skills/github-pr-review/scripts/, so the
+# repository holding it is four levels up. That repository is the BASE
+# checkout when the CI lane runs, which is the whole point: policy.yml decides
+# what a recipe must contain, so reading it out of the tree under review would
+# let a PR edit the policy that judges it. One line added to its own
+# policy.yml would turn H21 from five CI-FAILs into none.
+_OWN_REPO = os.path.dirname(os.path.abspath(__file__))
+for _ in range(4):
+    _OWN_REPO = os.path.dirname(_OWN_REPO)
 
-        with open(os.path.join(root, ".github/policy.yml"), "rb") as handle:
-            section = (yaml.safe_load(handle) or {}).get("required_files")
-        return section if isinstance(section, dict) else {}
-    except Exception:
-        return {}
+
+def _load_policy_required_files(root):
+    """`required_files` from the checker's OWN repository, or {}.
+
+    `root` is consulted only when this script runs standalone against a tree
+    that is not its own — a developer pointing it somewhere else — and never
+    in preference to the base copy.
+    """
+    for base in (_OWN_REPO, root):
+        path = os.path.join(base, ".github/policy.yml")
+        if not os.path.exists(path):
+            continue
+        try:
+            import yaml
+
+            with open(path, "rb") as handle:
+                section = (yaml.safe_load(handle) or {}).get("required_files")
+        except Exception:
+            continue
+        if isinstance(section, dict):
+            # A mistyped section must not crash the rule that exists to catch
+            # mistyped files.
+            return {
+                k: v for k, v in section.items() if isinstance(v, (list, dict))
+            }
+    return {}
 
 
 def check_layout(out, root, rel, recipe_name):
@@ -1735,7 +1761,11 @@ def check_text_wide(out, root, rel):
             )
             if not m:
                 continue
-            var, val = m.group(1), m.group(2).strip().split("#")[0].strip()
+            # _scalar_value, not split("#"): `NAME="foo # bar"` is a value
+            # containing a hash, not a value plus a comment. Splitting it
+            # produced '"foo" is a stub committed as if it were a real value',
+            # stray quote included.
+            var, val = m.group(1), _scalar_value(m.group(2))
             if var != var.upper():
                 find(
                     out,
@@ -1831,7 +1861,7 @@ def main():
         )
 
     pj = load_toml(os.path.join(root, rel, "pyproject.toml")) or {}
-    pj_name = pj.get("project", {}).get("name", "")
+    pj_name = _table(pj, "project").get("name", "")
 
     out = []
     check_pyproject(out, root, rel, recipe_name)

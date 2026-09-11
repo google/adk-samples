@@ -130,7 +130,7 @@ def _validated(policy: dict) -> dict:
     for key in ("lifetime_cap", "min_allowance", "blocker_only_after_round"):
         try:
             checked[key] = int(checked[key])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             fall_back(key, "is not a whole number")
             continue
         if checked[key] < 0:
@@ -138,8 +138,13 @@ def _validated(policy: dict) -> dict:
 
     try:
         checked["decay"] = float(checked["decay"])
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         fall_back("decay", "is not a number")
+    if checked["decay"] != checked["decay"] or checked["decay"] in (
+        float("inf"),
+        float("-inf"),
+    ):
+        fall_back("decay", "is not a finite number")
     if not 0 < checked["decay"] <= 1:
         fall_back("decay", "is outside (0, 1]")
 
@@ -151,6 +156,16 @@ def _validated(policy: dict) -> dict:
             fall_back(key, "is not a list of strings")
     if not checked["lanes"]:
         fall_back("lanes", "is empty")
+    if not checked["blocker_lanes"]:
+        # Otherwise every lane skips from the narrowing round onward and the
+        # reviewer goes silent on every PR, from one deleted line of config.
+        fall_back("blocker_lanes", "is empty")
+    overlap = set(checked["exempt_lanes"]) & set(checked["lanes"])
+    if overlap:
+        # A lane cannot be both budgeted and exempt: the exempt branch returns
+        # before any ceiling is applied, so listing a model lane here makes it
+        # unbounded.
+        fall_back("exempt_lanes", f"also appears in lanes ({sorted(overlap)})")
 
     # blocker_lanes must be a PREFIX of lanes, or the lanes that survive a
     # shrinking allowance are not the ones that survive the round limit, and
@@ -238,7 +253,9 @@ def lane_of(review: dict) -> str:
     return match.group(1).strip() if match else ""
 
 
-def summarise_history(reviews: list, comments: list, exempt: list) -> dict:
+def summarise_history(
+    reviews: list, comments: list, exempt: list, head_sha: str = ""
+) -> dict:
     """Round number, last reviewed commit, and how much has been said.
 
     A "round" is a COMMIT we reviewed, not a review we posted: four lanes post
@@ -261,20 +278,33 @@ def summarise_history(reviews: list, comments: list, exempt: list) -> dict:
     our_review_ids = set(review_commit)
 
     posted_total = 0
-    previous_round_count = 0
     # The commit of the LATEST review, not the last first-seen commit. After a
     # force-push back to an already-reviewed commit A the history is [A, B]
     # but the newest review is against A, and `rounds[-1]` would name B — a
     # commit no longer reachable, whose compare then 404s into a silent full
     # re-review of the whole PR.
     last_sha = ours[-1]["commit_id"] if ours else ""
+
+    # The round the decay measures is the last one that is NOT the commit
+    # about to be reviewed. Without that exclusion, a maintainer typing
+    # `@ai-review` twice on one commit decays off a count that includes the
+    # comments the first invocation just posted, so the allowance GROWS:
+    # 2 → 3 → 5 → 8, and five invocations spend the whole lifetime budget on
+    # an unchanged commit.
+    basis_sha = last_sha
+    if head_sha and head_sha == last_sha:
+        earlier = [c for c in rounds if c != head_sha]
+        basis_sha = earlier[-1] if earlier else ""
+
+    per_round: dict[str, int] = {}
     for comment in comments:
         review_id = comment.get("pull_request_review_id")
         if review_id not in our_review_ids:
             continue
         posted_total += 1
-        if review_commit.get(review_id) == last_sha:
-            previous_round_count += 1
+        commit = review_commit.get(review_id)
+        per_round[commit] = per_round.get(commit, 0) + 1
+    previous_round_count = per_round.get(basis_sha, 0)
 
     return {
         "round": len(rounds) + 1,
@@ -438,10 +468,14 @@ def progress_line(decision: dict) -> str:
     parts.append(
         f"this round is capped at {decision['allowance']} across all reviewers"
     )
-    if decision["round"] >= decision["narrow_after"]:
-        parts.append(
-            "from here only " + " and ".join(decision["blocker_lanes"]) + " run"
-        )
+    # Tense matters: at the narrowing round itself the nit lanes are still
+    # running, so a Hygiene review saying "only Security and Correctness run"
+    # contradicts itself. Warn on that round, state it afterwards.
+    lanes_left = " and ".join(decision["blocker_lanes"])
+    if decision["round"] == decision["narrow_after"]:
+        parts.append(f"after this round only {lanes_left} run")
+    elif decision["round"] > decision["narrow_after"]:
+        parts.append(f"only {lanes_left} still run")
     return " · ".join(parts) + "."
 
 
@@ -543,7 +577,9 @@ def main() -> int:
         )
         return EXIT_OK
 
-    state = summarise_history(reviews, comments, policy["exempt_lanes"])
+    state = summarise_history(
+        reviews, comments, policy["exempt_lanes"], args.head_sha
+    )
     if args.full_review:
         # An explicit re-review reads everything again, so there is no "last
         # reviewed" point to diff against. The round number and the caps are

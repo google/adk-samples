@@ -318,7 +318,7 @@ jobs:
           # progress line and up to fifteen unreviewed paths, and repeating
           # all of it once per comment is how a failed batch becomes twelve
           # copies of the same wall of text.
-          done < <(jq -c '.comments[] as $c | {event: "COMMENT", body: "Automated **House Rules** review (posted individually after a batch failure).", comments: [$c]}' review_payload.json)
+          done < <(jq -c '.comments[] as $c | {event: "COMMENT", body: "Automated **House Rules** review (posted individually after a batch failure).", commit_id: .commit_id, comments: [$c]} | with_entries(select(.value != null))' review_payload.json)
 
           echo "Posted ${POSTED} comment(s)."
           if [[ "${POSTED}" -eq 0 ]]; then

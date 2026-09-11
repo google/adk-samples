@@ -190,7 +190,10 @@ def run_checker(module, repo_root: str, recipe: str, changed: set[str] | None):
     pyproject = module.load_toml(
         str(Path(repo_root) / recipe / "pyproject.toml")
     )
-    pyproject_name = (pyproject or {}).get("project", {}).get("name", "")
+    # Through the checker's own guard: `project = "oops"` in a pyproject is a
+    # realistic typo, and .get() on a str raises out of here, which the caller
+    # catches per recipe and turns into a silently unreviewed recipe.
+    pyproject_name = module._table(pyproject or {}, "project").get("name", "")
 
     out: list[dict] = []
     module.check_pyproject(out, repo_root, recipe, name)
@@ -202,7 +205,9 @@ def run_checker(module, repo_root: str, recipe: str, changed: set[str] | None):
     module.check_text_wide(out, repo_root, recipe)
     module.check_env_defaults(out, repo_root, recipe)
     module.check_license_headers(out, repo_root, recipe)
-    module.check_pr_shape(out, repo_root, recipe)
+    # NOT check_pr_shape: H42 is a property of the pull request, not of a
+    # recipe, and `out` is per recipe so the checker's own once-guard cannot
+    # see across them. main() calls it once, after the loop.
     return out, list(module.SKIPPED)
 
 
@@ -294,6 +299,19 @@ def main() -> int:
         for rule, why in skipped:
             print(f"  not checked — {rule}: {why}")
         findings.extend(to_reviewer_finding(f) for f in raw)
+
+    # H42 once for the whole run, anchored in the first recipe. Called inside
+    # the loop it produced one identical comment per recipe on one line — and
+    # at exactly three recipes the grouping pass collapsed them into "the same
+    # thing in 2 other places", which is false: it is the same place, thrice.
+    if roots:
+        shape: list[dict] = []
+        try:
+            module.CHANGED = set(changed)
+            module.check_pr_shape(shape, str(args.repo_root), roots[0])
+        except Exception as exc:
+            print(f"  PR-shape check failed: {exc}")
+        findings.extend(to_reviewer_finding(f) for f in shape)
 
     # CI-failing findings first: an author acts on "this blocks the build" and
     # may never act on a convention nit.

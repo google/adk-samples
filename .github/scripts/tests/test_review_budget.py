@@ -879,3 +879,98 @@ def test_the_last_reviewed_commit_is_the_newest_review_not_the_newest_commit():
     ]
     state = rb.summarise_history(reviews, [], POLICY["exempt_lanes"])
     assert state["last_reviewed_sha"] == "aaa"
+
+
+# ------------------------------------------- repeated manual re-review
+
+
+def test_repeated_invokes_on_one_commit_do_not_grow_the_allowance():
+    """`@ai-review` twice on the same commit decayed off a count that included
+    the comments the first invocation had just posted, so the allowance GREW
+    — 2, 3, 5, 8 — and five invocations spent the whole lifetime budget on an
+    unchanged commit while the round counter stayed at 2."""
+    reviews = [
+        review("aaa", "2026-01-01T00:00:00Z", rid=1),
+        review("bbb", "2026-01-02T00:00:00Z", rid=2),
+    ]
+    comments = [comment(1)] * 8 + [comment(2)] * 4
+
+    seen = []
+    for i in range(4):
+        state = rb.summarise_history(
+            reviews, comments, POLICY["exempt_lanes"], head_sha="bbb"
+        )
+        decision = rb.decide(state, policy(), "Security", 5)
+        seen.append(decision["allowance"])
+        rid = 10 + i
+        reviews.append(review("bbb", f"2026-01-02T0{i}:00:00Z", rid=rid))
+        comments += [comment(rid)] * decision["max_comments"]
+
+    assert len(set(seen)) == 1, f"the allowance moved across invokes: {seen}"
+
+
+def test_the_decay_still_measures_the_previous_commit():
+    """The exclusion must not swallow the ordinary case."""
+    reviews = [
+        review("aaa", "2026-01-01T00:00:00Z", rid=1),
+        review("bbb", "2026-01-02T00:00:00Z", rid=2),
+    ]
+    comments = [comment(1)] * 8 + [comment(2)] * 4
+    state = rb.summarise_history(
+        reviews, comments, POLICY["exempt_lanes"], head_sha="ccc"
+    )
+    assert state["previous_round_count"] == 4
+
+
+# --------------------------------------------------- hostile policy values
+
+
+def test_an_infinite_cap_does_not_escape_as_a_ci_fault():
+    """`lifetime_cap: .inf` is valid YAML and int() of it raises OverflowError
+    — out of the very function written to stop a policy typo reddening CI."""
+    fixed = rb._validated({**rb.DEFAULTS, "lifetime_cap": float("inf")})
+    assert fixed["lifetime_cap"] == rb.DEFAULTS["lifetime_cap"]
+    assert (
+        rb._validated({**rb.DEFAULTS, "decay": float("nan")})["decay"]
+        == (rb.DEFAULTS["decay"])
+    )
+
+
+def test_an_empty_blocker_list_does_not_silence_every_lane():
+    """From the narrowing round on, every lane would skip — the reviewer goes
+    quiet on every PR in the repo, from one deleted line of config."""
+    assert (
+        rb._validated({**rb.DEFAULTS, "blocker_lanes": []})["blocker_lanes"]
+        == rb.DEFAULTS["blocker_lanes"]
+    )
+
+
+def test_a_lane_cannot_be_budgeted_and_exempt_at_once():
+    """The exempt branch returns before any ceiling is applied, so listing a
+    model lane there makes it unbounded."""
+    fixed = rb._validated({**rb.DEFAULTS, "exempt_lanes": ["Hygiene"]})
+    assert "Hygiene" not in fixed["exempt_lanes"]
+
+
+def test_the_narrowing_is_announced_in_the_right_tense():
+    """At the narrowing round the nit lanes are still running, so a Hygiene
+    review saying "only Security and Correctness run" contradicts itself."""
+    base = {"last_reviewed_sha": "x", "posted_total": 2}
+    at = rb.progress_line(
+        rb.decide(
+            {**base, "round": 2, "previous_round_count": 9},
+            policy(),
+            "Hygiene",
+            5,
+        )
+    )
+    after = rb.progress_line(
+        rb.decide(
+            {**base, "round": 3, "previous_round_count": 9},
+            policy(),
+            "Security",
+            5,
+        )
+    )
+    assert "after this round only" in at
+    assert "only Security and Correctness still run" in after

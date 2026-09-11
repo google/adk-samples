@@ -1617,7 +1617,7 @@ jobs:
           # A short body, not `.body`. The summary now carries the marker,
           # the progress line and up to fifteen unreviewed paths; repeating it
           # once per comment turns a failed batch into a wall of duplicates.
-          done < <(jq -c --arg label "${REVIEW_LABEL}" '.comments[] as $c | {event: "COMMENT", body: ("Automated **" + $label + "** review (posted individually after a batch failure)."), comments: [$c]}' review_payload.json)
+          done < <(jq -c --arg label "${REVIEW_LABEL}" '.comments[] as $c | {event: "COMMENT", body: ("Automated **" + $label + "** review (posted individually after a batch failure)."), commit_id: .commit_id, comments: [$c]} | with_entries(select(.value != null))' review_payload.json)
 
           echo "Posted ${POSTED} comment(s); ${FAILED} rejected."
           if [[ "${POSTED}" -eq 0 ]]; then

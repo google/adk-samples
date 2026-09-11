@@ -798,6 +798,27 @@ def _tokens(text: str) -> set[str]:
     }
 
 
+def _our_review(item: dict) -> bool:
+    """A non-empty review body that WE posted.
+
+    The author check is the whole point. Review bodies are used for
+    containment matching — "did we already say this in an earlier round" — and
+    a body is large, so containment against an arbitrary one is easy to
+    satisfy. Without this filter a PR author could paste a wall of plausible
+    text into a review of their own PR and suppress most of what the next
+    round would have said: the same hole the 0.35 verdict threshold was
+    removed for, rebuilt wider.
+
+    Only an App or Actions token can post as an account of type Bot.
+    """
+    if not (item.get("body") or "").strip():
+        return False
+    if str((item.get("user") or {}).get("type") or "") != "Bot":
+        return False
+    body = str(item["body"]).lstrip()
+    return REVIEW_MARKER in body or body.startswith("Automated **")
+
+
 def fetch_existing_comments(repo: str, pr: int) -> list[dict]:
     """Everything already said on this PR, inline and top-level.
 
@@ -860,6 +881,7 @@ def fetch_existing_comments(repo: str, pr: int) -> list[dict]:
                     {
                         "kind": kind,
                         "id": item.get("id"),
+                        "user": item.get("user") or {},
                         "path": item.get("path"),
                         "line": item.get("line"),
                         "original_line": item.get("original_line"),

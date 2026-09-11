@@ -1952,3 +1952,28 @@ def test_a_newline_in_a_path_cannot_forge_a_list_item():
         "body"
     ]
     assert body.count("- `") == 1
+
+
+def test_only_our_own_review_bodies_are_used_for_containment():
+    """A review body is large, so containment against an arbitrary one is easy
+    to satisfy. Reading everyone's bodies let a PR author paste a wall of
+    plausible text into a review of their own PR and suppress most of what the
+    next round would say — the hole the 0.35 verdict threshold was removed
+    for, rebuilt wider."""
+    ours = {
+        "body": f"{m.REVIEW_MARKER}\nAutomated **House Rules** review — 1.",
+        "user": {"type": "Bot"},
+    }
+    theirs = {
+        "body": "I think the timeout here is fine, and the retry loop too, "
+        "and the import ordering, and the missing test file.",
+        "user": {"type": "User"},
+    }
+    bot_but_not_ours = {
+        "body": "Dependabot could not update this dependency.",
+        "user": {"type": "Bot"},
+    }
+    assert m._our_review(ours)
+    assert not m._our_review(theirs)
+    assert not m._our_review(bot_but_not_ours)
+    assert not m._our_review({"body": "   ", "user": {"type": "Bot"}})

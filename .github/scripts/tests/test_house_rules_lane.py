@@ -240,3 +240,49 @@ def test_ci_failures_are_ordered_first(tmp_path):
     translated = [lane.to_reviewer_finding(f) for f in findings]
     translated.sort(key=lambda f: (f.get("_ci") != "fail", f.get("path") or ""))
     assert [f["body"] for f in translated] == ["blocker", "nit"]
+
+
+def test_h42_is_reported_once_for_the_whole_pr(tmp_path):
+    """H42 is a property of the pull request, not of a recipe. Called inside
+    the per-recipe loop it produced one identical comment per recipe on one
+    line — and at exactly three recipes the grouping pass collapsed them into
+    "the same thing in 2 other places", which is false: it is the same place,
+    three times. The checker's own once-guard cannot see across recipes
+    because `out` is fresh for each."""
+    import inspect
+
+    assert "module.check_pr_shape(" not in inspect.getsource(
+        lane.run_checker
+    ), "the per-recipe path still calls it, so it fires once per recipe"
+    assert "module.check_pr_shape(" in inspect.getsource(lane.main), (
+        "nothing calls it at all, so H42 never fires"
+    )
+
+
+@pytest.mark.skipif(not CHECKER.exists(), reason="checker not in this checkout")
+def test_a_mistyped_project_table_does_not_delete_a_recipes_review(tmp_path):
+    """`project = "oops"` is a realistic typo. .get() on a str raised out of
+    the lane, which catches per recipe and reports the PR as clean."""
+    _recipe(
+        tmp_path,
+        "contrib/python/typo",
+        **{"manifest.yaml": MANIFEST, "pyproject.toml": 'project = "oops"\n'},
+    )
+    module = lane.load_checker(CHECKER)
+    findings, _ = lane.run_checker(
+        module, str(tmp_path), "contrib/python/typo", None
+    )
+    assert findings, "the recipe produced no findings at all"
+
+
+@pytest.mark.skipif(not CHECKER.exists(), reason="checker not in this checkout")
+def test_the_schema_comes_from_the_base_checkout(tmp_path):
+    """A PR that edits its own manifest schema must not thereby edit the rule
+    that judges it."""
+    assert lane.SCHEMA_PATH.is_file()
+    assert "pr-head" not in str(lane.SCHEMA_PATH)
+    import inspect
+
+    source = inspect.getsource(lane.run_checker)
+    assert "SCHEMA_PATH" in source
+    assert 'repo_root) / ".github/schemas' not in source
