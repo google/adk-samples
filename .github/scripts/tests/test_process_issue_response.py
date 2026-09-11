@@ -8,6 +8,8 @@ from process_issue_response import (
     DEFAULT_ASSIGNEE,
     ROUTING_RULES,
     Option,
+    _parse_json_dict,
+    _strip_trailing_commas,
     extract_decision_json,
     find_json_objects,
     normalize_path,
@@ -352,9 +354,26 @@ def test_extract_decision_json_with_raw_control_chars_in_response():
     assert "Line 1\nLine 2" in extracted["response"]
 
 
-def test_parse_json_dict_helper():
-    from process_issue_response import _parse_json_dict
+def test_strip_trailing_commas():
+    assert _strip_trailing_commas("") == ""
+    assert _strip_trailing_commas('{"a": 1,}') == '{"a": 1}'
+    assert _strip_trailing_commas('{"a": 1, \n }') == '{"a": 1 \n }'
+    assert _strip_trailing_commas("[1, 2, ]") == "[1, 2 ]"
+    # Preserves trailing comma patterns inside string literals
+    assert (
+        _strip_trailing_commas('{"code": "int arr[] = {1, 2, };", "opt": 1,}')
+        == '{"code": "int arr[] = {1, 2, };", "opt": 1}'
+    )
+    # Handles escaped quotes in strings
+    assert (
+        _strip_trailing_commas(
+            r'{"text": "quote: \"hello, }\", rest", "opt": 2,}'
+        )
+        == r'{"text": "quote: \"hello, }\", rest", "opt": 2}'
+    )
 
+
+def test_parse_json_dict_helper():
     assert _parse_json_dict("") is None
     assert _parse_json_dict("not json") is None
     assert _parse_json_dict('["not", "a", "dict"]') is None
@@ -363,6 +382,14 @@ def test_parse_json_dict_helper():
     assert _parse_json_dict('{"arr": [1, 2,], "key": "val",}') == {
         "arr": [1, 2],
         "key": "val",
+    }
+    # String literal containing ', }' must not be rewritten
+    parsed = _parse_json_dict(
+        '{"response": "Valid syntax: {1, 2, } in C", "option": 1,}'
+    )
+    assert parsed == {
+        "response": "Valid syntax: {1, 2, } in C",
+        "option": 1,
     }
 
 

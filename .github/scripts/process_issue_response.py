@@ -180,27 +180,60 @@ def parse_option(raw_option: Any) -> Option:
     return Option.ACKNOWLEDGE_AND_ASSIGN
 
 
+def _strip_trailing_commas(text: str) -> str:
+    """Remove trailing commas before '}' or ']' outside of JSON string literals."""
+    result: list[str] = []
+    in_string = False
+    escape = False
+    i = 0
+    length = len(text)
+    while i < length:
+        char = text[i]
+        if escape:
+            escape = False
+            result.append(char)
+            i += 1
+            continue
+        if char == "\\":
+            if in_string:
+                escape = True
+            result.append(char)
+            i += 1
+            continue
+        if char == '"':
+            in_string = not in_string
+            result.append(char)
+            i += 1
+            continue
+        if not in_string and char == ",":
+            j = i + 1
+            while j < length and text[j] in " \t\r\n":
+                j += 1
+            if j < length and text[j] in ("}", "]"):
+                i += 1
+                continue
+        result.append(char)
+        i += 1
+    return "".join(result)
+
+
 def _parse_json_dict(text: str) -> dict[str, Any] | None:
     """Attempt to parse a candidate string into a dict, handling strictness and trailing commas."""
     text = text.strip()
     if not text:
         return None
-    try:
-        parsed = json.loads(text, strict=False)
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        pass
 
-    # Clean trailing commas and retry
-    cleaned = re.sub(r",\s*([}\]])", r"\1", text)
-    if cleaned != text:
+    cleaned = _strip_trailing_commas(text)
+    candidates = (text, cleaned) if cleaned != text else (text,)
+
+    for candidate in candidates:
         try:
-            parsed = json.loads(cleaned, strict=False)
+            parsed = json.loads(candidate, strict=False)
             if isinstance(parsed, dict):
                 return parsed
         except json.JSONDecodeError:
-            pass
+            continue
+
     return None
 
 

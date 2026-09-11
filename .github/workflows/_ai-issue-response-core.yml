@@ -327,7 +327,7 @@ jobs:
               --model "${AGY_MODEL}" \
               --effort "${AGY_EFFORT}" \
               --output-format json \
-              --print-timeout "${PRINT_TIMEOUT}" > agy_result.json 2> agy_stderr.log
+              --print-timeout "${PRINT_TIMEOUT}" > agy_result.json 2>/dev/null
             AGY_EXIT=$?
             set -e
 
