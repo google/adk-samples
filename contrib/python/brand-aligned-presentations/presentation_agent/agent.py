@@ -53,6 +53,7 @@ from presentation_agent.shared_libraries.config import (
     get_gcs_client,
     get_logger,
     initialize_genai_client,
+    resolve_regional_location,
 )
 from presentation_agent.sub_agents import (
     batch_slide_writer_tool,
@@ -147,9 +148,9 @@ class PresentationExpertApp:
 
         # Configure Session Service (Persistent Vertex AI or Local In-Memory)
         is_local = (os.getenv("LOCAL_DEV") or "").lower() == "true"
-        session_location = os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
-        if session_location.lower() in ("global", "us"):
-            session_location = "us-central1"
+        session_location = resolve_regional_location(
+            os.getenv("GOOGLE_CLOUD_LOCATION")
+        )
         if not is_local and os.getenv("GOOGLE_CLOUD_PROJECT"):
             session_service = VertexAiSessionService(
                 project=os.getenv("GOOGLE_CLOUD_PROJECT"),

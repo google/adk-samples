@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 from presentation_agent.agent import root_agent  # noqa: E402
+from presentation_agent.shared_libraries.config import (  # noqa: E402
+    resolve_regional_location,
+)
 
 
 # Function to update the .env file
@@ -73,7 +76,7 @@ def write_deployment_metadata(
     with open(metadata_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
-    logging.info(f"Agent Engine ID written to {metadata_file}")
+    logger.info(f"Agent Engine ID written to {metadata_file}")
 
 
 def load_requirements():
@@ -166,13 +169,8 @@ def main(mode):
     GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
     # Agent Engine and GCS staging bucket require a regional location (e.g. us-central1).
     # Multi-region endpoint locations ("global" or "us") used by Gemini 3.5+
-    # fall back to us-central1 for deployment resources.
-    deployment_location = GOOGLE_CLOUD_LOCATION
-    if not deployment_location or deployment_location.lower() in (
-        "global",
-        "us",
-    ):
-        deployment_location = "us-central1"
+    # fall back to a regional location for deployment resources.
+    deployment_location = resolve_regional_location(GOOGLE_CLOUD_LOCATION)
     # Ensure GCP_STAGING_BUCKET is just the name, setup_staging_bucket will add gs:// prefix
     GCP_STAGING_BUCKET_NAME = (os.getenv("GCP_STAGING_BUCKET") or "").replace(
         "gs://", ""
@@ -268,7 +266,7 @@ def main(mode):
             env_vars=env_vars,
         )
 
-        logging.info(
+        logger.info(
             f"Deployed agent to Vertex AI Agent Engine successfully, resource name: {remote_agent.resource_name}"
         )
         update_env_file(remote_agent.resource_name, ENV_FILE_PATH)

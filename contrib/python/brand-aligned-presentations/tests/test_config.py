@@ -69,3 +69,17 @@ def test_get_gcs_client_exception():
         mock_client.side_effect = Exception("Test GCS client init failure")
         client = config_module.get_gcs_client()
         assert client is None
+
+
+def test_resolve_regional_location():
+    assert config_module.resolve_regional_location(None) == "us-central1"
+    assert config_module.resolve_regional_location("") == "us-central1"
+    assert config_module.resolve_regional_location("global") == "us-central1"
+    assert config_module.resolve_regional_location("GLOBAL") == "us-central1"
+    assert config_module.resolve_regional_location("us") == "us-central1"
+    assert config_module.resolve_regional_location("US") == "us-central1"
+    assert config_module.resolve_regional_location("us-east1") == "us-east1"
+    assert (
+        config_module.resolve_regional_location("europe-west1")
+        == "europe-west1"
+    )

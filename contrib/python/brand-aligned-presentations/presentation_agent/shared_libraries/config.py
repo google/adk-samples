@@ -41,6 +41,16 @@ log = get_logger("config")
 # Exported Config Variables (Directly read from environment)
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
+DEFAULT_REGIONAL_LOCATION = "us-central1"
+
+
+def resolve_regional_location(location: str | None) -> str:
+    """Translates multi-region endpoint locations ('global' or 'us') to a regional GCP location."""
+    if not location or location.lower() in ("global", "us"):
+        return DEFAULT_REGIONAL_LOCATION
+    return location
+
+
 ROOT_MODEL = os.getenv("GEMINI_MODEL_NAME")
 IMAGE_GENERATION_MODEL = os.getenv("IMAGE_GENERATION_MODEL")
 PROJECT_NUMBER = os.getenv("GOOGLE_CLOUD_PROJECT_NUMBER")
