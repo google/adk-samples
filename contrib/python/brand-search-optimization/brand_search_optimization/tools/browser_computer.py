@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import socket
 import urllib.parse
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -53,8 +54,17 @@ _DISALLOWED_HOSTS: frozenset[str] = frozenset(
 )
 
 
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Reports whether an address belongs to a range the agent must not reach."""
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+
+
 def _validate_navigation_url(url: str) -> bool:
-    """Validates navigation URLs to prevent SSRF against internal/metadata endpoints."""
+    """Validates navigation URLs to prevent SSRF against internal/metadata endpoints.
+
+    Only inspects the URL itself. Callers that are about to fetch the URL should
+    use :func:`validate_navigation_target`, which also resolves the hostname.
+    """
     try:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme.lower() not in _ALLOWED_URL_SCHEMES:
@@ -69,12 +79,7 @@ def _validate_navigation_url(url: str) -> bool:
             return False
         try:
             ip = ipaddress.ip_address(hostname_lower)
-            if (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-            ):
+            if _is_blocked_ip(ip):
                 return False
         except ValueError:
             # Not an IP literal, valid public hostname format
@@ -82,6 +87,43 @@ def _validate_navigation_url(url: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def _resolved_addresses_allowed(hostname: str) -> bool:
+    """Resolves a hostname and rejects it if any address is private or local.
+
+    A public-looking hostname can still resolve to a loopback, private or
+    metadata address, so the literal checks in :func:`_validate_navigation_url`
+    are not sufficient on their own.
+    """
+    try:
+        infos = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        # Unresolvable host: let the browser surface the failure itself.
+        return True
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if _is_blocked_ip(ip):
+            return False
+    return True
+
+
+async def validate_navigation_target(url: str) -> bool:
+    """Validates a URL and the addresses its hostname resolves to."""
+    if not _validate_navigation_url(url):
+        return False
+    hostname = urllib.parse.urlparse(url).hostname
+    if not hostname:
+        return False
+    try:
+        ipaddress.ip_address(hostname.lower())
+    except ValueError:
+        # Hostname rather than an IP literal, so resolution is still needed.
+        return await asyncio.to_thread(_resolved_addresses_allowed, hostname)
+    return True
 
 
 def _calculate_scroll_deltas(
@@ -130,6 +172,12 @@ class MockBrowserComputer(BaseComputer):
         self._history: list[str] = [self._url]
         self._history_idx: int = 0
 
+    def _visit(self, url: str) -> None:
+        """Records a newly visited URL as the head of the history."""
+        self._url = url
+        self._history.append(url)
+        self._history_idx = len(self._history) - 1
+
     async def screen_size(self) -> tuple[int, int]:
         return self._screen_size
 
@@ -155,9 +203,9 @@ class MockBrowserComputer(BaseComputer):
         clear_before_typing: bool = True,
     ) -> ComputerState:
         clean_query = text.strip().replace(" ", "+")
-        self._url = _format_url(f"{GOOGLE_SHOPPING_SEARCH_URL}&q={clean_query}")
-        self._history.append(self._url)
-        self._history_idx = len(self._history) - 1
+        self._visit(
+            _format_url(f"{GOOGLE_SHOPPING_SEARCH_URL}&q={clean_query}")
+        )
         return await self.current_state()
 
     async def scroll_document(
@@ -190,21 +238,17 @@ class MockBrowserComputer(BaseComputer):
         return await self.current_state()
 
     async def search(self) -> ComputerState:
-        self._url = _format_url(GOOGLE_SHOPPING_SEARCH_URL)
-        self._history.append(self._url)
-        self._history_idx = len(self._history) - 1
+        self._visit(_format_url(GOOGLE_SHOPPING_SEARCH_URL))
         return await self.current_state()
 
     async def navigate(self, url: str) -> ComputerState:
         formatted_url = _format_url(url)
-        if not _validate_navigation_url(formatted_url):
+        if not await validate_navigation_target(formatted_url):
             logger.warning(
                 "Rejected navigation to disallowed URL: %s", formatted_url
             )
             return await self.current_state()
-        self._url = formatted_url
-        self._history.append(self._url)
-        self._history_idx = len(self._history) - 1
+        self._visit(formatted_url)
         return await self.current_state()
 
     async def key_combination(self, keys: list[str]) -> ComputerState:
@@ -399,7 +443,7 @@ class PlaywrightBrowserComputer(BaseComputer):
 
     async def navigate(self, url: str) -> ComputerState:
         formatted_url = _format_url(url)
-        if not _validate_navigation_url(formatted_url):
+        if not await validate_navigation_target(formatted_url):
             logger.warning(
                 "Rejected navigation to disallowed URL: %s", formatted_url
             )

@@ -36,6 +36,10 @@ allow_origins = (
 
 AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Fallbacks for local execution; deployments set PORT (see .env.example).
+DEFAULT_HOST = "0.0.0.0"
+DEFAULT_PORT = 8080
+
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -77,5 +81,5 @@ app.description = "API for interacting with the Agent brand-search-optimization"
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("PORT")) if os.getenv("PORT") else 8080
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.getenv("PORT") or DEFAULT_PORT)
+    uvicorn.run(app, host=DEFAULT_HOST, port=port)
