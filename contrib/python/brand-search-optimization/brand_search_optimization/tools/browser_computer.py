@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 # Default standard viewport resolution for retail browser search
 DEFAULT_SCREEN_SIZE: tuple[int, int] = (1280, 800)
+DEFAULT_TIMEOUT_MS: int = 5000
+DEFAULT_SCROLL_OFFSET: int = 500
 
 
 class MockBrowserComputer(BaseComputer):
@@ -205,7 +207,7 @@ class PlaywrightBrowserComputer(BaseComputer):
             await self._page.mouse.click(x, y)
             try:
                 await self._page.wait_for_load_state(
-                    "domcontentloaded", timeout=5000
+                    "domcontentloaded", timeout=DEFAULT_TIMEOUT_MS
                 )
             except Exception:
                 pass
@@ -236,7 +238,7 @@ class PlaywrightBrowserComputer(BaseComputer):
                 await self._page.keyboard.press("Enter")
                 try:
                     await self._page.wait_for_load_state(
-                        "domcontentloaded", timeout=5000
+                        "domcontentloaded", timeout=DEFAULT_TIMEOUT_MS
                     )
                 except Exception:
                     pass
@@ -249,13 +251,13 @@ class PlaywrightBrowserComputer(BaseComputer):
         if self._page:
             delta_x, delta_y = 0, 0
             if direction == "up":
-                delta_y = -500
+                delta_y = -DEFAULT_SCROLL_OFFSET
             elif direction == "down":
-                delta_y = 500
+                delta_y = DEFAULT_SCROLL_OFFSET
             elif direction == "left":
-                delta_x = -500
+                delta_x = -DEFAULT_SCROLL_OFFSET
             elif direction == "right":
-                delta_x = 500
+                delta_x = DEFAULT_SCROLL_OFFSET
             await self._page.mouse.wheel(delta_x, delta_y)
             await asyncio.sleep(0.3)
         return await self.current_state()
@@ -292,7 +294,7 @@ class PlaywrightBrowserComputer(BaseComputer):
         await self._ensure_browser()
         if self._page:
             try:
-                await self._page.go_back(timeout=5000)
+                await self._page.go_back(timeout=DEFAULT_TIMEOUT_MS)
             except Exception:
                 pass
         return await self.current_state()
@@ -301,7 +303,7 @@ class PlaywrightBrowserComputer(BaseComputer):
         await self._ensure_browser()
         if self._page:
             try:
-                await self._page.go_forward(timeout=5000)
+                await self._page.go_forward(timeout=DEFAULT_TIMEOUT_MS)
             except Exception:
                 pass
         return await self.current_state()

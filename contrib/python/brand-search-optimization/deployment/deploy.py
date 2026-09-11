@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -86,7 +86,7 @@ def main(argv: list[str]) -> None:
         print("Missing required environment variable: STAGING_BUCKET")
         return
 
-    env_vars["DISABLE_WEB_DRIVER"] = "1"
+    env_vars["DISABLE_WEB_DRIVER"] = str(constants.DISABLE_WEB_DRIVER)
 
     vertexai.init(
         project=project_id,

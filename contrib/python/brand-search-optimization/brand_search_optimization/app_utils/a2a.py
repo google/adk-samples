@@ -14,7 +14,7 @@
 
 """Attach A2A (Agent2Agent) endpoints to the FastAPI app.
 
-func:`attach_a2a_routes` registers the dynamic
+:func:`attach_a2a_routes` registers the dynamic
 agent-card endpoint and the JSON-RPC endpoint so the same app serves A2A
 alongside the adk_api routes, reachable by A2A clients and Gemini Enterprise A2A
 registration.
@@ -143,7 +143,7 @@ async def attach_a2a_routes(
     ``APP_URL``). Call once per app — typically in a FastAPI ``lifespan``, since
     the card is built asynchronously; repeated calls register duplicate routes.
     """
-    resolved_app_url = app_url or os.getenv("APP_URL", "http://0.0.0.0:8000")
+    resolved_app_url = app_url or os.getenv("APP_URL", "http://0.0.0.0:8080")
     resolved_agent_version = agent_version or os.getenv(
         "AGENT_VERSION", "0.1.0"
     )

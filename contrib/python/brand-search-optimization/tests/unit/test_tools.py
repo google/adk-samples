@@ -17,7 +17,13 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.adk.tools.computer_use.base_computer import ComputerEnvironment
+from google.adk.tools.computer_use.base_computer import (
+    BaseComputer,
+    ComputerEnvironment,
+)
+from google.adk.tools.computer_use.computer_use_toolset import (
+    ComputerUseToolset,
+)
 
 from brand_search_optimization.shared_libraries import constants
 from brand_search_optimization.sub_agents.comparison.models import (
@@ -62,16 +68,22 @@ class TestBigQueryConnector:
             response = bq_connector.get_product_details_for_brand(
                 brand="Cymbal", limit=5
             )
+            mock_client.query.assert_called_once()
+            called_query = mock_client.query.call_args[0][0]
+            assert "test_project" in called_query
+            assert "test_table" in called_query
             assert response.brand == "Cymbal"
             assert response.total_count == 2
             assert len(response.products) == 2
             assert response.products[0].title == "Cymbal Air Max"
             assert response.products[1].title == "Cymbal Sportswear T-Shirt"
+            assert response.is_sample_data is False
 
     def test_get_product_details_for_brand_empty(self):
         response = bq_connector.get_product_details_for_brand(brand="")
         assert response.total_count == 0
         assert response.products == []
+        assert response.is_sample_data is False
 
     @patch("brand_search_optimization.tools.bq_connector.client", None)
     @patch(
@@ -83,6 +95,7 @@ class TestBigQueryConnector:
         assert response.brand == "Acme"
         assert response.total_count >= 1
         assert any("Acme" in p.title for p in response.products)
+        assert response.is_sample_data is True
 
 
 class TestBrowserComputer:
@@ -123,9 +136,18 @@ class TestBrowserComputer:
             computer = get_browser_computer()
             assert isinstance(computer, MockBrowserComputer)
 
-    def test_get_computer_use_toolset(self):
+    @pytest.mark.asyncio
+    async def test_get_computer_use_toolset(self):
         toolset = get_computer_use_toolset()
-        assert toolset is not None
+        assert isinstance(toolset, ComputerUseToolset)
+        assert toolset._computer is not None
+        assert isinstance(toolset._computer, BaseComputer)
+        tools = await toolset.get_tools()
+        assert len(tools) > 0
+        tool_names = {t.name for t in tools}
+        assert "navigate" in tool_names
+        assert "click_at" in tool_names
+        assert "type_text_at" in tool_names
 
 
 class TestModels:

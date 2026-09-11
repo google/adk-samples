@@ -22,9 +22,9 @@ COPY ./pyproject.toml ./README.md ./uv.lock* ./
 
 COPY ./brand_search_optimization ./brand_search_optimization
 
-RUN uv sync --frozen
+RUN uv sync --frozen && uv run playwright install --with-deps chromium
 
-ARG AGENT_VERSION=0.0.0
+ARG AGENT_VERSION=0.1.0
 ENV AGENT_VERSION=${AGENT_VERSION}
 
 EXPOSE 8080

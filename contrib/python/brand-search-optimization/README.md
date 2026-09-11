@@ -19,7 +19,7 @@ The workflow coordinates specialized agents:
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.11 - 3.12
 - `uv` installed: https://docs.astral.sh/uv/
 - Google Cloud project with Vertex AI and BigQuery access
 - Application Default Credentials:
@@ -70,7 +70,7 @@ uv run adk run brand_search_optimization
 uv run adk web
 ```
 
-Then select `brand-search-optimization` from the application dropdown.
+Then select `brand_search_optimization` from the application dropdown.
 
 ## Evaluation
 
@@ -116,14 +116,23 @@ For post-deployment session testing, see `deployment/test_deployment.py`.
 
 Environment variables are declared in `.env.example`:
 
+- `GOOGLE_GENAI_USE_VERTEXAI`: Set to `1` for Vertex AI backend, `0` for Google AI Studio
+- `GOOGLE_API_KEY`: Google AI Studio API key (when using AI Studio backend)
 - `GOOGLE_CLOUD_PROJECT`: Google Cloud project ID
 - `GOOGLE_CLOUD_LOCATION`: Vertex AI location (e.g., `us-central1` or `global`)
-- `GOOGLE_GENAI_USE_VERTEXAI`: Set to `1` for Vertex AI
 - `MODEL`: Model name (e.g., `gemini-3.5-flash`)
 - `DATASET_ID`: BigQuery dataset ID (default: `products_data_agent`)
 - `TABLE_ID`: BigQuery table ID (default: `shoe_items`)
-- `DISABLE_WEB_DRIVER`: Set to `1` to run in offline/mock browser mode for headless testing
+- `DISABLE_WEB_DRIVER`: Set to `1` to run in offline/mock browser mode for headless testing (default: `0`)
 - `STAGING_BUCKET`: GCS staging bucket for Cloud deployment
+- `AGENT_VERSION`: Version string advertised in A2A agent card (default: `0.1.0`)
+- `ALLOW_ORIGINS`: Allowed CORS origins for FastAPI server (comma-separated)
+- `APP_URL`: Base URL advertised in A2A agent card (default: `http://0.0.0.0:8080`)
+- `GOOGLE_CLOUD_AGENT_ENGINE_ID`: Agent Engine resource ID for remote session service
+- `GOOGLE_CLOUD_AGENT_ENGINE_LOCATION`: Agent Engine location/region (e.g., `us-central1`)
+- `LOGS_BUCKET_NAME`: GCS bucket for remote artifact storage
+- `SESSION_SERVICE_URI`: URI for ADK session service (e.g., `shared://session`)
+- `PORT`: HTTP port for FastAPI server (default: `8080`)
 
 ## Example Interaction
 

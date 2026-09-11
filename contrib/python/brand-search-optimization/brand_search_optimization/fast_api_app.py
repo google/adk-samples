@@ -17,7 +17,6 @@ import os
 from collections.abc import AsyncIterator
 
 from a2a.server.tasks import InMemoryTaskStore
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from google.adk.cli.fast_api import get_fast_api_app
 from google.adk.runners import Runner
@@ -25,9 +24,12 @@ from google.adk.runners import Runner
 from brand_search_optimization.app_utils import services
 from brand_search_optimization.app_utils.a2a import attach_a2a_routes
 
-load_dotenv()
 allow_origins = (
-    os.getenv("ALLOW_ORIGINS", "").split(",")
+    [
+        origin.strip()
+        for origin in os.getenv("ALLOW_ORIGINS").split(",")
+        if origin.strip()
+    ]
     if os.getenv("ALLOW_ORIGINS")
     else None
 )
@@ -75,4 +77,5 @@ app.description = "API for interacting with the Agent brand-search-optimization"
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", "8080"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

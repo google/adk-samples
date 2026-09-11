@@ -12,11 +12,10 @@
 name: "brand-search-optimization"
 agent_directory: "brand_search_optimization"
 language: "python"
-region: "us-east1"
+region: "us-central1"
 create_params:
   deployment_target: "cloud_run"
   session_type: "in_memory"
   is_a2a: true
   cicd_runner: "skip"
   agent_gateway: false
-  agent_guidance_filename: "AGENTS.md"

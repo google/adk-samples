@@ -65,6 +65,13 @@ class BrandCatalogResponse(BaseModel):
     total_count: int = Field(
         default=0, description="Number of products retrieved"
     )
+    is_sample_data: bool = Field(
+        default=False,
+        description=(
+            "Whether the response contains fallback sample data because"
+            " BigQuery is unavailable"
+        ),
+    )
 
 
 def get_product_details_for_brand(
@@ -72,6 +79,9 @@ def get_product_details_for_brand(
     limit: int = 5,
 ) -> BrandCatalogResponse:
     """Retrieves product details (title, description, attributes) for a brand from BigQuery.
+
+    If BigQuery is unavailable (e.g. offline testing or unconfigured credentials),
+    returns deterministic sample product records and sets is_sample_data=True.
 
     Args:
         brand: The brand name to query in the product catalog.
@@ -109,6 +119,7 @@ def get_product_details_for_brand(
                 ),
             ],
             total_count=2,
+            is_sample_data=True,
         )
 
     query = f"""

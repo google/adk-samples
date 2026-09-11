@@ -26,7 +26,7 @@ load_dotenv(_ROOT / ".env", override=False)
 load_dotenv(_ROOT / ".env.example", override=False)
 
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "1")
 
 from .agent import root_agent  # noqa: E402 -- must come after load_dotenv()
 

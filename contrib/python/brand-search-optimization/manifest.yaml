@@ -4,7 +4,6 @@ language: "python"   # Options: [python | java | go | kotlin | typescript]
 deployable: true
 description: "Optimizes retail product titles for brand search performance using Gemini Computer Use and multi-agent workflow"
 
-# deployable: true   # (optional) one-command deploy, no manual steps; omit if false (default)
 # large: true        # (optional) opt into the relaxed size tier; see .github/policy.yml (recipe_size_limits) for the exact numbers; omit if false (default)
 
 architecture:          # (optional) omit the whole block if nothing below can be inferred from code

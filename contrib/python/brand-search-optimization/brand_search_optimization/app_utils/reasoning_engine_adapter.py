@@ -22,6 +22,7 @@ contract. Agent Engine forwards calls to ``/api/reasoning_engine`` (sync) and
 packaged Agent Engine.
 """
 
+import http
 import inspect
 import json
 
@@ -70,7 +71,7 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
         allowed = streaming_methods if streaming else sync_methods
         if class_method not in allowed:
             raise HTTPException(
-                status_code=404,
+                status_code=http.HTTPStatus.NOT_FOUND,
                 detail=f"Unsupported reasoning_engine method: {class_method!r}",
             )
         return getattr(rt, class_method)
