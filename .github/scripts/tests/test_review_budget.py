@@ -391,9 +391,20 @@ def test_a_full_review_clears_the_diff_scope_but_not_the_caps(monkeypatch):
     assert rb.decide(state, policy(), "Security", 5)["allowance"] == 5
 
 
-def test_an_unreadable_history_is_a_ci_fault_not_a_guess(monkeypatch):
-    """Guessing here means guessing the round, and a wrong guess of 1 hands a
-    full batch to a PR that has already had six."""
+def test_an_unreadable_history_degrades_to_silence_not_a_full_batch(
+    tmp_path, monkeypatch
+):
+    """Every number here comes from the review history, so without it the
+    honest options are "assume round 1" and "say nothing".
+
+    Assuming round 1 hands a fresh batch to a PR that has already had six --
+    the exact failure this script exists to prevent. Failing the job is no
+    better: a transient API error is not the contributor's problem, and a red
+    check they cannot act on is worse than a quiet round they can recover
+    with one more push.
+    """
+    out = tmp_path / "out.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
     monkeypatch.setattr(rb, "gh_json", lambda path: None)
     monkeypatch.setattr(
         sys,
@@ -406,9 +417,16 @@ def test_an_unreadable_history_is_a_ci_fault_not_a_guess(monkeypatch):
             "1",
             "--lane",
             "Security",
+            "--github-output",
         ],
     )
-    assert rb.main() == 2
+    assert rb.main() == 0
+    written = dict(
+        line.split("=", 1) for line in out.read_text().strip().splitlines()
+    )
+    assert written["skip"] == "true"
+    assert written["max_comments"] == "0"
+    assert written["progress"] == ""
 
 
 def test_the_decision_reaches_github_output(tmp_path, monkeypatch):
@@ -531,8 +549,13 @@ def test_the_ceiling_and_the_progress_line_reach_the_poster(core):
     build = _step(core, "build_review")
     assert "--max-comments" in build["run"]
     assert "--progress" in build["run"]
+    # prepare_diff's number, not the budget step's raw allowance: it is the
+    # SMALLER of the round allowance and what a PR of this size warrants, and
+    # it is the figure the model was told to aim at. Enforcing the larger one
+    # lets a ten-line PR collect five comments a lane whenever the round
+    # allowance happens to be generous.
     assert build["env"]["MAX_COMMENTS"].endswith(
-        "budget.outputs.max_comments }}"
+        "prepare_diff.outputs.budget }}"
     )
     assert build["env"]["PROGRESS"].endswith("budget.outputs.progress }}")
 
@@ -609,3 +632,55 @@ def test_the_prompt_target_never_exceeds_the_enforced_ceiling(tmp_path):
         line.split("=", 1) for line in gh_out.read_text().strip().splitlines()
     )
     assert written["budget"] == "1"
+
+
+def test_a_zero_reaches_github_output_as_zero(tmp_path, monkeypatch):
+    """Truthiness is the wrong test for an integer output. Written as an empty
+    string, `max_comments` becomes `--max-comments ""` in the workflow, which
+    argparse rejects — turning a lane that simply had no budget into a failed
+    job."""
+    out = tmp_path / "out.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    rb.emit(
+        {
+            "round": 0,
+            "last_reviewed_sha": "",
+            "posted_total": 0,
+            "max_comments": 0,
+            "skip": True,
+            "exempt": False,
+            "reason": "none",
+        },
+        True,
+    )
+    written = dict(
+        line.split("=", 1) for line in out.read_text().strip().splitlines()
+    )
+    assert written["max_comments"] == "0"
+    assert written["posted_total"] == "0"
+    assert written["round"] == "0"
+
+
+def test_the_round_cap_is_named_as_a_shared_number():
+    """The same line goes on each lane's review. Four reviews each saying
+    "capped at 20" read as a threat of eighty comments."""
+    state = {
+        "round": 2,
+        "last_reviewed_sha": "x",
+        "posted_total": 4,
+        "previous_round_count": 14,
+    }
+    line = rb.progress_line(rb.decide(state, policy(), "Security", 5))
+    assert "across all reviewers" in line
+
+
+def test_a_skipped_lane_says_nothing_at_all():
+    """It posts no review, so a progress line would be a review body with no
+    findings in it — the reviewer announcing that it has nothing to say."""
+    state = {
+        "round": 4,
+        "last_reviewed_sha": "x",
+        "posted_total": 25,
+        "previous_round_count": 2,
+    }
+    assert rb.progress_line(rb.decide(state, policy(), "Hygiene", 5)) == ""

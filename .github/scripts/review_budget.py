@@ -33,8 +33,9 @@ Usage:
       [--head-sha SHA] [--full-review] [--churn-budget 5] [--github-output]
 
 Exit codes:
-  0  decision written
-  2  CI fault — the pull request's review history could not be read
+  0  always, including when the history could not be read. There is no failure
+     mode here worth a red check: the worst case is a lane that stays quiet for
+     one round, and the next push recovers it.
 """
 
 import argparse
@@ -50,8 +51,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 from ci_message import (
     EXIT_OK,
     guard,
-    infra_fault,
-    report_infra_fault,
 )
 
 CHECKER = "review_budget.py"
@@ -302,13 +301,18 @@ def progress_line(decision: dict) -> str:
     "Endless" is partly not knowing whether it converges. None of the limits
     above are visible from the outside unless something says so.
     """
-    if decision.get("exempt"):
+    if decision.get("exempt") or decision.get("skip"):
         return ""
     parts = [f"Round {decision['round']}"]
     posted = decision["posted_total"]
     cap = decision["lifetime_cap"]
     parts.append(f"{posted} of this PR's {cap} automated comments used")
-    parts.append(f"this round is capped at {decision['allowance']}")
+    # "across all reviewers", because this same line appears on each lane's
+    # review. Without it, four reviews each saying "capped at 20" read as a
+    # threat of eighty comments rather than a promise of twenty.
+    parts.append(
+        f"this round is capped at {decision['allowance']} across all reviewers"
+    )
     if decision["round"] >= decision["narrow_after"]:
         parts.append(
             "from here only " + " and ".join(decision["blocker_lanes"]) + " run"
@@ -371,9 +375,12 @@ def emit(decision: dict, to_github_output: bool) -> None:
             # Single-line values only. `progress` and `reason` are built here
             # from numbers and lane names, never from PR content, so neither
             # can carry a newline that would forge a second output.
-            handle.write(
-                f"{key}={str(value).splitlines()[0] if value else ''}\n"
-            )
+            #
+            # Truthiness is the wrong test: `max_comments` is legitimately 0,
+            # and writing that as an empty string hands the workflow
+            # `--max-comments ""`, which argparse rejects as not an integer.
+            text = "" if value is None else str(value)
+            handle.write(f"{key}={text.splitlines()[0] if text else ''}\n")
 
 
 def main() -> int:
@@ -385,13 +392,31 @@ def main() -> int:
         f"repos/{args.repo}/pulls/{args.pr}/comments?per_page=100"
     )
     if reviews is None or comments is None:
-        return report_infra_fault(
-            infra_fault(
-                CHECKER,
-                f"cannot read the review history of {args.repo}#{args.pr}; "
-                "refusing to guess a budget",
-            )
+        # Degrade, never fail — but degrade toward SILENCE, not toward a full
+        # batch. Every number here is derived from the review history, so
+        # without it the honest options are "assume round 1" and "say
+        # nothing". Assuming round 1 hands a fresh 20 comments to a PR that
+        # has already had six, which is the exact failure this script exists
+        # to prevent; saying nothing costs one round of review and the next
+        # push recovers it.
+        print(
+            f"  cannot read the review history of {args.repo}#{args.pr}; "
+            "skipping this lane rather than risking a full batch"
         )
+        emit(
+            {
+                "round": 0,
+                "last_reviewed_sha": "",
+                "posted_total": 0,
+                "lane": args.lane,
+                "skip": True,
+                "max_comments": 0,
+                "exempt": False,
+                "reason": "the PR's review history could not be read",
+            },
+            args.github_output,
+        )
+        return EXIT_OK
 
     state = summarise_history(reviews, comments, policy["exempt_lanes"])
     if args.full_review:

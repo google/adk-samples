@@ -547,7 +547,7 @@ jobs:
           python3 .github/scripts/prepare_review_diff.py \
             --diff pr_diff.txt \
             --out pr_diff_reviewable.txt \
-            --budget-ceiling "${BUDGET_CEILING}" \
+            --budget-ceiling "${BUDGET_CEILING:-0}" \
             --github-output "${GITHUB_OUTPUT}"
 
       # A Dependabot PR is not a broken PR. Every step below keys off this as
@@ -1353,7 +1353,12 @@ jobs:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
           REVIEW_LABEL: '${{ inputs.review_label }}'
-          MAX_COMMENTS: '${{ steps.budget.outputs.max_comments }}'
+          # prepare_diff's number, not the budget step's: it is the SMALLER
+          # of the round allowance and what a PR of this size warrants, and
+          # it is the figure the model was told to aim at. Enforcing the
+          # larger one would let a ten-line PR collect five comments a lane
+          # because the round allowance happened to be generous.
+          MAX_COMMENTS: '${{ steps.prepare_diff.outputs.budget }}'
           PROGRESS: '${{ steps.budget.outputs.progress }}'
         run: |-
           set -euo pipefail
