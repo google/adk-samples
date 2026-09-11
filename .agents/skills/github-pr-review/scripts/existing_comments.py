@@ -43,16 +43,25 @@ query($owner:String!, $name:String!, $pr:Int!, $cursor:String) {
 
 
 def gh(args):
-    proc = subprocess.run(["gh"] + args, capture_output=True, text=True, check=False)
+    proc = subprocess.run(
+        ["gh", *args], capture_output=True, text=True, check=False
+    )
     if proc.returncode != 0:
-        raise SystemExit(f"gh {' '.join(args[:2])} failed: {proc.stderr.strip()[:200]}")
+        raise SystemExit(
+            f"gh {' '.join(args[:2])} failed: {proc.stderr.strip()[:200]}"
+        )
     return json.loads(proc.stdout or "null")
 
 
 def paged(path):
     out, page = [], 1
     while True:
-        batch = gh(["api", f"{path}{'&' if '?' in path else '?'}per_page=100&page={page}"])
+        batch = gh(
+            [
+                "api",
+                f"{path}{'&' if '?' in path else '?'}per_page=100&page={page}",
+            ]
+        )
         if not batch:
             break
         out.extend(batch)
@@ -67,16 +76,30 @@ def thread_state(repo, pr):
     owner, name = repo.split("/")
     state, cursor = {}, None
     while True:
-        data = gh(["api", "graphql", "-f", f"query={GRAPHQL}",
-                   "-F", f"owner={owner}", "-F", f"name={name}",
-                   "-F", f"pr={pr}"] + (["-F", f"cursor={cursor}"] if cursor else []))
+        data = gh(
+            [
+                "api",
+                "graphql",
+                "-f",
+                f"query={GRAPHQL}",
+                "-F",
+                f"owner={owner}",
+                "-F",
+                f"name={name}",
+                "-F",
+                f"pr={pr}",
+            ]
+            + (["-F", f"cursor={cursor}"] if cursor else [])
+        )
         rt = data["data"]["repository"]["pullRequest"]["reviewThreads"]
         for node in rt["nodes"]:
             c = (node.get("comments") or {}).get("nodes") or [{}]
             c = c[0]
             key = (c.get("path"), c.get("line") or c.get("originalLine"))
-            state[key] = {"resolved": bool(node.get("isResolved")),
-                          "outdated": bool(node.get("isOutdated"))}
+            state[key] = {
+                "resolved": bool(node.get("isResolved")),
+                "outdated": bool(node.get("isOutdated")),
+            }
         if not rt["pageInfo"]["hasNextPage"]:
             break
         cursor = rt["pageInfo"]["endCursor"]
@@ -95,8 +118,11 @@ def main():
     try:
         states = thread_state(args.repo, args.pr)
     except SystemExit as e:
-        print(f"warning: thread state unavailable ({e}); "
-              "treating all threads as open", file=sys.stderr)
+        print(
+            f"warning: thread state unavailable ({e}); "
+            "treating all threads as open",
+            file=sys.stderr,
+        )
         states = {}
 
     out = []
@@ -104,30 +130,40 @@ def main():
         line = c.get("line")
         orig = c.get("original_line")
         st = states.get((c.get("path"), line or orig), {})
-        user = (c.get("user") or {})
-        out.append({
-            "kind": "inline",
-            "path": c.get("path"),
-            "line": line,
-            "original_line": orig,
-            "side": c.get("side") or "RIGHT",
-            "body": c.get("body") or "",
-            "author": user.get("login"),
-            # A bot may be typed as Bot, or be a User account with a [bot] suffix.
-            "is_bot": user.get("type") == "Bot"
-                      or str(user.get("login", "")).endswith("[bot]"),
-            "resolved": st.get("resolved", False),
-            "outdated": st.get("outdated", False),
-        })
+        user = c.get("user") or {}
+        out.append(
+            {
+                "kind": "inline",
+                "path": c.get("path"),
+                "line": line,
+                "original_line": orig,
+                "side": c.get("side") or "RIGHT",
+                "body": c.get("body") or "",
+                "author": user.get("login"),
+                # A bot may be typed as Bot, or be a User account with a [bot] suffix.
+                "is_bot": user.get("type") == "Bot"
+                or str(user.get("login", "")).endswith("[bot]"),
+                "resolved": st.get("resolved", False),
+                "outdated": st.get("outdated", False),
+            }
+        )
     for c in issues:
-        user = (c.get("user") or {})
-        out.append({
-            "kind": "issue", "path": None, "line": None, "original_line": None,
-            "side": None, "body": c.get("body") or "", "author": user.get("login"),
-            "is_bot": user.get("type") == "Bot"
-                      or str(user.get("login", "")).endswith("[bot]"),
-            "resolved": False, "outdated": False,
-        })
+        user = c.get("user") or {}
+        out.append(
+            {
+                "kind": "issue",
+                "path": None,
+                "line": None,
+                "original_line": None,
+                "side": None,
+                "body": c.get("body") or "",
+                "author": user.get("login"),
+                "is_bot": user.get("type") == "Bot"
+                or str(user.get("login", "")).endswith("[bot]"),
+                "resolved": False,
+                "outdated": False,
+            }
+        )
 
     if args.out:
         json.dump(out, open(args.out, "w"), indent=1)
@@ -136,12 +172,16 @@ def main():
     n_bot = sum(1 for c in out if c["is_bot"])
     n_res = sum(1 for c in out if c["resolved"])
     n_out = sum(1 for c in out if c["outdated"])
-    print(f"{len(out)} existing comment(s): {n_inline} inline, "
-          f"{len(out) - n_inline} top-level")
+    print(
+        f"{len(out)} existing comment(s): {n_inline} inline, "
+        f"{len(out) - n_inline} top-level"
+    )
     print(f"  {n_bot} from bots, {n_res} resolved, {n_out} outdated")
     if n_out:
-        print("  outdated threads do NOT block new findings (the code moved), "
-              "but their text still counts")
+        print(
+            "  outdated threads do NOT block new findings (the code moved), "
+            "but their text still counts"
+        )
     if args.out:
         print(f"-> {args.out}")
 

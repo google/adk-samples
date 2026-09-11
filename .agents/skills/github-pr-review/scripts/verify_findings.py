@@ -47,7 +47,9 @@ HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 WINDOW_LINE_RE = re.compile(r"^\s*(\d+)\s*[:|]\s?(.*)$")
 
 
-ESCAPE_SEQ = re.compile(r"\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|\\x[0-9a-fA-F]{2}")
+ESCAPE_SEQ = re.compile(
+    r"\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|\\x[0-9a-fA-F]{2}"
+)
 
 
 def norm(s):
@@ -72,8 +74,14 @@ def addressable_lines(repo, pr):
     out, page = {}, 1
     while True:
         proc = subprocess.run(
-            ["gh", "api", f"/repos/{repo}/pulls/{pr}/files?per_page=100&page={page}"],
-            capture_output=True, text=True, check=False,
+            [
+                "gh",
+                "api",
+                f"/repos/{repo}/pulls/{pr}/files?per_page=100&page={page}",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if proc.returncode != 0:
             raise SystemExit(f"gh api failed: {proc.stderr.strip()[:200]}")
@@ -109,8 +117,9 @@ def _window_pairs(window):
         # Lanes abbreviate long lines. A Unicode ellipsis vanishes in norm() as
         # non-ASCII, but an ASCII "..." survives and turns a valid prefix into a
         # mismatch -- which rejected 6 of 146 real findings on PR #2302.
-        out.append((int(m.group(1)),
-                    re.sub(r"(\.{3}|\u2026)\s*$", "", m.group(2))))
+        out.append(
+            (int(m.group(1)), re.sub(r"(\.{3}|\u2026)\s*$", "", m.group(2)))
+        )
     return out
 
 
@@ -129,7 +138,9 @@ def _matches_at(pairs, lines, offset):
         # equality, so short lines cannot carry a false match.
         if a == b:
             pass
-        elif min(len(a), len(b)) >= MIN_PREFIX and (a.startswith(b) or b.startswith(a)):
+        elif min(len(a), len(b)) >= MIN_PREFIX and (
+            a.startswith(b) or b.startswith(a)
+        ):
             pass
         else:
             return False, 0
@@ -148,7 +159,9 @@ def check_window(finding, repo_root, max_drift=3):
     if not os.path.exists(path):
         return False, "file does not exist in the checkout"
     try:
-        lines = open(path, encoding="utf-8", errors="replace").read().split("\n")
+        lines = (
+            open(path, encoding="utf-8", errors="replace").read().split("\n")
+        )
     except OSError as e:
         return False, f"unreadable: {e}"
 
@@ -158,7 +171,7 @@ def check_window(finding, repo_root, max_drift=3):
 
     pairs = _window_pairs(finding.get("window"))
     if not pairs:
-        return True, "no window supplied"      # tolerated, not verified
+        return True, "no window supplied"  # tolerated, not verified
 
     ok, _ = _matches_at(pairs, lines, 0)
     if ok:
@@ -166,33 +179,43 @@ def check_window(finding, repo_root, max_drift=3):
 
     for offset in [d for k in range(1, max_drift + 1) for d in (k, -k)]:
         ok, n = _matches_at(pairs, lines, offset)
-        if ok and n >= 2:                       # one line could match by chance
+        if ok and n >= 2:  # one line could match by chance
             new_line = line + offset
             if 1 <= new_line <= len(lines):
                 finding["line"] = new_line
                 finding["_line_corrected"] = f"{line} -> {new_line}"
-                return True, f"window matched at offset {offset:+d}; anchor corrected"
+                return (
+                    True,
+                    f"window matched at offset {offset:+d}; anchor corrected",
+                )
 
     n, claimed = pairs[0]
     actual = lines[n - 1] if 1 <= n <= len(lines) else ""
-    return False, (f"window line {n} says {claimed.strip()[:40]!r}, "
-                   f"file has {actual.strip()[:40]!r}")
+    return False, (
+        f"window line {n} says {claimed.strip()[:40]!r}, "
+        f"file has {actual.strip()[:40]!r}"
+    )
 
 
 # ---------------------------------------------------------------- existing work
 
-PROXIMITY = 2   # same line, or within 2 -- tight, to avoid eating fresh findings
+PROXIMITY = 2  # same line, or within 2 -- tight, to avoid eating fresh findings
 MIN_PREFIX = 8  # below this, a window line must equal the file line exactly
 
-_STOPWORDS = set("""a an the is are was were be been being this that these those it
+_STOPWORDS = set(
+    """a an the is are was were be been being this that these those it
 its of to in on for with from by at as and or not no any some all each every into
 out here there which what when where line lines file files code value values never
-only still also just even than then them they their should does did has have""".split())
+only still also just even than then them they their should does did has have""".split()
+)
 
 
 def _tokens(text):
-    return {w for w in re.findall(r"[a-z_][a-z_0-9]{3,}", str(text).lower())
-            if w not in _STOPWORDS}
+    return {
+        w
+        for w in re.findall(r"[a-z_][a-z_0-9]{3,}", str(text).lower())
+        if w not in _STOPWORDS
+    }
 
 
 def rejected_as_exclusions(entries):
@@ -201,11 +224,21 @@ def rejected_as_exclusions(entries):
     Marked `kind: inline` so they create line-zones, and never `outdated` -- a
     decision the user already made does not expire because the code moved.
     """
-    return [{"kind": "inline", "path": e.get("path"), "line": e.get("line"),
-             "original_line": e.get("line"), "body": e.get("comment", ""),
-             "author": "you", "is_bot": False, "resolved": False,
-             "outdated": False, "_was_rejected": True}
-            for e in entries or []]
+    return [
+        {
+            "kind": "inline",
+            "path": e.get("path"),
+            "line": e.get("line"),
+            "original_line": e.get("line"),
+            "body": e.get("comment", ""),
+            "author": "you",
+            "is_bot": False,
+            "resolved": False,
+            "outdated": False,
+            "_was_rejected": True,
+        }
+        for e in entries or []
+    ]
 
 
 def build_exclusions(existing, proximity=PROXIMITY):
@@ -257,7 +290,11 @@ def already_raised(finding, zones, texts, sim=0.55):
             if len(mine & toks) / min(len(mine), len(toks)) >= sim:
                 if c.get("_was_rejected"):
                     return True, "very similar to a comment you cut previously"
-                who = "a bot" if c.get("is_bot") else (c.get("author") or "someone")
+                who = (
+                    "a bot"
+                    if c.get("is_bot")
+                    else (c.get("author") or "someone")
+                )
                 return True, f"{who} already said something very similar"
     return False, ""
 
@@ -290,15 +327,24 @@ def fact_anchor_lint(finding):
     # Only single-token identifiers. A multi-word backticked phrase is prose
     # quoting code (`make streamlit`, `except Exception: continue`) and will not
     # appear verbatim in the window -- flagging those was pure noise on #2373.
-    ticked = [tok for tok in re.findall(r"`([^`]+)`", text)
-              if not re.search(r"[\s:(){}\[\]]", tok)]
+    ticked = [
+        tok
+        for tok in re.findall(r"`([^`]+)`", text)
+        if not re.search(r"[\s:(){}\[\]]", tok)
+    ]
     if window and ticked:
         flat = re.sub(r"\W", "", window)
-        missing = [tok for tok in ticked
-                   if re.sub(r"\W", "", tok) and re.sub(r"\W", "", tok) not in flat]
+        missing = [
+            tok
+            for tok in ticked
+            if re.sub(r"\W", "", tok) and re.sub(r"\W", "", tok) not in flat
+        ]
         if missing:
-            notes.append("names " + ", ".join(f"`{m}`" for m in missing[:3])
-                         + " which is not in the window")
+            notes.append(
+                "names "
+                + ", ".join(f"`{m}`" for m in missing[:3])
+                + " which is not in the window"
+            )
 
     m = INFERENCE_WORDS.search(text)
     if m:
@@ -306,8 +352,61 @@ def fact_anchor_lint(finding):
     return notes
 
 
+def red_workflows(repo, sha):
+    """Basenames of the workflow files that FAILED on this head commit.
 
-def verify(findings, repo_root, addr, existing=None):
+    The rules doc keeps a hand-maintained "Already enforced" table so a reviewer
+    does not repeat a red check. A table drifts; the PR's own results do not.
+    Only `failure` counts -- a run still queued tells us nothing, and suppressing
+    on it would silently drop a real finding.
+    """
+    proc = subprocess.run(
+        [
+            "gh",
+            "api",
+            f"/repos/{repo}/actions/runs?head_sha={sha}&per_page=100",
+            "--jq",
+            ".workflow_runs[] | [.path, .conclusion] | @tsv",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None  # cannot tell; caller must not suppress
+    red = set()
+    for line in proc.stdout.splitlines():
+        path, _, conclusion = line.partition("\t")
+        if conclusion.strip() == "failure" and path.strip():
+            red.add(os.path.basename(path.strip()))
+    return red
+
+
+# A finding already cites the check that enforces it in `evidence`, e.g.
+# "python-validate-recipe.yml:261-266". Reusing that citation means no second
+# rule-to-check mapping table has to be kept in step with anything.
+_EVIDENCE_WORKFLOW = re.compile(r"([A-Za-z0-9_.\-]+\.ya?ml)")
+
+
+def already_red(finding, red):
+    """Is a check already failing this PR for exactly this? (reason | None)
+
+    Advisory findings are never suppressed: nothing is failing for them, so the
+    comment is the only way the author hears it at all.
+    """
+    if not red or finding.get("ci") != "fail":
+        return None
+    for wf in _EVIDENCE_WORKFLOW.findall(str(finding.get("evidence") or "")):
+        if wf in red:
+            return (
+                f"{wf} is already failing on this PR with a precise message; "
+                "a comment repeating it lands on an author who is already "
+                "looking at a red check"
+            )
+    return None
+
+
+def verify(findings, repo_root, addr, existing=None, red=None):
     zones, texts = build_exclusions(existing or [])
     verified, rejected, suppressed = [], [], []
     for f in findings:
@@ -341,6 +440,11 @@ def verify(findings, repo_root, addr, existing=None):
             suppressed.append({**f, "_reason": why})
             continue
 
+        why_red = already_red(f, red)
+        if why_red:
+            suppressed.append({**f, "_reason": why_red})
+            continue
+
         notes = fact_anchor_lint(f)
         if notes:
             f["_anchor_warnings"] = notes
@@ -350,10 +454,12 @@ def verify(findings, repo_root, addr, existing=None):
 
 
 # Words too generic to identify a defect class.
-_STOP = set("""a an the is are was were be been being this that these those it its
+_STOP = set(
+    """a an the is are was were be been being this that these those it its
 of to in on for with from by at as and or not no any some all each every into out
 here there which what when where line lines file files code value values never
-only still also just even than then them they their there's is-a""".split())
+only still also just even than then them they their there's is-a""".split()
+)
 
 
 def cluster(findings, min_size=3):
@@ -364,17 +470,18 @@ def cluster(findings, min_size=3):
     and on PR #2373 twenty findings collapsed to five classes that way, freeing
     fifteen of twenty budget slots.
     """
+
     def sig(f):
         words = re.findall(r"[a-z_]{4,}", str(f.get("what", "")).lower())
         return frozenset(w for w in words if w not in _STOP)
 
     sigs = [(f, sig(f)) for f in findings]
     groups, used = [], set()
-    for i, (fa, sa) in enumerate(sigs):
+    for i, (_fa, sa) in enumerate(sigs):
         if i in used or not sa:
             continue
         members = [i]
-        for j, (fb, sb) in enumerate(sigs[i + 1:], start=i + 1):
+        for j, (_fb, sb) in enumerate(sigs[i + 1 :], start=i + 1):
             if j in used or not sb:
                 continue
             overlap = len(sa & sb) / max(1, min(len(sa), len(sb)))
@@ -393,10 +500,27 @@ def main():
     ap.add_argument("--repo", help="owner/name; omit to skip addressability")
     ap.add_argument("--pr")
     ap.add_argument("--out", help="write verified findings here")
-    ap.add_argument("--existing", help="existing_comments.py output; suppress repeats")
-    ap.add_argument("--no-ledger", action="store_true",
-                    help="ignore previously-rejected comments for this PR")
-    ap.add_argument("--json", action="store_true", help="machine-readable summary")
+    ap.add_argument(
+        "--existing", help="existing_comments.py output; suppress repeats"
+    )
+    ap.add_argument(
+        "--no-ledger",
+        action="store_true",
+        help="ignore previously-rejected comments for this PR",
+    )
+    ap.add_argument(
+        "--head-sha",
+        help="PR head commit; with --repo, suppresses CI-FAIL "
+        "findings whose enforcing workflow is already red",
+    )
+    ap.add_argument(
+        "--no-ci-status",
+        action="store_true",
+        help="do not read the PR's check results",
+    )
+    ap.add_argument(
+        "--json", action="store_true", help="machine-readable summary"
+    )
     args = ap.parse_args()
 
     raw = json.load(open(args.findings))
@@ -418,14 +542,29 @@ def main():
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             import rejections
+
             prior = rejections.load(args.repo, args.pr)
             existing = existing + rejected_as_exclusions(prior)
             n_rejected = len(prior)
-        except Exception as e:                       # never block a review on this
-            print(f"warning: could not load rejection ledger: {e}", file=sys.stderr)
+        except Exception as e:  # never block a review on this
+            print(
+                f"warning: could not load rejection ledger: {e}",
+                file=sys.stderr,
+            )
+
+    red = None
+    if args.repo and args.head_sha and not args.no_ci_status:
+        red = red_workflows(args.repo, args.head_sha)
+        if red is None:
+            print(
+                "warning: could not read check results; not suppressing "
+                "anything as already-red",
+                file=sys.stderr,
+            )
 
     verified, rejected, suppressed = verify(
-        raw, os.path.expanduser(args.repo_root), addr, existing)
+        raw, os.path.expanduser(args.repo_root), addr, existing, red
+    )
 
     n_unanchor = sum(1 for f in verified if not f.get("anchorable"))
     n_down = sum(1 for f in verified if f.get("cheap") == "not_cheap")
@@ -446,21 +585,37 @@ def main():
         json.dump(verified, open(args.out, "w"), indent=1)
 
     if args.json:
-        print(json.dumps({"summary": summary, "rejected": rejected,
-                          "suppressed": suppressed}, indent=1))
+        print(
+            json.dumps(
+                {
+                    "summary": summary,
+                    "rejected": rejected,
+                    "suppressed": suppressed,
+                },
+                indent=1,
+            )
+        )
         return
 
-    print(f"{summary['input']} findings in, {summary['verified']} verified, "
-          f"{summary['rejected']} REJECTED")
+    print(
+        f"{summary['input']} findings in, {summary['verified']} verified, "
+        f"{summary['rejected']} REJECTED"
+    )
     if n_rejected:
-        print(f"  ({n_rejected} previously-cut comment(s) loaded from the ledger)")
+        print(
+            f"  ({n_rejected} previously-cut comment(s) loaded from the ledger)"
+        )
     if rejected:
-        print("\nrejected (window contradicts the file -- treat as fabricated):")
+        print(
+            "\nrejected (window contradicts the file -- treat as fabricated):"
+        )
         for f in rejected:
             print(f"  {f.get('path')}:{f.get('line')}  {f['_reason']}")
     if n_unanchor:
-        print(f"\n{n_unanchor} not addressable (outside every diff hunk) -- "
-              "these can only go up as one top-level comment:")
+        print(
+            f"\n{n_unanchor} not addressable (outside every diff hunk) -- "
+            "these can only go up as one top-level comment:"
+        )
         for f in verified:
             if not f.get("anchorable"):
                 print(f"  {f['path']}:{f['line']}")
@@ -474,21 +629,31 @@ def main():
         for f in suppressed:
             print(f"  {f['path']}:{f['line']}  {f['_reason']}")
     if n_down:
-        print(f"\n{n_down} not cheaply verifiable (from their own verify_steps):")
+        print(
+            f"\n{n_down} not cheaply verifiable (from their own verify_steps):"
+        )
         for f in verified:
             if f.get("cheap") == "not_cheap":
-                print(f"  {f['path']}:{f['line']}  ({f.get('_cheap_reason','')})")
+                print(
+                    f"  {f['path']}:{f['line']}  ({f.get('_cheap_reason', '')})"
+                )
     if n_warn:
-        print(f"\n{n_warn} fact-anchoring warning(s) — check these read as "
-              "pointing at something visible:")
+        print(
+            f"\n{n_warn} fact-anchoring warning(s) — check these read as "
+            "pointing at something visible:"
+        )
         for f in verified:
             for note in f.get("_anchor_warnings", []):
                 print(f"  {f['path']}:{f['line']}  {note}")
     groups = cluster(verified)
     if groups:
-        print(f"\n{len(groups)} repeated class(es) — group each into ONE comment:")
+        print(
+            f"\n{len(groups)} repeated class(es) — group each into ONE comment:"
+        )
         for g in groups:
-            where = ", ".join(f"{x['path'].rsplit('/', 1)[-1]}:{x['line']}" for x in g[:3])
+            where = ", ".join(
+                f"{x['path'].rsplit('/', 1)[-1]}:{x['line']}" for x in g[:3]
+            )
             print(f"  {len(g)}x  {g[0]['what'][:70]}")
             print(f"      {where}{' …' if len(g) > 3 else ''}")
 

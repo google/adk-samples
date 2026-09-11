@@ -46,7 +46,7 @@ def gh_api(path, method="GET", payload=None):
     cmd = ["gh", "api", path]
     if method != "GET":
         cmd += ["--method", method, "--input", "-"]
-    proc = subprocess.run(
+    proc = subprocess.run(  # noqa: PLW1510 -- returncode is inspected below
         cmd,
         input=json.dumps(payload) if payload is not None else None,
         capture_output=True,
@@ -65,7 +65,9 @@ def fetch_files(repo, pr):
     """All changed files, paginated."""
     files, page = [], 1
     while True:
-        batch = gh_api(f"/repos/{repo}/pulls/{pr}/files?per_page=100&page={page}")
+        batch = gh_api(
+            f"/repos/{repo}/pulls/{pr}/files?per_page=100&page={page}"
+        )
         if not batch:
             break
         files.extend(batch)
@@ -130,9 +132,15 @@ def main():
     ap.add_argument("--repo", required=True, help="owner/name")
     ap.add_argument("--pr", required=True, type=int)
     ap.add_argument("--file", required=True, help="JSON array of comments")
-    ap.add_argument("--dry-run", action="store_true", help="validate only, post nothing")
-    ap.add_argument("--min-gap", type=int, default=10, help="min seconds between posts")
-    ap.add_argument("--max-gap", type=int, default=20, help="max seconds between posts")
+    ap.add_argument(
+        "--dry-run", action="store_true", help="validate only, post nothing"
+    )
+    ap.add_argument(
+        "--min-gap", type=int, default=10, help="min seconds between posts"
+    )
+    ap.add_argument(
+        "--max-gap", type=int, default=20, help="max seconds between posts"
+    )
     args = ap.parse_args()
 
     with open(args.file) as fh:
@@ -159,7 +167,9 @@ def main():
             continue
         path = c.get("path")
         if path not in index:
-            errors.append(f"{where}: '{path}' is not in this PR's changed files")
+            errors.append(
+                f"{where}: '{path}' is not in this PR's changed files"
+            )
             continue
         line, side = c.get("line"), c.get("side", "RIGHT")
         if not isinstance(line, int):
@@ -169,7 +179,9 @@ def main():
         valid = right if side == "RIGHT" else left
         if line not in valid:
             nearby = sorted(valid)[:1] + sorted(valid)[-1:] if valid else []
-            hint = f" (addressable {side} lines range {nearby})" if nearby else ""
+            hint = (
+                f" (addressable {side} lines range {nearby})" if nearby else ""
+            )
             errors.append(f"{where}: {path}:{line} is not in the diff{hint}")
 
     if errors:
@@ -178,7 +190,9 @@ def main():
             print(f"  - {e}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Validated {len(comments)} comment(s) against PR #{args.pr} @ {head_sha[:8]}")
+    print(
+        f"Validated {len(comments)} comment(s) against PR #{args.pr} @ {head_sha[:8]}"
+    )
 
     # A pending (unsubmitted) review blocks every individual comment: POST
     # .../comments implicitly opens a pending review and GitHub permits only one
@@ -186,11 +200,14 @@ def main():
     try:
         me = gh_api("/user").get("login")
         reviews = gh_api(f"/repos/{args.repo}/pulls/{args.pr}/reviews")
-        stuck = [r for r in reviews
-                 if r.get("state") == "PENDING"
-                 and (r.get("user") or {}).get("login") == me]
+        stuck = [
+            r
+            for r in reviews
+            if r.get("state") == "PENDING"
+            and (r.get("user") or {}).get("login") == me
+        ]
     except Exception:
-        stuck = []                       # never block posting on a probe failure
+        stuck = []  # never block posting on a probe failure
     if stuck:
         rid = stuck[0]["id"]
         print(
@@ -217,7 +234,9 @@ def main():
 
     pending = [c for c in comments if key_of(c) not in already]
     if len(pending) < len(comments):
-        print(f"Resuming: {len(comments) - len(pending)} already posted, {len(pending)} to go")
+        print(
+            f"Resuming: {len(comments) - len(pending)} already posted, {len(pending)} to go"
+        )
 
     for i, c in enumerate(pending):
         payload = {
@@ -232,16 +251,23 @@ def main():
             payload["start_side"] = c.get("start_side", payload["side"])
 
         try:
-            res = gh_api(f"/repos/{args.repo}/pulls/{args.pr}/comments", "POST", payload)
+            res = gh_api(
+                f"/repos/{args.repo}/pulls/{args.pr}/comments", "POST", payload
+            )
         except RuntimeError as e:
             print(f"\nFailed on {c['path']}:{c['line']}: {e}", file=sys.stderr)
-            print(f"Progress saved to {state_path}; re-run to resume.", file=sys.stderr)
+            print(
+                f"Progress saved to {state_path}; re-run to resume.",
+                file=sys.stderr,
+            )
             save_state(state_path, state)
             sys.exit(1)
 
         state["posted"].append(key_of(c))
         save_state(state_path, state)
-        print(f"[{i + 1}/{len(pending)}] {c['path']}:{c['line']} -> {res.get('html_url', 'posted')}")
+        print(
+            f"[{i + 1}/{len(pending)}] {c['path']}:{c['line']} -> {res.get('html_url', 'posted')}"
+        )
 
         if i < len(pending) - 1:
             gap = random.randint(args.min_gap, args.max_gap)

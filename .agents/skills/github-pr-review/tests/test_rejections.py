@@ -5,8 +5,6 @@ GitHub has no record of it. Observed on the PR #2373 re-review: three findings t
 user had already rejected came back.
 """
 
-import json
-
 import pytest
 import rejections
 import verify_findings as vf
@@ -62,6 +60,7 @@ def test_entries_carry_a_timestamp():
 
 # ------------------------------------------------- suppression on re-review
 
+
 def write(tmp_path, rel, text):
     p = tmp_path / rel
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -70,8 +69,14 @@ def write(tmp_path, rel, text):
 
 
 def finding(**kw):
-    base = {"path": "src/a.py", "line": 2, "what": "x", "comment": "something",
-            "verify_steps": "read line 2", "window": "   2: two"}
+    base = {
+        "path": "src/a.py",
+        "line": 2,
+        "what": "x",
+        "comment": "something",
+        "verify_steps": "read line 2",
+        "window": "   2: two",
+    }
     base.update(kw)
     return base
 
@@ -87,8 +92,12 @@ def test_a_cut_comment_does_not_come_back(tmp_path):
 def test_a_cut_comment_blocks_nearby_lines_too(tmp_path):
     write(tmp_path, "src/a.py", "\n".join(f"l{i}" for i in range(10)))
     prior = vf.rejected_as_exclusions([c(line=2)])
-    v, _, sup = vf.verify([finding(line=4, window="   4: l3")],
-                          str(tmp_path), {"src/a.py": {4}}, prior)
+    v, _, sup = vf.verify(
+        [finding(line=4, window="   4: l3")],
+        str(tmp_path),
+        {"src/a.py": {4}},
+        prior,
+    )
     assert not v and sup
 
 
@@ -101,15 +110,22 @@ def test_a_rejection_never_expires_as_outdated(tmp_path):
 
 def test_unrelated_finding_survives_the_ledger(tmp_path):
     write(tmp_path, "src/a.py", "\n".join(f"l{i}" for i in range(30)))
-    prior = vf.rejected_as_exclusions([c(line=2, comment="licence header truncated")])
-    f = finding(line=25, what="ipv4_enabled is true on the database",
-                window="  25: l24")
+    prior = vf.rejected_as_exclusions(
+        [c(line=2, comment="licence header truncated")]
+    )
+    f = finding(
+        line=25, what="ipv4_enabled is true on the database", window="  25: l24"
+    )
     v, _, sup = vf.verify([f], str(tmp_path), {"src/a.py": {25}}, prior)
     assert len(v) == 1 and not sup
 
 
 def test_empty_ledger_suppresses_nothing(tmp_path):
     write(tmp_path, "src/a.py", "one\ntwo\n")
-    v, _, sup = vf.verify([finding()], str(tmp_path), {"src/a.py": {2}},
-                          vf.rejected_as_exclusions([]))
+    v, _, sup = vf.verify(
+        [finding()],
+        str(tmp_path),
+        {"src/a.py": {2}},
+        vf.rejected_as_exclusions([]),
+    )
     assert len(v) == 1 and not sup

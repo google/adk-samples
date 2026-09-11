@@ -28,9 +28,15 @@ from pathlib import Path
 
 
 def ledger_dir():
-    return Path(os.environ.get(
-        "GH_PR_REVIEW_STATE",
-        Path.home() / ".local" / "state" / "github-pr-review")) / "rejected"
+    return (
+        Path(
+            os.environ.get(
+                "GH_PR_REVIEW_STATE",
+                Path.home() / ".local" / "state" / "github-pr-review",
+            )
+        )
+        / "rejected"
+    )
 
 
 def ledger_path(repo, pr):
@@ -58,12 +64,17 @@ def record(repo, pr, rejected):
         key = (r.get("path"), r.get("line"), r.get("comment"))
         if key in seen:
             continue
-        existing.append({
-            "path": r.get("path"), "line": r.get("line"),
-            "comment": r.get("comment") or r.get("body") or "",
-            "what": r.get("what", ""),
-            "rejected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        })
+        existing.append(
+            {
+                "path": r.get("path"),
+                "line": r.get("line"),
+                "comment": r.get("comment") or r.get("body") or "",
+                "what": r.get("what", ""),
+                "rejected_at": time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                ),
+            }
+        )
         seen.add(key)
         added += 1
     json.dump(existing, open(p, "w"), indent=1)
@@ -71,7 +82,11 @@ def record(repo, pr, rejected):
 
 
 def _key(c):
-    return (c.get("path"), c.get("line"), (c.get("comment") or c.get("body") or ""))
+    return (
+        c.get("path"),
+        c.get("line"),
+        (c.get("comment") or c.get("body") or ""),
+    )
 
 
 def main():
@@ -81,7 +96,9 @@ def main():
     ap.add_argument("--record", action="store_true")
     ap.add_argument("--show", action="store_true")
     ap.add_argument("--candidates", help="everything that was drafted")
-    ap.add_argument("--approved", help="what the user approved; the rest is rejected")
+    ap.add_argument(
+        "--approved", help="what the user approved; the rest is rejected"
+    )
     args = ap.parse_args()
 
     if args.show or not args.record:
@@ -108,8 +125,10 @@ def main():
     added, path = record(args.repo, args.pr, rejected)
     print(f"recorded {added} rejection(s) for {args.repo}#{args.pr}")
     for r in rejected:
-        print(f"  {r.get('path')}:{r.get('line')}  "
-              f"{(r.get('comment') or r.get('body') or '')[:70]}")
+        print(
+            f"  {r.get('path')}:{r.get('line')}  "
+            f"{(r.get('comment') or r.get('body') or '')[:70]}"
+        )
     print(f"-> {path}")
 
 

@@ -33,7 +33,10 @@ import sys
 # --- what never earns a review comment -------------------------------------
 # (pattern, reason) -- matched against the full path, case-insensitively.
 SKIP_PATTERNS = [
-    (r"(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|go\.sum|uv\.lock)$", "lockfile"),
+    (
+        r"(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|poetry\.lock|Cargo\.lock|Gemfile\.lock|composer\.lock|go\.sum|uv\.lock)$",
+        "lockfile",
+    ),
     (r"(^|/)(vendor|node_modules|third_party|external)/", "vendored"),
     (r"(^|/)(dist|build|out|target)/", "build output"),
     (r"(^|/)__snapshots__/", "snapshot"),
@@ -43,13 +46,27 @@ SKIP_PATTERNS = [
     (r"_pb2(_grpc)?\.pyi?$", "generated protobuf"),
     (r"\.generated\.[a-z]+$", "generated"),
     (r"(^|/)generated/", "generated"),
-    (r"\.(png|jpe?g|gif|svg|ico|webp|pdf|woff2?|ttf|eot|zip|tar|gz|jar|so|dylib|dll)$", "binary asset"),
+    (
+        r"\.(png|jpe?g|gif|svg|ico|webp|pdf|woff2?|ttf|eot|zip|tar|gz|jar|so|dylib|dll)$",
+        "binary asset",
+    ),
     (r"(^|/)testdata/", "test fixture"),
     (r"(^|/)fixtures?/", "test fixture"),
 ]
 
 # A data file this large is a fixture dump whatever it is named.
-BULK_DATA_EXT = {".json", ".csv", ".tsv", ".yaml", ".yml", ".xml", ".sql", ".txt", ".ndjson", ".jsonl"}
+BULK_DATA_EXT = {
+    ".json",
+    ".csv",
+    ".tsv",
+    ".yaml",
+    ".yml",
+    ".xml",
+    ".sql",
+    ".txt",
+    ".ndjson",
+    ".jsonl",
+}
 BULK_DATA_CHURN = 500
 
 # Comment budget by reviewable churn: (max_churn, low, high). Mirrors SKILL.md.
@@ -74,7 +91,9 @@ AVG_POST_GAP_SECONDS = 15
 
 
 def gh_api(path):
-    proc = subprocess.run(["gh", "api", path], capture_output=True, text=True)
+    proc = subprocess.run(
+        ["gh", "api", path], capture_output=True, text=True, check=False
+    )
     if proc.returncode != 0:
         raise SystemExit(f"gh api {path} failed: {proc.stderr.strip()}")
     return json.loads(proc.stdout) if proc.stdout.strip() else {}
@@ -83,7 +102,9 @@ def gh_api(path):
 def fetch_files(repo, pr):
     files, page = [], 1
     while True:
-        batch = gh_api(f"/repos/{repo}/pulls/{pr}/files?per_page=100&page={page}")
+        batch = gh_api(
+            f"/repos/{repo}/pulls/{pr}/files?per_page=100&page={page}"
+        )
         if not batch:
             break
         files.extend(batch)
@@ -108,7 +129,11 @@ def skip_reason(path, churn, *, include_tests=True, include_web=True):
         return "tests excluded"
     if not include_web and WEB_DIR_RE.search(path):
         return "web excluded"
-    ext = path[path.rfind("."):].lower() if "." in path.rsplit("/", 1)[-1] else ""
+    ext = (
+        path[path.rfind(".") :].lower()
+        if "." in path.rsplit("/", 1)[-1]
+        else ""
+    )
     if ext in BULK_DATA_EXT and churn >= BULK_DATA_CHURN:
         return "bulk data"
     return None
@@ -131,10 +156,23 @@ def lane_count(churn, file_count):
 
 # Directory components that describe layout rather than subject matter, so a test
 # and the thing it tests resolve to the same affinity key.
-STRUCTURAL_DIRS = {"tests", "test", "__tests__", "spec", "specs", "src", "lib", "scripts"}
+STRUCTURAL_DIRS = {
+    "tests",
+    "test",
+    "__tests__",
+    "spec",
+    "specs",
+    "src",
+    "lib",
+    "scripts",
+}
 TEST_AFFIXES = [
-    (r"^test_", ""), (r"_test$", ""), (r"^Test", ""),
-    (r"\.test$", ""), (r"\.spec$", ""), (r"_spec$", ""),
+    (r"^test_", ""),
+    (r"_test$", ""),
+    (r"^Test", ""),
+    (r"\.test$", ""),
+    (r"\.spec$", ""),
+    (r"_spec$", ""),
 ]
 
 
@@ -151,7 +189,7 @@ def affinity_key(path):
     for pattern, repl in TEST_AFFIXES:
         stem = re.sub(pattern, repl, stem)
     dirs = [d for d in parts[:-1] if d.lower() not in STRUCTURAL_DIRS]
-    return "/".join(dirs + [stem.lower()])
+    return "/".join([*dirs, stem.lower()])
 
 
 def pack(files, n):
@@ -178,7 +216,9 @@ def pack(files, n):
     for unit in sorted(units, key=lambda u: -u["churn"]):
         lane = min(lanes, key=lambda x: x["churn"])
         # Heaviest file first, so the lane's prompt leads with the substantive work.
-        lane["files"].extend(f["path"] for f in sorted(unit["files"], key=lambda f: -f["churn"]))
+        lane["files"].extend(
+            f["path"] for f in sorted(unit["files"], key=lambda f: -f["churn"])
+        )
         lane["churn"] += unit["churn"]
     return [x for x in lanes if x["files"]]
 
@@ -190,10 +230,16 @@ def build_plan(repo, pr, *, include_tests=True, include_web=True):
     reviewable, skipped = [], []
     for f in raw:
         churn = f.get("additions", 0) + f.get("deletions", 0)
-        entry = {"path": f["filename"], "churn": churn, "status": f.get("status")}
+        entry = {
+            "path": f["filename"],
+            "churn": churn,
+            "status": f.get("status"),
+        }
         reason = skip_reason(
-            f["filename"], churn,
-            include_tests=include_tests, include_web=include_web,
+            f["filename"],
+            churn,
+            include_tests=include_tests,
+            include_web=include_web,
         )
         if reason:
             skipped.append({**entry, "reason": reason})
@@ -217,7 +263,11 @@ def build_plan(repo, pr, *, include_tests=True, include_web=True):
         "title": meta.get("title"),
         "head_sha": meta.get("head", {}).get("sha"),
         "state": meta.get("state"),
-        "churn": {"total": r_churn + s_churn, "reviewable": r_churn, "skipped": s_churn},
+        "churn": {
+            "total": r_churn + s_churn,
+            "reviewable": r_churn,
+            "skipped": s_churn,
+        },
         "budget": {"low": low, "high": high, "mid": (low + high) // 2},
         "fan_out": n > 1,
         "lanes": pack(reviewable, n),
@@ -229,10 +279,12 @@ def build_plan(repo, pr, *, include_tests=True, include_web=True):
 def render(plan):
     out = []
     churn = plan["churn"]
-    n_files = sum(len(l["files"]) for l in plan["lanes"])
+    n_files = sum(len(lane["files"]) for lane in plan["lanes"])
     out.append(f"PR #{plan['pr']} - {plan['title']}")
-    out.append(f"  {churn['total']} changed lines; {churn['reviewable']} reviewable "
-               f"across {n_files} file(s)")
+    out.append(
+        f"  {churn['total']} changed lines; {churn['reviewable']} reviewable "
+        f"across {n_files} file(s)"
+    )
 
     if plan["skipped"]:
         by_reason = {}
@@ -240,18 +292,26 @@ def render(plan):
             by_reason.setdefault(f["reason"], 0)
             by_reason[f["reason"]] += 1
         summary = ", ".join(f"{v} {k}" for k, v in sorted(by_reason.items()))
-        out.append(f"  skipped {len(plan['skipped'])} file(s) / {churn['skipped']} lines: {summary}")
+        out.append(
+            f"  skipped {len(plan['skipped'])} file(s) / {churn['skipped']} lines: {summary}"
+        )
 
     b = plan["budget"]
-    out.append(f"  budget: {b['low']}-{b['high']} comments "
-               f"(post run ~{plan['post_eta_seconds'] // 60} min)")
+    out.append(
+        f"  budget: {b['low']}-{b['high']} comments "
+        f"(post run ~{plan['post_eta_seconds'] // 60} min)"
+    )
     out.append("")
 
     if plan["fan_out"]:
-        out.append(f"Fan out: {len(plan['lanes'])} file lanes + 1 cross-cutting lane")
+        out.append(
+            f"Fan out: {len(plan['lanes'])} file lanes + 1 cross-cutting lane"
+        )
         for lane in plan["lanes"]:
-            out.append(f"  lane {lane['id']}  {lane['churn']:>5} lines  "
-                       f"{len(lane['files'])} file(s)")
+            out.append(
+                f"  lane {lane['id']}  {lane['churn']:>5} lines  "
+                f"{len(lane['files'])} file(s)"
+            )
             for p in lane["files"]:
                 out.append(f"           {p}")
     else:
@@ -268,20 +328,30 @@ def main():
     ap.add_argument("--repo", required=True, help="owner/name")
     ap.add_argument("--pr", required=True, type=int)
     ap.add_argument("--json", action="store_true", help="emit the plan as JSON")
-    ap.add_argument("--no-tests", action="store_true",
-                    help="exclude test directories from review scope")
-    ap.add_argument("--no-web", action="store_true",
-                    help="exclude web/frontend directories from review scope")
+    ap.add_argument(
+        "--no-tests",
+        action="store_true",
+        help="exclude test directories from review scope",
+    )
+    ap.add_argument(
+        "--no-web",
+        action="store_true",
+        help="exclude web/frontend directories from review scope",
+    )
     args = ap.parse_args()
 
     plan = build_plan(
-        args.repo, args.pr,
-        include_tests=not args.no_tests, include_web=not args.no_web,
+        args.repo,
+        args.pr,
+        include_tests=not args.no_tests,
+        include_web=not args.no_web,
     )
     if plan["state"] != "open":
         print(f"warning: PR #{args.pr} is {plan['state']}", file=sys.stderr)
     if not plan["lanes"]:
-        sys.exit("Nothing reviewable in this PR -- every changed file was skipped.")
+        sys.exit(
+            "Nothing reviewable in this PR -- every changed file was skipped."
+        )
 
     print(json.dumps(plan, indent=2) if args.json else render(plan))
 

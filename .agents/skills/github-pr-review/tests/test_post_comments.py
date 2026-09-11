@@ -1,18 +1,8 @@
 """The posting gate. Every failure here reaches a colleague's PR."""
 
-import json
-
 import post_comments as pc
 
-
-PATCH = (
-    "@@ -1,3 +1,5 @@\n"
-    " ctx1\n"
-    "+added2\n"
-    "+added3\n"
-    " ctx4\n"
-    "-removed\n"
-)
+PATCH = "@@ -1,3 +1,5 @@\n ctx1\n+added2\n+added3\n ctx4\n-removed\n"
 
 
 def test_commentable_lines_are_added_plus_context():
@@ -23,7 +13,7 @@ def test_commentable_lines_are_added_plus_context():
 def test_deleted_lines_are_left_side_only():
     """A deleted line is addressable, but only with side=LEFT."""
     right, left = pc.commentable_lines(PATCH)
-    assert 3 in left          # the removed line, old numbering
+    assert 3 in left  # the removed line, old numbering
     assert 5 not in right
 
 
@@ -39,7 +29,9 @@ def test_multi_hunk_patch_tracks_both_ranges():
 
 
 def test_no_newline_marker_does_not_advance_numbering():
-    right, _ = pc.commentable_lines("@@ -1,1 +1,1 @@\n+a\n\\ No newline at end of file\n")
+    right, _ = pc.commentable_lines(
+        "@@ -1,1 +1,1 @@\n+a\n\\ No newline at end of file\n"
+    )
     assert right == {1}
 
 

@@ -383,12 +383,12 @@ Then checkpoint (see [Progress reporting](#progress-reporting)).
 ```bash
 python3 "$SKILL_DIR/scripts/verify_findings.py" \
   --findings /tmp/pr-<N>-raw.json --repo-root <repo_path> \
-  --repo <owner/name> --pr <N> \
+  --repo <owner/name> --pr <N> --head-sha <headRefOid from Step 1> \
   --existing /tmp/pr-<N>-existing.json \
   --out /tmp/pr-<N>-verified.json
 ```
 
-It does four things that were previously prose, done by hand, and sometimes skipped:
+It does five things that were previously prose, done by hand, and sometimes skipped:
 
 1. **Window vs file.** Each finding's quoted source is diffed against the real file.
    A mismatch means the lane fabricated it — **rejected**, not downgraded.
@@ -398,6 +398,13 @@ It does four things that were previously prose, done by hand, and sometimes skip
 4. **Duplicate suppression.** Drops anything already raised on the PR (see Step 1)
    **and anything the user cut on a previous review** — the rejection ledger loads
    automatically from `--repo`/`--pr`. `--no-ledger` disables it.
+5. **Already-red suppression.** With `--head-sha`, drops a **CI-FAIL** finding whose
+   enforcing workflow is already failing on that commit, matched from the workflow
+   file the finding cites in `evidence`. The author is looking at that red check
+   already, and its message is more precise than ours. Advisory findings are never
+   suppressed this way — nothing is failing for them, so the comment is the only way
+   the author hears it. An unreadable status suppresses nothing. `--no-ci-status`
+   disables it.
 
 It also emits a fact-anchoring lint and a clustering hint for grouping. Both are
 advisory; read them, don't obey them blindly.

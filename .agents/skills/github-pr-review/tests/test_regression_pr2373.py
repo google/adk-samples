@@ -19,7 +19,8 @@ import pytest
 import verify_findings as vf
 
 FIXTURE = json.loads(
-    (Path(__file__).parent / "fixtures" / "pr2373_outcomes.json").read_text())
+    (Path(__file__).parent / "fixtures" / "pr2373_outcomes.json").read_text()
+)
 COMMENTS = FIXTURE["comments"]
 CUT = [c for c in COMMENTS if c["verdict"] == "cut"]
 KEPT = [c for c in COMMENTS if c["verdict"] == "keep"]

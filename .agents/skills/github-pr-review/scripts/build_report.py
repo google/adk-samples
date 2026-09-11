@@ -32,7 +32,7 @@ import os
 import re
 import sys
 
-TABLE_CODE_MAX = 68          # chars of source shown in a table cell
+TABLE_CODE_MAX = 68  # chars of source shown in a table cell
 SEV_SHORT = {"critical": "crit", "no_critical": "no_crit"}
 
 
@@ -42,7 +42,9 @@ def common_prefix(paths):
         return ""
     parts = [p.split("/")[:-1] for p in paths]
     shared = []
-    for chunk in zip(*parts):
+    # strict=False is the point: paths of different depth stop at the
+    # shortest shared prefix, which is exactly the common directory.
+    for chunk in zip(*parts, strict=False):
         if len(set(chunk)) != 1:
             break
         shared.append(chunk[0])
@@ -54,7 +56,7 @@ def cell(text):
     return (
         str(text)
         .replace("\\", "\\\\")
-        .replace("|", "\\|")      # an unescaped pipe silently eats the row
+        .replace("|", "\\|")  # an unescaped pipe silently eats the row
         .replace("\n", " ")
         .strip()
     )
@@ -69,13 +71,17 @@ def anchor_line(window, line):
         if m and int(m.group(1)) == line:
             return m.group(2).strip()
     # No numbered match — fall back to the longest non-empty line.
-    lines = [l.strip() for l in str(window).split("\n") if l.strip()]
+    lines = [ln.strip() for ln in str(window).split("\n") if ln.strip()]
     return max(lines, key=len) if lines else ""
 
 
 def truncate(code):
     code = code.strip()
-    return code if len(code) <= TABLE_CODE_MAX else code[: TABLE_CODE_MAX - 1] + "…"
+    return (
+        code
+        if len(code) <= TABLE_CODE_MAX
+        else code[: TABLE_CODE_MAX - 1] + "…"
+    )
 
 
 def code_block_cell(text):
@@ -87,14 +93,15 @@ def code_block_cell(text):
     if not text:
         return ""
     esc = (
-        str(text).rstrip()
+        str(text)
+        .rstrip()
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
-        .replace("|", "&#124;")     # pipe would split the cell
-        .replace("`", "&#96;")      # source containing ``` would open a fence
+        .replace("|", "&#124;")  # pipe would split the cell
+        .replace("`", "&#96;")  # source containing ``` would open a fence
     )
-    lines = [l.replace(" ", "&nbsp;") for l in esc.split("\n")]
+    lines = [ln.replace(" ", "&nbsp;") for ln in esc.split("\n")]
     return "<code>" + "<br>".join(lines) + "</code>"
 
 
@@ -103,10 +110,16 @@ def group_key(c):
 
 
 def render_table(rows, prefix, start_index):
-    out = ["| # | file | line | sev | code at that line | comment |",
-           "|---|---|---|---|---|---|"]
+    out = [
+        "| # | file | line | sev | code at that line | comment |",
+        "|---|---|---|---|---|---|",
+    ]
     for i, c in enumerate(rows, start_index):
-        short = c["path"][len(prefix):] if c["path"].startswith(prefix) else c["path"]
+        short = (
+            c["path"][len(prefix) :]
+            if c["path"].startswith(prefix)
+            else c["path"]
+        )
         code = truncate(anchor_line(c.get("window", ""), c["line"]))
         out.append(
             f"| {i} | `{cell(short)}` | {c['line']} "
@@ -120,17 +133,23 @@ def render_table(rows, prefix, start_index):
 
 def render_detail_table(rows, prefix, start_index):
     """Second table: the full window and how to check it. Still a table."""
-    out = ["| # | location | code window | to check | underlying finding |",
-           "|---|---|---|---|---|"]
+    out = [
+        "| # | location | code window | to check | underlying finding |",
+        "|---|---|---|---|---|",
+    ]
     for i, c in enumerate(rows, start_index):
-        short = c["path"][len(prefix):] if c["path"].startswith(prefix) else c["path"]
+        short = (
+            c["path"][len(prefix) :]
+            if c["path"].startswith(prefix)
+            else c["path"]
+        )
         finding = cell(c.get("what", ""))
         if c.get("unchecked"):
             finding += f" **Not checked:** {cell(c['unchecked'])}"
         out.append(
             f"| {i} | `{cell(short)}:{c['line']}` "
-            f"| {code_block_cell(c.get('window',''))} "
-            f"| {cell(c.get('verify_steps',''))} "
+            f"| {code_block_cell(c.get('window', ''))} "
+            f"| {cell(c.get('verify_steps', ''))} "
             f"| {finding} |"
         )
     return out
@@ -138,6 +157,7 @@ def render_detail_table(rows, prefix, start_index):
 
 def counts(rows):
     from collections import Counter
+
     return Counter(group_key(c) for c in rows)
 
 
@@ -147,10 +167,17 @@ def main():
     ap.add_argument("--repo", required=True)
     ap.add_argument("--pr", required=True)
     ap.add_argument("--out-md", required=True)
-    ap.add_argument("--out-csv", default=None,
-                    help="optional; same rows as the markdown, for spreadsheet triage")
-    ap.add_argument("--dropped", type=int, default=0,
-                    help="how many findings the gate discarded")
+    ap.add_argument(
+        "--out-csv",
+        default=None,
+        help="optional; same rows as the markdown, for spreadsheet triage",
+    )
+    ap.add_argument(
+        "--dropped",
+        type=int,
+        default=0,
+        help="how many findings the gate discarded",
+    )
     ap.add_argument("--title", default="")
     args = ap.parse_args()
 
@@ -179,25 +206,33 @@ def main():
     if args.title:
         m.append(f"**PR** {args.title}  ")
     n_crit = sum(1 for c in inline if c.get("severity") == "critical")
-    m.append(f"**Comments** {len(inline)} ({n_crit} critical)"
-             + (f", plus {len(unanchorable)} un-anchorable" if unanchorable else "")
-             + "  ")
+    m.append(
+        f"**Comments** {len(inline)} ({n_crit} critical)"
+        + (f", plus {len(unanchorable)} un-anchorable" if unanchorable else "")
+        + "  "
+    )
     if args.dropped:
-        m.append(f"**Gated out** {args.dropped} findings, not cheaply verifiable  ")
+        m.append(
+            f"**Gated out** {args.dropped} findings, not cheaply verifiable  "
+        )
     m.append("**Status** nothing posted")
     m.append("")
     if prefix:
         m.append(f"Paths below are relative to `{prefix}`")
         m.append("")
-    m.append("Every row carries the source line it is anchored to. If you cannot "
-             "settle a row from the table alone, that is a defect in the comment, "
-             "not in you — say so and it gets cut.")
+    m.append(
+        "Every row carries the source line it is anchored to. If you cannot "
+        "settle a row from the table alone, that is a defect in the comment, "
+        "not in you — say so and it gets cut."
+    )
     m.append("")
     if unanchorable:
         nfail = sum(1 for c in unanchorable if c.get("ci") == "fail")
-        m.append(f"The {len(unanchorable)} un-anchorable "
-                 f"({nfail} CI-failing) can only go up as one top-level comment — "
-                 "see the last table.")
+        m.append(
+            f"The {len(unanchorable)} un-anchorable "
+            f"({nfail} CI-failing) can only go up as one top-level comment — "
+            "see the last table."
+        )
         m.append("")
     m.append("---")
     m.append("")
@@ -211,19 +246,29 @@ def main():
     if unanchorable:
         m.append("## Un-anchorable — one top-level comment")
         m.append("")
-        m.append("Real findings whose lines sit outside every diff hunk, so GitHub "
-                 "cannot take them as inline comments. CI-failing first. Do **not** "
-                 "pin these to a nearby line to force them through.")
+        m.append(
+            "Real findings whose lines sit outside every diff hunk, so GitHub "
+            "cannot take them as inline comments. CI-failing first. Do **not** "
+            "pin these to a nearby line to force them through."
+        )
         m.append("")
-        ua = sorted(unanchorable,
-                    key=lambda c: (c.get("ci") != "fail", c["path"], c["line"]))
+        ua = sorted(
+            unanchorable,
+            key=lambda c: (c.get("ci") != "fail", c["path"], c["line"]),
+        )
         m.append("| # | file | line | CI | rule | finding |")
         m.append("|---|---|---|---|---|---|")
         for i, c in enumerate(ua, 1):
-            short = c["path"][len(prefix):] if c["path"].startswith(prefix) else c["path"]
+            short = (
+                c["path"][len(prefix) :]
+                if c["path"].startswith(prefix)
+                else c["path"]
+            )
             ci = "**FAIL**" if c.get("ci") == "fail" else "advisory"
-            m.append(f"| {i} | `{cell(short)}` | {c['line']} | {ci} "
-                     f"| {cell(c.get('rule',''))} | {cell(c.get('what') or c.get('comment',''))} |")
+            m.append(
+                f"| {i} | `{cell(short)}` | {c['line']} | {ci} "
+                f"| {cell(c.get('rule', ''))} | {cell(c.get('what') or c.get('comment', ''))} |"
+            )
         m.append("")
 
     m.append("---")
@@ -236,33 +281,57 @@ def main():
         m += render_detail_table(inline, prefix, 1)
         m.append("")
 
-    os.makedirs(os.path.dirname(os.path.expanduser(args.out_md)) or ".", exist_ok=True)
+    os.makedirs(
+        os.path.dirname(os.path.expanduser(args.out_md)) or ".", exist_ok=True
+    )
     with open(os.path.expanduser(args.out_md), "w") as fh:
         fh.write("\n".join(m) + "\n")
 
     # ---------------- csv (opt-in) ----------------
     if args.out_csv:
         os.makedirs(
-            os.path.dirname(os.path.expanduser(args.out_csv)) or ".", exist_ok=True)
+            os.path.dirname(os.path.expanduser(args.out_csv)) or ".",
+            exist_ok=True,
+        )
         with open(os.path.expanduser(args.out_csv), "w", newline="") as fh:
             wr = csv.writer(fh, quoting=csv.QUOTE_ALL)
-            wr.writerow(["path", "line", "severity", "anchorable", "ci", "rule",
-                         "comment", "code_at_line", "verify_steps", "code_window"])
+            wr.writerow(
+                [
+                    "path",
+                    "line",
+                    "severity",
+                    "anchorable",
+                    "ci",
+                    "rule",
+                    "comment",
+                    "code_at_line",
+                    "verify_steps",
+                    "code_window",
+                ]
+            )
             for c in inline + unanchorable:
-                wr.writerow([
-                    c["path"], c["line"], c.get("severity", ""),
-                    "no" if c.get("anchorable") is False else "yes",
-                    c.get("ci", ""), c.get("rule", ""),
-                    c["comment"],
-                    anchor_line(c.get("window", ""), c["line"]),
-                    c.get("verify_steps", ""), c.get("window", ""),
-                ])
+                wr.writerow(
+                    [
+                        c["path"],
+                        c["line"],
+                        c.get("severity", ""),
+                        "no" if c.get("anchorable") is False else "yes",
+                        c.get("ci", ""),
+                        c.get("rule", ""),
+                        c["comment"],
+                        anchor_line(c.get("window", ""), c["line"]),
+                        c.get("verify_steps", ""),
+                        c.get("window", ""),
+                    ]
+                )
 
     print(f"markdown -> {args.out_md}")
     if args.out_csv:
         print(f"csv      -> {args.out_csv}")
-    print(f"{len(inline)} comments"
-          + (f", {len(unanchorable)} un-anchorable" if unanchorable else ""))
+    print(
+        f"{len(inline)} comments"
+        + (f", {len(unanchorable)} un-anchorable" if unanchorable else "")
+    )
 
 
 if __name__ == "__main__":

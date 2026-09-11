@@ -9,10 +9,15 @@ def f(path, churn, status="added"):
 
 # ------------------------------------------------- affinity packing
 
+
 def test_source_and_its_test_land_in_the_same_lane():
     """Split across lanes, neither reviewer can tell if the test covers the code."""
-    files = [f("tools/validate.py", 100), f("tools/tests/test_validate.py", 100),
-             f("other/a.py", 100), f("other/b.py", 100)]
+    files = [
+        f("tools/validate.py", 100),
+        f("tools/tests/test_validate.py", 100),
+        f("other/a.py", 100),
+        f("other/b.py", 100),
+    ]
     lanes = pr.pack(files, 2)
     for lane in lanes:
         has_src = "tools/validate.py" in lane["files"]
@@ -38,24 +43,29 @@ def test_affinity_key_keeps_unrelated_files_apart():
 def test_lanes_stay_balanced_despite_grouping():
     files = [f(f"m{i}.py", 100) for i in range(10)]
     lanes = pr.pack(files, 5)
-    churns = [l["churn"] for l in lanes]
+    churns = [lane["churn"] for lane in lanes]
     assert max(churns) - min(churns) <= 100
 
 
 def test_oversized_group_is_split_rather_than_wrecking_balance():
-    files = [f("big.py", 5000), f("tests/test_big.py", 5000)] + \
-            [f(f"s{i}.py", 10) for i in range(4)]
+    files = [f("big.py", 5000), f("tests/test_big.py", 5000)] + [
+        f(f"s{i}.py", 10) for i in range(4)
+    ]
     lanes = pr.pack(files, 3)
-    assert len([l for l in lanes if l["files"]]) >= 2
+    assert len([lane for lane in lanes if lane["files"]]) >= 2
 
 
 # ------------------------------------------------------ skip rules
 
+
 def test_pure_rename_is_skipped():
     """65 of 123 files on PR #2373. Byte-identical moves have nothing to review."""
     plan_files = [f("a.py", 0, "renamed"), f("b.py", 10, "added")]
-    reviewable = [x for x in plan_files
-                  if not (x["status"] == "renamed" and x["churn"] == 0)]
+    reviewable = [
+        x
+        for x in plan_files
+        if not (x["status"] == "renamed" and x["churn"] == 0)
+    ]
     assert [x["path"] for x in reviewable] == ["b.py"]
 
 
@@ -65,8 +75,15 @@ def test_renamed_with_edits_is_still_reviewed():
 
 
 def test_lockfiles_and_generated_are_skipped():
-    for path in ("pnpm-lock.yaml", "go.sum", "vendor/x.go", "dist/a.js",
-                 "x_pb2.py", "api.png", "__snapshots__/a.snap"):
+    for path in (
+        "pnpm-lock.yaml",
+        "go.sum",
+        "vendor/x.go",
+        "dist/a.js",
+        "x_pb2.py",
+        "api.png",
+        "__snapshots__/a.snap",
+    ):
         assert pr.skip_reason(path, 10) is not None, path
 
 
@@ -80,12 +97,18 @@ def test_bulk_data_skipped_only_when_large():
 
 
 def test_scope_flags_exclude_tests_and_web():
-    assert pr.skip_reason("a/tests/x.py", 10, include_tests=False) == "tests excluded"
+    assert (
+        pr.skip_reason("a/tests/x.py", 10, include_tests=False)
+        == "tests excluded"
+    )
     assert pr.skip_reason("a/tests/x.py", 10, include_tests=True) is None
-    assert pr.skip_reason("web/src/a.ts", 10, include_web=False) == "web excluded"
+    assert (
+        pr.skip_reason("web/src/a.ts", 10, include_web=False) == "web excluded"
+    )
 
 
 # --------------------------------------------------------- budget
+
 
 def test_budget_uses_reviewable_churn_not_total():
     """A PR that is 4,800 lines of lockfile plus 2 real lines is a small PR."""
@@ -95,10 +118,11 @@ def test_budget_uses_reviewable_churn_not_total():
 
 
 def test_budget_never_exceeds_twenty():
-    assert pr.budget_for(10 ** 6)[1] == 20
+    assert pr.budget_for(10**6)[1] == 20
 
 
 # ----------------------------------------------------- lane count
+
 
 def test_small_pr_does_not_fan_out():
     assert pr.lane_count(300, 5) == 1
