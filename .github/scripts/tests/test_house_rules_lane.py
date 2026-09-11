@@ -323,3 +323,21 @@ def test_an_all_recipes_failed_run_is_not_reported_as_clean(tmp_path, capsys):
     # Sanity: the healthy case exits 0 and does find the mixed-PR nit.
     assert rc.returncode == 0, rc.stderr
     assert any(f["_rule"] == "H42" for f in json.loads(out.read_text()))
+
+
+def test_a_new_recipe_with_no_manifest_yet_is_still_reviewed(tmp_path):
+    """Walking up to a manifest misses the case most in need of review: a NEW
+    recipe whose manifest has not been written. Found on live PR 2627, which
+    adds contrib/python/software-bug-assistant with a Dockerfile and a README
+    and no manifest — the lane reported nothing to do."""
+    (tmp_path / "contrib/python/new-thing").mkdir(parents=True)
+    (tmp_path / "contrib/python/new-thing/Dockerfile").write_text("FROM x\n")
+    roots = lane.recipe_roots(["contrib/python/new-thing/Dockerfile"], tmp_path)
+    assert roots == ["contrib/python/new-thing"]
+
+
+def test_a_file_beside_the_recipes_is_still_not_a_recipe(tmp_path):
+    """The fallback must not undo the lookahead: three segments is a file
+    sitting next to the recipes, not a recipe."""
+    assert lane.recipe_roots(["contrib/python/README.md"], tmp_path) == []
+    assert lane.recipe_roots(["core/AGENTS.md"], tmp_path) == []

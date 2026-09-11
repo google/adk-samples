@@ -119,11 +119,26 @@ def recipe_roots(
         # Walk up from the file to the nearest directory holding a manifest,
         # stopping before the area directory itself.
         current = Path(path).parent
+        found = False
         while len(current.parts) >= 2:
             if (repo_root / current / "manifest.yaml").is_file():
                 roots.add(current.as_posix())
+                found = True
                 break
             current = current.parent
+        if found:
+            continue
+        # No manifest anywhere above it. That is not "not a recipe" — it is
+        # most likely a NEW recipe whose manifest has not been written yet,
+        # which is the case most in need of review. Found on a live PR that
+        # added contrib/python/software-bug-assistant with a Dockerfile and a
+        # README and no manifest: the lane reported nothing to do.
+        #
+        # Requires four segments, so a file sitting BESIDE the recipes
+        # (contrib/python/README.md) still resolves to nothing.
+        parts = path.split("/")
+        if len(parts) > 3:
+            roots.add("/".join(parts[:3]))
     return sorted(roots)
 
 

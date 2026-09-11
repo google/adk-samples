@@ -1046,3 +1046,23 @@ def test_the_budget_step_resolves_the_head_sha_for_every_trigger(core):
             f"{step_id} reads the event payload, which is empty on "
             "issue_comment"
         )
+
+
+def test_an_exempt_lane_is_not_skipped_by_another_lanes_review():
+    """`last_reviewed_sha` comes from the BUDGETED lanes only — an exempt
+    lane's reviews are excluded so they cannot advance the round counter — so
+    testing an exempt lane against it asks whether some OTHER lane has seen
+    this commit. Found on live PR 2627, where the deterministic lane skipped
+    because Hygiene had already reviewed that commit."""
+    state = {
+        "round": 2,
+        "last_reviewed_sha": "abc123",
+        "posted_total": 1,
+        "previous_round_count": 1,
+    }
+    decision = rb.decide(state, policy(), "House Rules", 5, head_sha="abc123")
+    assert decision["skip"] is False
+    assert decision["exempt"] is True
+
+    # A budgeted lane on the same commit still skips.
+    assert rb.decide(state, policy(), "Security", 5, head_sha="abc123")["skip"]

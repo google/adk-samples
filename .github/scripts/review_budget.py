@@ -371,6 +371,22 @@ def decide(
     floor = int(policy["min_allowance"])
     narrow_after = int(policy["blocker_only_after_round"])
 
+    # Exempt FIRST. `last_reviewed_sha` is derived from the budgeted lanes
+    # only — an exempt lane's own reviews are excluded so they cannot advance
+    # the round counter — so testing an exempt lane against it asks whether
+    # some OTHER lane has seen this commit, which is not the question. Run
+    # against a real PR, the deterministic lane skipped because Hygiene had
+    # already reviewed that commit.
+    if lane in exempt:
+        return {
+            **state,
+            "lane": lane,
+            "skip": False,
+            "max_comments": 0,  # 0 means "no ceiling" for an exempt lane
+            "exempt": True,
+            "reason": "exempt from the review budget",
+        }
+
     # Nothing has moved since the last round. A re-run, a label change, a
     # comment: none of them is new code, and re-reviewing the same commit is
     # how the reviewer used to produce a second batch of comments about work
@@ -381,23 +397,13 @@ def decide(
             "lane": lane,
             "skip": True,
             "max_comments": 0,
-            "exempt": lane in exempt,
+            "exempt": False,
             "allowance": 0,
             "remaining": 0,
             "lifetime_cap": cap,
             "blocker_lanes": blockers,
             "narrow_after": narrow_after,
             "reason": f"commit {head_sha[:8]} has already been reviewed",
-        }
-
-    if lane in exempt:
-        return {
-            **state,
-            "lane": lane,
-            "skip": False,
-            "max_comments": 0,  # 0 means "no ceiling" for an exempt lane
-            "exempt": True,
-            "reason": "exempt from the review budget",
         }
 
     round_number = state["round"]
