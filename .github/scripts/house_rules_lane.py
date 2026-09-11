@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Run the deterministic house-rules checker over the recipes a PR touches.
 
 Used by .github/workflows/ai-pr-review-house-rules.yml. This is the fifth
@@ -40,7 +53,6 @@ Exit codes:
 import argparse
 import importlib.util
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -54,26 +66,64 @@ from ci_message import (
 
 CHECKER = "house_rules_lane.py"
 
-# A recipe root is <area>/<language>/<name> or skills/<vertical>/<solution>.
-# Derived from the changed paths rather than by walking the tree: a PR that
-# edits one recipe must not collect findings about the other four hundred.
-#
-# The lookahead is load-bearing. Without it `contrib/python/README.md` — a file
-# that lives BESIDE the recipes, not in one — matches as a recipe called
-# README.md, and the lane then reports a missing pyproject.toml, a missing
-# README and a missing runnability test against a path that is not a recipe.
-RECIPE_ROOT = re.compile(
-    r"^(?:(?:core|contrib)/[^/]+/[^/]+|skills/[^/]+/[^/]+)(?=/)"
+# The manifest schema comes from the BASE checkout — this file's own directory
+# — never from the tree under review.
+SCHEMA_PATH = (
+    Path(__file__).resolve().parents[1] / "schemas" / "manifest-schema.json"
 )
 
+# A PR touching more recipes than this gets the first N checked. The job has a
+# ten-minute timeout and each recipe is a git subprocess plus six walks.
+MAX_RECIPES = 40
 
-def recipe_roots(changed: list[str]) -> list[str]:
-    """Every recipe directory the PR touches, in a stable order."""
+# The areas a recipe can live in. Everything else in the repo is tooling.
+RECIPE_AREAS = ("core/", "contrib/", "skills/")
+
+
+def recipe_roots(
+    changed: list[str], repo_root: Path | None = None
+) -> list[str]:
+    """Every recipe directory the PR touches, in a stable order.
+
+    A recipe is identified by the presence of its manifest.yaml, not by
+    counting path segments. Segment-counting got this wrong in both
+    directions at once:
+
+      core/rag-agent-search/app/agent.py  ->  "core/rag-agent-search/app"
+          a real recipe's subdirectory, reported as a recipe of its own, which
+          then collects CI-FAIL comments for every required file it lacks
+      skills/store-ops/manifest.yaml      ->  nothing
+          a solution placed directly under skills/ -- which is H41's exact
+          target, so the rule could never see the thing it exists to report
+
+    Both are real paths in this repository today. Walking up to the manifest
+    answers the question actually being asked: which recipe does this file
+    belong to?
+    """
     roots = set()
-    for path in changed:
-        match = RECIPE_ROOT.match(path.strip())
-        if match:
-            roots.add(match.group(0))
+    for raw in changed:
+        path = raw.strip()
+        if not path.startswith(RECIPE_AREAS):
+            continue
+        if repo_root is None:
+            # No tree to consult. Fall back to counting segments, which is
+            # what this did before and is wrong in the two ways described
+            # above — but a caller with no checkout has nothing better, and
+            # the production caller always passes one. The trailing-slash
+            # requirement keeps `contrib/python/README.md`, a file sitting
+            # BESIDE the recipes, from parsing as a recipe named README.md.
+            parts = path.split("/")
+            if len(parts) > 3:
+                roots.add("/".join(parts[:3]))
+            continue
+        # Walk up from the file to the nearest directory holding a manifest,
+        # stopping before the area directory itself.
+        current = Path(path).parent
+        while len(current.parts) >= 2:
+            if (repo_root / current / "manifest.yaml").is_file():
+                roots.add(current.as_posix())
+                break
+            current = current.parent
     return sorted(roots)
 
 
@@ -131,7 +181,12 @@ def run_checker(module, repo_root: str, recipe: str, changed: set[str] | None):
     )
 
     name = recipe.rsplit("/", 1)[-1]
-    schema = str(Path(repo_root) / ".github/schemas/manifest-schema.json")
+    # The BASE schema, never the PR's copy. The workflow takes care to run the
+    # base branch's checker so a PR cannot rewrite the script that reviews it;
+    # reading the schema out of the PR head handed back exactly that — adding
+    # a property there neuters H19's unknown-key check, and enum values from
+    # it are echoed verbatim into a posted comment.
+    schema = str(SCHEMA_PATH)
     pyproject = module.load_toml(
         str(Path(repo_root) / recipe / "pyproject.toml")
     )
@@ -195,7 +250,15 @@ def main() -> int:
             infra_fault(CHECKER, f"cannot read {args.changed_files}: {exc}")
         )
 
-    roots = recipe_roots(changed)
+    roots = recipe_roots(changed, args.repo_root)
+    if len(roots) > MAX_RECIPES:
+        # Each recipe costs a git subprocess and six directory walks against a
+        # ten-minute job timeout. Reviewing the first N and saying so beats a
+        # red check that reviewed nothing.
+        # A plain line: the repo routes contributor-facing annotations
+        # through ci_message, and this is a note for whoever reads the job.
+        print(f"{len(roots)} recipes touched; checking the first {MAX_RECIPES}")
+        roots = roots[:MAX_RECIPES]
     if not roots:
         print("No recipe directories in this PR; nothing for this lane to do.")
         args.out.write_text("[]", encoding="utf-8")
@@ -209,6 +272,7 @@ def main() -> int:
         )
 
     findings: list[dict] = []
+    failed: list[str] = []
     for recipe in roots:
         if not (args.repo_root / recipe).is_dir():
             # Deleted, or renamed away. Nothing to check and nothing wrong.
@@ -223,6 +287,7 @@ def main() -> int:
             # contributor reading their PR can act on, and ci_message owns the
             # annotations a contributor does see.
             print(f"  house-rules check failed for {recipe}: {exc}")
+            failed.append(recipe)
             continue
         print(f"{recipe}: {len(raw)} finding(s)")
         # A rule that could not be evaluated is not a rule that passed.
@@ -236,6 +301,21 @@ def main() -> int:
 
     args.out.write_text(json.dumps(findings, indent=1), encoding="utf-8")
     print(f"{len(findings)} finding(s) across {len(roots)} recipe(s).")
+
+    if failed:
+        print(f"{len(failed)} recipe(s) could not be checked: {failed}")
+    if failed and not findings:
+        # Every recipe raised and nothing was found: an empty findings file is
+        # indistinguishable from a clean PR, and the PR goes green with no
+        # review and nobody told. That is the one case worth failing for --
+        # it means the checker is broken, not the contribution.
+        return report_infra_fault(
+            infra_fault(
+                CHECKER,
+                f"every recipe failed to check ({failed}); refusing to report "
+                "a clean review",
+            )
+        )
     return EXIT_OK
 
 

@@ -130,7 +130,11 @@ jobs:
       - name: 'Checkout the PR head (data only, never executed)'
         uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # ratchet:actions/checkout@v4
         with:
-          repository: '${{ github.event.pull_request.head.repo.full_name || github.repository }}'
+          # No `repository:` override. refs/pull/N/head lives in the BASE
+          # repository and resolves to the PR head commit whatever fork it
+          # came from; pointing this at the fork asks it for a ref it does
+          # not have, and would silently check out an unrelated tree if that
+          # fork happened to have its own PR with the same number.
           ref: 'refs/pull/${{ steps.pr.outputs.number }}/head'
           path: 'pr-head'
           persist-credentials: false
@@ -190,6 +194,7 @@ jobs:
         env:
           GH_TOKEN: '${{ github.token }}'
           PR_NUMBER: '${{ steps.pr.outputs.number }}'
+          HEAD_SHA: '${{ github.event.pull_request.head.sha }}'
         run: |-
           set -euo pipefail
           # --repo/--pr let it drop anything already said on this PR, by an
@@ -200,6 +205,7 @@ jobs:
             --label 'House Rules' \
             --repo "${GITHUB_REPOSITORY}" \
             --pr "${PR_NUMBER}" \
+            --commit-id "${HEAD_SHA}" \
             --out review_payload.json
 
           if [[ -f review_payload.json ]]; then
@@ -212,7 +218,7 @@ jobs:
       - name: 'Upload the payload'
         if: |-
           steps.payload.outputs.has_payload == 'true'
-        uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' # ratchet:actions/upload-artifact@v4
+        uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' # ratchet:actions/upload-artifact@v7.0.1
         with:
           name: 'house-rules-payload'
           path: 'review_payload.json'
@@ -223,7 +229,7 @@ jobs:
       - name: 'Upload the dry-run inputs'
         if: |-
           always() && github.event.inputs.dry_run == 'true'
-        uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' # ratchet:actions/upload-artifact@v4
+        uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' # ratchet:actions/upload-artifact@v7.0.1
         with:
           name: 'house-rules-dryrun'
           path: |-
@@ -308,7 +314,11 @@ jobs:
               | gh api --method POST "${REVIEWS_ENDPOINT}" --input - > /dev/null; then
               POSTED=$((POSTED + 1))
             fi
-          done < <(jq -c '.comments[] as $c | {event: "COMMENT", body: .body, comments: [$c]}' review_payload.json)
+          # A short body, not `.body`: the summary carries the marker, the
+          # progress line and up to fifteen unreviewed paths, and repeating
+          # all of it once per comment is how a failed batch becomes twelve
+          # copies of the same wall of text.
+          done < <(jq -c '.comments[] as $c | {event: "COMMENT", body: "Automated **House Rules** review (posted individually after a batch failure).", comments: [$c]}' review_payload.json)
 
           echo "Posted ${POSTED} comment(s)."
           if [[ "${POSTED}" -eq 0 ]]; then

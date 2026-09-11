@@ -113,6 +113,16 @@ NEW_RECIPE = True  # set False when the PR only edits an existing recipe
 FILTERED = []  # rules suppressed as pre-existing, for reporting
 
 
+# Rules whose `path` names a DIRECTORY rather than a file: the recipe root, a
+# pruned build directory, a misplaced vertical. `CHANGED` holds files, so a
+# plain `path in CHANGED` is false for every one of them and the rule can
+# never fire in CI. H41, H44 and H47 were implemented, tested, declared
+# covered by the drift test -- and dead on arrival in their only production
+# caller, which is a worse state than being unimplemented, because the drift
+# test reports them as done.
+DIRECTORY_RULES = {"H22", "H23", "H41", "H44", "H47"}
+
+
 def _is_ours(rule, path):
     """Is this violation something the PR introduced, or pre-existing noise?"""
     if CHANGED is None:
@@ -121,6 +131,9 @@ def _is_ours(rule, path):
         return True
     if rule in WHOLE_RECIPE_RULES:
         return NEW_RECIPE
+    if rule in DIRECTORY_RULES:
+        prefix = path.rstrip("/") + "/"
+        return any(changed.startswith(prefix) for changed in CHANGED)
     return path in CHANGED
 
 
@@ -177,9 +190,24 @@ def find(out, rule, ci, path, line, what, evidence, verify):
     )
 
 
+# GitHub accepts a 100 MB file, every reader here splits what it reads into
+# lines (roughly doubling it), and the recipe subtree is walked six times. No
+# rule needs more than this to decide anything.
+MAX_READ_BYTES = 2_000_000
+
+
 def read(p):
+    """A file's text, or None if it cannot or should not be read.
+
+    Guards OSError rather than just missing files: a dangling symlink, a
+    permission error and a directory in place of a file all reach here, and
+    any one of them escaping discards every finding for the whole recipe.
+    """
     try:
-        return open(p, encoding="utf-8", errors="replace").read()
+        if os.path.getsize(p) > MAX_READ_BYTES:
+            return None
+        with open(p, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
     except OSError:
         return None
 
@@ -189,6 +217,12 @@ def lineno_of(text, pattern):
         if re.search(pattern, line):
             return i
     return 1
+
+
+def _table(data, key):
+    """`data[key]` when it is a mapping, else an empty one."""
+    value = data.get(key) if isinstance(data, dict) else None
+    return value if isinstance(value, dict) else {}
 
 
 def load_toml(p):
@@ -250,7 +284,10 @@ def _env_read_defaults(src, path):
     """
     try:
         tree = ast.parse(src)
-    except SyntaxError:
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        # RecursionError, not SyntaxError, is what a generated constant table
+        # of 200k terms raises -- a plausible accident, not just an attack.
+        # Anything escaping here discards the whole recipe's findings.
         return []
 
     def env_call(node):
@@ -487,7 +524,11 @@ def check_pyproject(out, root, rel, recipe_name):
         return
     r = os.path.join(rel, "pyproject.toml")
     data = load_toml(p) or {}
-    proj = data.get("project", {})
+    # `.get(k, {})` is not enough: a key present with the WRONG type returns
+    # that value, and every reader below then calls .get() on a str or a list.
+    # A mistyped table is exactly what these rules exist to catch, so crashing
+    # on one loses the recipe's whole review to the defect it was looking for.
+    proj = _table(data, "project")
 
     # H1 -- ruff config belongs to the repo root only
     hits = [
@@ -560,7 +601,7 @@ def check_pyproject(out, root, rel, recipe_name):
             )
 
     # H5 -- [[tool.uv.index]] array-of-tables, default=true, public PyPI
-    idx = data.get("tool", {}).get("uv", {}).get("index")
+    idx = _table(_table(data, "tool"), "uv").get("index")
     ok_urls = {"https://pypi.org/simple", "https://pypi.org/simple/"}
     if idx is None:
         find(
@@ -573,7 +614,7 @@ def check_pyproject(out, root, rel, recipe_name):
             "check_recipe_pyproject.py:262-340",
             "read [tool.uv]",
         )
-    elif isinstance(idx, dict):
+    elif not isinstance(idx, list):
         # single-bracket [tool.uv.index] instead of array-of-tables
         find(
             out,
@@ -586,7 +627,9 @@ def check_pyproject(out, root, rel, recipe_name):
             "check the bracket count",
         )
     else:
-        defaults = [e for e in idx if e.get("default") is True]
+        defaults = [
+            e for e in idx if isinstance(e, dict) and e.get("default") is True
+        ]
         if not defaults:
             find(
                 out,
@@ -631,7 +674,7 @@ def check_pyproject(out, root, rel, recipe_name):
         )
 
     # H7 -- build-system with both keys
-    bs = data.get("build-system", {})
+    bs = _table(data, "build-system")
     if not bs or not bs.get("requires") or not bs.get("build-backend"):
         find(
             out,
@@ -645,11 +688,8 @@ def check_pyproject(out, root, rel, recipe_name):
         )
 
     # H8 -- testpaths, if present, must collect the runnability test
-    tp = (
-        data.get("tool", {})
-        .get("pytest", {})
-        .get("ini_options", {})
-        .get("testpaths")
+    tp = _table(_table(_table(data, "tool"), "pytest"), "ini_options").get(
+        "testpaths"
     )
     if tp:
         entries = [tp] if isinstance(tp, str) else list(tp)
@@ -768,18 +808,12 @@ GENERIC_TEAMS = {
     "googler",
     "googlers",
     "gcp",
-    "cloud",
     "alphabet",
     "adk",
     "adk samples",
     "adk-samples",
     "adk sample",
-    "samples",
-    "sample",
-    "recipes",
-    "recipe",
     "contrib",
-    "community",
     "open source",
     "opensource",
     "team",
@@ -807,24 +841,22 @@ GENERIC_TEAMS = {
     "individual",
     "independent",
     "solo",
-    "eng",
-    "engineering",
-    "dev",
-    "devs",
-    "developer",
-    "developers",
-    "devrel",
     "misc",
     "other",
     "others",
-    "internal",
-    "external",
-    "public",
 }
 
 
 def _norm_team(value):
-    """Lowercase, de-punctuate, and drop a trailing team/group/org noun."""
+    """Lowercase, de-punctuate, and drop a trailing team/group/org noun.
+
+    The stripper is why the generic list must stay short: "Cloud Org" strips
+    to "cloud", so putting a plausible team word on the list flags every real
+    team whose name ends in it. Words removed for exactly that reason:
+    DevRel, Community, Engineering, Cloud, Samples and their variants -- each
+    of them names a real team somewhere, and one of them names a real team
+    that owns five recipes in this repository.
+    """
     v = re.sub(r"[^a-z0-9&/ -]", " ", str(value).lower())
     v = re.sub(r"\s+", " ", v).strip(" -&/")
     stripped = re.sub(
@@ -907,22 +939,27 @@ def check_ownership_team(out, r, text, data):
             CI_ADV,
             r,
             line,
-            f'ownership.team is "{raw}", the same GitHub handle as {who}. '
-            "team is the owning team; a personal handle leaves the recipe "
-            "unowned the moment that person moves",
+            f'ownership.team and {who} are both "{raw}". One of the two is '
+            "wrong: team is the owning team and poc is a person, so a single "
+            "value cannot be both, and whichever one is the personal handle "
+            "leaves the recipe unowned the moment that person moves",
             ".github/schemas/manifest-schema.json (ownership.team)",
             verify,
         )
         return
 
-    if re.search(r"https?://|github\.com/|\S+@\S+\.\S+", raw):
+    # A group alias is not a person and does not leave when one does, which
+    # is the exact failure this rule exists to prevent. Only a personal
+    # address is a problem, and telling the two apart is not something to
+    # guess at, so no email is reported.
+    if re.search(r"https?://|github\.com/", raw):
         find(
             out,
             "H48",
             CI_ADV,
             r,
             line,
-            f'ownership.team is "{raw}" -- a URL or an address, not a team name',
+            f'ownership.team is "{raw}" -- a URL, not a team name',
             ".github/schemas/manifest-schema.json (ownership.team)",
             verify,
         )
@@ -968,6 +1005,12 @@ def check_manifest(out, root, rel, schema_path):
     # A manifest is flat enough that a missing pyyaml must not silently disable
     # H18/H19 -- a checker that quietly skips rules is worse than no checker.
     data, degraded = _parse_manifest(text)
+    if isinstance(data, (list, str, int, float, bool)):
+        # A YAML list or scalar where a mapping belongs. Every reader below
+        # calls .get() on it. The schema check would have reported this
+        # properly; crashing loses the whole recipe instead.
+        SKIPPED.append(("H17/H18/H19/H48", "manifest.yaml is not a mapping"))
+        return
     if data is None:
         SKIPPED.append(("H18/H19", "could not parse manifest.yaml"))
         return
@@ -1123,8 +1166,15 @@ _JUNK_EXACT = {
     "credentials.json": "a committed credentials file",
     "client_secret.json": "a committed OAuth client secret",
 }
+# `.pem` alone is NOT here. A public CA bundle (certs/server-ca.pem is the
+# documented Cloud SQL proxy fixture) and a test certificate are both ordinary
+# committed files, and "you committed a private key" is the most alarming
+# thing this checker can say. Only names that say PRIVATE KEY on their face.
 _JUNK_SUFFIX = {
-    ".pem": "a committed private key or certificate",
+    "-key.pem": "a committed private key",
+    "_key.pem": "a committed private key",
+    "privkey.pem": "a committed private key",
+    "private.pem": "a committed private key",
     ".pfx": "a committed key store",
     ".p12": "a committed key store",
     ".pyc": "a compiled artefact, not source",
@@ -1144,7 +1194,12 @@ def _junk_file(fn):
     for suffix, why in _JUNK_SUFFIX.items():
         if fn.endswith(suffix):
             return why
-    if re.fullmatch(r"service[-_]account.*\.json", fn):
+    # A template or an example is the file a recipe SHOULD ship. The .env
+    # branch above already knew that; this one did not, so
+    # service-account-template.json was reported as a committed key.
+    if re.fullmatch(r"service[-_]account.*\.json", fn) and not re.search(
+        r"(example|sample|template|fake|dummy|test)", fn
+    ):
         return "a committed service-account key"
     return None
 
@@ -1196,8 +1251,16 @@ def check_pr_shape(out, root, rel):
 
     Needs the changed-file list; with no --changed-files/--pr there is no PR to
     have a shape, so this is silently not applicable rather than skipped.
+
+    A property of the PR, not of a recipe, so it is emitted ONCE however many
+    recipes the run covers. Called per recipe, it produced N identical
+    comments on one line -- and at exactly three recipes the grouping pass
+    collapsed them into "the same thing in 2 other places in this PR", which
+    is false: it is the same place, three times.
     """
     if CHANGED is None:
+        return
+    if any(f["rule"] == "H42" for f in out):
         return
     skill_files = sorted(c for c in CHANGED if c.startswith(".agents/skills/"))
     recipe_files = sorted(
@@ -1207,9 +1270,19 @@ def check_pr_shape(out, root, rel):
         return
     # Anchor inside the recipe, not the skill: the recipe half is what the
     # author is here for, and it is the half a maintainer will be reading.
+    # Prefer this recipe's own manifest: the finding is anchored somewhere a
+    # maintainer will be reading, and `recipe_files[0]` could be a file that
+    # merely sorts first, such as contrib/README.md.
     anchor = next(
-        (c for c in recipe_files if c.endswith("manifest.yaml")),
-        recipe_files[0],
+        (
+            c
+            for c in recipe_files
+            if c.startswith(rel + "/") and c.endswith("manifest.yaml")
+        ),
+        next(
+            (c for c in recipe_files if c.endswith("manifest.yaml")),
+            recipe_files[0],
+        ),
     )
     find(
         out,
@@ -1239,6 +1312,61 @@ def _rule_sources(root):
     }
 
 
+# Mirrors .github/policy.yml `required_files`. Read from policy.yml when it is
+# present in the tree under review, so the two cannot drift; these are the
+# fallback for a checkout that predates a key.
+_REQUIRED_ALWAYS = ["README.md"]
+_REQUIRED_BY_ROOT = {
+    "core": ["AGENTS.md"],
+    "contrib": [],
+    "skills": ["SKILL.md", "EVAL.yaml"],
+}
+_REQUIRED_BY_LANGUAGE = {
+    "python": [
+        "pyproject.toml",
+        "uv.lock",
+        ".env.example",
+        "tests/test_runnability.py",
+    ],
+    "go": ["go.mod"],
+}
+
+
+def _required_files(root, rel, recipe_abs):
+    """The files THIS recipe must have: always + by root + by its language.
+
+    A recipe's language comes from its manifest, not its path: under skills/
+    the middle folder is a vertical, so the path cannot say.
+    """
+    policy = _load_policy_required_files(root)
+    always = policy.get("always", _REQUIRED_ALWAYS)
+    by_root = policy.get("by_root", _REQUIRED_BY_ROOT)
+    by_language = policy.get("by_language", _REQUIRED_BY_LANGUAGE)
+
+    area = rel.strip("/").split("/")[0]
+    required = list(always) + list(by_root.get(area) or [])
+
+    language = (_manifest_language(root, rel) or "").strip().lower()
+    if not language:
+        parts = rel.strip("/").split("/")
+        if area in ("core", "contrib") and len(parts) >= 2:
+            language = parts[1].lower()
+    required += list(by_language.get(language) or [])
+    return sorted(set(required))
+
+
+def _load_policy_required_files(root):
+    """policy.yml's `required_files`, or {} when it cannot be read."""
+    try:
+        import yaml
+
+        with open(os.path.join(root, ".github/policy.yml"), "rb") as handle:
+            section = (yaml.safe_load(handle) or {}).get("required_files")
+        return section if isinstance(section, dict) else {}
+    except Exception:
+        return {}
+
+
 def check_layout(out, root, rel, recipe_name):
     recipe_abs = os.path.join(root, rel)
     src = _rule_sources(root)
@@ -1264,14 +1392,15 @@ def check_layout(out, root, rel, recipe_name):
                     "check the file exists",
                 )
 
-    # H21 -- required files
-    for f in (
-        "README.md",
-        "pyproject.toml",
-        "uv.lock",
-        ".env.example",
-        "tests/test_runnability.py",
-    ):
+    # H21 -- required files, SCOPED BY LANGUAGE AND ROOT.
+    #
+    # This used to hardcode the Python list for every recipe in every
+    # language, so a new TypeScript or Kotlin recipe collected four confident
+    # CI-FAIL comments demanding a pyproject.toml, a uv.lock, an .env.example
+    # and a pytest file it should never have -- the failure mode this whole
+    # lane exists to avoid, produced deterministically on every non-Python
+    # recipe. policy.yml has scoped these under `by_language` all along.
+    for f in _required_files(root, rel, recipe_abs):
         if not os.path.exists(os.path.join(recipe_abs, f)):
             find(
                 out,
@@ -1390,29 +1519,34 @@ def check_layout(out, root, rel, recipe_name):
     # H44 -- a directory whose basename validation silently prunes. Everything
     # inside it is invisible to every check in the repo, which is a far worse
     # outcome than a badly named folder.
-    for dirpath, dirnames, _ in os.walk(recipe_abs):
-        dirnames[:] = [
-            d
-            for d in dirnames
-            if d not in ("__pycache__", ".venv", "node_modules", ".git")
-        ]
-        for d in list(dirnames):
-            if d in PRUNED_DIR_NAMES:
-                rp = os.path.relpath(os.path.join(dirpath, d), root)
-                find(
-                    out,
-                    "H44",
-                    CI_ADV,
-                    rp,
-                    1,
-                    f'"{d}/" is silently pruned from validation, so nothing '
-                    "inside it is checked by anything. Rename it",
-                    ".github/policy.yml:103-121",
-                    "read the directory name",
-                )
+    # From git, not the filesystem — the same mistake H43 was rewritten to
+    # fix, twenty lines away. dist/, build/, out/ and coverage/ are exactly
+    # what a local build leaves behind and .gitignore hides, so on a
+    # developer's own tree (SKILL.md invokes this checker there) every one of
+    # them was a finding.
+    tracked_dirs = set()
+    for rp in _tracked_files(root, rel) or ():
+        parts = os.path.dirname(rp).split("/")
+        for i, part in enumerate(parts):
+            if part in PRUNED_DIR_NAMES:
+                tracked_dirs.add("/".join(parts[: i + 1]))
+    for rp in sorted(tracked_dirs):
+        d = rp.rsplit("/", 1)[-1]
+        find(
+            out,
+            "H44",
+            CI_ADV,
+            rp,
+            1,
+            f'"{d}/" is silently pruned from validation, so nothing inside '
+            "it is checked by anything. Rename it",
+            ".github/policy.yml:103-121",
+            "read the directory name",
+        )
 
     # H43 -- a file that should never be committed. Size-exempt, so no other
     # check reports them. TRACKED files only; see _tracked_files.
+    junk: list[tuple[str, str]] = []
     tracked = _tracked_files(root, rel)
     if tracked is None:
         SKIPPED.append(
@@ -1427,27 +1561,33 @@ def check_layout(out, root, rel, recipe_name):
             head, fn = os.path.split(rp)
             why = _junk_file(fn)
             if why:
-                find(
-                    out,
-                    "H43",
-                    CI_ADV,
-                    rp,
-                    1,
-                    why,
-                    ".gitignore",
-                    "check the file is tracked: git ls-files -- " + rp,
-                )
-            elif any(part in (".idea", ".vscode") for part in head.split("/")):
-                find(
-                    out,
-                    "H43",
-                    CI_ADV,
-                    rp,
-                    1,
-                    "editor state committed to the repo",
-                    ".gitignore",
-                    "read the path",
-                )
+                junk.append((rp, why))
+            elif ".idea" in head.split("/"):
+                # .vscode is deliberately excluded: `launch.json` and
+                # `extensions.json` are routinely committed as recommended
+                # project configuration, and calling that "editor state
+                # committed by accident" is wrong more often than it is right.
+                junk.append((rp, "JetBrains project state, not project config"))
+
+    # ONE finding with a count, like H10 and H26. A recipe with twelve stray
+    # files should not collect twelve comments.
+    if junk:
+        rp, why = junk[0]
+        extra = (
+            f"; {len(junk)} such file(s) are tracked here"
+            if len(junk) > 1
+            else ""
+        )
+        find(
+            out,
+            "H43",
+            CI_ADV,
+            rp,
+            1,
+            f"{why}{extra}",
+            ".gitignore",
+            "check the file is tracked: git ls-files -- " + rp,
+        )
 
     # H40 -- manifest.language must agree with the path. The two consumers
     # resolve it differently and Python validation is skipped entirely when
@@ -1555,7 +1695,15 @@ def check_text_wide(out, root, rel):
             if fn in ("uv.lock", "poetry.lock"):
                 continue
             fp = os.path.join(dirpath, fn)
-            if os.path.getsize(fp) > 2_000_000:
+            try:
+                if os.path.getsize(fp) > MAX_READ_BYTES:
+                    continue
+            except OSError:
+                # A dangling symlink is trivially committable -- git stores
+                # mode 120000 and never checks the target. Unguarded, the
+                # FileNotFoundError escapes to the lane, which drops EVERY
+                # finding for this recipe and reports it as clean. One file
+                # would evade the entire deterministic review.
                 continue
             t = read(fp)
             if not t:

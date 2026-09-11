@@ -1,3 +1,16 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """The arithmetic that makes automated review converge.
 
 Every number here is the difference between an author seeing the reviewer wind
@@ -27,11 +40,14 @@ def policy(**overrides):
     return {**rb.DEFAULTS, **POLICY, **overrides}
 
 
-def review(commit, when, lane="Correctness", rid=None, body=None):
+def review(commit, when, lane="Correctness", rid=None, body=None, bot=True):
     return {
         "id": rid if rid is not None else hash((commit, lane)) % 100000,
         "commit_id": commit,
         "submitted_at": when,
+        # Only a GitHub App or Actions token can post as type Bot, so this is
+        # what separates our reviews from a forgery. See is_ours.
+        "user": {"login": "adk-bot[bot]", "type": "Bot" if bot else "User"},
         "body": body
         if body is not None
         else f"{rb.REVIEW_MARKER}\nAutomated **{lane}** review — 1 finding(s).",
@@ -684,3 +700,182 @@ def test_a_skipped_lane_says_nothing_at_all():
         "previous_round_count": 2,
     }
     assert rb.progress_line(rb.decide(state, policy(), "Hygiene", 5)) == ""
+
+
+# ------------------------------------------------- forging our own identity
+
+
+def test_a_human_cannot_pose_as_the_reviewer():
+    """The attack this guards against, in full: a PR author submits a one-line
+    review whose body is the marker. GitHub stamps it with the current head,
+    every lane then reads `last_reviewed_sha == head_sha` and skips with
+    "already reviewed". Repeat after each push and AI review is off for that
+    pull request permanently. Twenty-five forged inline comments does the same
+    thing through the lifetime cap."""
+    forged = review("aaa", "2026-01-01T00:00:00Z", bot=False)
+    assert not rb.is_ours(forged)
+
+    state = rb.summarise_history(
+        [forged], [comment(forged["id"])] * 25, POLICY["exempt_lanes"]
+    )
+    assert state["round"] == 1, "a forged review advanced the round counter"
+    assert state["posted_total"] == 0, "forged comments consumed the cap"
+    assert state["last_reviewed_sha"] == "", (
+        "a forged review would make every lane skip as 'already reviewed'"
+    )
+
+
+def test_a_review_with_no_user_field_is_not_ours():
+    assert not rb.is_ours({"body": rb.REVIEW_MARKER, "commit_id": "a"})
+
+
+def test_our_own_bot_review_is_still_recognised():
+    assert rb.is_ours(review("aaa", "2026-01-01T00:00:00Z"))
+
+
+# ------------------------------------------------------- hostile / broken policy
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("decay", "sixty"),
+        ("decay", 0),
+        ("decay", 5),
+        ("decay", None),
+        ("lifetime_cap", "lots"),
+        ("lifetime_cap", -3),
+        ("min_allowance", None),
+        ("lanes", None),
+        ("lanes", []),
+        ("lanes", "Security"),
+        ("lanes", [1, 2]),
+        ("blocker_lanes", ["Hygiene"]),  # not a prefix of lanes
+        ("blocker_only_after_round", "two"),
+    ],
+)
+def test_a_broken_policy_value_falls_back_instead_of_reddening_every_pr(
+    key, value
+):
+    """`decide` coerces these with float()/int()/list(), so a typo in a config
+    file used to escape as a CI fault — four red checks per push, on every PR,
+    from a one-word edit."""
+    broken = rb._validated({**rb.DEFAULTS, key: value})
+    state = {
+        "round": 3,
+        "last_reviewed_sha": "x",
+        "posted_total": 4,
+        "previous_round_count": 6,
+    }
+    decision = rb.decide(state, broken, "Security", 5)
+    assert isinstance(decision["max_comments"], int)
+    assert decision["max_comments"] >= 0
+
+
+def test_a_blocker_list_that_is_not_a_prefix_is_rejected():
+    """Otherwise the lanes that survive a shrinking allowance are not the ones
+    that survive the round limit."""
+    fixed = rb._validated({**rb.DEFAULTS, "blocker_lanes": ["Hygiene"]})
+    assert fixed["blocker_lanes"] == rb.DEFAULTS["blocker_lanes"]
+
+
+# --------------------------------------------------- allocation misconfiguration
+
+
+def test_an_unlisted_lane_gets_nothing_rather_than_everything():
+    """It used to get the WHOLE round allowance, so four mislabelled lanes
+    could each post the entire budget."""
+    assert rb.allocate(12, POLICY["lanes"], "Performance") == 0
+    assert rb.allocate(12, POLICY["lanes"], "security") == 0  # case slip
+    assert rb.allocate(12, [], "Security") == 0
+
+
+# ------------------------------------------------ narrowing and allocation agree
+
+
+def test_past_the_narrowing_round_the_allowance_is_not_half_discarded():
+    """Dividing by four while two lanes skip threw half the allowance away,
+    and told the author a number twice what could actually be spent."""
+    state = {
+        "round": 3,
+        "last_reviewed_sha": "x",
+        "posted_total": 4,
+        "previous_round_count": 8,
+    }
+    shares = {
+        lane: rb.decide(state, policy(), lane, 5) for lane in POLICY["lanes"]
+    }
+    allowance = shares["Security"]["allowance"]
+    spendable = sum(d["max_comments"] for d in shares.values() if not d["skip"])
+    assert spendable == allowance, (
+        f"{allowance} allowed but only {spendable} spendable"
+    )
+
+
+# ------------------------------------------------------ a garbled API response
+
+
+@pytest.mark.parametrize(
+    "stdout", ["", "<html>rate limited</html>", '{"message":"Not Found"}']
+)
+def test_a_success_with_no_json_array_is_not_an_empty_history(
+    stdout, monkeypatch
+):
+    """Reading it as [] means "never reviewed", which hands a fresh batch to a
+    PR that has already had five rounds."""
+
+    class P:
+        returncode = 0
+        stdout_text = stdout
+        stderr = ""
+
+    P.stdout = stdout
+    monkeypatch.setattr(rb.subprocess, "run", lambda *a, **k: P())
+    assert rb.gh_json("repos/o/r/pulls/1/reviews") is None
+
+
+def test_a_partial_page_is_not_a_partial_history(monkeypatch):
+    class P:
+        returncode = 0
+        stdout = '[{"id":1}]\n[{"id":2},{"id":'
+        stderr = ""
+
+    monkeypatch.setattr(rb.subprocess, "run", lambda *a, **k: P())
+    assert rb.gh_json("repos/o/r/pulls/1/reviews") is None
+
+
+def test_a_genuine_multi_page_response_still_decodes(monkeypatch):
+    class P:
+        returncode = 0
+        stdout = '[{"id":1}]\n[{"id":2}]'
+        stderr = ""
+
+    monkeypatch.setattr(rb.subprocess, "run", lambda *a, **k: P())
+    assert rb.gh_json("x") == [{"id": 1}, {"id": 2}]
+
+
+def test_a_genuinely_empty_history_is_still_empty(monkeypatch):
+    class P:
+        returncode = 0
+        stdout = "[]"
+        stderr = ""
+
+    monkeypatch.setattr(rb.subprocess, "run", lambda *a, **k: P())
+    assert rb.gh_json("x") == []
+
+
+# ------------------------------------------------------------- force-push
+
+
+def test_the_last_reviewed_commit_is_the_newest_review_not_the_newest_commit():
+    """After a force-push back to an already-reviewed commit A the history is
+    [A, B] but the newest review is against A. Naming B points the compare at
+    a commit that no longer exists, which silently reverts to a full
+    re-review."""
+    reviews = [
+        review("aaa", "2026-01-01T00:00:00Z", rid=1),
+        review("bbb", "2026-01-02T00:00:00Z", rid=2),
+        review("aaa", "2026-01-03T00:00:00Z", rid=3),
+    ]
+    state = rb.summarise_history(reviews, [], POLICY["exempt_lanes"])
+    assert state["last_reviewed_sha"] == "aaa"

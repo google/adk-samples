@@ -1409,18 +1409,19 @@ def _texts(*comments):
     return [(m._tokens(c["body"]), c) for c in comments]
 
 
-def test_a_resolved_comment_suppresses_a_reworded_repeat():
-    """Repetition is weak evidence a finding is unwanted; a maintainer
-    resolving the thread is strong evidence, so it catches rewordings that
-    fall under the ordinary similarity bar."""
-    judged = {
-        "body": "This upload timeout looks too short for a large payload.",
-        "verdict": "resolved",
-    }
-    reworded = "The timeout here seems low for slow connections upload."
-    assert m.already_raised("p", 1, reworded, {}, _texts(judged))
-    del judged["verdict"]
-    assert not m.already_raised("p", 1, reworded, {}, _texts(judged))
+def test_a_verdict_names_itself_but_does_not_widen_suppression():
+    """A verdict used to lower the threshold to 0.35. Anyone can react to a
+    public comment and a PR author can resolve threads on their own PR, so
+    that let the REVIEWED PARTY suppress findings about their own code. The
+    verdict now only explains a suppression the ordinary bar already made."""
+    body = "the retry loop never terminates once the request is cancelled"
+    judged = {"body": body, "verdict": "resolved"}
+    why = m.already_raised("p", 1, body, {}, _texts(judged))
+    assert why and "resolved" in why
+
+    # Below the ordinary bar, a verdict buys nothing.
+    unrelated = "this upload has no timeout and will hang forever"
+    assert not m.already_raised("p", 1, unrelated, {}, _texts(judged))
 
 
 def test_the_verdict_is_named_in_the_reason():
@@ -1830,7 +1831,9 @@ def test_the_legacy_header_still_identifies_a_review():
 
     body = m.build_payload("Correctness", [], [], [])["body"]
     without_marker = body.replace(m.REVIEW_MARKER, "").lstrip()
-    assert review_budget.is_ours({"body": without_marker})
+    assert review_budget.is_ours(
+        {"body": without_marker, "user": {"type": "Bot"}}
+    )
 
 
 def test_the_progress_line_is_last_and_set_apart():
@@ -1843,3 +1846,109 @@ def test_the_progress_line_is_last_and_set_apart():
 def test_no_progress_line_when_there_is_nothing_to_say():
     body = m.build_payload("Correctness", [], [], [], "")["body"]
     assert "---" not in body
+
+
+def test_the_review_records_the_commit_it_reviewed():
+    """Without commit_id GitHub stamps the review with head AT POST TIME. A
+    review job takes minutes, so a push landing inside that window records a
+    commit nothing looked at — and review_budget.py reads exactly that field
+    to decide what has already been reviewed, so the next run skips every lane
+    and that commit is never reviewed by anyone."""
+    payload = m.build_payload("Correctness", [], [], [], "", "abc123")
+    assert payload["commit_id"] == "abc123"
+
+
+def test_no_commit_id_is_sent_when_none_is_known():
+    """An empty string would be rejected by the API; omitting the key keeps
+    GitHub's own default."""
+    assert "commit_id" not in m.build_payload("Correctness", [], [], [], "", "")
+
+
+def test_both_workflows_pass_the_commit_they_reviewed():
+    import yaml
+
+    workflows = Path(__file__).resolve().parents[3] / ".github" / "workflows"
+    for name, job, step_id in (
+        ("_ai-pr-review-core.yml", "review", "build_review"),
+        ("ai-pr-review-house-rules.yml", "check", "payload"),
+    ):
+        data = yaml.safe_load((workflows / name).read_text(encoding="utf-8"))
+        step = next(
+            s for s in data["jobs"][job]["steps"] if s.get("id") == step_id
+        )
+        assert "--commit-id" in step["run"], f"{name} does not pass --commit-id"
+        assert "HEAD_SHA" in step["env"], f"{name} does not define HEAD_SHA"
+
+
+# ------------------------------------------------- notes must converge too
+
+
+def _body_text(*notes):
+    return {
+        "kind": "review-body",
+        "body": "Automated **House Rules** review — 0 finding(s).\n\n"
+        "Also, on lines this PR does not change:\n\n"
+        + "\n".join(f"- `x.py:1` — {n}" for n in notes),
+    }
+
+
+def test_a_note_already_said_in_an_earlier_review_is_suppressed():
+    """The House Rules lane is never capped and never skipped, and produces
+    mostly notes. Review BODIES were not fetched, so nothing could see a note
+    it posted last round — the identical body went up on every push forever,
+    which is the exact non-convergence this branch exists to end."""
+    previous = _body_text(
+        "required file missing: tests/test_runnability.py",
+        "required file missing: uv.lock",
+    )
+    texts = [(m._tokens(previous["body"]), previous)]
+    why = m.already_raised(
+        "p", 1, "required file missing: tests/test_runnability.py", {}, texts
+    )
+    assert why and "earlier review" in why
+
+
+def test_a_new_note_is_not_swallowed_by_an_old_review_body():
+    previous = _body_text("required file missing: uv.lock")
+    texts = [(m._tokens(previous["body"]), previous)]
+    assert not m.already_raised(
+        "p", 1, "ownership.team names an organisation, not a team", {}, texts
+    )
+
+
+def test_review_bodies_are_fetched():
+    import inspect
+
+    source = inspect.getsource(m.fetch_existing_comments)
+    assert "/reviews" in source, (
+        "review bodies are not fetched, so notes can never be deduplicated"
+    )
+
+
+def test_the_note_list_is_bounded():
+    """GitHub rejects a body over ~65k characters, and the fallback then
+    re-posts the same oversized body once per comment, so every retry fails
+    too and the contributor gets a red check."""
+    notes = [
+        {"path": f"f{i}.py", "line": i, "body": "x" * 400} for i in range(200)
+    ]
+    body = m.build_payload("House Rules", [], notes, [])["body"]
+    assert "…and 180 more" in body
+    assert len(body) < 20000
+
+
+def test_a_backtick_in_a_path_cannot_break_out_of_its_code_span():
+    """Paths are fork-author-chosen text. A backtick closes the span and lets
+    arbitrary markdown into a body the bot signs."""
+    body = m.build_payload("Correctness", [], [], ["evil`](http://x)`.py"])[
+        "body"
+    ]
+    assert "`](http" not in body
+    assert "evil](http://x).py" in body
+
+
+def test_a_newline_in_a_path_cannot_forge_a_list_item():
+    body = m.build_payload("Correctness", [], [], ["a.py\n- `fake finding`"])[
+        "body"
+    ]
+    assert body.count("- `") == 1

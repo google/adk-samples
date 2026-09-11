@@ -360,12 +360,21 @@ jobs:
       # and returns the round number, the commit the last round reviewed, a
       # hard ceiling for this lane, and whether this lane should run at all.
       # Every constant it uses is in .github/policy.yml (`pr_review_budget`).
+      # review_budget.py needs PyYAML to read policy.yml. Without uv it falls
+      # back to hardcoded defaults, which a test pins equal to policy.yml --
+      # but then editing policy.yml would silently change nothing, which is
+      # the opposite of the point of putting the constants there.
+      - name: 'Install uv'
+        if: steps.diff_size_guard.outputs.skip != 'true'
+        uses: 'astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d' # ratchet:astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: '3.11'
+
       - name: 'Decide this round''s comment budget'
         id: 'budget'
         if: steps.diff_size_guard.outputs.skip != 'true'
         env:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
-          GH_REPO: '${{ github.repository }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
           REVIEW_LABEL: '${{ inputs.review_label }}'
           EVENT_NAME: '${{ inputs.event_name }}'
@@ -383,7 +392,7 @@ jobs:
           fi
 
           # shellcheck disable=SC2086  # FULL is a flag or empty, never a path
-          uv run --with pyyaml python3 .github/scripts/review_budget.py \
+          uv run --no-project --with pyyaml python3 .github/scripts/review_budget.py \
             --repo "${GITHUB_REPOSITORY}" \
             --pr "${PR_NUMBER}" \
             --lane "${REVIEW_LABEL}" \
@@ -459,6 +468,14 @@ jobs:
               case "${STATUS}" in
                 ahead)
                   SCOPE='incremental'
+                  ;;
+                identical|behind)
+                  # Nothing new, or the head moved backwards. Either way there
+                  # is no delta to review; the budget step's own same-commit
+                  # check normally catches this first.
+                  echo "no new commits since ${LAST_REVIEWED_SHA} (${STATUS}); nothing to review."
+                  echo "empty=true" >> "${GITHUB_OUTPUT}"
+                  exit 0
                   ;;
                 *)
                   echo "::warning::history diverged since the last review (${STATUS}); reviewing the whole PR"
@@ -1137,9 +1154,9 @@ jobs:
             # one that was even partly seen; everything after it in the full
             # diff was not looked at at all.
             grep -o '^diff --git a/[^ ]*' pr_diff_reviewable.txt \
-              | sed 's|^diff --git a/||' > diff_all_files.txt
+              | sed 's|^diff --git a/||' > diff_all_files.txt || true
             grep -o '^diff --git a/[^ ]*' pr_diff_used.txt \
-              | sed 's|^diff --git a/||' > diff_seen_files.txt
+              | sed 's|^diff --git a/||' > diff_seen_files.txt || true
             # comm needs sorted input; the diff order is not sorted.
             sort -u diff_all_files.txt > all_sorted.txt
             sort -u diff_seen_files.txt > seen_sorted.txt
@@ -1360,6 +1377,7 @@ jobs:
           # because the round allowance happened to be generous.
           MAX_COMMENTS: '${{ steps.prepare_diff.outputs.budget }}'
           PROGRESS: '${{ steps.budget.outputs.progress }}'
+          HEAD_SHA: '${{ github.event.pull_request.head.sha }}'
         run: |-
           set -euo pipefail
 
@@ -1416,6 +1434,7 @@ jobs:
             --unreviewed unreviewed_files.txt \
             --max-comments "${MAX_COMMENTS}" \
             --progress "${PROGRESS}" \
+            --commit-id "${HEAD_SHA}" \
             --out review_payload.json
 
           if [[ -f review_payload.json ]]; then
@@ -1595,7 +1614,10 @@ jobs:
             else
               FAILED=$((FAILED + 1))
             fi
-          done < <(jq -c '.comments[] as $c | {event: "COMMENT", body: .body, comments: [$c]}' review_payload.json)
+          # A short body, not `.body`. The summary now carries the marker,
+          # the progress line and up to fifteen unreviewed paths; repeating it
+          # once per comment turns a failed batch into a wall of duplicates.
+          done < <(jq -c --arg label "${REVIEW_LABEL}" '.comments[] as $c | {event: "COMMENT", body: ("Automated **" + $label + "** review (posted individually after a batch failure)."), comments: [$c]}' review_payload.json)
 
           echo "Posted ${POSTED} comment(s); ${FAILED} rejected."
           if [[ "${POSTED}" -eq 0 ]]; then

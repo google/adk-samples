@@ -312,7 +312,7 @@ def main() -> int:
     budget = budget_for(lines)
     # Later rounds shrink. Telling the model to aim for 5 while the poster
     # will keep 1 wastes four findings and makes the log a puzzle.
-    if args.budget_ceiling:
+    if args.budget_ceiling > 0:
         budget = min(budget, args.budget_ceiling)
     reviewable = "true" if stats["kept_files"] and lines else "false"
     print(

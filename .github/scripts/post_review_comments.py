@@ -209,17 +209,28 @@ PROXIMITY = 2
 # Token overlap above which two comments are saying the same thing.
 SIMILARITY = 0.55
 
-# The threshold for a comment a maintainer has explicitly JUDGED — resolved
-# its thread, or reacted 👎 to it. Repetition alone is weak evidence that a
-# finding is unwanted; a verdict is strong evidence, so it suppresses a wider
-# neighbourhood of rewordings.
+# How much of a note's vocabulary must already appear in an earlier review
+# body for it to count as already said. High, because a body carries every
+# note from its round and a low bar would swallow unrelated findings.
+NOTE_CONTAINMENT = 0.9
+
+# A verdict — a resolved thread, a hidden comment, a 👎 — is recorded and named
+# in the log, but it does NOT widen the suppression threshold.
 #
-# What this cannot do: a comment that was DELETED leaves nothing behind, in
-# either API, so the same finding comes back on the next push. Closing that
-# needs stored state, which this system deliberately does not have — the
-# interactive skill keeps a ledger because it knows what was cut BEFORE
-# posting, and CI has no equivalent moment.
-JUDGED_SIMILARITY = 0.35
+# It used to, at 0.35. Two things were wrong with that. Anyone can react to a
+# public comment and a PR author can resolve threads on their own PR, so
+# "maintainer verdict" was not maintainer-only: the reviewed party could
+# switch off findings about their own code, which is precisely backwards for
+# the Security lane. And 0.35 against a containment metric is very wide — two
+# shared tokens out of four — so it suppressed genuinely new findings.
+#
+# The verdict still earns its keep: the reason string tells whoever reads the
+# log why a comment was dropped, and a resolved thread already blocks its own
+# line through the proximity zones.
+#
+# What none of this can do: a DELETED comment leaves nothing behind in either
+# API, so that finding can come back. Closing it needs stored state, which
+# this system deliberately does not have.
 
 _STOPWORDS = set(
     """a an the is are was were be been being this that these those it its of to
@@ -765,6 +776,20 @@ def check_window(
     )
 
 
+def _similarity(a: set[str], b: set[str]) -> float:
+    """Jaccard, not containment.
+
+    `len(a & b) / min(len(a), len(b))` is containment: a short comment fully
+    contained in a longer one scores 1.0 however much more the longer one
+    says. That made a 5-defect comment "the same" as a 1-defect one, and let a
+    4-token finding be suppressed by any comment sharing two of its words.
+    Dividing by the union asks the question actually intended — are these two
+    comments about the same thing.
+    """
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
 def _tokens(text: str) -> set[str]:
     return {
         word
@@ -792,6 +817,13 @@ def fetch_existing_comments(repo: str, pr: int) -> list[dict]:
     for endpoint, kind in (
         (f"repos/{repo}/pulls/{pr}/comments", "inline"),
         (f"repos/{repo}/issues/{pr}/comments", "top-level"),
+        # Review BODIES, which is where notes live — findings on lines the PR
+        # does not change. Without this endpoint `already_raised` cannot see a
+        # note it posted last round, so a lane that is never capped and never
+        # skipped (House Rules) repeats the identical body on every push
+        # forever. That is the non-convergence this whole change exists to
+        # end, hiding in the one class of finding nobody was deduplicating.
+        (f"repos/{repo}/pulls/{pr}/reviews", "review-body"),
     ):
         try:
             proc = subprocess.run(
@@ -819,6 +851,11 @@ def fetch_existing_comments(repo: str, pr: int) -> list[dict]:
             except json.JSONDecodeError:
                 break
             for item in batch:
+                if (
+                    kind == "review-body"
+                    and not (item.get("body") or "").strip()
+                ):
+                    continue
                 existing.append(
                     {
                         "kind": kind,
@@ -912,8 +949,16 @@ def fetch_verdicts(repo: str, pr: int) -> dict[int, str]:
 
     verdicts: dict[int, str] = {}
     for thread in threads or []:
+        # GraphQL returns a null node for anything the token cannot see. The
+        # docstring above promises this is best-effort; an AttributeError here
+        # escapes to guard() and turns "slightly noisier review" into a CI
+        # fault on the contributor's PR.
+        if not isinstance(thread, dict):
+            continue
         resolved = bool(thread.get("isResolved"))
         for comment in (thread.get("comments") or {}).get("nodes") or []:
+            if not isinstance(comment, dict):
+                continue
             cid = comment.get("databaseId")
             if not cid:
                 continue
@@ -970,11 +1015,21 @@ def already_raised(
     for tokens, comment in texts:
         if len(tokens) < 4:
             continue
-        overlap = len(mine & tokens) / min(len(mine), len(tokens))
-        verdict = comment.get("verdict")
-        if verdict and overlap >= JUDGED_SIMILARITY:
-            return f"a maintainer already {verdict} this on this PR"
-        if overlap >= SIMILARITY:
+        if comment.get("kind") == "review-body":
+            # A review body holds EVERY note from that round at once, plus a
+            # header and a progress line, so it is many times the size of any
+            # one note and Jaccard scores it near zero. The question here is
+            # not "are these the same comment" but "did we already say this
+            # inside that body", which is containment. The bar is high
+            # because the body is large: nearly every distinctive word of
+            # this note has to have appeared in it.
+            if len(mine & tokens) / len(mine) >= NOTE_CONTAINMENT:
+                return "already said in an earlier review on this PR"
+            continue
+        if _similarity(mine, tokens) >= SIMILARITY:
+            verdict = comment.get("verdict")
+            if verdict:
+                return f"already on this PR, and somebody {verdict} it"
             return "very similar to a comment already on this PR"
     return ""
 
@@ -984,10 +1039,15 @@ def already_raised(
 # on PR #2373 twenty findings were five real classes. Five comments spend five
 # slots to say one thing; the other four buy distinct defects.
 GROUP_AT = 3
-# Token overlap at which two findings are the same class. Higher than the
-# duplicate bar: this collapses comments rather than dropping them, so being
-# wrong here loses information instead of merely losing noise.
-GROUP_SIMILARITY = 0.6
+# Jaccard overlap at which two findings are the same defect class.
+#
+# 0.5 under Jaccard, not the 0.6 this was under containment: for two bodies of
+# the same length, containment 0.6 is Jaccard ~0.43, so the old number was far
+# looser than it looked in one direction and far tighter in the other. Being
+# wrong here collapses real information rather than merely suppressing noise,
+# which is why it sits above the duplicate bar in spirit and is measured
+# symmetrically.
+GROUP_SIMILARITY = 0.5
 
 
 def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
@@ -1013,9 +1073,7 @@ def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
             ):
                 if j in used or len(other) < 4:
                     continue
-                if len(tokens & other) / min(len(tokens), len(other)) >= (
-                    GROUP_SIMILARITY
-                ):
+                if _similarity(tokens, other) >= GROUP_SIMILARITY:
                     members.append(j)
 
         if len(members) >= GROUP_AT:
@@ -1027,15 +1085,20 @@ def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
                     f"{victim['path']}:{victim['line']}: grouped into "
                     f"{comment['path']}:{comment['line']}"
                 )
-            grouped_comment = {
-                **comment,
-                "body": (
-                    f"{comment['body'].rstrip()}\n\n"
-                    f"(Same thing in {others} other place"
-                    f"{'s' if others != 1 else ''} in this PR.)"
-                ),
-            }
-            kept.append(grouped_comment)
+            grouped_body = (
+                f"{comment['body'].rstrip()}\n\n"
+                f"(Same thing in {others} other place"
+                f"{'s' if others != 1 else ''} in this review.)"
+            )
+            # The shape gate ran BEFORE grouping, and grouping is the one path
+            # that makes a body longer. A 600-char body plus the note is 643,
+            # over the cap that keeps this public channel narrow — and the
+            # whole review would be rejected for it. If the note will not fit,
+            # keep the comment ungrouped rather than dropping either.
+            if implausible_body(grouped_body):
+                kept.append(comment)
+                continue
+            kept.append({**comment, "body": grouped_body})
             continue
         kept.append(comment)
 
@@ -1104,21 +1167,24 @@ def build_comments(
         verified, line, reason = check_window(
             finding, line, line_text.get(path, {})
         )
-        if not verified and finding.get("window"):
+        # A finding from the deterministic checker read the file itself, out
+        # of the same checkout this diff describes. The window check exists to
+        # catch a MODEL that invented a finding and invented the source to
+        # match it; there is no such claim to audit here. This has to be
+        # decided BEFORE the gate below, not after it — waiving a check that
+        # has already dropped the finding waives nothing.
+        trusted = finding.get("source") == TRUSTED_SOURCE
+        if not verified and finding.get("window") and not trusted:
             skipped.append(f"{path}:{line}: {reason}")
             continue
         if line != declared:
             print(f"  {path}: {reason}")
 
-        # A finding from the deterministic checker read the file itself, out
-        # of the same checkout this diff describes. The window check exists to
-        # catch a MODEL that invented a finding and invented the source to
-        # match it; there is no such claim to audit here. Without this, every
-        # house-rule finding whose subject is not an added line — a required
-        # file that is missing, a folder name, a lockfile source — is dropped
-        # as "not a line this PR adds" instead of reaching the author in the
-        # review body.
-        if finding.get("source") == TRUSTED_SOURCE:
+        # Without this, every house-rule finding whose subject is not an added
+        # line — a required file that is missing, a folder name, a lockfile
+        # source — is dropped as "not a line this PR adds" instead of reaching
+        # the author in the review body.
+        if trusted:
             verified = True
 
         duplicate = already_raised(path, line, body, zones, texts)
@@ -1142,6 +1208,15 @@ def build_comments(
     skipped.extend(grouped)
 
     return comments, notes, skipped
+
+
+def _non_negative(value: str) -> int:
+    """An int >= 0. A negative ceiling is `comments[:-1]`, which drops ONE
+    comment and logs it as "over budget" — the opposite of what was asked."""
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError(f"must be zero or more, got {number}")
+    return number
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1189,11 +1264,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--max-comments",
-        type=int,
+        type=_non_negative,
         default=0,
         help="hard ceiling on inline comments, from review_budget.py. 0 means "
         "no ceiling. Until this existed the budget reached the model as prose "
         "and nothing downstream checked it",
+    )
+    parser.add_argument(
+        "--commit-id",
+        default="",
+        help="the commit these findings are about. Recorded on the review so "
+        "a later run knows exactly what was reviewed, rather than inferring "
+        "it from whatever head happened to be at post time",
     )
     parser.add_argument(
         "--progress",
@@ -1215,6 +1297,28 @@ def build_parser() -> argparse.ArgumentParser:
 # to be actionable, short enough not to bury the findings above it.
 MAX_UNREVIEWED_LISTED = 15
 
+# Notes are bullets in ONE review body, so they cannot be capped by
+# --max-comments without changing what that flag means. They still need a
+# bound: GitHub rejects a review body over ~65k characters, and the fallback
+# path then re-posts the same oversized body once per comment, so every retry
+# fails too and the contributor gets a red check. The House Rules lane is
+# exempt from the comment budget and produces mostly notes, which is exactly
+# the combination that gets there.
+MAX_NOTES_LISTED = 20
+
+
+# A path is fork-author-chosen text. Everything else on this channel goes
+# through a shape rule; this is the one part that did not, and a backtick in a
+# filename closes the code span and lets arbitrary markdown — a link, an
+# image, a fake instruction — into a body the review bot signs.
+_UNSAFE_IN_SPAN = re.compile(r"[`\r\n]")
+
+
+def _safe_span(text: str, limit: int = 160) -> str:
+    """A path, safe to drop inside a markdown code span."""
+    cleaned = _UNSAFE_IN_SPAN.sub("", str(text))
+    return cleaned if len(cleaned) <= limit else cleaned[: limit - 1] + "…"
+
 
 def build_payload(
     label: str,
@@ -1222,6 +1326,7 @@ def build_payload(
     notes: list[dict],
     unreviewed: list[str] | None = None,
     progress: str = "",
+    commit_id: str = "",
 ) -> dict:
     """The review payload. `body` is required whenever `event` is COMMENT."""
     header = f"Automated **{label}** review — {len(comments)} finding(s)."
@@ -1236,7 +1341,12 @@ def build_payload(
         # inline. Listing them here is the only way they reach the author at
         # all, and on PR #2373 this class held all three hard CI failures.
         lines += ["", "Also, on lines this PR does not change:", ""]
-        lines += [f"- `{n['path']}:{n['line']}` — {n['body']}" for n in notes]
+        lines += [
+            f"- `{_safe_span(n['path'])}:{n['line']}` — {n['body']}"
+            for n in notes[:MAX_NOTES_LISTED]
+        ]
+        if len(notes) > MAX_NOTES_LISTED:
+            lines.append(f"- …and {len(notes) - MAX_NOTES_LISTED} more")
 
     if unreviewed:
         # Silence on a file reads as approval of it. When the diff did not fit
@@ -1248,7 +1358,9 @@ def build_payload(
             f"**{len(unreviewed)} file(s) were not looked at** by this lane:",
             "",
         ]
-        lines += [f"- `{p}`" for p in unreviewed[:MAX_UNREVIEWED_LISTED]]
+        lines += [
+            f"- `{_safe_span(p)}`" for p in unreviewed[:MAX_UNREVIEWED_LISTED]
+        ]
         if len(unreviewed) > MAX_UNREVIEWED_LISTED:
             lines.append(
                 f"- …and {len(unreviewed) - MAX_UNREVIEWED_LISTED} more"
@@ -1260,11 +1372,20 @@ def build_payload(
         # is the answer to "is this ever going to stop".
         lines += ["", "---", "", f"_{progress}_"]
 
-    return {
+    payload = {
         "event": "COMMENT",
         "body": "\n".join(lines),
         "comments": comments,
     }
+    if commit_id:
+        # Without this GitHub records the review against whatever is head AT
+        # POST TIME, not the commit that was reviewed. A review job takes
+        # minutes, so a push landing inside that window makes the recorded
+        # commit one that nothing looked at — and review_budget.py reads that
+        # field to decide what has already been reviewed, so the next run
+        # skips every lane and that commit is never reviewed by anyone.
+        payload["commit_id"] = commit_id
+    return payload
 
 
 def _findings_from_file(path: Path) -> list:
@@ -1404,7 +1525,12 @@ def _post(args, findings: list) -> int:
     args.out.write_text(
         json.dumps(
             build_payload(
-                args.label, comments, notes, unreviewed, args.progress
+                args.label,
+                comments,
+                notes,
+                unreviewed,
+                args.progress,
+                getattr(args, "commit_id", ""),
             )
         ),
         encoding="utf-8",

@@ -604,7 +604,6 @@ def test_company_name_as_team_is_reported(tmp_path):
         '"Google Cloud"',
         '"ADK Samples Team"',
         '"n/a"',
-        '"eng"',
         '"me"',
         '"TEAM"',
     ):
@@ -622,7 +621,8 @@ def test_team_equal_to_the_poc_handle_is_reported(tmp_path):
         tmp_path, '  team: "lspataroG"\n  poc: "lspatarog"\n'
     )
     chr.check_manifest(out, root, rel, None)
-    assert "same GitHub handle as poc" in h48(out)[0]["what"]
+    assert "poc" in h48(out)[0]["what"]
+    assert "cannot be both" in h48(out)[0]["what"]
 
 
 def test_team_equal_to_a_contributor_handle_is_reported(tmp_path):
@@ -916,12 +916,77 @@ def test_h43_says_so_when_git_cannot_answer(tmp_path, monkeypatch):
     assert any(r == "H43" for r, _ in chr.SKIPPED)
 
 
-def test_h44_pruned_directory_name(tmp_path):
+def test_h44_pruned_directory_name(tmp_path, monkeypatch):
+    """From git, not the filesystem: dist/ and build/ are exactly what a local
+    build leaves behind and .gitignore hides, and SKILL.md invokes this
+    checker against a developer's own tree."""
     root, rel = recipe(tmp_path, **{"dist/thing.py": "x = 1\n"})
+    monkeypatch.setattr(chr, "_TRACKED", {})
+    monkeypatch.setattr(
+        chr, "_tracked_files", lambda r, s: {f"{rel}/dist/thing.py"}
+    )
     out = []
     chr.check_layout(out, root, rel, "my-recipe")
     hits = [f for f in out if f["rule"] == "H44"]
     assert len(hits) == 1 and hits[0]["path"].endswith("/dist")
+
+
+def test_h44_ignores_an_untracked_build_directory(tmp_path, monkeypatch):
+    root, rel = recipe(tmp_path, **{"dist/thing.py": "x = 1\n"})
+    monkeypatch.setattr(chr, "_TRACKED", {})
+    monkeypatch.setattr(chr, "_tracked_files", lambda r, s: set())
+    out = []
+    chr.check_layout(out, root, rel, "my-recipe")
+    assert not [f for f in out if f["rule"] == "H44"]
+
+
+def test_h43_reports_one_grouped_finding_not_one_per_file(
+    tmp_path, monkeypatch
+):
+    """H10 and H26 both group; a recipe with twelve stray files should not
+    collect twelve comments."""
+    root, rel = recipe(tmp_path)
+    monkeypatch.setattr(chr, "_TRACKED", {})
+    monkeypatch.setattr(
+        chr,
+        "_tracked_files",
+        lambda r, s: {f"{rel}/.env", f"{rel}/.DS_Store", f"{rel}/a.pyc"},
+    )
+    out = []
+    chr.check_layout(out, root, rel, "my-recipe")
+    hits = [f for f in out if f["rule"] == "H43"]
+    assert len(hits) == 1
+    assert "3 such file(s)" in hits[0]["what"]
+
+
+def test_h43_does_not_call_every_pem_a_private_key(tmp_path, monkeypatch):
+    """A public CA bundle is an ordinary committed file, and "you committed a
+    private key" is the most alarming thing this checker can say."""
+    root, rel = recipe(tmp_path)
+    monkeypatch.setattr(chr, "_TRACKED", {})
+    monkeypatch.setattr(
+        chr,
+        "_tracked_files",
+        lambda r, s: {
+            f"{rel}/certs/server-ca.pem",
+            f"{rel}/service-account-template.json",
+            f"{rel}/.vscode/launch.json",
+        },
+    )
+    out = []
+    chr.check_layout(out, root, rel, "my-recipe")
+    assert not [f for f in out if f["rule"] == "H43"]
+
+
+def test_h43_still_catches_a_real_private_key(tmp_path, monkeypatch):
+    root, rel = recipe(tmp_path)
+    monkeypatch.setattr(chr, "_TRACKED", {})
+    monkeypatch.setattr(
+        chr, "_tracked_files", lambda r, s: {f"{rel}/server-key.pem"}
+    )
+    out = []
+    chr.check_layout(out, root, rel, "my-recipe")
+    assert [f for f in out if f["rule"] == "H43"]
 
 
 def test_tracked_file_cache_is_per_recipe(tmp_path):
@@ -932,3 +997,46 @@ def test_tracked_file_cache_is_per_recipe(tmp_path):
     chr._TRACKED[("/root", "b")] = set()
     assert chr._tracked_files("/root", "b") == set()
     assert chr._tracked_files("/root", "a") == {"a/.env"}
+
+
+def test_words_that_name_real_teams_are_not_generic(tmp_path):
+    """The trailing-noun stripper is why this list must stay short: "Cloud
+    Org" strips to "cloud", so a plausible team word on the list flags every
+    real team whose name ends in it. `DevRel` is the everyday short form of a
+    team that owns five recipes in this repository."""
+    for value in (
+        "DevRel",
+        "Community",
+        "Engineering",
+        "Cloud Org",
+        "Samples",
+        "Developer Relations",
+        "Public Sector",
+    ):
+        out = []
+        root, rel = manifest_with(
+            tmp_path / value.replace(" ", "-"),
+            f'  team: "{value}"\n  poc: "someone"\n',
+        )
+        chr.check_manifest(out, root, rel, None)
+        assert not h48(out), f"{value} is a plausible real team"
+
+
+def test_a_group_alias_is_an_owner(tmp_path):
+    """A mailing list is the one value immune to the failure this rule exists
+    to prevent: it does not leave when a person does."""
+    out = []
+    root, rel = manifest_with(
+        tmp_path, '  team: "adk-samples-team@google.com"\n  poc: "someone"\n'
+    )
+    chr.check_manifest(out, root, rel, None)
+    assert not h48(out)
+
+
+def test_a_url_is_still_not_a_team(tmp_path):
+    out = []
+    root, rel = manifest_with(
+        tmp_path, '  team: "https://github.com/orgs/x/teams/y"\n  poc: "a"\n'
+    )
+    chr.check_manifest(out, root, rel, None)
+    assert h48(out)
