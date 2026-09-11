@@ -133,6 +133,7 @@ Environment variables are declared in `.env.example`:
 - `LOGS_BUCKET_NAME`: GCS bucket for remote artifact storage
 - `SESSION_SERVICE_URI`: URI for ADK session service (e.g., `shared://session`)
 - `ARTIFACT_SERVICE_URI`: URI for ADK artifact service (e.g., `shared://artifact`)
+- `HOST`: Host interface binding for FastAPI server (default: `0.0.0.0`)
 - `PORT`: HTTP port for FastAPI server (default: `8080`)
 
 ## Example Interaction

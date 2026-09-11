@@ -77,5 +77,7 @@ app.description = "API for interacting with the Agent brand-search-optimization"
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("PORT")) if os.getenv("PORT") else 8080
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    host = os.getenv("HOST")
+    port_str = os.getenv("PORT")
+    port = int(port_str) if port_str else None
+    uvicorn.run(app, host=host, port=port)

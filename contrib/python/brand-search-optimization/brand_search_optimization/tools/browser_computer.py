@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import socket
 import urllib.parse
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -77,8 +78,24 @@ def _validate_navigation_url(url: str) -> bool:
             ):
                 return False
         except ValueError:
-            # Not an IP literal, valid public hostname format
-            pass
+            # Hostname: resolve DNS and verify resolved IP addresses against private subnets
+            try:
+                addr_info = socket.getaddrinfo(
+                    hostname_lower, None, type=socket.SOCK_STREAM
+                )
+                for item in addr_info:
+                    sockaddr = item[4]
+                    ip_str = sockaddr[0]
+                    ip = ipaddress.ip_address(ip_str)
+                    if (
+                        ip.is_private
+                        or ip.is_loopback
+                        or ip.is_link_local
+                        or ip.is_reserved
+                    ):
+                        return False
+            except (socket.gaierror, OSError, ValueError):
+                pass
         return True
     except Exception:
         return False
@@ -130,6 +147,12 @@ class MockBrowserComputer(BaseComputer):
         self._history: list[str] = [self._url]
         self._history_idx: int = 0
 
+    def _update_url(self, url: str) -> None:
+        """Updates the current URL and appends it to navigation history."""
+        self._url = url
+        self._history.append(self._url)
+        self._history_idx = len(self._history) - 1
+
     async def screen_size(self) -> tuple[int, int]:
         return self._screen_size
 
@@ -155,9 +178,9 @@ class MockBrowserComputer(BaseComputer):
         clear_before_typing: bool = True,
     ) -> ComputerState:
         clean_query = text.strip().replace(" ", "+")
-        self._url = _format_url(f"{GOOGLE_SHOPPING_SEARCH_URL}&q={clean_query}")
-        self._history.append(self._url)
-        self._history_idx = len(self._history) - 1
+        self._update_url(
+            _format_url(f"{GOOGLE_SHOPPING_SEARCH_URL}&q={clean_query}")
+        )
         return await self.current_state()
 
     async def scroll_document(
@@ -190,9 +213,7 @@ class MockBrowserComputer(BaseComputer):
         return await self.current_state()
 
     async def search(self) -> ComputerState:
-        self._url = _format_url(GOOGLE_SHOPPING_SEARCH_URL)
-        self._history.append(self._url)
-        self._history_idx = len(self._history) - 1
+        self._update_url(_format_url(GOOGLE_SHOPPING_SEARCH_URL))
         return await self.current_state()
 
     async def navigate(self, url: str) -> ComputerState:
@@ -202,9 +223,7 @@ class MockBrowserComputer(BaseComputer):
                 "Rejected navigation to disallowed URL: %s", formatted_url
             )
             return await self.current_state()
-        self._url = formatted_url
-        self._history.append(self._url)
-        self._history_idx = len(self._history) - 1
+        self._update_url(formatted_url)
         return await self.current_state()
 
     async def key_combination(self, keys: list[str]) -> ComputerState:

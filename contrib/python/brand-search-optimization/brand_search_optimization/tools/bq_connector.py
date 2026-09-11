@@ -15,6 +15,7 @@
 """Defines BigQuery product catalog connector for brand search optimization."""
 
 import logging
+import re
 from typing import Any
 
 from google.cloud import bigquery
@@ -23,6 +24,20 @@ from pydantic import BaseModel, Field
 from ..shared_libraries import constants
 
 logger = logging.getLogger(__name__)
+
+_BQ_IDENTIFIER_PATTERN: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_:-]+$")
+
+
+def _validate_bq_identifier(identifier: str | None, name: str) -> str:
+    """Validates BigQuery project/dataset/table identifier to prevent SQL injection."""
+    if not identifier or not _BQ_IDENTIFIER_PATTERN.match(identifier.strip()):
+        raise ValueError(
+            f"Invalid BigQuery identifier for {name}: {identifier!r}. Only"
+            " alphanumeric characters, underscores, colons, and hyphens are"
+            " permitted."
+        )
+    return identifier.strip()
+
 
 client: bigquery.Client | None = None
 _client_state: dict[str, BaseException | None] = {"init_error": None}
@@ -134,6 +149,18 @@ def get_product_details_for_brand(
             is_sample_data=True,
         )
 
+    try:
+        project = _validate_bq_identifier(constants.PROJECT, "PROJECT")
+        dataset_id = _validate_bq_identifier(constants.DATASET_ID, "DATASET_ID")
+        table_id = _validate_bq_identifier(constants.TABLE_ID, "TABLE_ID")
+    except ValueError as e:
+        logger.error("BigQuery identifier validation failed: %s", e)
+        return BrandCatalogResponse(
+            brand=clean_brand,
+            products=[],
+            total_count=0,
+        )
+
     query = f"""
         SELECT
             Title,
@@ -141,7 +168,7 @@ def get_product_details_for_brand(
             Attributes,
             Brand
         FROM
-            `{constants.PROJECT}.{constants.DATASET_ID}.{constants.TABLE_ID}`
+            `{project}.{dataset_id}.{table_id}`
         WHERE LOWER(Brand) LIKE LOWER(CONCAT('%', @brand_param, '%'))
         LIMIT @limit_param
     """

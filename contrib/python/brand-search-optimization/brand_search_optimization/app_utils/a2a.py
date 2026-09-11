@@ -104,7 +104,7 @@ _ADK_AGENT_EXECUTOR_EXTENSION_URI = (
 )
 
 
-async def _add_v0_3_compat_interface(card: AgentCard) -> AgentCard:
+def _add_v0_3_compat_interface(card: AgentCard) -> AgentCard:
     """Advertise a v0.3 JSON-RPC interface so the served card stays consumable by
     v0.3 A2A clients — notably Gemini Enterprise registration, whose validator
     still requires the 0.3 card shape (top-level ``url``/``protocolVersion``)."""

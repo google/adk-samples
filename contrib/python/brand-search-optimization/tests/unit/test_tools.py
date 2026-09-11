@@ -105,14 +105,15 @@ class TestBigQueryConnector:
         mock_query_job.result.return_value = [mock_row]
         mock_client.query.return_value = mock_query_job
 
-        response = bq_connector.get_product_details_for_brand(
-            brand="Cymbal", limit=5
-        )
-        assert response.total_count == 1
-        assert response.products[0].title == "Cymbal Runner"
-        assert response.products[0].description == "N/A"
-        assert response.products[0].attributes == "N/A"
-        assert response.products[0].brand == "Cymbal"
+        with patch.object(constants, "PROJECT", "test_project"):
+            response = bq_connector.get_product_details_for_brand(
+                brand="Cymbal", limit=5
+            )
+            assert response.total_count == 1
+            assert response.products[0].title == "Cymbal Runner"
+            assert response.products[0].description == "N/A"
+            assert response.products[0].attributes == "N/A"
+            assert response.products[0].brand == "Cymbal"
 
     def test_get_product_details_for_brand_empty(self):
         response = bq_connector.get_product_details_for_brand(brand="")
@@ -131,6 +132,36 @@ class TestBigQueryConnector:
         assert response.total_count >= 1
         assert any("Acme" in p.title for p in response.products)
         assert response.is_sample_data is True
+
+    def test_validate_bq_identifier(self):
+        assert (
+            bq_connector._validate_bq_identifier("valid_dataset", "DATASET_ID")
+            == "valid_dataset"
+        )
+        assert (
+            bq_connector._validate_bq_identifier("my-project-123", "PROJECT")
+            == "my-project-123"
+        )
+        with pytest.raises(ValueError, match="Invalid BigQuery identifier"):
+            bq_connector._validate_bq_identifier(
+                "dataset; DROP TABLE users;", "DATASET_ID"
+            )
+        with pytest.raises(ValueError, match="Invalid BigQuery identifier"):
+            bq_connector._validate_bq_identifier("table`--", "TABLE_ID")
+        with pytest.raises(ValueError, match="Invalid BigQuery identifier"):
+            bq_connector._validate_bq_identifier("", "PROJECT")
+
+    @patch("brand_search_optimization.tools.bq_connector.client")
+    def test_get_product_details_for_brand_invalid_identifier_rejection(
+        self, mock_client
+    ):
+        with patch.object(constants, "PROJECT", "invalid`project; DROP TABLE;"):
+            response = bq_connector.get_product_details_for_brand(
+                brand="Cymbal"
+            )
+            mock_client.query.assert_not_called()
+            assert response.total_count == 0
+            assert response.products == []
 
 
 class TestBrowserComputer:
@@ -170,6 +201,41 @@ class TestBrowserComputer:
         assert _validate_navigation_url("http://10.0.0.1/admin") is False
         assert _validate_navigation_url("http://192.168.1.1/") is False
         assert _validate_navigation_url("invalid-url") is False
+
+    @patch("socket.getaddrinfo")
+    def test_validate_navigation_url_dns_rebinding_ssrf(self, mock_getaddrinfo):
+        mock_getaddrinfo.return_value = [
+            (2, 1, 6, "", ("127.0.0.1", 80)),
+        ]
+        assert (
+            _validate_navigation_url("http://evil-rebinding-domain.com/secret")
+            is False
+        )
+
+        mock_getaddrinfo.return_value = [
+            (2, 1, 6, "", ("10.0.0.5", 80)),
+        ]
+        assert (
+            _validate_navigation_url("http://internal-private-host.com")
+            is False
+        )
+
+        mock_getaddrinfo.return_value = [
+            (2, 1, 6, "", ("93.184.216.34", 80)),
+        ]
+        assert (
+            _validate_navigation_url("http://legitimate-public-host.com")
+            is True
+        )
+
+    def test_mock_browser_computer_update_url_helper(self):
+        computer = MockBrowserComputer()
+        initial_history_len = len(computer._history)
+        computer._update_url("https://example.com/test")
+        assert computer._url == "https://example.com/test"
+        assert len(computer._history) == initial_history_len + 1
+        assert computer._history[-1] == "https://example.com/test"
+        assert computer._history_idx == len(computer._history) - 1
 
     @pytest.mark.asyncio
     async def test_mock_browser_computer_operations(self):
@@ -351,3 +417,18 @@ class TestAppUtils:
         mock_req_10._json = {"method": "SendMessage"}
         ctx3 = builder.build(mock_req_10)
         assert ctx3.state["headers"]["A2A-Version"] == "1.0"
+
+    def test_add_v0_3_compat_interface_synchronous(self):
+        mock_card = MagicMock()
+        mock_interface = MagicMock()
+        mock_interface.url = "http://localhost:8080/a2a/rpc"
+        mock_card.supported_interfaces = [mock_interface]
+
+        # Ensure calling synchronously does not return a coroutine
+        updated_card = a2a._add_v0_3_compat_interface(mock_card)
+        assert updated_card is mock_card
+        assert len(updated_card.supported_interfaces) == 2
+        added = updated_card.supported_interfaces[1]
+        assert added.protocol_binding == "JSONRPC"
+        assert added.protocol_version == "0.3"
+        assert added.url == "http://localhost:8080/a2a/rpc"

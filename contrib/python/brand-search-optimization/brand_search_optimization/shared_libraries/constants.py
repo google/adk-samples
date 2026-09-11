@@ -21,10 +21,10 @@ DESCRIPTION = (
     "A multi-agent assistant for optimizing brand product search performance "
     "using Gemini Computer Use."
 )
-PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "EMPTY")
-LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
+PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
 MODEL = os.getenv("MODEL")
-DATASET_ID = os.getenv("DATASET_ID", "products_data_agent")
-TABLE_ID = os.getenv("TABLE_ID", "shoe_items")
-DISABLE_WEB_DRIVER = int(os.getenv("DISABLE_WEB_DRIVER", "0"))
-STAGING_BUCKET = os.getenv("STAGING_BUCKET", "")
+DATASET_ID = os.getenv("DATASET_ID")
+TABLE_ID = os.getenv("TABLE_ID")
+DISABLE_WEB_DRIVER = os.getenv("DISABLE_WEB_DRIVER") == "1"
+STAGING_BUCKET = os.getenv("STAGING_BUCKET")
