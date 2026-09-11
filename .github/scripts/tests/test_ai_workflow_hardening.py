@@ -551,6 +551,23 @@ def test_the_diff_is_marked_untrusted_in_the_prompt():
 
 LANES = sorted(WORKFLOWS.glob("ai-pr-review-*.yml"))
 
+# The four model lanes delegate to the reusable core from a job called
+# `trigger`. The house-rules lane runs no model and owns its own jobs, so its
+# invoke gate lives on `check`. Everything below is about the gate, not about
+# what the job goes on to do, so both shapes are covered.
+INVOKE_JOBS = ("trigger", "check")
+
+
+def _invoke_job(workflow: dict, name: str) -> dict:
+    for job in INVOKE_JOBS:
+        if job in workflow["jobs"]:
+            return workflow["jobs"][job]
+    raise AssertionError(
+        f"{name}: no job named any of {INVOKE_JOBS}; the invoke gate this "
+        "test pins has moved somewhere it cannot be found"
+    )
+
+
 # The operands of the `issue_comment` branch of each lane's `if:`. Written as
 # the substrings that carry the meaning, so reformatting the expression does
 # not trip the test but dropping a check does.
@@ -567,8 +584,8 @@ def _squash(text: str) -> str:
 
 def test_the_lane_files_were_all_found():
     """A glob that matches nothing turns every test below into a pass."""
-    assert len(LANES) == 4, (
-        f"expected 4 review lanes, found {[p.name for p in LANES]}"
+    assert len(LANES) == 5, (
+        f"expected 5 review lanes, found {[p.name for p in LANES]}"
     )
 
 
@@ -583,7 +600,7 @@ def test_a_comment_run_that_cannot_review_cannot_cancel_one(path):
     """
     workflow = _load(path)
     group = _squash(workflow["concurrency"]["group"])
-    condition = _squash(workflow["jobs"]["trigger"]["if"])
+    condition = _squash(_invoke_job(workflow, path.name)["if"])
 
     for operand in INVOKE_OPERANDS:
         assert operand in condition, (
@@ -623,3 +640,76 @@ def test_a_push_still_supersedes_the_review_it_replaces(path):
     assert "github.event.pull_request.number" in group
     assert "github.event.issue.number" in group
     assert concurrency["cancel-in-progress"] is True
+
+
+# --------------------------------------------------------------------------
+# The two injected regions. Both are read from the BASE checkout, both degrade
+# to nothing rather than failing a review, and both have a cap of their own.
+# A shared cap would mean the rules and the voice competing for one number,
+# with the loser truncated away silently.
+# --------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+INJECTED_REGIONS = [
+    (".github/review-rules.md", "REVIEWER RULES", "MAX_RULES_BYTES"),
+    (".github/review-voice.md", "REVIEWER VOICE", "MAX_VOICE_BYTES"),
+]
+
+
+@pytest.mark.parametrize(
+    ("path", "marker", "cap"), INJECTED_REGIONS, ids=lambda v: str(v)[:24]
+)
+def test_the_injected_region_exists_and_is_marked(path, marker, cap):
+    text = (REPO_ROOT / path).read_text(encoding="utf-8")
+    assert f"<!-- BEGIN {marker} -->" in text
+    assert f"<!-- END {marker} -->" in text
+
+
+@pytest.mark.parametrize(
+    ("path", "marker", "cap"), INJECTED_REGIONS, ids=lambda v: str(v)[:24]
+)
+def test_the_region_fits_its_own_cap(path, marker, cap):
+    """Fails while there is still room to reorganise, not after the tail has
+    already been dropped from a live review."""
+    core = (REPO_ROOT / ".github/workflows/_ai-pr-review-core.yml").read_text(
+        encoding="utf-8"
+    )
+    limit = int(re.search(rf"{cap}=(\d+)", core).group(1))
+
+    text = (REPO_ROOT / path).read_text(encoding="utf-8")
+    body = text.split(f"<!-- BEGIN {marker} -->")[1].split(
+        f"<!-- END {marker} -->"
+    )[0]
+    size = len(body.encode("utf-8"))
+    assert size <= limit, (
+        f"{path} is {size} bytes against a {limit}-byte cap; the TAIL of it "
+        "is what a live review would silently lose"
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "marker", "cap"), INJECTED_REGIONS, ids=lambda v: str(v)[:24]
+)
+def test_the_workflow_reads_the_region_and_can_survive_without_it(
+    path, marker, cap
+):
+    core = (REPO_ROOT / ".github/workflows/_ai-pr-review-core.yml").read_text(
+        encoding="utf-8"
+    )
+    assert path in core, f"{path} is never read by the workflow"
+    assert f"BEGIN {marker}" in core
+    # Degrade, never fail: a missing region is a warning, not an error.
+    stanza = core.split(f"BEGIN {marker}")[2]
+    assert "::warning::" in stanza[:2000], (
+        f"a missing {path} must warn, not fail every PR"
+    )
+
+
+def test_the_voice_corpus_carries_examples_not_adjectives():
+    """The whole reason this region exists. "Write like a colleague" is advice
+    every model already believes it is following; a rated example is not."""
+    text = (REPO_ROOT / ".github/review-voice.md").read_text(encoding="utf-8")
+    body = text.split("<!-- BEGIN REVIEWER VOICE -->")[1]
+    assert body.count("- `") >= 15, "too few concrete examples to calibrate on"
+    assert "GOOD:" in body and "BAD, with the reason:" in body

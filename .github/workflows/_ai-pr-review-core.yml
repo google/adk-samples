@@ -641,6 +641,12 @@ jobs:
           RULES_FILE='.github/review-rules.md'
           RULES_TEXT=''
           MAX_RULES_BYTES=16000
+          # The voice corpus gets a budget of its own rather than sharing the
+          # rules'. They are different things competing for one number
+          # otherwise, and the loser is truncated silently. ~3.4KB today.
+          VOICE_FILE='.github/review-voice.md'
+          VOICE_TEXT=''
+          MAX_VOICE_BYTES=6000
           if [[ -f "${RULES_FILE}" ]] \
             && grep -q '<!-- BEGIN REVIEWER RULES -->' "${RULES_FILE}" \
             && grep -q '<!-- END REVIEWER RULES -->' "${RULES_FILE}"; then
@@ -663,7 +669,16 @@ jobs:
             RULES_TEXT=''
           else
             RULES_BYTES="$(printf '%s' "${RULES_TEXT}" | wc -c | tr -d ' ')"
-            echo "repo review rules: ${RULES_BYTES} bytes"
+            echo "repo review rules: ${RULES_BYTES} of ${MAX_RULES_BYTES} bytes"
+            # Warn BEFORE the cap bites. From the reviewer's point of view
+            # truncation is silent — the rules simply stop partway through —
+            # so the first sign of it would otherwise be a lane that quietly
+            # forgot whatever sits at the end of the file. A maintainer adding
+            # a rule needs to hear that the room is running out while there is
+            # still room to reorganise.
+            if (( RULES_BYTES * 100 / MAX_RULES_BYTES >= 80 )); then
+              echo "::warning::${RULES_FILE} is at $(( RULES_BYTES * 100 / MAX_RULES_BYTES ))% of the ${MAX_RULES_BYTES}-byte cap. Past it the TAIL of the marked region is what goes, so keep the most load-bearing rules first."
+            fi
             if (( RULES_BYTES > MAX_RULES_BYTES )); then
               echo "::warning::${RULES_FILE} contributes ${RULES_BYTES} bytes, over the ${MAX_RULES_BYTES}-byte cap; truncating so it cannot starve the diff"
               # Via a file, never `printf ... | head -c`. head exits at the cap
@@ -674,6 +689,35 @@ jobs:
               printf '%s' "${RULES_TEXT}" > rules_full.txt
               RULES_TEXT="$(head -c "${MAX_RULES_BYTES}" rules_full.txt)
           [... repo rules truncated — apply only what is shown above ...]"
+            fi
+          fi
+
+          # The voice corpus. Same contract as the rules region: extracted
+          # from the BASE checkout between its own markers, capped, and
+          # degrading to nothing rather than failing the review. A reviewer
+          # with no corpus writes in the house model voice, which is worse
+          # than the calibrated one and still worth posting.
+          if [[ -f "${VOICE_FILE}" ]] \
+            && grep -q '<!-- BEGIN REVIEWER VOICE -->' "${VOICE_FILE}" \
+            && grep -q '<!-- END REVIEWER VOICE -->' "${VOICE_FILE}"; then
+            VOICE_TEXT="$(
+              awk '
+                /<!-- BEGIN REVIEWER VOICE -->/ { inside = 1; next }
+                /<!-- END REVIEWER VOICE -->/   { if (inside) exit }
+                inside
+              ' "${VOICE_FILE}"
+            )"
+          fi
+          if [[ -z "${VOICE_TEXT//[[:space:]]/}" ]]; then
+            echo "::warning::${VOICE_FILE} is missing or has no BEGIN/END REVIEWER VOICE markers; reviewing without the voice corpus"
+            VOICE_TEXT=''
+          else
+            VOICE_BYTES="$(printf '%s' "${VOICE_TEXT}" | wc -c | tr -d ' ')"
+            echo "review voice: ${VOICE_BYTES} of ${MAX_VOICE_BYTES} bytes"
+            if (( VOICE_BYTES > MAX_VOICE_BYTES )); then
+              echo "::warning::${VOICE_FILE} contributes ${VOICE_BYTES} bytes, over the ${MAX_VOICE_BYTES}-byte cap; truncating"
+              printf '%s' "${VOICE_TEXT}" > voice_full.txt
+              VOICE_TEXT="$(head -c "${MAX_VOICE_BYTES}" voice_full.txt)"
             fi
           fi
 
@@ -822,6 +866,14 @@ jobs:
               printf '%s\n\n' "${RULES_TEXT}"
             fi
 
+            # After the rules and immediately before the output format, which
+            # is where the model is about to start writing prose. An example
+            # of the target shape lands harder here than the same text would
+            # three thousand tokens earlier.
+            if [[ -n "${VOICE_TEXT}" ]]; then
+              printf '%s\n\n' "${VOICE_TEXT}"
+            fi
+
             cat <<'GUIDE_EOF'
           ## Guidelines
 
@@ -953,8 +1005,30 @@ jobs:
               head -c "${DIFF_BUDGET}" pr_diff_reviewable.txt
               printf '\n[... diff truncated — review only what is shown above ...]'
             } > pr_diff_used.txt
+
+            # Name what fell off the end. A truncated review is not wrong, but
+            # it IS narrower than it looks: the author sees comments on the
+            # files that happened to sort early and silence on the rest, and
+            # reasonably reads that silence as approval. The cut lands at a
+            # byte offset, so the last file named in the kept text is the last
+            # one that was even partly seen; everything after it in the full
+            # diff was not looked at at all.
+            grep -o '^diff --git a/[^ ]*' pr_diff_reviewable.txt \
+              | sed 's|^diff --git a/||' > diff_all_files.txt
+            grep -o '^diff --git a/[^ ]*' pr_diff_used.txt \
+              | sed 's|^diff --git a/||' > diff_seen_files.txt
+            # comm needs sorted input; the diff order is not sorted.
+            sort -u diff_all_files.txt > all_sorted.txt
+            sort -u diff_seen_files.txt > seen_sorted.txt
+            comm -23 all_sorted.txt seen_sorted.txt > unreviewed_files.txt
+            UNREVIEWED="$(wc -l < unreviewed_files.txt | tr -d ' ')"
+            if (( UNREVIEWED > 0 )); then
+              echo "::warning::${UNREVIEWED} file(s) fell outside the prompt budget and were not reviewed by this lane"
+              head -n 20 unreviewed_files.txt | sed 's/^/  unreviewed: /'
+            fi
           else
             cp pr_diff_reviewable.txt pr_diff_used.txt
+            : > unreviewed_files.txt
           fi
 
           cat prompt_head.txt pr_diff_used.txt > full_prompt.txt
@@ -1209,6 +1283,7 @@ jobs:
             --label "${REVIEW_LABEL}" \
             --repo "${GITHUB_REPOSITORY}" \
             --pr "${PR_NUMBER}" \
+            --unreviewed unreviewed_files.txt \
             --out review_payload.json
 
           if [[ -f review_payload.json ]]; then

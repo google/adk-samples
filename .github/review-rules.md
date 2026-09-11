@@ -1,16 +1,23 @@
 # Repository rules — `google/adk-samples`
 
-**Single source of truth for repo-specific review rules.** Three consumers:
+**Single source of truth for repo-specific review rules.** Four consumers:
 
 - The four **AI PR reviewers**. `_ai-pr-review-core.yml` injects everything
   between the `BEGIN`/`END REVIEWER RULES` markers verbatim into their prompt.
   They run in an empty scratch directory with no repository access, so the
-  marked region is the ONLY repo knowledge they have.
+  marked region is the ONLY repo knowledge they have. How a comment must be
+  WORDED lives in [`review-voice.md`](./review-voice.md), injected the same way
+  under its own cap.
+- The **house-rules lane**, `ai-pr-review-house-rules.yml`. No model: it runs
+  `check_house_rules.py` against a checkout of the PR and posts what the script
+  decides. Rules it implements do not depend on a reviewer reading this file
+  correctly, and it cannot invent a violation.
 - The **`github-pr-review` repo skill**, run by hand. Its house-rules lane reads
   this file; `reference/lane-prompt.md` cites findings by `H` number.
-- **`scripts/check_house_rules.py`**, which reimplements the mechanical rules in
+- **`scripts/check_house_rules.py`**, which implements the mechanical rules in
   Python. It does not read this file — `tests/test_house_rules_drift.py` pins
-  the two together.
+  the two together, and fails if a reportable rule is neither implemented there
+  nor declared in its `MODEL_JUDGED` list.
 
 Text outside the markers reaches the skill and its tests, never the AI prompt.
 
