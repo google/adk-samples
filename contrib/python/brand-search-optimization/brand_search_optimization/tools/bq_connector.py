@@ -15,6 +15,7 @@
 """Defines BigQuery product catalog connector for brand search optimization."""
 
 import logging
+from typing import Any
 
 from google.cloud import bigquery
 from pydantic import BaseModel, Field
@@ -25,6 +26,17 @@ logger = logging.getLogger(__name__)
 
 client: bigquery.Client | None = None
 _client_state: dict[str, BaseException | None] = {"init_error": None}
+
+
+def _extract_field(row: Any, *keys: str, default: str = "") -> str:
+    """Safely extracts a non-empty string value from row attributes."""
+    for key in keys:
+        val = getattr(row, key, None)
+        if val is not None:
+            val_str = str(val).strip()
+            if val_str:
+                return val_str
+    return default
 
 
 def _get_client() -> bigquery.Client | None:
@@ -145,19 +157,21 @@ def get_product_details_for_brand(
         results = query_job.result()
         products = []
         for row in results:
+            title_val = _extract_field(row, "Title", "title", default="")
+            if not title_val:
+                continue
             products.append(
                 ProductRecord(
-                    title=getattr(row, "Title", "")
-                    or getattr(row, "title", ""),
-                    description=getattr(row, "Description", "")
-                    or getattr(row, "description", "")
-                    or "N/A",
-                    attributes=getattr(row, "Attributes", "")
-                    or getattr(row, "attributes", "")
-                    or "N/A",
-                    brand=getattr(row, "Brand", "")
-                    or getattr(row, "brand", "")
-                    or clean_brand,
+                    title=title_val,
+                    description=_extract_field(
+                        row, "Description", "description", default="N/A"
+                    ),
+                    attributes=_extract_field(
+                        row, "Attributes", "attributes", default="N/A"
+                    ),
+                    brand=_extract_field(
+                        row, "Brand", "brand", default=clean_brand
+                    ),
                 )
             )
         return BrandCatalogResponse(

@@ -79,6 +79,31 @@ class TestBigQueryConnector:
             assert response.products[1].title == "Cymbal Sportswear T-Shirt"
             assert response.is_sample_data is False
 
+    @patch("brand_search_optimization.tools.bq_connector.client")
+    def test_get_product_details_for_brand_null_fields(self, mock_client):
+        mock_row = MagicMock()
+        mock_row.Title = "Cymbal Runner"
+        mock_row.title = None
+        mock_row.Description = None
+        mock_row.description = None
+        mock_row.Attributes = None
+        mock_row.attributes = None
+        mock_row.Brand = None
+        mock_row.brand = None
+
+        mock_query_job = MagicMock()
+        mock_query_job.result.return_value = [mock_row]
+        mock_client.query.return_value = mock_query_job
+
+        response = bq_connector.get_product_details_for_brand(
+            brand="Cymbal", limit=5
+        )
+        assert response.total_count == 1
+        assert response.products[0].title == "Cymbal Runner"
+        assert response.products[0].description == "N/A"
+        assert response.products[0].attributes == "N/A"
+        assert response.products[0].brand == "Cymbal"
+
     def test_get_product_details_for_brand_empty(self):
         response = bq_connector.get_product_details_for_brand(brand="")
         assert response.total_count == 0

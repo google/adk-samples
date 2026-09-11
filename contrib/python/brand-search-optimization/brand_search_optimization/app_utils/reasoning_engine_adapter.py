@@ -90,7 +90,12 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
             # the callable, so a sync method returning an async iterable also
             # works. The sync route below draws the same distinction for the
             # `""` and `async` buckets via iscoroutinefunction.
-            stream = method(**(body.get("input") or {}))
+            kwargs = body.get("input") or {}
+            stream = (
+                await method(**kwargs)
+                if inspect.iscoroutinefunction(method)
+                else method(**kwargs)
+            )
             if hasattr(stream, "__aiter__"):
                 async for event in stream:
                     yield json.dumps(event) + "\n"

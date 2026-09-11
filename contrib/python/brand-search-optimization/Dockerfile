@@ -16,13 +16,23 @@ FROM python:3.11-slim
 
 RUN pip install --no-cache-dir uv==0.8.13
 
+RUN useradd --create-home --uid 1000 appuser
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN mkdir -p /ms-playwright && chown -R appuser:appuser /ms-playwright
+
 WORKDIR /code
+RUN chown appuser:appuser /code
 
-COPY ./pyproject.toml ./README.md ./uv.lock* ./
-
-COPY ./brand_search_optimization ./brand_search_optimization
+COPY --chown=appuser:appuser ./pyproject.toml ./README.md ./uv.lock* ./
+COPY --chown=appuser:appuser ./brand_search_optimization ./brand_search_optimization
+COPY --chown=appuser:appuser ./.env.example ./.env.example
 
 RUN uv sync --frozen && uv run playwright install --with-deps chromium
+
+RUN chown -R appuser:appuser /code /ms-playwright /home/appuser
+
+USER appuser
 
 ARG AGENT_VERSION=0.1.0
 ENV AGENT_VERSION=${AGENT_VERSION}

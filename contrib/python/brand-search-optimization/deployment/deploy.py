@@ -86,7 +86,9 @@ def main(argv: list[str]) -> None:
         print("Missing required environment variable: STAGING_BUCKET")
         return
 
-    env_vars["DISABLE_WEB_DRIVER"] = str(constants.DISABLE_WEB_DRIVER)
+    env_vars["DISABLE_WEB_DRIVER"] = (
+        "1" if constants.DISABLE_WEB_DRIVER else "0"
+    )
 
     vertexai.init(
         project=project_id,

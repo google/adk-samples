@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_SCREEN_SIZE: tuple[int, int] = (1280, 800)
 DEFAULT_TIMEOUT_MS: int = 5000
 DEFAULT_SCROLL_OFFSET: int = 500
+MAX_WAIT_SECONDS: int = 5
+POST_SCROLL_WAIT_SECONDS: float = 0.3
+GOOGLE_SHOPPING_SEARCH_URL: str = "https://www.google.com/search?tbm=shop"
+DEFAULT_INITIAL_SEARCH_URL: str = (
+    f"{GOOGLE_SHOPPING_SEARCH_URL}&q=running+shoes"
+)
 
 
 class MockBrowserComputer(BaseComputer):
@@ -52,7 +58,7 @@ class MockBrowserComputer(BaseComputer):
     def __init__(
         self,
         screen_size: tuple[int, int] = DEFAULT_SCREEN_SIZE,
-        initial_url: str = "https://www.google.com/search?tbm=shop&q=running+shoes",
+        initial_url: str = DEFAULT_INITIAL_SEARCH_URL,
     ) -> None:
         self._screen_size = screen_size
         self._url = initial_url
@@ -83,7 +89,7 @@ class MockBrowserComputer(BaseComputer):
         clear_before_typing: bool = True,
     ) -> ComputerState:
         clean_query = text.strip().replace(" ", "+")
-        self._url = f"https://www.google.com/search?tbm=shop&q={clean_query}"
+        self._url = f"{GOOGLE_SHOPPING_SEARCH_URL}&q={clean_query}"
         self._history.append(self._url)
         self._history_idx = len(self._history) - 1
         return await self.current_state()
@@ -118,7 +124,7 @@ class MockBrowserComputer(BaseComputer):
         return await self.current_state()
 
     async def search(self) -> ComputerState:
-        self._url = "https://www.google.com/search?tbm=shop"
+        self._url = GOOGLE_SHOPPING_SEARCH_URL
         self._history.append(self._url)
         self._history_idx = len(self._history) - 1
         return await self.current_state()
@@ -156,8 +162,24 @@ class PlaywrightBrowserComputer(BaseComputer):
         self._headless = headless
         self._playwright: Any | None = None
         self._browser: Any | None = None
-        self._context: Any | None = None
-        self._page: Any | None = None
+        self._contexts: dict[str, Any] = {}
+        self._pages: dict[str, Any] = {}
+        self._current_session_id: str = "default"
+
+    async def prepare(self, tool_context: Any) -> None:
+        """Binds active session context to avoid multi-session page contention."""
+        if (
+            tool_context
+            and hasattr(tool_context, "session")
+            and tool_context.session
+        ):
+            self._current_session_id = str(tool_context.session.id)
+        else:
+            self._current_session_id = "default"
+
+    @property
+    def _page(self) -> Any:
+        return self._pages.get(self._current_session_id)
 
     async def screen_size(self) -> tuple[int, int]:
         return self._screen_size
@@ -166,7 +188,8 @@ class PlaywrightBrowserComputer(BaseComputer):
         return ComputerEnvironment.ENVIRONMENT_BROWSER
 
     async def _ensure_browser(self) -> None:
-        if self._page is None:
+        sid = self._current_session_id
+        if sid not in self._pages or self._pages[sid] is None:
             try:
                 from playwright.async_api import async_playwright
 
@@ -175,16 +198,15 @@ class PlaywrightBrowserComputer(BaseComputer):
                 if self._browser is None:
                     self._browser = await self._playwright.chromium.launch(
                         headless=self._headless,
-                        args=["--no-sandbox", "--disable-setuid-sandbox"],
                     )
-                if self._context is None:
-                    self._context = await self._browser.new_context(
+                if sid not in self._contexts or self._contexts[sid] is None:
+                    self._contexts[sid] = await self._browser.new_context(
                         viewport={
                             "width": self._screen_size[0],
                             "height": self._screen_size[1],
                         }
                     )
-                self._page = await self._context.new_page()
+                self._pages[sid] = await self._contexts[sid].new_page()
             except Exception as e:
                 logger.warning(
                     "Playwright initialization failed (%s); falling back to dummy state",
@@ -259,7 +281,7 @@ class PlaywrightBrowserComputer(BaseComputer):
             elif direction == "right":
                 delta_x = DEFAULT_SCROLL_OFFSET
             await self._page.mouse.wheel(delta_x, delta_y)
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(POST_SCROLL_WAIT_SECONDS)
         return await self.current_state()
 
     async def scroll_at(
@@ -282,12 +304,12 @@ class PlaywrightBrowserComputer(BaseComputer):
             elif direction == "right":
                 delta_x = magnitude
             await self._page.mouse.wheel(delta_x, delta_y)
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(POST_SCROLL_WAIT_SECONDS)
         return await self.current_state()
 
     async def wait(self, seconds: int) -> ComputerState:
         await self._ensure_browser()
-        await asyncio.sleep(min(seconds, 5))
+        await asyncio.sleep(min(seconds, MAX_WAIT_SECONDS))
         return await self.current_state()
 
     async def go_back(self) -> ComputerState:
@@ -312,7 +334,7 @@ class PlaywrightBrowserComputer(BaseComputer):
         await self._ensure_browser()
         if self._page:
             await self._page.goto(
-                "https://www.google.com/search?tbm=shop",
+                GOOGLE_SHOPPING_SEARCH_URL,
                 wait_until="domcontentloaded",
             )
         return await self.current_state()
@@ -360,12 +382,20 @@ class PlaywrightBrowserComputer(BaseComputer):
         )
 
     async def close(self) -> None:
-        if self._page is not None:
-            await self._page.close()
-            self._page = None
-        if self._context is not None:
-            await self._context.close()
-            self._context = None
+        for page in self._pages.values():
+            if page is not None:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+        self._pages.clear()
+        for context in self._contexts.values():
+            if context is not None:
+                try:
+                    await context.close()
+                except Exception:
+                    pass
+        self._contexts.clear()
         if self._browser is not None:
             await self._browser.close()
             self._browser = None

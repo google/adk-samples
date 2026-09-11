@@ -19,9 +19,11 @@ from google.adk.apps import App
 
 from . import prompt
 from .shared_libraries import constants
-from .sub_agents.comparison.agent import comparison_root_agent
-from .sub_agents.keyword_finding.agent import keyword_finding_agent
-from .sub_agents.search_results.agent import search_results_agent
+from .sub_agents import (
+    comparison_root_agent,
+    keyword_finding_agent,
+    search_results_agent,
+)
 
 root_agent = LlmAgent(
     model=constants.MODEL,
