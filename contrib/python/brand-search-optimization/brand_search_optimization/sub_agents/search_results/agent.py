@@ -18,9 +18,12 @@ Follows official ADK Computer Use pattern:
 https://github.com/google/adk-python/tree/main/contributing/samples/multimodal/computer_use
 """
 
+import functools
 import os
+from typing import Any
 
 from google.adk.agents.llm_agent import Agent
+from google.adk.models.llm_request import LlmRequest
 from google.adk.tools.computer_use.computer_use_toolset import (
     ComputerUseToolset,
 )
@@ -28,7 +31,44 @@ from google.adk.tools.computer_use.computer_use_toolset import (
 from .playwright_computer import PlaywrightComputer
 from .prompt import SEARCH_RESULT_AGENT_PROMPT
 
-computer = PlaywrightComputer()
+
+async def adapt_computer_use_tools_callback(
+    callback_context: Any,
+    llm_request: LlmRequest,
+) -> None:
+    """Adapts BaseComputer tool names to standard Gemini Computer Use action names."""
+
+    def make_adapter(new_name: str):
+        def adapter(orig_func: Any):
+            @functools.wraps(orig_func)
+            async def wrapped(*args: Any, **kwargs: Any) -> Any:
+                return await orig_func(*args, **kwargs)
+
+            wrapped.__name__ = new_name
+            return wrapped
+
+        return adapter
+
+    adaptations = [
+        ("click_at", "click"),
+        ("type_text_at", "type"),
+        ("hover_at", "hover"),
+        ("scroll_document", "scroll"),
+        ("current_state", "take_screenshot"),
+        ("key_combination", "press_key"),
+    ]
+
+    for method_name, new_name in adaptations:
+        if method_name in llm_request.tools_dict:
+            orig_tool = llm_request.tools_dict[method_name]
+            await ComputerUseToolset.adapt_computer_use_tool(
+                method_name,
+                make_adapter(new_name),
+                llm_request,
+            )
+            # Retain original method name as an alias
+            llm_request.tools_dict[method_name] = orig_tool
+
 
 search_results_agent = Agent(
     model=os.getenv("MODEL_NAME"),
@@ -38,5 +78,6 @@ search_results_agent = Agent(
         "ranking visibility using ADK Computer Use Toolset."
     ),
     instruction=SEARCH_RESULT_AGENT_PROMPT,
-    tools=[ComputerUseToolset(computer=computer)],
+    tools=[ComputerUseToolset(computer=PlaywrightComputer())],
+    before_model_callback=adapt_computer_use_tools_callback,
 )

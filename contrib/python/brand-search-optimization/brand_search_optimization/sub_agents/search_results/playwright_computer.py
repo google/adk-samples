@@ -12,17 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Playwright implementation of ADK BaseComputer for Gemini Computer Use.
-
-Follows the official ADK Computer Use specification:
-https://github.com/google/adk-python/tree/main/contributing/samples/multimodal/computer_use
-"""
+"""Playwright implementation of ADK BaseComputer for Gemini Computer Use."""
 
 import asyncio
-import os
-import tempfile
 from typing import Literal
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 from google.adk.tools.computer_use.base_computer import (
     BaseComputer,
@@ -38,8 +32,6 @@ from playwright.async_api import (
 
 DEFAULT_SCREEN_SIZE = (1440, 900)
 START_URL = "https://www.google.com"
-PAGE_LOAD_TIMEOUT_MS = 3000
-DEFAULT_SCROLL_FACTOR = 0.7
 
 
 def _format_url(url: str) -> str:
@@ -59,14 +51,10 @@ class PlaywrightComputer(BaseComputer):
     def __init__(
         self,
         screen_size: tuple[int, int] = DEFAULT_SCREEN_SIZE,
-        user_data_dir: str | None = None,
         start_url: str = START_URL,
     ) -> None:
         self._screen_size = screen_size
         self._start_url = start_url
-        self._user_data_dir = user_data_dir or tempfile.mkdtemp(
-            prefix="adk_playwright_profile_"
-        )
         self._playwright: Playwright | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
@@ -77,221 +65,223 @@ class PlaywrightComputer(BaseComputer):
     async def environment(self) -> ComputerEnvironment:
         return ComputerEnvironment.ENVIRONMENT_BROWSER
 
-    async def _ensure_browser(self) -> Page:
-        """Lazily initialize browser context with anti-bot evasion settings."""
-        is_closed = False
-        if self._page is not None and hasattr(self._page, "is_closed"):
-            fn = self._page.is_closed
-            if callable(fn) and not hasattr(fn, "assert_called"):
-                try:
-                    is_closed = bool(fn())
-                except Exception:
-                    pass
+    async def initialize(self) -> None:
+        """Initialize the browser, context, and default page."""
+        if self._page is not None:
+            return
+        self._playwright = await async_playwright().start()
+        browser = await self._playwright.chromium.launch(headless=True)
+        self._context = await browser.new_context(
+            viewport={
+                "width": self._screen_size[0],
+                "height": self._screen_size[1],
+            },
+            user_agent=(
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            ),
+        )
+        self._page = await self._context.new_page()
+        await self._page.goto(self._start_url)
 
-        if self._page is None or is_closed:
-            os.makedirs(self._user_data_dir, exist_ok=True)
-            if self._playwright is None:
-                self._playwright = await async_playwright().start()
-            if self._context is None:
-                self._context = await self._playwright.chromium.launch_persistent_context(
-                    user_data_dir=self._user_data_dir,
-                    headless=True,
-                    ignore_default_args=["--enable-automation"],
-                    args=[
-                        "--disable-dev-shm-usage",
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-infobars",
-                    ],
-                    viewport={
-                        "width": self._screen_size[0],
-                        "height": self._screen_size[1],
-                    },
-                    user_agent=(
-                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-                    ),
-                    locale="en-US",
-                    timezone_id="America/New_York",
-                )
-                await self._context.add_init_script("""
-                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                    window.chrome = { runtime: {} };
-                    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                    Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-                """)
-            self._page = (
-                self._context.pages[0]
-                if self._context.pages
-                else await self._context.new_page()
-            )
+    async def _get_page(self) -> Page:
+        if self._page is None:
+            await self.initialize()
         return self._page
 
     async def _capture_state(self) -> ComputerState:
-        """Capture screenshot and current URL, auto-dismissing consent modals."""
-        if self._page is None:
-            return ComputerState(screenshot=b"", url="")
+        page = await self._get_page()
         try:
-            await self._page.wait_for_load_state(
-                "domcontentloaded", timeout=PAGE_LOAD_TIMEOUT_MS
-            )
+            await page.wait_for_load_state("domcontentloaded", timeout=3000)
         except Exception:
             pass
-
-        # Auto-dismiss common cookie/consent modals
-        if hasattr(self._page, "get_by_role") and not hasattr(
-            self._page.get_by_role, "assert_called"
-        ):
-            for text in (
-                "Accept all",
-                "I agree",
-                "Tout accepter",
-                "Alle akzeptieren",
-            ):
-                try:
-                    btn = self._page.get_by_role("button", name=text)
-                    if hasattr(btn, "is_visible") and await btn.is_visible():
-                        await btn.click()
-                        await asyncio.sleep(0.5)
-                        break
-                except Exception:
-                    pass
-
         await asyncio.sleep(0.5)
         try:
-            screenshot = await self._page.screenshot(type="png")
-            url = self._page.url
-            return ComputerState(screenshot=screenshot, url=url)
+            screenshot = await page.screenshot(type="png")
         except Exception:
-            url = getattr(self._page, "url", "")
-            return ComputerState(screenshot=b"", url=url)
+            screenshot = b""
+
+        raw_url = getattr(page, "url", "") or ""
+        if (
+            not raw_url
+            or raw_url == "about:blank"
+            or not raw_url.startswith(("http://", "https://"))
+        ):
+            raw_url = self._start_url
+
+        return ComputerState(screenshot=screenshot, url=raw_url)
 
     async def open_web_browser(self) -> ComputerState:
-        page = await self._ensure_browser()
+        page = await self._get_page()
         await page.goto(self._start_url)
         return await self._capture_state()
 
-    async def click_at(self, x: int, y: int) -> ComputerState:
-        page = await self._ensure_browser()
-        await page.mouse.click(x, y)
+    async def click_at(
+        self,
+        x: int = 0,
+        y: int = 0,
+        coordinate: list[int] | tuple[int, int] | None = None,
+        point: list[int] | tuple[int, int] | None = None,
+        button: str = "left",
+    ) -> ComputerState:
+        page = await self._get_page()
+        coord = coordinate or point
+        if coord and len(coord) >= 2:
+            x, y = coord[0], coord[1]
+        await page.mouse.click(int(x), int(y))
         return await self._capture_state()
 
-    async def hover_at(self, x: int, y: int) -> ComputerState:
-        page = await self._ensure_browser()
-        await page.mouse.move(x, y)
+    async def hover_at(
+        self,
+        x: int = 0,
+        y: int = 0,
+        coordinate: list[int] | tuple[int, int] | None = None,
+        point: list[int] | tuple[int, int] | None = None,
+    ) -> ComputerState:
+        page = await self._get_page()
+        coord = coordinate or point
+        if coord and len(coord) >= 2:
+            x, y = coord[0], coord[1]
+        await page.mouse.move(int(x), int(y))
         return await self._capture_state()
 
     async def type_text_at(
         self,
-        x: int,
-        y: int,
-        text: str,
+        x: int = 0,
+        y: int = 0,
+        text: str = "",
+        value: str = "",
+        query: str = "",
         press_enter: bool = True,
         clear_before_typing: bool = True,
+        coordinate: list[int] | tuple[int, int] | None = None,
+        point: list[int] | tuple[int, int] | None = None,
     ) -> ComputerState:
-        page = await self._ensure_browser()
+        page = await self._get_page()
+        coord = coordinate or point
+        if coord and len(coord) >= 2:
+            x, y = coord[0], coord[1]
+        if x or y:
+            await page.mouse.click(int(x), int(y))
         if clear_before_typing:
-            await page.mouse.click(x, y)
             await page.keyboard.press("Meta+A")
             await page.keyboard.press("Backspace")
-        await page.keyboard.type(text)
+        text_to_type = text or value or query
+        if text_to_type:
+            await page.keyboard.type(str(text_to_type))
         if press_enter:
             await page.keyboard.press("Enter")
         return await self._capture_state()
 
-    def _calculate_scroll_deltas(
-        self,
-        direction: Literal["up", "down", "left", "right"],
-        magnitude: int | None = None,
-    ) -> tuple[int, int]:
-        """Calculates dx and dy scroll deltas based on direction and magnitude or screen dimensions."""
-        if magnitude is not None:
-            dy = (
-                magnitude
-                if direction == "down"
-                else (-magnitude if direction == "up" else 0)
-            )
-            dx = (
-                magnitude
-                if direction == "right"
-                else (-magnitude if direction == "left" else 0)
-            )
-        else:
-            w, h = self._screen_size
-            dy = (
-                int(h * DEFAULT_SCROLL_FACTOR)
-                if direction == "down"
-                else (
-                    -int(h * DEFAULT_SCROLL_FACTOR) if direction == "up" else 0
-                )
-            )
-            dx = (
-                int(w * DEFAULT_SCROLL_FACTOR)
-                if direction == "right"
-                else (
-                    -int(w * DEFAULT_SCROLL_FACTOR)
-                    if direction == "left"
-                    else 0
-                )
-            )
-        return dx, dy
-
     async def scroll_document(
-        self, direction: Literal["up", "down", "left", "right"]
+        self,
+        direction: Literal["up", "down", "left", "right"] = "down",
     ) -> ComputerState:
-        page = await self._ensure_browser()
-        dx, dy = self._calculate_scroll_deltas(direction)
-        await page.mouse.wheel(dx, dy)
+        page = await self._get_page()
+        dy = int(self._screen_size[1] * 0.7) * (
+            1 if direction == "down" else -1
+        )
+        await page.mouse.wheel(0, dy)
         return await self._capture_state()
 
     async def scroll_at(
         self,
-        x: int,
-        y: int,
-        direction: Literal["up", "down", "left", "right"],
-        magnitude: int,
+        x: int = 0,
+        y: int = 0,
+        direction: Literal["up", "down", "left", "right"] = "down",
+        magnitude: int = 300,
     ) -> ComputerState:
-        page = await self._ensure_browser()
-        await page.mouse.move(x, y)
-        dx, dy = self._calculate_scroll_deltas(direction, magnitude=magnitude)
-        await page.mouse.wheel(dx, dy)
+        page = await self._get_page()
+        if x or y:
+            await page.mouse.move(int(x), int(y))
+        dy = magnitude if direction == "down" else -magnitude
+        await page.mouse.wheel(0, dy)
         return await self._capture_state()
 
-    async def wait(self, seconds: int) -> ComputerState:
-        await asyncio.sleep(seconds)
+    async def wait(
+        self,
+        seconds: int = 5,
+        duration: int = 5,
+        duration_seconds: int = 5,
+    ) -> ComputerState:
+        sec = (
+            seconds
+            if seconds != 5
+            else (duration if duration != 5 else duration_seconds)
+        )
+        await asyncio.sleep(sec)
         return await self._capture_state()
 
     async def go_back(self) -> ComputerState:
-        page = await self._ensure_browser()
+        page = await self._get_page()
         await page.go_back()
         return await self._capture_state()
 
     async def go_forward(self) -> ComputerState:
-        page = await self._ensure_browser()
+        page = await self._get_page()
         await page.go_forward()
         return await self._capture_state()
 
-    async def search(self) -> ComputerState:
-        page = await self._ensure_browser()
-        await page.goto(self._start_url)
+    async def search(
+        self,
+        query: str = "",
+        text: str = "",
+        search_query: str = "",
+        q: str = "",
+    ) -> ComputerState:
+        page = await self._get_page()
+        raw_query = query or text or search_query or q
+        search_str = raw_query.strip()
+        if search_str:
+            target_url = (
+                f"https://www.google.com/search?q={quote_plus(search_str)}"
+            )
+            await page.goto(target_url)
+        else:
+            await page.goto(self._start_url)
         return await self._capture_state()
 
-    async def navigate(self, url: str) -> ComputerState:
-        page = await self._ensure_browser()
-        await page.goto(_format_url(url))
+    async def navigate(self, url: str = START_URL) -> ComputerState:
+        page = await self._get_page()
+        await page.goto(_format_url(url or self._start_url))
         return await self._capture_state()
 
-    async def key_combination(self, keys: list[str]) -> ComputerState:
-        page = await self._ensure_browser()
-        await page.keyboard.press("+".join(keys))
+    async def key_combination(
+        self,
+        keys: list[str] | str | None = None,
+        key: str | None = None,
+        hotkey: str | None = None,
+    ) -> ComputerState:
+        page = await self._get_page()
+        k = key or hotkey
+        if k:
+            key_list = [k]
+        elif isinstance(keys, str):
+            key_list = [keys]
+        elif keys:
+            key_list = list(keys)
+        else:
+            key_list = ["Enter"]
+        await page.keyboard.press("+".join(key_list))
         return await self._capture_state()
 
     async def drag_and_drop(
-        self, x: int, y: int, destination_x: int, destination_y: int
+        self,
+        x: int = 0,
+        y: int = 0,
+        destination_x: int = 0,
+        destination_y: int = 0,
+        start: list[int] | None = None,
+        end: list[int] | None = None,
     ) -> ComputerState:
-        page = await self._ensure_browser()
-        await page.mouse.move(x, y)
+        page = await self._get_page()
+        if start and len(start) >= 2:
+            x, y = start[0], start[1]
+        if end and len(end) >= 2:
+            destination_x, destination_y = end[0], end[1]
+        await page.mouse.move(int(x), int(y))
         await page.mouse.down()
-        await page.mouse.move(destination_x, destination_y)
+        await page.mouse.move(int(destination_x), int(destination_y))
         await page.mouse.up()
         return await self._capture_state()
 

@@ -25,10 +25,10 @@ COMPARISON_CRITIC_AGENT_PROMPT = """
 """
 
 COMPARISON_ROOT_AGENT_PROMPT = """
-    You are a routing agent
-    1. Route to `comparison_generator_agent` to generate comparison
-    2. Route to `comparsion_critic_agent` to critic this comparison
-    3. Loop through these agents
-    4. Stop when the `comparison_critic_agent` is satisfied
-    5. Relay the comparison report to the user
+    You are a comparison orchestrator agent.
+    Follow this structured flow to produce the title comparison report:
+    1. Route to `comparison_generator_agent` to create the initial side-by-side title comparison.
+    2. Route to `comparison_critic_agent` to review and critique the generated comparison.
+    3. If the critic suggests improvements, route once more to `comparison_generator_agent` to finalize the report.
+    4. Return the final finalized comparison report with clear title recommendations.
 """
