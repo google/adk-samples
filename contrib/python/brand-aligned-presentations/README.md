@@ -107,10 +107,10 @@ Ensure your service account (or user account) has the following permissions:
 
     **Required Variables:**
     - `GOOGLE_CLOUD_PROJECT`: Your Google Cloud Project ID.
-    - `GOOGLE_CLOUD_LOCATION`: The target region (e.g., `global`).
+    - `GOOGLE_CLOUD_LOCATION`: The Vertex AI endpoint location for Gemini 3.5+ models (`global` or `us`).
     - `GEMINI_MODEL_NAME`: The specific LLM version to use (e.g., `gemini-3.6-flash`).
     - `IMAGE_GENERATION_MODEL`: The image generation model version (e.g., `gemini-3.1-flash-image`).
-    - `GCP_STAGING_BUCKET`: GCS Bucket name for storing artifacts (e.g., `gs://my-bucket`). If not provided, a new bucket named `YOUR_PROJECT_ID-staging-bucket` will be created in the `GOOGLE_CLOUD_LOCATION` (defaults to `us-central1` or target region).
+    - `GCP_STAGING_BUCKET`: GCS Bucket name for storing artifacts (e.g., `gs://my-bucket`). If not provided, a new bucket named `YOUR_PROJECT_ID-staging-bucket` will be created in `us-central1` (since `global` and `us` are endpoint locations rather than a regional GCS storage location).
     - `DEFAULT_TEMPLATE_URI`: GCS URI of the master PowerPoint template (e.g., `gs://bucket/Proposal_Template.pptx`). If not provided, the default `docs/Proposal_Template.pptx` will be uploaded to your `GCP_STAGING_BUCKET` and used automatically.
     - `AS_APP`: The Gemini Enterprise App ID.
     - `DATASTORE_ID`: (Optional) Full path to the Vertex AI Search Datastore for internal RAG.(Format: `projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/dataStores/{DATA_STORE_ID}`).
@@ -135,7 +135,7 @@ You can also use the [Google Agents CLI](https://github.com/google/agents-cli) t
 uvx google-agents-cli setup
 ```
 
-**Create the project from this sample** (replace `my-research-deck-agent` with your project name):
+**Create the project from this recipe** (replace `my-research-deck-agent` with your project name):
 
 ```bash
 agents-cli create my-research-deck-agent -a adk@brand-aligned-presentations

@@ -164,8 +164,15 @@ def handle_default_template(project_id, bucket_name):
 def main(mode):
     GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
     GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
-    if not GOOGLE_CLOUD_LOCATION or GOOGLE_CLOUD_LOCATION == "global":
-        GOOGLE_CLOUD_LOCATION = "us-east1"
+    # Agent Engine and GCS staging bucket require a regional location (e.g. us-central1).
+    # Multi-region endpoint locations ("global" or "us") used by Gemini 3.5+
+    # fall back to us-central1 for deployment resources.
+    deployment_location = GOOGLE_CLOUD_LOCATION
+    if not deployment_location or deployment_location.lower() in (
+        "global",
+        "us",
+    ):
+        deployment_location = "us-central1"
     # Ensure GCP_STAGING_BUCKET is just the name, setup_staging_bucket will add gs:// prefix
     GCP_STAGING_BUCKET_NAME = (os.getenv("GCP_STAGING_BUCKET") or "").replace(
         "gs://", ""
@@ -180,12 +187,12 @@ def main(mode):
 
     # Set up staging bucket
     GCP_STAGING_BUCKET = setup_staging_bucket(
-        GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GCP_STAGING_BUCKET_NAME
+        GOOGLE_CLOUD_PROJECT, deployment_location, GCP_STAGING_BUCKET_NAME
     )
 
     vertexai.init(
         project=GOOGLE_CLOUD_PROJECT,
-        location=GOOGLE_CLOUD_LOCATION,
+        location=deployment_location,
         staging_bucket=GCP_STAGING_BUCKET,
     )
 
@@ -196,7 +203,9 @@ def main(mode):
     # Build env_vars dynamically, ensuring all values are strings
     env_vars = {
         "GCP_PROJECT": str(GOOGLE_CLOUD_PROJECT or ""),
-        "GCP_LOCATION": str(GOOGLE_CLOUD_LOCATION),
+        "GCP_LOCATION": str(deployment_location),
+        "GOOGLE_CLOUD_PROJECT": str(GOOGLE_CLOUD_PROJECT or ""),
+        "GOOGLE_CLOUD_LOCATION": str(GOOGLE_CLOUD_LOCATION or "global"),
         "GEMINI_MODEL_NAME": str(os.getenv("GEMINI_MODEL_NAME") or ""),
         "IMAGE_GENERATION_MODEL": str(
             os.getenv("IMAGE_GENERATION_MODEL") or ""

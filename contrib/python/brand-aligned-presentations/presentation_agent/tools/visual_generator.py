@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import asyncio
-import os
 import tempfile
 import uuid
 
@@ -66,9 +65,7 @@ async def generate_visual(prompt: str) -> str:
                 location=GOOGLE_CLOUD_LOCATION,
             )
 
-        model_name = (
-            os.getenv("IMAGE_GENERATION_MODEL") or IMAGE_GENERATION_MODEL
-        )
+        model_name = IMAGE_GENERATION_MODEL
         log.info(f"Calling {model_name} to generate visual...")
         response = await asyncio.to_thread(
             _genai_client.models.generate_content,

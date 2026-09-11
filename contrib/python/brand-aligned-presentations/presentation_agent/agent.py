@@ -15,12 +15,13 @@
 import os
 
 import google.auth
+import google.auth.exceptions
 
 try:
     _, project_id = google.auth.default()
     if project_id:
         os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
-except Exception:
+except google.auth.exceptions.DefaultCredentialsError:
     pass
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
@@ -146,9 +147,9 @@ class PresentationExpertApp:
 
         # Configure Session Service (Persistent Vertex AI or Local In-Memory)
         is_local = (os.getenv("LOCAL_DEV") or "").lower() == "true"
-        session_location = os.getenv("GOOGLE_CLOUD_LOCATION") or "us-east1"
-        if session_location == "global":
-            session_location = "us-east1"
+        session_location = os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
+        if session_location.lower() in ("global", "us"):
+            session_location = "us-central1"
         if not is_local and os.getenv("GOOGLE_CLOUD_PROJECT"):
             session_service = VertexAiSessionService(
                 project=os.getenv("GOOGLE_CLOUD_PROJECT"),

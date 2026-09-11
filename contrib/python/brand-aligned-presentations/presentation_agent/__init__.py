@@ -15,6 +15,7 @@
 import os
 
 import google.auth
+import google.auth.exceptions
 from dotenv import load_dotenv
 
 # Load variables from .env if present. In production the environment is
@@ -26,7 +27,7 @@ try:
     _, project_id = google.auth.default()
     if project_id:
         os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
-except Exception:
+except google.auth.exceptions.DefaultCredentialsError:
     pass
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
