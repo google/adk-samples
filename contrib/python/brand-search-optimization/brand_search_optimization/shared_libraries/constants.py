@@ -12,16 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Defines constants."""
+"""Defines shared constants for brand search optimization."""
 
 import os
 
 AGENT_NAME = "brand_search_optimization"
-DESCRIPTION = "A helpful assistant for brand search optimization."
-PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "EMPTY")
-LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
+DESCRIPTION = (
+    "A multi-agent assistant for optimizing brand product search performance "
+    "using Gemini Computer Use."
+)
+PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
 MODEL = os.getenv("MODEL")
-DATASET_ID = os.getenv("DATASET_ID", "products_data_agent")
-TABLE_ID = os.getenv("TABLE_ID", "shoe_items")
-DISABLE_WEB_DRIVER = int(os.getenv("DISABLE_WEB_DRIVER", "0"))
-STAGING_BUCKET = os.getenv("STAGING_BUCKET", "")
+DATASET_ID = os.getenv("DATASET_ID")
+TABLE_ID = os.getenv("TABLE_ID")
+DISABLE_WEB_DRIVER = os.getenv("DISABLE_WEB_DRIVER") == "1"
+STAGING_BUCKET = os.getenv("STAGING_BUCKET")
