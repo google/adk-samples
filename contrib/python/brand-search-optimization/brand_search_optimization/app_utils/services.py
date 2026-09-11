@@ -33,7 +33,7 @@ from google.adk.cli.utils.service_factory import (
 SESSION_SERVICE_URI = "shared://session"
 ARTIFACT_SERVICE_URI = "shared://artifact"
 
-_AGENT_DIR = os.path.dirname(
+AGENT_DIR = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 
@@ -45,7 +45,7 @@ def get_session_service():
         "shared://"
     ):
         return create_session_service_from_options(
-            base_dir=_AGENT_DIR, session_service_uri=uri
+            base_dir=AGENT_DIR, session_service_uri=uri
         )
     if agent_engine_id := os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
         from google.adk.sessions.vertex_ai_session_service import (
@@ -76,7 +76,7 @@ def get_artifact_service():
         )
 
         return create_artifact_service_from_options(
-            base_dir=_AGENT_DIR, artifact_service_uri=uri
+            base_dir=AGENT_DIR, artifact_service_uri=uri
         )
     if bucket := os.environ.get("LOGS_BUCKET_NAME"):
         return GcsArtifactService(bucket_name=bucket)

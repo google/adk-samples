@@ -203,32 +203,6 @@ class TestBrowserComputer:
         assert _validate_navigation_url("http://192.168.1.1/") is False
         assert _validate_navigation_url("invalid-url") is False
 
-    @patch("socket.getaddrinfo")
-    def test_validate_navigation_url_dns_rebinding_ssrf(self, mock_getaddrinfo):
-        mock_getaddrinfo.return_value = [
-            (2, 1, 6, "", ("127.0.0.1", 80)),
-        ]
-        assert (
-            _validate_navigation_url("http://evil-rebinding-domain.com/secret")
-            is False
-        )
-
-        mock_getaddrinfo.return_value = [
-            (2, 1, 6, "", ("10.0.0.5", 80)),
-        ]
-        assert (
-            _validate_navigation_url("http://internal-private-host.com")
-            is False
-        )
-
-        mock_getaddrinfo.return_value = [
-            (2, 1, 6, "", ("93.184.216.34", 80)),
-        ]
-        assert (
-            _validate_navigation_url("http://legitimate-public-host.com")
-            is True
-        )
-
     def test_mock_browser_computer_visit_helper(self):
         computer = MockBrowserComputer()
         initial_history_len = len(computer._history)
@@ -240,7 +214,7 @@ class TestBrowserComputer:
 
     @pytest.mark.asyncio
     async def test_validate_navigation_target_resolves_hostname(self):
-        # A public-looking hostname that resolves to a private address is
+        # A public-looking hostname that resolves to a private or loopback address is
         # rejected, and one that resolves publicly is allowed.
         with patch(
             "socket.getaddrinfo",
@@ -248,6 +222,14 @@ class TestBrowserComputer:
         ):
             assert (
                 await validate_navigation_target("https://internal.example.com")
+                is False
+            )
+        with patch(
+            "socket.getaddrinfo",
+            return_value=[(None, None, None, "", ("127.0.0.1", 0))],
+        ):
+            assert (
+                await validate_navigation_target("https://evil-rebinding.com")
                 is False
             )
         with patch(
@@ -347,6 +329,38 @@ class TestBrowserComputer:
         assert "navigate" in tool_names
         assert "click_at" in tool_names
         assert "type_text_at" in tool_names
+
+    @pytest.mark.asyncio
+    async def test_adapt_computer_use_tools_callback(self):
+        from google.adk.models.llm_request import LlmRequest
+
+        from brand_search_optimization.sub_agents.search_results.agent import (
+            adapt_computer_use_tools_callback,
+        )
+
+        mock_tool = MagicMock()
+        mock_req = MagicMock(spec=LlmRequest)
+        mock_req.tools_dict = {
+            "click_at": mock_tool,
+            "type_text_at": mock_tool,
+            "hover_at": mock_tool,
+            "scroll_document": mock_tool,
+            "scroll_at": mock_tool,
+            "current_state": mock_tool,
+            "key_combination": mock_tool,
+        }
+
+        await adapt_computer_use_tools_callback(None, mock_req)
+
+        assert mock_req.tools_dict["click"] == mock_tool
+        assert mock_req.tools_dict["type"] == mock_tool
+        assert mock_req.tools_dict["move"] == mock_tool
+        assert mock_req.tools_dict["scroll"] == mock_tool
+        assert mock_req.tools_dict["take_screenshot"] == mock_tool
+        assert mock_req.tools_dict["press_key"] == mock_tool
+        assert mock_req.tools_dict["hotkey"] == mock_tool
+        # Original legacy tool definitions remain intact
+        assert mock_req.tools_dict["click_at"] == mock_tool
 
 
 class TestModels:

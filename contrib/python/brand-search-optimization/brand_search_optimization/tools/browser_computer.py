@@ -82,24 +82,8 @@ def _validate_navigation_url(url: str) -> bool:
             if _is_blocked_ip(ip):
                 return False
         except ValueError:
-            # Hostname: resolve DNS and verify resolved IP addresses against private subnets
-            try:
-                addr_info = socket.getaddrinfo(
-                    hostname_lower, None, type=socket.SOCK_STREAM
-                )
-                for item in addr_info:
-                    sockaddr = item[4]
-                    ip_str = sockaddr[0]
-                    ip = ipaddress.ip_address(ip_str)
-                    if (
-                        ip.is_private
-                        or ip.is_loopback
-                        or ip.is_link_local
-                        or ip.is_reserved
-                    ):
-                        return False
-            except (socket.gaierror, OSError, ValueError):
-                pass
+            # Not an IP literal, valid public hostname format
+            pass
         return True
     except Exception:
         return False
@@ -192,7 +176,6 @@ class MockBrowserComputer(BaseComputer):
         """Records a newly visited URL as the head of the history."""
         self._url = url
         self._history.append(url)
-        self._history_idx = len(self._history) - 1
         self._history_idx = len(self._history) - 1
 
     async def screen_size(self) -> tuple[int, int]:

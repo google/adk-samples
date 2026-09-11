@@ -21,8 +21,14 @@ from fastapi import FastAPI
 from google.adk.cli.fast_api import get_fast_api_app
 from google.adk.runners import Runner
 
-from brand_search_optimization.app_utils import services
 from brand_search_optimization.app_utils.a2a import attach_a2a_routes
+from brand_search_optimization.app_utils.services import (
+    AGENT_DIR,
+    ARTIFACT_SERVICE_URI,
+    SESSION_SERVICE_URI,
+    get_artifact_service,
+    get_session_service,
+)
 
 allow_origins = (
     [
@@ -34,8 +40,6 @@ allow_origins = (
     else None
 )
 
-AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -44,8 +48,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     runner = Runner(
         app=adk_app,
-        session_service=services.get_session_service(),
-        artifact_service=services.get_artifact_service(),
+        session_service=get_session_service(),
+        artifact_service=get_artifact_service(),
         auto_create_session=True,
     )
     app.state.runner = runner
@@ -63,9 +67,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app: FastAPI = get_fast_api_app(
     agents_dir=AGENT_DIR,
     web=True,
-    artifact_service_uri=services.ARTIFACT_SERVICE_URI,
+    artifact_service_uri=ARTIFACT_SERVICE_URI,
     allow_origins=allow_origins,
-    session_service_uri=services.SESSION_SERVICE_URI,
+    session_service_uri=SESSION_SERVICE_URI,
     otel_to_cloud=True,
     lifespan=lifespan,
 )
