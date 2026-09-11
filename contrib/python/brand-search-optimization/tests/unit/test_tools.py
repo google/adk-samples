@@ -45,6 +45,7 @@ from brand_search_optimization.tools.browser_computer import (
     _validate_navigation_url,
     get_browser_computer,
     get_computer_use_toolset,
+    validate_navigation_target,
 )
 
 
@@ -228,14 +229,34 @@ class TestBrowserComputer:
             is True
         )
 
-    def test_mock_browser_computer_update_url_helper(self):
+    def test_mock_browser_computer_visit_helper(self):
         computer = MockBrowserComputer()
         initial_history_len = len(computer._history)
-        computer._update_url("https://example.com/test")
+        computer._visit("https://example.com/test")
         assert computer._url == "https://example.com/test"
         assert len(computer._history) == initial_history_len + 1
         assert computer._history[-1] == "https://example.com/test"
         assert computer._history_idx == len(computer._history) - 1
+
+    @pytest.mark.asyncio
+    async def test_validate_navigation_target_resolves_hostname(self):
+        # A public-looking hostname that resolves to a private address is
+        # rejected, and one that resolves publicly is allowed.
+        with patch(
+            "socket.getaddrinfo",
+            return_value=[(None, None, None, "", ("10.0.0.7", 0))],
+        ):
+            assert (
+                await validate_navigation_target("https://internal.example.com")
+                is False
+            )
+        with patch(
+            "socket.getaddrinfo",
+            return_value=[(None, None, None, "", ("93.184.216.34", 0))],
+        ):
+            assert (
+                await validate_navigation_target("https://example.com") is True
+            )
 
     @pytest.mark.asyncio
     async def test_mock_browser_computer_operations(self):
@@ -251,9 +272,13 @@ class TestBrowserComputer:
         assert state.screenshot is not None
         assert len(state.screenshot) > 0
 
-        nav_state = await computer.navigate(
-            "https://www.google.com/search?tbm=shop&q=running+shoes"
-        )
+        with patch(
+            "brand_search_optimization.tools.browser_computer._resolved_addresses_allowed",
+            return_value=True,
+        ):
+            nav_state = await computer.navigate(
+                "https://www.google.com/search?tbm=shop&q=running+shoes"
+            )
         assert "running+shoes" in nav_state.url
 
         # Disallowed navigation is rejected
