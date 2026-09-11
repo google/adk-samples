@@ -974,3 +974,75 @@ def test_the_narrowing_is_announced_in_the_right_tense():
     )
     assert "after this round only" in at
     assert "only Security and Correctness still run" in after
+
+
+def test_the_decay_basis_is_the_last_round_by_review_order():
+    """`rounds` is deduped on first sight, so after A, B, A the last non-head
+    entry is B — a round two pushes ago. Same trap the last_sha comment warns
+    about, made ten lines below it."""
+    reviews = [
+        review("A", "2026-01-01T00:00:00Z", rid=1),
+        review("B", "2026-01-02T00:00:00Z", rid=2),
+        review("C", "2026-01-03T00:00:00Z", rid=3),
+        review("A", "2026-01-04T00:00:00Z", rid=4),
+        review("C", "2026-01-05T00:00:00Z", rid=5),
+    ]
+    comments = [comment(2)] * 9 + [comment(4)] * 7
+    state = rb.summarise_history(
+        reviews, comments, POLICY["exempt_lanes"], head_sha="C"
+    )
+    assert state["previous_round_count"] == 7
+
+
+def test_an_exempt_lane_that_is_also_budgeted_loses_the_exemption():
+    """The exempt branch returns before any ceiling, so a budgeted lane listed
+    there is unbounded. Falling back to the DEFAULT exempt list could itself
+    overlap a hand-edited `lanes`; removing the offenders cannot."""
+    fixed = rb._validated(
+        {**rb.DEFAULTS, "lanes": ["Security", "Correctness", "House Rules"]}
+    )
+    assert not set(fixed["lanes"]) & set(fixed["exempt_lanes"])
+
+
+def test_no_overlap_survives_the_prefix_fallback():
+    """The guard ran before the prefix rule could reassign `lanes`, so a
+    fallback to the defaults reintroduced an overlap it had just cleared."""
+    fixed = rb._validated(
+        {
+            **rb.DEFAULTS,
+            "lanes": ["Security", "Correctness"],
+            "blocker_lanes": ["Hygiene"],
+            "exempt_lanes": ["Hygiene"],
+        }
+    )
+    assert not set(fixed["lanes"]) & set(fixed["exempt_lanes"])
+
+
+def test_a_re_review_with_no_earlier_round_says_so_honestly():
+    """Deliberately stingy: there is no earlier round to decay from, and
+    counting the current commit's own comments is what made repeated
+    invocations grow the allowance. The reason must not claim otherwise."""
+    state = {
+        "round": 2,
+        "last_reviewed_sha": "",
+        "posted_total": 8,
+        "previous_round_count": 0,
+    }
+    decision = rb.decide(state, policy(), "Security", 5)
+    assert "no earlier round" in decision["reason"]
+    assert decision["allowance"] == POLICY["min_allowance"]
+
+
+def test_the_budget_step_resolves_the_head_sha_for_every_trigger(core):
+    """`github.event.pull_request` is null on issue_comment and
+    workflow_dispatch — which are exactly the triggers the same-commit guard
+    exists for. Empty there, the guard could not fire and repeated
+    `@ai-review` grew the allowance instead of shrinking it."""
+    run = _step(core, "budget")["run"]
+    assert "head_sha=" in run and "--jq '.head.sha'" in run
+    for step_id in ("fetch_diff", "build_review"):
+        env = _step(core, step_id)["env"]
+        assert env["HEAD_SHA"].endswith("budget.outputs.head_sha }}"), (
+            f"{step_id} reads the event payload, which is empty on "
+            "issue_comment"
+        )

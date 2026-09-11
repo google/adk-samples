@@ -277,6 +277,7 @@ def main() -> int:
         )
 
     findings: list[dict] = []
+    recipe_findings = 0
     failed: list[str] = []
     for recipe in roots:
         if not (args.repo_root / recipe).is_dir():
@@ -298,6 +299,7 @@ def main() -> int:
         # A rule that could not be evaluated is not a rule that passed.
         for rule, why in skipped:
             print(f"  not checked — {rule}: {why}")
+        recipe_findings += len(raw)
         findings.extend(to_reviewer_finding(f) for f in raw)
 
     # H42 once for the whole run, anchored in the first recipe. Called inside
@@ -322,7 +324,11 @@ def main() -> int:
 
     if failed:
         print(f"{len(failed)} recipe(s) could not be checked: {failed}")
-    if failed and not findings:
+    # `recipe_findings`, not `findings`: the PR-shape check runs outside the
+    # per-recipe loop and contributes to the total, so one advisory nit from
+    # it was enough to make "every recipe failed" look like "we found
+    # something" and the lane exited green on a wholly broken checker.
+    if failed and not recipe_findings:
         # Every recipe raised and nothing was found: an empty findings file is
         # indistinguishable from a clean PR, and the PR goes green with no
         # review and nobody told. That is the one case worth failing for --

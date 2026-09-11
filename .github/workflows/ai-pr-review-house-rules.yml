@@ -97,9 +97,11 @@ jobs:
       has_payload: '${{ steps.payload.outputs.has_payload }}'
 
     steps:
-      - name: 'Resolve the PR number'
+      - name: 'Resolve the PR number and head commit'
         id: 'pr'
         env:
+          GH_TOKEN: '${{ github.token }}'
+          GH_REPO: '${{ github.repository }}'
           EVENT_NAME: '${{ github.event_name }}'
           FROM_PR: '${{ github.event.pull_request.number }}'
           FROM_ISSUE: '${{ github.event.issue.number }}'
@@ -116,6 +118,12 @@ jobs:
             exit 1
           fi
           echo "number=${NUMBER}" >> "${GITHUB_OUTPUT}"
+
+          # Resolved for every trigger: github.event.pull_request is null on
+          # issue_comment and workflow_dispatch, and the review has to record
+          # the commit it actually reviewed.
+          HEAD_SHA="$(gh api "repos/${GH_REPO}/pulls/${NUMBER}" --jq '.head.sha' || true)"
+          echo "head_sha=${HEAD_SHA}" >> "${GITHUB_OUTPUT}"
 
       # The base branch: the checker, the rules and the schema all come from
       # here. persist-credentials: false because nothing in this job pushes,
@@ -194,7 +202,7 @@ jobs:
         env:
           GH_TOKEN: '${{ github.token }}'
           PR_NUMBER: '${{ steps.pr.outputs.number }}'
-          HEAD_SHA: '${{ github.event.pull_request.head.sha }}'
+          HEAD_SHA: '${{ steps.pr.outputs.head_sha }}'
         run: |-
           set -euo pipefail
           # --repo/--pr let it drop anything already said on this PR, by an

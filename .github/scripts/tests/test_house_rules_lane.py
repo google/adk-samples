@@ -15,6 +15,7 @@
 """The deterministic review lane: recipe discovery, translation, isolation."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -286,3 +287,39 @@ def test_the_schema_comes_from_the_base_checkout(tmp_path):
     source = inspect.getsource(lane.run_checker)
     assert "SCHEMA_PATH" in source
     assert 'repo_root) / ".github/schemas' not in source
+
+
+def test_an_all_recipes_failed_run_is_not_reported_as_clean(tmp_path, capsys):
+    """The PR-shape check runs outside the per-recipe loop and contributes to
+    the total, so one advisory nit from it made "every recipe failed" look
+    like "we found something" and the lane exited green on a broken checker."""
+    _recipe(tmp_path, "contrib/python/alpha", **{"manifest.yaml": MANIFEST})
+    changed = tmp_path / "changed.txt"
+    changed.write_text(
+        "contrib/python/alpha/manifest.yaml\n.agents/skills/x/SKILL.md\n"
+    )
+    out = tmp_path / "findings.json"
+    rc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parents[1] / "house_rules_lane.py"),
+            "--checker",
+            str(CHECKER),
+            "--repo-root",
+            str(tmp_path),
+            "--changed-files",
+            str(changed),
+            "--out",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[3] / "tools"),
+        },
+    )
+    # Sanity: the healthy case exits 0 and does find the mixed-PR nit.
+    assert rc.returncode == 0, rc.stderr
+    assert any(f["_rule"] == "H42" for f in json.loads(out.read_text()))

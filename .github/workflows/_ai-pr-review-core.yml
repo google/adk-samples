@@ -378,9 +378,20 @@ jobs:
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
           REVIEW_LABEL: '${{ inputs.review_label }}'
           EVENT_NAME: '${{ inputs.event_name }}'
-          HEAD_SHA: '${{ github.event.pull_request.head.sha }}'
         run: |-
           set -euo pipefail
+
+          # Resolve the head sha for EVERY trigger. `github.event.pull_request`
+          # is null on issue_comment and workflow_dispatch, and those are
+          # exactly the triggers the same-commit guard exists for: with an
+          # empty value the guard cannot fire, so repeated `@ai-review` on one
+          # commit decayed off a count that grew with each invocation and the
+          # allowance went UP.
+          HEAD_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha' || true)"
+          if [[ -z "${HEAD_SHA}" ]]; then
+            echo "::warning::could not resolve the head sha; reviewing without incremental scope"
+          fi
+          echo "head_sha=${HEAD_SHA}" >> "${GITHUB_OUTPUT}"
 
           # A maintainer typing `@ai-review`, or dispatching by hand, is asking
           # for the whole PR to be looked at again. That widens the SCOPE; it
@@ -416,7 +427,7 @@ jobs:
           GH_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN_SECRET }}'
           PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
           LAST_REVIEWED_SHA: '${{ steps.budget.outputs.last_reviewed_sha }}'
-          HEAD_SHA: '${{ github.event.pull_request.head.sha }}'
+          HEAD_SHA: '${{ steps.budget.outputs.head_sha }}'
         run: |-
           set -euo pipefail
 
@@ -1377,7 +1388,7 @@ jobs:
           # because the round allowance happened to be generous.
           MAX_COMMENTS: '${{ steps.prepare_diff.outputs.budget }}'
           PROGRESS: '${{ steps.budget.outputs.progress }}'
-          HEAD_SHA: '${{ github.event.pull_request.head.sha }}'
+          HEAD_SHA: '${{ steps.budget.outputs.head_sha }}'
         run: |-
           set -euo pipefail
 

@@ -872,10 +872,13 @@ def fetch_existing_comments(repo: str, pr: int) -> list[dict]:
             except json.JSONDecodeError:
                 break
             for item in batch:
-                if (
-                    kind == "review-body"
-                    and not (item.get("body") or "").strip()
-                ):
+                # OUR review bodies only. This call site has now been the
+                # bug three times running: a review body is large, so
+                # containment against an arbitrary one is easy to satisfy,
+                # and a PR author pasting a wall of plausible text into a
+                # self-review suppresses most of what the next round would
+                # say. The helper without this line is decoration.
+                if kind == "review-body" and not _our_review(item):
                     continue
                 existing.append(
                     {

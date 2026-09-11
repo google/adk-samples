@@ -160,13 +160,6 @@ def _validated(policy: dict) -> dict:
         # Otherwise every lane skips from the narrowing round onward and the
         # reviewer goes silent on every PR, from one deleted line of config.
         fall_back("blocker_lanes", "is empty")
-    overlap = set(checked["exempt_lanes"]) & set(checked["lanes"])
-    if overlap:
-        # A lane cannot be both budgeted and exempt: the exempt branch returns
-        # before any ceiling is applied, so listing a model lane here makes it
-        # unbounded.
-        fall_back("exempt_lanes", f"also appears in lanes ({sorted(overlap)})")
-
     # blocker_lanes must be a PREFIX of lanes, or the lanes that survive a
     # shrinking allowance are not the ones that survive the round limit, and
     # the reviewer narrows to one set while allocating to another.
@@ -174,6 +167,23 @@ def _validated(policy: dict) -> dict:
     if checked["blocker_lanes"] and prefix != checked["blocker_lanes"]:
         fall_back("blocker_lanes", "is not a prefix of lanes")
         checked["lanes"] = DEFAULTS["lanes"]
+
+    # LAST, and by subtraction rather than by falling back. A lane cannot be
+    # both budgeted and exempt: the exempt branch returns before any ceiling
+    # is applied, so a budgeted lane listed here is unbounded. Two ways this
+    # was ineffective before — the check ran before the prefix rule could
+    # reassign `lanes`, and falling back to the DEFAULT exempt list can
+    # itself overlap a hand-edited `lanes`. Removing the offenders cannot.
+    overlap = set(checked["exempt_lanes"]) & set(checked["lanes"])
+    if overlap:
+        print(
+            "  policy.yml pr_review_budget.exempt_lanes also lists "
+            f"{sorted(overlap)}, which are budgeted lanes; treating those as "
+            "budgeted"
+        )
+        checked["exempt_lanes"] = [
+            lane for lane in checked["exempt_lanes"] if lane not in overlap
+        ]
     return checked
 
 
@@ -293,7 +303,11 @@ def summarise_history(
     # an unchanged commit.
     basis_sha = last_sha
     if head_sha and head_sha == last_sha:
-        earlier = [c for c in rounds if c != head_sha]
+        # By REVIEW ORDER, not by first appearance. `rounds` is deduped on
+        # first sight, so after A, B, A the last non-head entry is B — a round
+        # two pushes ago — where the genuinely previous round is the second A.
+        # Exactly the trap the last_sha comment above describes.
+        earlier = [r["commit_id"] for r in ours if r["commit_id"] != head_sha]
         basis_sha = earlier[-1] if earlier else ""
 
     per_round: dict[str, int] = {}
@@ -395,9 +409,18 @@ def decide(
     else:
         decayed = math.floor(decay * state["previous_round_count"])
         allowance = max(floor, decayed)
-        basis = (
-            f"{state['previous_round_count']} comment(s) last round x {decay}"
-        )
+        if state["previous_round_count"]:
+            basis = (
+                f"{state['previous_round_count']} comment(s) last round "
+                f"x {decay}"
+            )
+        else:
+            # Deliberate and stingy. It happens when a maintainer asks for a
+            # second look at a commit that has only ever had one round: there
+            # is no earlier round to decay from, and counting the current
+            # commit's own comments is what made repeated invocations grow the
+            # allowance instead of shrinking it. A push earns a full round.
+            basis = f"no earlier round to measure; the floor of {floor}"
 
     allowance = min(allowance, remaining)
 

@@ -1384,12 +1384,35 @@ def _load_policy_required_files(root):
                 section = (yaml.safe_load(handle) or {}).get("required_files")
         except Exception:
             continue
-        if isinstance(section, dict):
-            # A mistyped section must not crash the rule that exists to catch
-            # mistyped files.
-            return {
-                k: v for k, v in section.items() if isinstance(v, (list, dict))
-            }
+        if not isinstance(section, dict):
+            continue
+        # Each key by its OWN expected type. `isinstance(v, (list, dict))`
+        # let `by_root:` written as a list through, and _required_files then
+        # called .get() on it -- crashing the rule that exists to catch
+        # exactly that kind of mistake, and taking the recipe's whole review
+        # with it.
+        clean = {}
+        if isinstance(section.get("always"), list):
+            clean["always"] = section["always"]
+        for key in ("by_root", "by_language"):
+            value = section.get(key)
+            if isinstance(value, dict):
+                clean[key] = {
+                    k: v for k, v in value.items() if isinstance(v, list)
+                }
+        if base is not _OWN_REPO:
+            # Reached only when the checker lives outside a repository -- the
+            # skill documents installing it in ~/.agents/skills. The tree
+            # under review is then the only policy available, and a PR can
+            # edit it, so the reader deserves to know.
+            SKIPPED.append(
+                (
+                    "H21",
+                    "required_files came from the tree under review, not from "
+                    "a base checkout; a PR can edit that file",
+                )
+            )
+        return clean
     return {}
 
 

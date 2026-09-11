@@ -1977,3 +1977,74 @@ def test_only_our_own_review_bodies_are_used_for_containment():
     assert not m._our_review(theirs)
     assert not m._our_review(bot_but_not_ours)
     assert not m._our_review({"body": "   ", "user": {"type": "Bot"}})
+
+
+def test_a_hostile_self_review_cannot_suppress_the_next_round(monkeypatch):
+    """Through fetch_existing_comments and already_raised, NOT through the
+    helper. The previous version of this test called `_our_review` directly
+    and stayed green while the helper was orphaned and the hole wide open —
+    which is how the same defect survived three rounds of review."""
+    hostile = {
+        "id": 1,
+        "user": {"type": "User", "login": "pr-author"},
+        "body": "required file missing tests test_runnability py uv lock "
+        "pyproject toml env example ownership team names an organisation",
+    }
+    pages = {"comments": "[]", "reviews": json.dumps([hostile])}
+
+    def fake_run(cmd, **kwargs):
+        path = cmd[3].split("?")[0]
+
+        class P:
+            returncode = 0
+            stdout = pages[path.rsplit("/", 1)[-1]]
+            stderr = ""
+
+        return P()
+
+    monkeypatch.setattr(m.subprocess, "run", fake_run)
+    monkeypatch.setattr(m, "fetch_verdicts", lambda repo, pr: {})
+
+    existing = m.fetch_existing_comments("o/r", 1)
+    assert existing == [], "a stranger's review body reached the exclusions"
+
+    zones, texts = m.build_exclusions(existing)
+    assert not m.already_raised(
+        "x.py",
+        1,
+        "required file missing: tests/test_runnability.py",
+        zones,
+        texts,
+    )
+
+
+def test_our_own_review_body_still_suppresses_its_own_repeat(monkeypatch):
+    ours = {
+        "id": 2,
+        "user": {"type": "Bot", "login": "adk-bot[bot]"},
+        "body": f"{m.REVIEW_MARKER}\nAutomated **House Rules** review — 1.\n\n"
+        "- `a/b.py:1` — required file missing: tests/test_runnability.py",
+    }
+    pages = {"comments": "[]", "reviews": json.dumps([ours])}
+
+    def fake_run(cmd, **kwargs):
+        path = cmd[3].split("?")[0]
+
+        class P:
+            returncode = 0
+            stdout = pages[path.rsplit("/", 1)[-1]]
+            stderr = ""
+
+        return P()
+
+    monkeypatch.setattr(m.subprocess, "run", fake_run)
+    monkeypatch.setattr(m, "fetch_verdicts", lambda repo, pr: {})
+
+    zones, texts = m.build_exclusions(m.fetch_existing_comments("o/r", 1))
+    assert m.already_raised(
+        "x.py",
+        1,
+        "required file missing: tests/test_runnability.py",
+        zones,
+        texts,
+    )
