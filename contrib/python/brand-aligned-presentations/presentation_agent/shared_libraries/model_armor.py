@@ -103,8 +103,10 @@ async def model_armor_interceptor(
         logger.info(f"DEBUG: Full Model Armor Response: {data}")
 
     if not data:
-        # Fail-closed logic
-        if (os.getenv("USE_IN_MEMORY_FOR_TESTS") or "").lower() == "true":
+        # Fail-closed logic: test bypass disabled in production environments
+        if (
+            os.getenv("USE_IN_MEMORY_FOR_TESTS") or ""
+        ).lower() == "true" and not os.getenv("K_SERVICE"):
             return None
         return types.Content(
             role="model",
@@ -165,8 +167,10 @@ async def model_armor_response_interceptor(
     data = await _call_model_armor_api("sanitizeModelResponse", payload)
 
     if not data:
-        # Fail-closed logic for response
-        if (os.getenv("USE_IN_MEMORY_FOR_TESTS") or "").lower() == "true":
+        # Fail-closed logic: test bypass disabled in production environments
+        if (
+            os.getenv("USE_IN_MEMORY_FOR_TESTS") or ""
+        ).lower() == "true" and not os.getenv("K_SERVICE"):
             return None
         return LlmResponse(
             content=types.Content(
