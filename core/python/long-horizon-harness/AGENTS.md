@@ -190,7 +190,7 @@ lha/
 | Horizon feature | ADK mechanism |
 |---|---|
 | `on_session_start` | `before_agent_callback` (first invocation only, state-key guarded) |
-| Memory prefetch | `HorizonPreloadMemoryTool()` in root agent's `tools` (`horizon/memory/preload.py`) — calls `memory_service.search_memory()`, injects hits into the **contents tail**, not `system_instruction` |
+| Memory prefetch | `HorizonPreloadMemoryTool()` in root agent's `tools` (`horizon/memory/preload.py`) — calls `memory_service.search_memory()`, injects capped hits into the **contents**, not `system_instruction` |
 | Post-turn memory sync | `auto_capture_callback` (after_agent) — NOT a blanket `add_session_to_memory()` |
 | Tool block | `before_tool_callback` returns `{"error": ...}` |
 | Output transform | `after_model_callback` returns modified `LlmResponse` |
@@ -370,7 +370,7 @@ The routine fire path (`routine_tick_endpoint.py:_fire_routine`) wraps the turn 
 - Don't reintroduce Next.js or SWR. The UI is a Vite SPA, same-origin backend calls, served in prod by `web/server/` and in dev by the Vite proxy.
 - Don't reintroduce `recipe-*` color tokens or `RECIPE_*` env vars. Canonical: `LHA_*` / `lh-*`.
 - Don't pass kwargs to `PreloadMemoryTool()` — installed ADK's `__init__` is `(self)` only.
-- Don't put per-turn content in `system_instruction`. `GeminiContextCacheManager._generate_cache_fingerprint` hashes the whole string, so anything that varies turn to turn invalidates the context cache for the entire prefix. This is why `HorizonPreloadMemoryTool` (`horizon/memory/preload.py`) overrides ADK's stock `PreloadMemoryTool`: the stock one appends `<PAST_CONVERSATIONS>` to `system_instruction`, and that block is rebuilt every turn from a similarity search keyed on the current user text, so with memories present the cache never validated and the whole static prefix was re-billed at full price. The block now rides the trailing `role="user"` contents, which `_find_count_of_contents_to_cache` excludes by design, and is capped by `LHA_PRELOAD_MAX_MEMORIES` / `LHA_PRELOAD_MAX_CHARS` because `BaseMemoryService.search_memory` has no `top_k`.
+- Don't put per-turn content in `system_instruction`. `GeminiContextCacheManager._generate_cache_fingerprint` hashes the whole string, so anything that varies turn to turn invalidates the context cache for the entire prefix. A memory block rebuilt every turn from a similarity search is the worst case: with memories present the cache never validates and the whole static prefix is re-billed at full price. ADK places the block via `LlmRequest._insert_transient_user_content`, which `_find_count_of_contents_to_cache` excludes by design; `HorizonPreloadMemoryTool` (`horizon/memory/preload.py`) subclasses the stock `PreloadMemoryTool` only to cap it with `LHA_PRELOAD_MAX_MEMORIES` / `LHA_PRELOAD_MAX_CHARS`, because `BaseMemoryService.search_memory` has no `top_k`.
 
 ## Operational Guidelines
 
@@ -383,7 +383,7 @@ The routine fire path (`routine_tick_endpoint.py:_fire_routine`) wraps the turn 
 
 ## Pinned versions
 
-- `google-adk[mcp,otel-gcp,a2a]>=2.5.0,<3.0.0` (ADK **2.5.x** — ships the a2a 0.3↔1.x `_compat` bridge).
+- `google-adk[mcp,otel-gcp,a2a]>=2.8.0,<3.0.0` (ADK **2.8.x** — ships the a2a 0.3↔1.x `_compat` bridge).
 - `a2a-sdk[http-server,sqlite]>=1.0,<2` (a2a **1.x**; proto types, `[http-server]` routes + `[sqlite]` `DatabaseTaskStore`. The v0.3 compat layer keeps Gemini Enterprise working). Web `@a2a-js/sdk` **1.0.1** — the web UI speaks the native 1.0 wire; Gemini Enterprise uses the v0.3 interface, served from the same `/a2a` endpoint.
 - `croniter>=6.2.2` — 5-field cron for routine schedules (`scheduler/cron.py`).
 - Lint stack: `ruff` + `ty` (Astral's Rust type checker, replacing mypy) + `codespell`.

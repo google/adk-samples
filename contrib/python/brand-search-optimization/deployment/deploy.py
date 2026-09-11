@@ -94,9 +94,7 @@ def main(argv: list[str]) -> None:
         print("Missing required environment variable: GOOGLE_CLOUD_LOCATION")
         return
     elif not bucket:
-        print(
-            "Missing required environment variable: GOOGLE_CLOUD_STORAGE_BUCKET"
-        )
+        print("Missing required environment variable: STAGING_BUCKET")
         return
 
     env_vars["DISABLE_WEB_DRIVER"] = "1"

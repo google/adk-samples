@@ -49,15 +49,7 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
     location = (
         FLAGS.location if FLAGS.location else os.getenv("GOOGLE_CLOUD_LOCATION")
     )
-    bucket = (
-        FLAGS.bucket
-        if FLAGS.bucket
-        else os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET")
-    )
-
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-    location = os.getenv("GOOGLE_CLOUD_LOCATION")
-    bucket = os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET")
+    bucket = FLAGS.bucket if FLAGS.bucket else os.getenv("STAGING_BUCKET")
 
     if not project_id:
         print("Missing required environment variable: GOOGLE_CLOUD_PROJECT")
@@ -66,9 +58,7 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
         print("Missing required environment variable: GOOGLE_CLOUD_LOCATION")
         return
     elif not bucket:
-        print(
-            "Missing required environment variable: GOOGLE_CLOUD_STORAGE_BUCKET"
-        )
+        print("Missing required environment variable: STAGING_BUCKET")
         return
 
     vertexai.init(
