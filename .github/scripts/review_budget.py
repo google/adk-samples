@@ -301,24 +301,39 @@ def summarise_history(
     # comments the first invocation just posted, so the allowance GROWS:
     # 2 → 3 → 5 → 8, and five invocations spend the whole lifetime budget on
     # an unchanged commit.
-    basis_sha = last_sha
-    if head_sha and head_sha == last_sha:
-        # By REVIEW ORDER, not by first appearance. `rounds` is deduped on
-        # first sight, so after A, B, A the last non-head entry is B — a round
-        # two pushes ago — where the genuinely previous round is the second A.
-        # Exactly the trap the last_sha comment above describes.
-        earlier = [r["commit_id"] for r in ours if r["commit_id"] != head_sha]
-        basis_sha = earlier[-1] if earlier else ""
+    #
+    # Counted per ROUND, not per commit. `git commit --amend` lands back on a
+    # sha that has already been reviewed, and keying on the commit alone
+    # pooled every round that ever saw it -- so the basis GREW and the decay
+    # ran backwards: 20, 4, 2, 6, 4, 3 instead of 20, 4, 2, 1, 1, 1, with the
+    # lifetime cap exhausted two pushes early. A round is one contiguous run
+    # of reviews against one commit, in review order.
+    round_of_review: dict[int, int] = {}
+    round_index = -1
+    previous_commit = None
+    for review in ours:
+        if review["commit_id"] != previous_commit:
+            round_index += 1
+            previous_commit = review["commit_id"]
+        round_of_review[review.get("id")] = round_index
+    # The basis round: the latest run that is not the commit being reviewed.
+    basis_round = None
+    for review in reversed(ours):
+        if review["commit_id"] != (head_sha or object()):
+            basis_round = round_of_review[review.get("id")]
+            break
+    if not head_sha or head_sha != last_sha:
+        basis_round = round_of_review[ours[-1].get("id")] if ours else None
 
-    per_round: dict[str, int] = {}
+    per_round: dict[int, int] = {}
     for comment in comments:
         review_id = comment.get("pull_request_review_id")
         if review_id not in our_review_ids:
             continue
         posted_total += 1
-        commit = review_commit.get(review_id)
-        per_round[commit] = per_round.get(commit, 0) + 1
-    previous_round_count = per_round.get(basis_sha, 0)
+        index = round_of_review.get(review_id)
+        per_round[index] = per_round.get(index, 0) + 1
+    previous_round_count = per_round.get(basis_round, 0)
 
     return {
         "round": len(rounds) + 1,

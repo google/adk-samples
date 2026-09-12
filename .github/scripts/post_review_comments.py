@@ -1075,6 +1075,27 @@ GROUP_AT = 3
 GROUP_SIMILARITY = 0.5
 
 
+# Where a path's recipe begins. Two findings in different recipes are never
+# "the same thing in another place" — they are two recipes each needing a fix,
+# and collapsing them tells one author and silences the rest.
+_RECIPE_KEY = re.compile(r"^((?:core|contrib|skills)/[^/]+(?:/[^/]+)?)")
+
+
+def _group_scope(path: str) -> str:
+    """The recipe a comment belongs to, for grouping purposes.
+
+    Outside a recipe — repo tooling, a workflow, a root-level file — the scope
+    is the top-level directory, so ordinary grouping still works. Keying those
+    on the filename would give every file a scope of its own and disable
+    grouping wherever recipes are not involved.
+    """
+    text = str(path)
+    match = _RECIPE_KEY.match(text)
+    if match:
+        return match.group(1)
+    return text.split("/", maxsplit=1)[0] if "/" in text else ""
+
+
 def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
     """Collapse 3+ comments of one class onto the first instance.
 
@@ -1097,6 +1118,16 @@ def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
                 tokenised[i + 1 :], start=i + 1
             ):
                 if j in used or len(other) < 4:
+                    continue
+                # Same recipe only. The deterministic lane builds each rule's
+                # body from one format string, so two recipes' findings for
+                # one rule are near-identical by construction and always
+                # cleared the threshold: three recipes with a deprecated model
+                # id produced ONE comment on the first of them, and the other
+                # two authors were told nothing.
+                if _group_scope(_other["path"]) != _group_scope(
+                    comment["path"]
+                ):
                     continue
                 if _similarity(tokens, other) >= GROUP_SIMILARITY:
                     members.append(j)
@@ -1159,6 +1190,9 @@ def build_comments(
     notes: list[dict] = []
     skipped: list[str] = []
     zones, texts = build_exclusions(existing or [])
+    # The same structures, accumulated as this run accepts findings.
+    run_zones: dict[str, dict[int, dict]] = {}
+    run_texts: list[tuple[set[str], dict]] = []
 
     for finding in findings:
         if not isinstance(finding, dict):
@@ -1208,6 +1242,16 @@ def build_comments(
         if not verified and finding.get("window") and not trusted:
             skipped.append(f"{path}:{line}: {reason}")
             continue
+        if not verified and not finding.get("window") and not trusted:
+            # DELIBERATE, and worth naming because it looks like a hole: a
+            # finding with no window at all is not dropped for fabrication.
+            # It still has to land on a line this PR adds, so the model
+            # cannot choose where it goes, and dropping these instead would
+            # discard a real finding whenever the model omits one field.
+            # Logged so the trade is visible in the job output rather than
+            # silent. test_a_finding_with_no_window_still_needs_a_real_added_line
+            # pins the behaviour.
+            print(f"  {path}:{line}: no window supplied; anchor not verified")
         if line != declared:
             print(f"  {path}: {reason}")
 
@@ -1222,6 +1266,23 @@ def build_comments(
         if duplicate:
             skipped.append(f"{path}:{line}: {duplicate}")
             continue
+
+        # ...and against what THIS run has already accepted. Everything above
+        # compares against comments already on the PR, so the system
+        # suppressed a near-duplicate from a previous round two lines away
+        # and happily posted an exact duplicate on the same line in one run.
+        this_run = already_raised(path, line, body, run_zones, run_texts)
+        if this_run:
+            skipped.append(f"{path}:{line}: already said in this review")
+            continue
+
+        accepted = {"kind": "inline", "path": path, "line": line, "body": body}
+        run_texts.append((_tokens(body), accepted))
+        # EXACT line only, not the ±2 proximity zone used against comments
+        # already on the PR. Within one run two distinct defects a line apart
+        # are both worth saying; across rounds, proximity is the right bar
+        # because the second one is usually the first one restated.
+        run_zones.setdefault(path, {}).setdefault(line, accepted)
 
         if line in anchors.get(path, frozenset()):
             comments.append(
@@ -1351,6 +1412,21 @@ def _safe_span(text: str, limit: int = 160) -> str:
     return cleaned if len(cleaned) <= limit else cleaned[: limit - 1] + "…"
 
 
+def _safe_line(text: str) -> str:
+    """A finding body, safe to splice into a bullet in the review body.
+
+    The path beside it is sanitised; this was not, and it is the wider
+    channel — 600 characters of model text derived from a fork-authored diff.
+    A newline plus `---` renders a horizontal rule, `![](url)` fires a remote
+    request on render, and an italic line forges a second progress footer
+    above the real one. All three reproduced.
+    """
+    flat = " ".join(str(text).split())
+    # An image is a request the reader's browser makes to a URL the pull
+    # request chose. A link is fine; an inline image is not.
+    return flat.replace("![", "!\u200b[")
+
+
 def build_payload(
     label: str,
     comments: list[dict],
@@ -1373,7 +1449,7 @@ def build_payload(
         # all, and on PR #2373 this class held all three hard CI failures.
         lines += ["", "Also, on lines this PR does not change:", ""]
         lines += [
-            f"- `{_safe_span(n['path'])}:{n['line']}` — {n['body']}"
+            f"- `{_safe_span(n['path'])}:{n['line']}` — {_safe_line(n['body'])}"
             for n in notes[:MAX_NOTES_LISTED]
         ]
         if len(notes) > MAX_NOTES_LISTED:

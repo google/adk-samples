@@ -79,6 +79,10 @@ MAX_RECIPES = 40
 # The areas a recipe can live in. Everything else in the repo is tooling.
 RECIPE_AREAS = ("core/", "contrib/", "skills/")
 
+# Files that mark a directory as a vertical skill's root when no manifest has
+# been written yet. From policy.yml required_files.by_root.skills.
+SOLUTION_MARKERS = ("SKILL.md", "EVAL.yaml")
+
 
 def recipe_roots(
     changed: list[str], repo_root: Path | None = None
@@ -137,6 +141,20 @@ def recipe_roots(
         # Requires four segments, so a file sitting BESIDE the recipes
         # (contrib/python/README.md) still resolves to nothing.
         parts = path.split("/")
+        # Under skills/ a solution may sit at depth 2 (misplaced -- which is
+        # H41's entire subject) or depth 3 (correct). With no manifest to
+        # settle it, a marker file does: skills/store-ops/SKILL.md means the
+        # root is skills/store-ops, and the four-segment rule would otherwise
+        # resolve its scripts/ and tests/ as two separate recipes while
+        # missing the real one.
+        if parts[0] == "skills" and len(parts) >= 3 and repo_root is not None:
+            shallow = "/".join(parts[:2])
+            if any(
+                (repo_root / shallow / marker).is_file()
+                for marker in SOLUTION_MARKERS
+            ):
+                roots.add(shallow)
+                continue
         if len(parts) > 3:
             roots.add("/".join(parts[:3]))
     return sorted(roots)
@@ -158,6 +176,28 @@ def load_checker(path: Path):
     return module
 
 
+# The citation is what makes a rule comment checkable rather than arbitrary,
+# but `evidence` can be six full repository paths joined with "; ". Appended
+# whole it pushed bodies to 788 characters, past the 600-character shape gate
+# in post_review_comments.py -- which then DROPPED them, so the longest and
+# most-cited findings were the ones the author never saw. 14% of this repo's
+# house-rule findings were lost that way.
+MAX_EVIDENCE_CHARS = 180
+
+
+def _short_evidence(evidence) -> str:
+    """A citation that fits, keeping the first source and counting the rest."""
+    text = str(evidence or "").strip()
+    if len(text) <= MAX_EVIDENCE_CHARS:
+        return text
+    parts = [p.strip() for p in text.split(";") if p.strip()]
+    if len(parts) > 1:
+        head = parts[0]
+        if len(head) <= MAX_EVIDENCE_CHARS - 20:
+            return f"{head}; and {len(parts) - 1} more"
+    return text[: MAX_EVIDENCE_CHARS - 1] + "…"
+
+
 def to_reviewer_finding(finding: dict) -> dict:
     """Translate a checker finding into the shape the posting script reads.
 
@@ -169,7 +209,7 @@ def to_reviewer_finding(finding: dict) -> dict:
     lane to fail.
     """
     body = str(finding.get("what") or "").strip()
-    evidence = str(finding.get("evidence") or "").strip()
+    evidence = _short_evidence(finding.get("evidence"))
     if evidence and evidence not in body:
         # The citation is what makes a rule comment checkable rather than
         # arbitrary: a file the author can open beats a rule id they cannot.

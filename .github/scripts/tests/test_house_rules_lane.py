@@ -410,3 +410,49 @@ def test_a_file_beside_the_recipes_is_still_not_a_recipe(tmp_path):
     sitting next to the recipes, not a recipe."""
     assert lane.recipe_roots(["contrib/python/README.md"], tmp_path) == []
     assert lane.recipe_roots(["core/AGENTS.md"], tmp_path) == []
+
+
+def test_a_misplaced_solution_resolves_to_itself_not_its_subdirectories(
+    tmp_path,
+):
+    """A solution directly under skills/ is H41's entire subject. With no
+    manifest, the four-segment rule resolved its scripts/ and tests/ as two
+    separate recipes and the real root as none — so the rule could never fire
+    on the thing it exists to report, and the lane printed "0 findings across
+    2 recipes"."""
+    (tmp_path / "skills/store-ops/scripts").mkdir(parents=True)
+    (tmp_path / "skills/store-ops/tests").mkdir()
+    for marker in ("SKILL.md", "EVAL.yaml", "README.md"):
+        (tmp_path / "skills/store-ops" / marker).write_text("x\n")
+    roots = lane.recipe_roots(
+        [
+            "skills/store-ops/SKILL.md",
+            "skills/store-ops/scripts/run.sh",
+            "skills/store-ops/tests/test_x.py",
+        ],
+        tmp_path,
+    )
+    assert roots == ["skills/store-ops"]
+
+
+def test_a_correctly_placed_solution_is_unaffected(tmp_path):
+    (tmp_path / "skills/retail/ops/src").mkdir(parents=True)
+    (tmp_path / "skills/retail/ops/SKILL.md").write_text("x\n")
+    assert lane.recipe_roots(["skills/retail/ops/src/a.ts"], tmp_path) == [
+        "skills/retail/ops"
+    ]
+
+
+def test_a_long_citation_is_shortened_rather_than_dropped():
+    """`evidence` can be six full repository paths. Appended whole it pushed
+    bodies to 788 characters, past the 600-char shape gate — which then
+    dropped them, so the most-cited findings were the ones the author never
+    saw. 14% of this repo's house-rule findings were lost that way."""
+    long_evidence = "; ".join(
+        f"core/python/x/deeply/nested/module_{i}.py:120" for i in range(6)
+    )
+    out = lane.to_reviewer_finding(
+        {"path": "p", "line": 1, "what": "x" * 400, "evidence": long_evidence}
+    )
+    assert len(out["body"]) <= 600
+    assert "and 5 more" in out["body"]

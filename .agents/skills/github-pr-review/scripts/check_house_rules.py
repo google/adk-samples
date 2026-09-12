@@ -436,8 +436,14 @@ def check_license_headers(out, root, rel):
                 continue
             fp = os.path.join(dirpath, fn)
             relp = os.path.relpath(fp, root)
-            if CHANGED is not None and relp not in CHANGED:
-                continue
+            # NOT filtered by CHANGED here. H27 is a statement about the
+            # recipe's convention -- "N differ from the M carrying the full
+            # block" -- so the tally has to be over the whole recipe. Counting
+            # only changed files made a PR that edits two of the sixteen
+            # unheaded files in a 465-file recipe report "no .py file in this
+            # recipe carries the standard Apache header", with 449 of them
+            # carrying it. The filter chose the branch as well as the numbers.
+            # _is_ours still decides whether the finding is reported.
             if fn.endswith((".gen.ts", ".gen.tsx")) or "generated" in relp:
                 continue
             text = read(fp)
@@ -517,6 +523,20 @@ def check_license_headers(out, root, rel):
                 )
 
 
+# Roots whose recipe name is namespaced by the segment above it. Mirrors
+# NAMESPACED_ROOTS in .github/scripts/check_recipe_pyproject.py, which is what
+# actually fails the build.
+_NAMESPACED_ROOTS = {"skills"}
+
+
+def _expected_project_name(rel, recipe_name):
+    """The [project].name CI will demand for this recipe."""
+    parts = rel.strip("/").split("/")
+    if len(parts) == 3 and parts[0] in _NAMESPACED_ROOTS:
+        return f"{parts[1]}-{parts[2]}"
+    return recipe_name
+
+
 def check_pyproject(out, root, rel, recipe_name):
     p = os.path.join(root, rel, "pyproject.toml")
     text = read(p)
@@ -549,18 +569,23 @@ def check_pyproject(out, root, rel, recipe_name):
             "grep '^\\[tool\\.ruff' in this file",
         )
 
-    # H3 -- [project].name must equal the folder basename
+    # H3 -- [project].name. Under skills/ the expected value is
+    # <vertical>-<solution>, not the bare basename: check_recipe_pyproject's
+    # NAMESPACED_ROOTS namespaces that root. Comparing against the basename
+    # fired on both shipped vertical skills and told each author to set the
+    # one value CI would reject.
     name = proj.get("name")
-    if name and name != recipe_name:
+    expected = _expected_project_name(rel, recipe_name)
+    if name and isinstance(name, str) and name != expected:
         find(
             out,
             "H3",
             CI_FAIL,
             r,
             lineno_of(text, r"^\s*name\s*="),
-            f'[project].name is "{name}" but the folder is "{recipe_name}"',
-            "check_recipe_pyproject.py:92-114",
-            "compare name= against the directory basename",
+            f'[project].name is "{name}"; this recipe\'s name is "{expected}"',
+            "check_recipe_pyproject.py:182-215",
+            f"compare name= against {expected}",
         )
 
     # H4 -- must accept 3.11 exactly. Specifier logic, not a string match.
@@ -576,6 +601,18 @@ def check_pyproject(out, root, rel, recipe_name):
             "no requires-python declared",
             "check_recipe_pyproject.py:117-197",
             "read [project]",
+        )
+    elif not isinstance(rp, str):
+        find(
+            out,
+            "H4",
+            CI_FAIL,
+            r,
+            ln,
+            f"requires-python is {type(rp).__name__}, not a string; "
+            "`requires-python = 3.11` without quotes is a float",
+            "check_recipe_pyproject.py:117-197",
+            "read the requires-python line",
         )
     else:
         bad = None
@@ -654,11 +691,15 @@ def check_pyproject(out, root, rel, recipe_name):
             )
 
     # H6 -- python-dotenv in [project].dependencies (dev group does NOT count)
-    deps = proj.get("dependencies", []) or []
+    deps = proj.get("dependencies") or []
+    if isinstance(deps, str) or not isinstance(deps, (list, tuple)):
+        deps = []
     names = {
         re.match(r"^\s*([A-Za-z0-9_.\-]+)", d).group(1).lower()
         for d in deps
-        if re.match(r"^\s*([A-Za-z0-9_.\-]+)", d)
+        # A dependency written as a table rather than a PEP 508 string is a
+        # realistic mistake, and re.match on a dict raises TypeError.
+        if isinstance(d, str) and re.match(r"^\s*([A-Za-z0-9_.\-]+)", d)
     }
     if "python-dotenv" not in names:
         find(
@@ -692,7 +733,12 @@ def check_pyproject(out, root, rel, recipe_name):
         "testpaths"
     )
     if tp:
-        entries = [tp] if isinstance(tp, str) else list(tp)
+        if isinstance(tp, str):
+            entries = [tp]
+        elif isinstance(tp, (list, tuple)):
+            entries = [e for e in tp if isinstance(e, str)]
+        else:
+            entries = []
         ok = {"", ".", "tests", "tests/test_runnability.py"}
         if not any(e.strip().rstrip("/") in ok for e in entries):
             find(
@@ -1024,7 +1070,21 @@ def check_manifest(out, root, rel, schema_path):
     check_ownership_team(out, r, text, data)
 
     # H18 -- description
-    desc = (data.get("description") or "").strip()
+    raw_desc = data.get("description")
+    # A YAML block scalar with nested keys parses to a dict, and an unquoted
+    # year parses to an int. Both reached .strip().
+    desc = raw_desc.strip() if isinstance(raw_desc, str) else ""
+    if raw_desc is not None and not isinstance(raw_desc, str):
+        find(
+            out,
+            "H18",
+            CI_FAIL,
+            r,
+            lineno_of(text, r"^description:"),
+            f"description is {type(raw_desc).__name__}, not a string",
+            "validate_manifest.py:159-166",
+            "read the description value",
+        )
     if desc.upper().startswith("TODO") or len(desc) < 10:
         find(
             out,
@@ -1332,6 +1392,46 @@ _REQUIRED_BY_LANGUAGE = {
 }
 
 
+def _case_insensitive_files(root):
+    """Names policy.yml says CI accepts in any case (today: EVAL.yaml)."""
+    for base in (_OWN_REPO, root):
+        path = os.path.join(base, ".github/policy.yml")
+        if not os.path.exists(path):
+            continue
+        try:
+            import yaml
+
+            with open(path, "rb") as handle:
+                names = (yaml.safe_load(handle) or {}).get(
+                    "case_insensitive_files"
+                )
+        except Exception:
+            continue
+        if isinstance(names, list):
+            return {str(n).lower() for n in names}
+    return {"eval.yaml"}
+
+
+def _missing(recipe_abs, rel_name, lenient):
+    """Is this required file absent?
+
+    `eval.yaml` satisfies `EVAL.yaml`: validate_structure.py reads
+    policy.case_insensitive_files and accepts either spelling, and the lane
+    runs on a case-sensitive filesystem where a bare os.path.exists does not.
+    A false "required file missing" on a file that is right there is the most
+    confusing comment this rule can produce.
+    """
+    if os.path.exists(os.path.join(recipe_abs, rel_name)):
+        return False
+    if rel_name.lower() not in lenient:
+        return True
+    directory, base = os.path.split(os.path.join(recipe_abs, rel_name))
+    try:
+        return base.lower() not in {e.lower() for e in os.listdir(directory)}
+    except OSError:
+        return True
+
+
 def _required_files(root, rel, recipe_abs):
     """The files THIS recipe must have: always + by root + by its language.
 
@@ -1449,8 +1549,9 @@ def check_layout(out, root, rel, recipe_name):
     # and a pytest file it should never have -- the failure mode this whole
     # lane exists to avoid, produced deterministically on every non-Python
     # recipe. policy.yml has scoped these under `by_language` all along.
+    lenient = _case_insensitive_files(root)
     for f in _required_files(root, rel, recipe_abs):
-        if not os.path.exists(os.path.join(recipe_abs, f)):
+        if _missing(recipe_abs, f, lenient):
             find(
                 out,
                 "H21",

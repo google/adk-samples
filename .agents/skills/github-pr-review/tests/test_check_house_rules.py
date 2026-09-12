@@ -1179,3 +1179,159 @@ def test_h21_asks_each_language_for_its_own_files(
     assert not (forbidden & asked), (
         f"{language}: wrongly asked for {forbidden & asked}"
     )
+
+
+@pytest.mark.parametrize(
+    ("label", "pyproject", "manifest"),
+    [
+        (
+            "requires-python unquoted",
+            '[project]\nname = "my-recipe"\nrequires-python = 3.11\n',
+            None,
+        ),
+        (
+            "requires-python a list",
+            '[project]\nname = "my-recipe"\nrequires-python = [">=3.11"]\n',
+            None,
+        ),
+        (
+            "dependency as a table",
+            '[project]\nname = "my-recipe"\ndependencies = [{name = "x"}]\n',
+            None,
+        ),
+        (
+            "testpaths a number",
+            "[tool.pytest.ini_options]\ntestpaths = 3\n",
+            None,
+        ),
+        (
+            "description a mapping",
+            None,
+            "type: standalone\ndescription:\n  text: hello\n",
+        ),
+        ("description a number", None, "type: standalone\ndescription: 2026\n"),
+    ],
+)
+def test_a_mistyped_value_never_erases_the_recipes_review(
+    tmp_path, label, pyproject, manifest
+):
+    """Every one of these is a realistic typo — forgetting quotes around
+    3.11 most of all — and every one of them raised out of the checker, which
+    the lane catches per recipe. The recipe then goes unreviewed and the PR is
+    reported clean, losing every other finding in it.
+
+    H4's own code path crashed on exactly the defect H4 exists to catch."""
+    files = {"manifest.yaml": manifest or "type: standalone\n"}
+    if pyproject:
+        files["pyproject.toml"] = pyproject
+    root, rel = recipe(tmp_path / label.replace(" ", "-"), **files)
+    findings = _all_checks(root, rel)
+    assert isinstance(findings, list), label
+
+
+def test_an_unquoted_requires_python_is_reported_not_swallowed(tmp_path):
+    root, rel = recipe(
+        tmp_path,
+        **{
+            "manifest.yaml": "type: standalone\n",
+            "pyproject.toml": '[project]\nname = "my-recipe"\n'
+            "requires-python = 3.11\n",
+        },
+    )
+    out = []
+    chr.check_pyproject(out, root, rel, "my-recipe")
+    h4 = [f for f in out if f["rule"] == "H4"]
+    assert h4 and "not a string" in h4[0]["what"]
+
+
+def test_h3_expects_the_namespaced_name_for_a_vertical_skill(tmp_path):
+    """check_recipe_pyproject namespaces skills/ as <vertical>-<solution>, so
+    comparing against the bare basename told the author of every vertical
+    skill to set the one value CI would then reject. It fired on both shipped
+    skills in this repo."""
+    rel = "skills/retail/store-ops"
+    root = tmp_path
+    (root / rel).mkdir(parents=True)
+    (root / rel / "pyproject.toml").write_text(
+        '[project]\nname = "retail-store-ops"\n'
+    )
+    out = []
+    chr.check_pyproject(out, str(root), rel, "store-ops")
+    assert not [f for f in out if f["rule"] == "H3"], (
+        "the correct namespaced name was reported as wrong"
+    )
+
+    (root / rel / "pyproject.toml").write_text(
+        '[project]\nname = "store-ops"\n'
+    )
+    out = []
+    chr.check_pyproject(out, str(root), rel, "store-ops")
+    h3 = [f for f in out if f["rule"] == "H3"]
+    assert h3 and "retail-store-ops" in h3[0]["what"]
+
+
+def test_h3_is_unchanged_for_an_ordinary_recipe(tmp_path):
+    rel = "contrib/python/thing"
+    (tmp_path / rel).mkdir(parents=True)
+    (tmp_path / rel / "pyproject.toml").write_text(
+        '[project]\nname = "thing"\n'
+    )
+    out = []
+    chr.check_pyproject(out, str(tmp_path), rel, "thing")
+    assert not [f for f in out if f["rule"] == "H3"]
+
+
+def _case_sensitive_exists(monkeypatch):
+    """Make os.path.exists case-sensitive for the duration of a test.
+
+    The CI runner is Linux; this developer machine is macOS, where
+    os.path.exists("EVAL.yaml") is already True when eval.yaml is on disk. A
+    test written against the local filesystem therefore passes whether the
+    fix is present or not, which is how the first version of this one shipped
+    green and useless.
+    """
+    real = os.path.exists
+
+    def exists(path):
+        if not real(path):
+            return False
+        directory, base = os.path.split(path)
+        try:
+            return base in os.listdir(directory or ".")
+        except OSError:
+            return real(path)
+
+    monkeypatch.setattr(chr.os.path, "exists", exists)
+
+
+def test_h21_accepts_a_lowercase_eval_yaml(tmp_path, monkeypatch):
+    """policy.case_insensitive_files lists EVAL.yaml and validate_structure
+    honours it, so `eval.yaml` passes CI. A bare os.path.exists on a
+    case-sensitive runner reported it missing — a file that is right there."""
+    rel = "skills/retail/store-ops"
+    (tmp_path / rel).mkdir(parents=True)
+    for name in ("README.md", "SKILL.md", "eval.yaml"):
+        (tmp_path / rel / name).write_text("x\n")
+    (tmp_path / rel / "manifest.yaml").write_text(
+        'type: standalone\nlanguage: "typescript"\n'
+    )
+    _case_sensitive_exists(monkeypatch)
+    out = []
+    chr.check_layout(out, str(tmp_path), rel, "store-ops")
+    missing = {f["path"].rsplit("/", 1)[-1] for f in out if f["rule"] == "H21"}
+    assert "EVAL.yaml" not in missing, f"still asked for EVAL.yaml: {missing}"
+
+
+def test_h21_still_reports_a_genuinely_absent_eval_yaml(tmp_path, monkeypatch):
+    rel = "skills/retail/no-eval"
+    (tmp_path / rel).mkdir(parents=True)
+    for name in ("README.md", "SKILL.md"):
+        (tmp_path / rel / name).write_text("x\n")
+    (tmp_path / rel / "manifest.yaml").write_text(
+        'type: standalone\nlanguage: "typescript"\n'
+    )
+    _case_sensitive_exists(monkeypatch)
+    out = []
+    chr.check_layout(out, str(tmp_path), rel, "no-eval")
+    missing = {f["path"].rsplit("/", 1)[-1] for f in out if f["rule"] == "H21"}
+    assert "EVAL.yaml" in missing

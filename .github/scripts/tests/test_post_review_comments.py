@@ -1705,15 +1705,25 @@ _SUBJECTS = [
 
 
 def _many_findings(n):
+    # One per line: stacking them all on line 1 makes the within-run
+    # duplicate check collapse them, and this fixture is for the CEILING.
     return [
         {
             "path": "contrib/python/x/pyproject.toml",
-            "line": 1,
+            "line": i + 1,
             "body": _SUBJECTS[i],
-            "verify_steps": "read line 1",
+            "verify_steps": f"read line {i + 1}",
         }
         for i in range(n)
     ]
+
+
+def _diff_n_added_lines(n, path="contrib/python/x/pyproject.toml"):
+    body = "".join(f"+line {i + 1}\n" for i in range(n))
+    return (
+        f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
+        f"@@ -0,0 +1,{n} @@\n{body}"
+    )
 
 
 def test_the_budget_is_now_enforced_not_suggested(tmp_path):
@@ -1721,7 +1731,7 @@ def test_the_budget_is_now_enforced_not_suggested(tmp_path):
     findings = tmp_path / "f.json"
     findings.write_text(json.dumps(_many_findings(9)), encoding="utf-8")
     diff = tmp_path / "d.txt"
-    diff.write_text(_diff_one_added_line(), encoding="utf-8")
+    diff.write_text(_diff_n_added_lines(9), encoding="utf-8")
     out = tmp_path / "p.json"
     rc = subprocess.run(
         [
@@ -1752,7 +1762,7 @@ def test_the_most_serious_findings_are_the_ones_kept(tmp_path):
     findings = tmp_path / "f.json"
     findings.write_text(json.dumps(_many_findings(5)), encoding="utf-8")
     diff = tmp_path / "d.txt"
-    diff.write_text(_diff_one_added_line(), encoding="utf-8")
+    diff.write_text(_diff_n_added_lines(5), encoding="utf-8")
     out = tmp_path / "p.json"
     subprocess.run(
         [
@@ -1781,7 +1791,7 @@ def test_no_ceiling_means_no_ceiling(tmp_path):
     findings = tmp_path / "f.json"
     findings.write_text(json.dumps(_many_findings(7)), encoding="utf-8")
     diff = tmp_path / "d.txt"
-    diff.write_text(_diff_one_added_line(), encoding="utf-8")
+    diff.write_text(_diff_n_added_lines(7), encoding="utf-8")
     out = tmp_path / "p.json"
     subprocess.run(
         [
@@ -2119,3 +2129,101 @@ def test_no_comment_is_ever_lost_by_grouping():
     ]
     kept, dropped = m.group_repeats(comments)
     assert len(kept) + len(dropped) == len(comments)
+
+
+def test_grouping_never_reaches_across_recipes():
+    """The deterministic lane builds each rule's body from one format string,
+    so two recipes' findings for one rule are near-identical by construction
+    and always cleared the threshold. Three recipes with a deprecated model id
+    produced ONE comment on the first of them; the other two authors were told
+    nothing about their own recipe."""
+    body = "deprecated model id (use gemini-3.5-flash); 1 occurrence(s)"
+    comments = [
+        {
+            "path": f"core/python/{n}/agent.py",
+            "line": 1,
+            "side": "RIGHT",
+            "body": body,
+        }
+        for n in ("alpha", "beta", "gamma")
+    ]
+    kept, dropped = m.group_repeats(comments)
+    assert len(kept) == 3, "one recipe's author was told and two were not"
+    assert dropped == []
+
+
+def test_grouping_still_works_within_one_recipe():
+    body = "this import of os is never used anywhere below"
+    comments = [
+        {
+            "path": f"core/python/alpha/{n}.py",
+            "line": 1,
+            "side": "RIGHT",
+            "body": body,
+        }
+        for n in ("a", "b", "c")
+    ]
+    kept, _ = m.group_repeats(comments)
+    assert len(kept) == 1
+
+
+def test_a_note_body_cannot_forge_markdown_in_the_review():
+    """The path beside it is sanitised; the body is the wider channel — 600
+    characters of model text derived from a fork-authored diff. A newline plus
+    --- renders a horizontal rule, an inline image fires a remote request when
+    the page renders, and an italic line forges a second progress footer."""
+    note = {
+        "path": "a.py",
+        "line": 1,
+        "body": "Looks fine.\n\n---\n\n![](https://attacker.example/p.png)\n\n"
+        "_Round 1 - 0 of this PR's 25 automated comments used._",
+    }
+    body = m.build_payload("Correctness", [], [note], [])["body"]
+    bullet = next(ln for ln in body.split("\n") if ln.startswith("- `a.py"))
+    assert "\n" not in bullet
+    assert "![](" not in bullet
+    # A `---` only renders as a horizontal rule on a line of its own. The
+    # flattening is what prevents that; inline it is literal text.
+    assert "---" not in [ln.strip() for ln in body.split("\n")]
+
+
+def test_the_same_finding_twice_in_one_run_is_posted_once():
+    """Everything else compares against comments already ON the PR, so the
+    system suppressed a near-duplicate from a previous round two lines away
+    and cheerfully posted an exact duplicate on the same line within one
+    run."""
+    diff = _diff_n_added_lines(3)
+    anchors, line_text = m.walk_right_side(diff)
+    path = "contrib/python/x/pyproject.toml"
+    body = "this subprocess call has no timeout argument at all"
+    findings = [
+        {"path": path, "line": 1, "body": body, "verify_steps": "read it"},
+        {"path": path, "line": 1, "body": body, "verify_steps": "read it"},
+    ]
+    comments, _notes, skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 1
+    assert any("already said in this review" in s for s in skipped)
+
+
+def test_two_distinct_defects_near_each_other_are_both_posted():
+    """The within-run check must not inherit the ±2 proximity zone: inside one
+    run, two different defects a line apart are both worth saying."""
+    diff = _diff_n_added_lines(3)
+    anchors, line_text = m.walk_right_side(diff)
+    path = "contrib/python/x/pyproject.toml"
+    findings = [
+        {
+            "path": path,
+            "line": 1,
+            "verify_steps": "read it",
+            "body": "this subprocess call has no timeout argument at all",
+        },
+        {
+            "path": path,
+            "line": 2,
+            "verify_steps": "read it",
+            "body": "the docstring claims milliseconds but seconds are passed",
+        },
+    ]
+    comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 2
