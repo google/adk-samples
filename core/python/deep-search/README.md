@@ -168,7 +168,7 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-install-project
 COPY app/ ./app/
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
@@ -179,7 +179,7 @@ EXPOSE 8080
 CMD ["uv", "run", "uvicorn", "app.fast_api_app:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
-2. **Mount the static files in `app/fast_api_app.py`** so that the FastAPI app serves the frontend while keeping `/api/*` routed to ADK:
+2. **Mount the static files in `app/fast_api_app.py`** so that the FastAPI app serves the frontend at the root while keeping `/api/*` routed to ADK:
 
 ```python
 from pathlib import Path
@@ -187,7 +187,7 @@ from fastapi.staticfiles import StaticFiles
 
 frontend_dist = Path("frontend/dist")
 if frontend_dist.exists():
-    app.mount("/app", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
 ```
 
 3. **Deploy with Google Agents CLI:**
