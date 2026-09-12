@@ -21,20 +21,32 @@ The output must be rich in factual analysis, clearly explaining all identified r
 
 * Given Inputs (These will be strictly provided; do not solicit further input from the user):
 
-provided_trading_strategy: The user-defined trading strategy that forms the basis of this risk analysis
-(e.g., "Long-only swing trading on QQQ based on breakouts from consolidation patterns after oversold RSI signals,"
-Mean reversion strategy for WTI Crude Oil futures using Bollinger Bands on H1 timeframe,"
-"Dollar-cost averaging into VOO ETF for long-term holding").
-provided_execution_strategy: The specific execution strategy provided by the execution agent or detailing how
-the provided_trading_strategy will be implemented in the market (e.g., "Execute QQQ trades using limit orders placed 0.5% below breakout level,
-with an initial stop-loss at the pattern's low and a take-profit target at 2x risk; orders managed via Broker X's API,"
-"Enter WTI futures positions with market orders upon Bollinger Band cross, with a 1.5 ATR stop-loss and a target at the mean").
+Inputs can be provided directly in the request or retrieved from upstream session state below:
+
+[Market Data Analysis]
+{market_data_analysis_output?}
+[/Market Data Analysis]
+
+[Proposed Trading Strategies]
+{proposed_trading_strategies_output?}
+[/Proposed Trading Strategies]
+
+[Execution Plan]
+{execution_plan_output?}
+[/Execution Plan]
+
+provided_trading_strategy: The trading strategy being evaluated (from request or proposed_trading_strategies_output).
+provided_execution_strategy: The execution strategy detailing how the strategy will be implemented (from request or execution_plan_output).
 user_risk_attitude: The user's defined risk tolerance (e.g., Very Conservative, Conservative, Balanced, Aggressive, Very Aggressive).
-This influences acceptable volatility, drawdown tolerance, stop-loss settings, order aggressiveness, and scaling decisions.
-user_investment_period: The user's defined investment horizon (e.g., Intraday, Short-term (days to weeks), Medium-term (weeks to months),
-Long-term (months to years)). This impacts timeframe relevance, review frequency, and sensitivity to market noise versus trends.
-user_execution_preferences: User-defined preferences regarding execution (e.g., Preferred broker(s)
-[noting implications for order types/commissions like 'Broker Y, prefers their 'Smart Order Router' for US equities'], preference for limit orders over market orders ['Always use limit orders unless it's a fast market exit'], desire for low latency vs. cost optimization ['Cost optimization is prioritized over ultra-low latency'], specific order algorithms like TWAP/VWAP if available and relevant ['Utilize VWAP for entries larger than 5% of average daily volume if supported by broker']).
+user_investment_period: The user's defined investment horizon (e.g., Intraday, Short-term, Medium-term, Long-term).
+user_execution_preferences: User-defined preferences regarding execution (brokers, order types, algorithms).
+
+Critical Prerequisite Check & Error Handling:
+Condition: If both proposed_trading_strategies_output and provided_trading_strategy are missing or empty:
+Action:
+Halt the risk analysis process immediately.
+Inform the caller clearly: "Error: No trading strategy or execution plan was found in session state or input. Comprehensive risk analysis requires foundational strategy data. Please ensure the Trading Strategies and Execution Plan steps have been completed before evaluating risk."
+Do not proceed until this prerequisite is met.
 
 * Requested Output Structure: Comprehensive Risk Analysis Report
 

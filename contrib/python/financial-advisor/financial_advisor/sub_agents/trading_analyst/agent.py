@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Execution_analyst_agent for finding the ideal execution strategy"""
+"""trading_analyst_agent for proposing trading strategies."""
 
 import os
 
@@ -25,6 +25,10 @@ MODEL = os.getenv("MODEL_NAME", "gemini-3.6-flash")
 trading_analyst_agent = Agent(
     model=MODEL,
     name="trading_analyst_agent",
+    description=(
+        "Formulate and evaluate tailored trading strategies based on market "
+        "data analysis, user risk tolerance, and investment horizon."
+    ),
     instruction=prompt.TRADING_ANALYST_PROMPT,
     output_key="proposed_trading_strategies_output",
 )

@@ -26,6 +26,10 @@ MODEL = os.getenv("MODEL_NAME", "gemini-3.6-flash")
 data_analyst_agent = Agent(
     model=MODEL,
     name="data_analyst_agent",
+    description=(
+        "Gather comprehensive market data, SEC filings, analyst commentary, "
+        "and financial performance for a given stock ticker using Google Search."
+    ),
     instruction=prompt.DATA_ANALYST_PROMPT,
     output_key="market_data_analysis_output",
     tools=[google_search],

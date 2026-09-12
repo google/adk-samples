@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Test deployment of Academic Research Agent to Agent Engine."""
+"""Test deployment of Financial Advisor to Agent Engine."""
 
 import os
 
@@ -52,10 +52,6 @@ def main(argv: list[str]) -> None:  # pylint: disable=unused-argument
         if FLAGS.bucket
         else os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET")
     )
-
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-    location = os.getenv("GOOGLE_CLOUD_LOCATION")
-    bucket = os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET")
 
     if not project_id:
         print("Missing required environment variable: GOOGLE_CLOUD_PROJECT")
