@@ -5,10 +5,12 @@ most expensive comment this skill can produce.
 """
 
 import json
+import os
 import textwrap
 from pathlib import Path
 
 import check_house_rules as chr
+import pytest
 
 
 def recipe(tmp_path, name="my-recipe", **files):
@@ -1040,3 +1042,140 @@ def test_a_url_is_still_not_a_team(tmp_path):
     )
     chr.check_manifest(out, root, rel, None)
     assert h48(out)
+
+
+# ------------------------------------ crash inputs that erased a whole recipe
+
+
+def _all_checks(root, rel, name="my-recipe"):
+    """Every check the CI lane runs, in the order the lane runs them.
+
+    AGENTS.md is written first because check_text_wide skips its whole
+    directory walk without one -- and that walk is where the file-size and
+    symlink handling lives. A crash test that never reaches the walk passes
+    for no reason at all.
+    """
+    Path(root, "AGENTS.md").write_text("Use gemini-3.5-flash instead.\n")
+    out = []
+    chr.check_pyproject(out, root, rel, name)
+    chr.check_uv_lock(out, root, rel, name, "")
+    chr.check_dotenv_bootstrap(out, root, rel)
+    chr.check_manifest(out, root, rel, None)
+    chr.check_readme(out, root, rel)
+    chr.check_layout(out, root, rel, name)
+    chr.check_text_wide(out, root, rel)
+    chr.check_env_defaults(out, root, rel)
+    chr.check_license_headers(out, root, rel)
+    return out
+
+
+def test_a_dangling_symlink_does_not_erase_the_recipes_review(tmp_path):
+    """git stores mode 120000 and never checks the target, so a dangling
+    symlink is trivially committable. os.path.getsize on it raised
+    FileNotFoundError, which the lane catches per recipe — so the whole
+    recipe went unreviewed and the PR was reported clean. One file evaded the
+    entire deterministic lane."""
+    root, rel = recipe(tmp_path, **{"manifest.yaml": "type: standalone\n"})
+    os.symlink("/nonexistent/target", Path(root) / rel / "dangling.txt")
+    findings = _all_checks(root, rel)
+    assert findings, "the recipe produced nothing at all"
+
+
+def test_a_deep_expression_does_not_erase_the_recipes_review(tmp_path):
+    """ast.parse raises RecursionError, not SyntaxError, on a generated
+    constant table — a plausible accident, not only an attack."""
+    root, rel = recipe(
+        tmp_path,
+        **{
+            "manifest.yaml": "type: standalone\n",
+            "generated.py": "x = " + "1+" * 60000 + "1\n",
+        },
+    )
+    assert _all_checks(root, rel), "the recipe produced nothing at all"
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [
+        ("manifest.yaml", "- a list\n- where a mapping belongs\n"),
+        ("manifest.yaml", "just a string\n"),
+    ],
+)
+def test_a_manifest_that_is_not_a_mapping_does_not_crash(
+    tmp_path, name, content
+):
+    root, rel = recipe(tmp_path / content[:6].strip(), **{name: content})
+    assert isinstance(_all_checks(root, rel), list)
+
+
+@pytest.mark.parametrize(
+    "pyproject",
+    [
+        '[tool.uv]\nindex = "https://pypi.org/simple"\n',  # not array-of-tables
+        'project = "oops"\n',  # not a table
+        '[project]\nname = "x"\n[build-system]\nrequires = "x"\n',
+    ],
+)
+def test_a_mistyped_pyproject_does_not_crash_the_rule_that_catches_it(
+    tmp_path, pyproject
+):
+    """H5 exists to catch a malformed index. A malformed index killing the run
+    instead means the recipe is reported clean."""
+    root, rel = recipe(
+        tmp_path / str(abs(hash(pyproject)))[:6],
+        **{"manifest.yaml": "type: standalone\n", "pyproject.toml": pyproject},
+    )
+    assert isinstance(_all_checks(root, rel), list)
+
+
+# ------------------------------------------- H21 is scoped by language, not path
+
+
+@pytest.mark.parametrize(
+    ("rel", "language", "expected", "forbidden"),
+    [
+        (
+            "contrib/typescript/ts-thing",
+            "typescript",
+            {"README.md"},
+            {"pyproject.toml", "uv.lock", ".env.example"},
+        ),
+        (
+            "contrib/go/go-thing",
+            "go",
+            {"README.md", "go.mod"},
+            {"pyproject.toml", "uv.lock"},
+        ),
+        (
+            "contrib/python/py-thing",
+            "python",
+            {"README.md", "pyproject.toml", "uv.lock", ".env.example"},
+            set(),
+        ),
+        (
+            "skills/retail/store-ops",
+            "typescript",
+            {"README.md", "SKILL.md", "EVAL.yaml"},
+            {"pyproject.toml", "uv.lock"},
+        ),
+    ],
+)
+def test_h21_asks_each_language_for_its_own_files(
+    tmp_path, rel, language, expected, forbidden
+):
+    """It hardcoded the Python list for every recipe in every language, so a
+    new TypeScript, Go, Java or Kotlin recipe collected four confident
+    CI-FAIL comments demanding files it should never have. policy.yml has
+    scoped these under by_language all along."""
+    root = tmp_path
+    (root / rel).mkdir(parents=True)
+    (root / rel / "manifest.yaml").write_text(
+        f'type: standalone\nlanguage: "{language}"\n'
+    )
+    out = []
+    chr.check_layout(out, str(root), rel, rel.rsplit("/", 1)[-1])
+    asked = {f["path"].rsplit("/", 1)[-1] for f in out if f["rule"] == "H21"}
+    assert expected <= asked, f"{language}: missing {expected - asked}"
+    assert not (forbidden & asked), (
+        f"{language}: wrongly asked for {forbidden & asked}"
+    )

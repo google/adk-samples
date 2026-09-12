@@ -1102,14 +1102,7 @@ def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
                     members.append(j)
 
         if len(members) >= GROUP_AT:
-            used.update(members)
             others = len(members) - 1
-            for index in members[1:]:
-                victim = tokenised[index][0]
-                dropped.append(
-                    f"{victim['path']}:{victim['line']}: grouped into "
-                    f"{comment['path']}:{comment['line']}"
-                )
             grouped_body = (
                 f"{comment['body'].rstrip()}\n\n"
                 f"(Same thing in {others} other place"
@@ -1117,12 +1110,25 @@ def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
             )
             # The shape gate ran BEFORE grouping, and grouping is the one path
             # that makes a body longer. A 600-char body plus the note is 643,
-            # over the cap that keeps this public channel narrow — and the
-            # whole review would be rejected for it. If the note will not fit,
-            # keep the comment ungrouped rather than dropping either.
+            # over the cap that keeps this public channel narrow, and GitHub
+            # would reject the whole review for it.
+            #
+            # `used` is marked only once the group is going ahead. Marking it
+            # first and then bailing out left the other members flagged as
+            # consumed while nothing had consumed them: they were skipped by
+            # the outer loop and silently vanished. Found by the test written
+            # for the cap itself, which is the only reason it is not still
+            # here.
             if implausible_body(grouped_body):
                 kept.append(comment)
                 continue
+            used.update(members)
+            for index in members[1:]:
+                victim = tokenised[index][0]
+                dropped.append(
+                    f"{victim['path']}:{victim['line']}: grouped into "
+                    f"{comment['path']}:{comment['line']}"
+                )
             kept.append({**comment, "body": grouped_body})
             continue
         kept.append(comment)

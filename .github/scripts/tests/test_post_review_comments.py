@@ -2048,3 +2048,74 @@ def test_our_own_review_body_still_suppresses_its_own_repeat(monkeypatch):
         zones,
         texts,
     )
+
+
+def test_a_grouped_body_never_exceeds_the_shape_cap():
+    """Grouping is the one path that makes a body LONGER, and the shape gate
+    runs before it. A 600-char body plus the note is 643, over the cap that
+    keeps this public channel narrow — and GitHub rejects the whole review for
+    it. Too long to annotate means keep it ungrouped, never drop it."""
+    # Real words: a long run of one character trips the unbroken-run rule
+    # instead, which would make this test pass for the wrong reason.
+    prefix = "the retry loop never terminates when cancelled "
+    filler = "and the socket stays open until the process exits. "
+    long_body = (prefix + filler * 20)[: m.MAX_BODY_CHARS]
+    assert len(long_body) == m.MAX_BODY_CHARS
+    assert not m.implausible_body(long_body), "the fixture is not a valid body"
+    comments = [
+        {"path": f"f{i}.py", "line": 1, "side": "RIGHT", "body": long_body}
+        for i in range(3)
+    ]
+    kept, dropped = m.group_repeats(comments)
+    assert len(kept) == 3, "the group note pushed a body over the cap"
+    for c in kept:
+        assert not m.implausible_body(c["body"]), m.implausible_body(c["body"])
+    assert dropped == []
+
+
+def test_a_short_group_still_gets_its_note():
+    """The cap guard must not disable grouping for ordinary bodies."""
+    body = "this import of os is never used anywhere below"
+    comments = [
+        {"path": f"f{i}.py", "line": 1, "side": "RIGHT", "body": body}
+        for i in range(3)
+    ]
+    kept, dropped = m.group_repeats(comments)
+    assert len(kept) == 1 and "2 other places" in kept[0]["body"]
+    assert len(dropped) == 2
+
+
+def test_a_group_that_cannot_be_annotated_loses_no_comment():
+    """When the note will not fit, the members must stay as separate comments.
+    `used` was marked before the bail-out, so the other members were flagged
+    as consumed while nothing had consumed them: the outer loop skipped them
+    and they vanished from the review with no log line. Three findings went in
+    and one came out."""
+    prefix = "the retry loop never terminates when cancelled "
+    filler = "and the socket stays open until the process exits. "
+    body = (prefix + filler * 20)[: m.MAX_BODY_CHARS]
+    comments = [
+        {"path": f"f{i}.py", "line": 1, "side": "RIGHT", "body": body}
+        for i in range(3)
+    ]
+    kept, dropped = m.group_repeats(comments)
+    assert len(kept) + len(dropped) == 3, "a comment disappeared entirely"
+    assert len(kept) == 3
+
+
+def test_no_comment_is_ever_lost_by_grouping():
+    """The invariant, over a mixed set: everything is either kept or recorded
+    as grouped-into. Nothing may simply vanish."""
+    bodies = [
+        "this import of os is never used anywhere below",
+        "the import of sys is never used anywhere below",
+        "import json is never used anywhere in this module",
+        "this subprocess call has no timeout argument at all",
+        "the docstring claims milliseconds but seconds are passed",
+    ]
+    comments = [
+        {"path": f"f{i}.py", "line": i + 1, "side": "RIGHT", "body": b}
+        for i, b in enumerate(bodies)
+    ]
+    kept, dropped = m.group_repeats(comments)
+    assert len(kept) + len(dropped) == len(comments)

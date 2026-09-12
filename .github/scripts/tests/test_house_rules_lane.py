@@ -255,8 +255,9 @@ def test_h42_is_reported_once_for_the_whole_pr(tmp_path):
     reads source stays green when the call is merely relocated, and moving
     that call is what the fix did."""
     for name in ("alpha", "beta", "gamma"):
-        _recipe(tmp_path, f"contrib/python/{name}",
-                **{"manifest.yaml": MANIFEST})
+        _recipe(
+            tmp_path, f"contrib/python/{name}", **{"manifest.yaml": MANIFEST}
+        )
     changed = tmp_path / "changed.txt"
     changed.write_text(
         "".join(
@@ -270,19 +271,28 @@ def test_h42_is_reported_once_for_the_whole_pr(tmp_path):
         [
             sys.executable,
             str(Path(__file__).resolve().parents[1] / "house_rules_lane.py"),
-            "--checker", str(CHECKER),
-            "--repo-root", str(tmp_path),
-            "--changed-files", str(changed),
-            "--out", str(out),
+            "--checker",
+            str(CHECKER),
+            "--repo-root",
+            str(tmp_path),
+            "--changed-files",
+            str(changed),
+            "--out",
+            str(out),
         ],
-        capture_output=True, text=True, check=False,
-        env={**os.environ, "PYTHONPATH": str(
-            Path(__file__).resolve().parents[3] / "tools"
-        )},
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[3] / "tools"),
+        },
     )
     assert rc.returncode == 0, rc.stderr
     h42 = [f for f in json.loads(out.read_text()) if f["_rule"] == "H42"]
-    assert len(h42) == 1, f"expected one H42 across three recipes, got {len(h42)}"
+    assert len(h42) == 1, (
+        f"expected one H42 across three recipes, got {len(h42)}"
+    )
 
 
 @pytest.mark.skipif(not CHECKER.exists(), reason="checker not in this checkout")
