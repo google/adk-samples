@@ -111,7 +111,9 @@ FENCED_BLOCK = re.compile(r"```(?:json)?\s*(\[.*?)```", re.DOTALL)
 
 # A window row: "  42: os.system(cmd)". Both ":" and "|" are seen as the
 # separator, and the leading whitespace is the model aligning its numbers.
-WINDOW_LINE = re.compile(r"^\s*(\d+)\s*[:|]\s?(.*)$")
+# The digit run is bounded for the same reason as MAX_LINE_DIGITS: a longer
+# one is not a line number, and int() on it raises rather than returning.
+WINDOW_LINE = re.compile(r"^\s*(\d{1,12})\s*[:|]\s?(.*)$")
 
 # The keys a finding is built from. Used to find where a string value ENDS
 # when the model has left raw quotes inside it — see _repair_string_values.
@@ -185,6 +187,11 @@ NOT_CHEAP_MARKERS = re.compile(
 # the two the prompt asks for, and clear too of a grouped finding that has to
 # say how many instances it covers.
 MAX_BODY_CHARS = 600
+
+# No file has 10^12 lines. The bound exists because int() on a string of more
+# than 4300 digits raises ValueError, which escapes as a CI fault and
+# discards every finding in the lane.
+MAX_LINE_DIGITS = 12
 
 # The longest unbroken non-whitespace run a body may contain. Calibrated
 # against real data, not guessed: the longest path in this repository is 123
@@ -414,7 +421,12 @@ def extract_findings(response: str) -> list:
     while (start := block.find("[", index)) != -1:
         try:
             array, index = decoder.raw_decode(block, start)
-        except json.JSONDecodeError as exc:
+        except ValueError as exc:
+            # ValueError, not JSONDecodeError: a bare integer literal of more
+            # than 4300 digits makes json's own number parser raise the base
+            # class, which slipped past the narrower handler and escaped as a
+            # CI fault before any validation had run. JSONDecodeError is a
+            # ValueError, so this still catches everything it did.
             if parsed_any:
                 break
             # Repair before salvage: it recovers every finding in the block,
@@ -562,7 +574,7 @@ def _repaired_findings(block: str) -> list | None:
     for candidate in _repair_readings(block, budget):
         try:
             array, _ = decoder.raw_decode(candidate, candidate.find("["))
-        except json.JSONDecodeError:
+        except ValueError:
             continue
         if isinstance(array, list) and array:
             readings.setdefault(json.dumps(array, sort_keys=True), array)
@@ -611,7 +623,14 @@ def _coerce_line(value: object) -> int | None:
         return None
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().isdecimal():
+    if (
+        isinstance(value, str)
+        and value.strip().isdecimal()
+        # Python 3.11 caps int(str) at 4300 digits and raises ValueError past
+        # it. A line number is never more than a handful; anything longer is
+        # not a line number, and letting int() decide costs the whole review.
+        and len(value.strip()) <= MAX_LINE_DIGITS
+    ):
         return int(value.strip())
     return None
 
@@ -1029,9 +1048,17 @@ def already_raised(
     body: str,
     zones: dict[str, dict[int, dict]],
     texts: list[tuple[set[str], dict]],
+    trusted: bool = False,
 ) -> str:
     """Why this finding repeats something already on the PR, or ""."""
-    if zones.get(path, {}).get(line):
+    if zones.get(path, {}).get(line) and not trusted:
+        # Position is good evidence of repetition for a MODEL finding: two
+        # comments on one line are usually the same observation restated.
+        # For the deterministic lane it is not — several rules anchor at
+        # line 1 when they cannot locate their subject, so one posted
+        # comment there would silence every other rule for that file on
+        # every later round. Those findings are distinguished by their text
+        # below, which is exact for a checker.
         return "already commented on this line"
 
     mine = _tokens(body)
@@ -1110,14 +1137,19 @@ def _said_in_this_run(
     is what `group_repeats` is for, and it says "same thing in N other
     places" rather than silently dropping the others.
     """
-    if zones.get(path, {}).get(line):
-        return True
+    # No line-zone leg. Many house rules fall back to line 1 when they cannot
+    # locate their subject, so distinct rules collide there constantly: a stub
+    # README produces four separate CI-failing H20 findings, all at line 1,
+    # and blocking on position alone told the author about one of them. What
+    # makes two findings the same finding is what they SAY.
     mine = _tokens(body)
     if len(mine) < 4:
         return False
     for tokens, accepted in texts:
         if accepted.get("path") != path or len(tokens) < 4:
             continue
+        if accepted.get("line") == line and accepted.get("body") == body:
+            return True
         if _similarity(mine, tokens) >= SIMILARITY:
             return True
     return False
@@ -1289,7 +1321,7 @@ def build_comments(
         if trusted:
             verified = True
 
-        duplicate = already_raised(path, line, body, zones, texts)
+        duplicate = already_raised(path, line, body, zones, texts, trusted)
         if duplicate:
             skipped.append(f"{path}:{line}: {duplicate}")
             continue
@@ -1447,6 +1479,12 @@ def _safe_span(text: str, limit: int = 160) -> str:
     return cleaned if len(cleaned) <= limit else cleaned[: limit - 1] + "…"
 
 
+# Case-insensitive: HTML tag names are, and the parser lowercases the node
+# before GitHub's sanitiser allowlist is consulted, so `<IMG SRC=...>` is the
+# same element as `<img src=...>` and rendered the same remote request.
+_IMG_TAG = re.compile(r"<img", re.IGNORECASE)
+
+
 def _defang_images(text: str) -> str:
     """Neutralise an inline image without touching anything else.
 
@@ -1456,7 +1494,7 @@ def _defang_images(text: str) -> str:
     markdown sanitiser allowlist, so closing only the `![]()` form left the
     same request one tag away.
     """
-    return text.replace("![", "!\u200b[").replace("<img", "&lt;img")
+    return _IMG_TAG.sub("&lt;img", text.replace("![", "!\u200b["))
 
 
 def _safe_line(text: str) -> str:

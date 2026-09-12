@@ -631,7 +631,10 @@ def check_pyproject(out, root, rel, recipe_name):
     else:
         bad = None
         for part in [s.strip() for s in rp.split(",")]:
-            m = re.match(r"(>=|>|~=|==)\s*3\.(\d+)", part)
+            # Bounded: int() on a string of more than 4300 digits raises
+            # ValueError, and a contributor could disable the deterministic
+            # lane for their own recipe with one long line.
+            m = re.match(r"(>=|>|~=|==)\s*3\.(\d{1,6})", part)
             if not m:
                 continue
             op, minor = m.group(1), int(m.group(2))
@@ -1065,11 +1068,18 @@ def check_manifest(out, root, rel, schema_path):
     # A manifest is flat enough that a missing pyyaml must not silently disable
     # H18/H19 -- a checker that quietly skips rules is worse than no checker.
     data, degraded = _parse_manifest(text)
-    if isinstance(data, (list, str, int, float, bool)):
-        # A YAML list or scalar where a mapping belongs. Every reader below
-        # calls .get() on it. The schema check would have reported this
-        # properly; crashing loses the whole recipe instead.
-        SKIPPED.append(("H17/H18/H19/H48", "manifest.yaml is not a mapping"))
+    if data is not None and not isinstance(data, dict):
+        # Anything that is not a mapping. Written as a blocklist of (list,
+        # str, int, float, bool) it missed the rest of what yaml.safe_load
+        # returns -- a bare date, a timestamp, !!set, !!binary -- and each of
+        # those still reached .get() and discarded the recipe's whole review.
+        # The question is "is it a mapping", so ask that.
+        SKIPPED.append(
+            (
+                "H17/H18/H19/H48",
+                f"manifest.yaml is a {type(data).__name__}, not a mapping",
+            )
+        )
         return
     if data is None:
         SKIPPED.append(("H18/H19", "could not parse manifest.yaml"))

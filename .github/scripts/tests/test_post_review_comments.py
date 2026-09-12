@@ -2312,3 +2312,113 @@ def test_a_superscript_digit_line_number_does_not_crash():
     """ "²".isdigit() is True and int("²") raises, which escapes as a CI fault."""
     assert m._coerce_line("²") is None
     assert m._coerce_line("42") == 42
+
+
+# ------------------------------------------- int() has a 4300-digit ceiling
+
+
+def test_an_absurdly_long_line_number_is_rejected_not_fatal():
+    """Python 3.11 caps int(str) at 4300 digits and raises ValueError past it.
+    "9"*5000 is `isdecimal()`, so the guard let it through to int() — which
+    escaped as a CI fault and discarded every finding in the lane."""
+    assert m._coerce_line("9" * 5000) is None
+    assert m._coerce_line("42") == 42
+
+
+def test_an_absurdly_long_window_line_number_is_not_fatal():
+    rows = m._window_rows("  " + "9" * 5000 + ": import os")
+    assert rows == [] or all(isinstance(n, int) for n, _ in rows)
+
+
+def test_a_giant_integer_literal_in_the_response_is_handled():
+    """json's own number parser raises a bare ValueError, not
+    JSONDecodeError, so it slipped past the handler before any validation."""
+    block = (
+        '```json\n[{"path": "a.py", "line": '
+        + "9" * 5000
+        + ', "body": "x"}]\n```'
+    )
+    try:
+        m.extract_findings(block)
+    except m.ReviewerOutputError:
+        pass  # a reported, handled failure is the correct outcome
+    except Exception as exc:
+        raise AssertionError(f"escaped as {type(exc).__name__}") from exc
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    ['<IMG SRC="https://evil/p.png">', "<Img src=x>", "<iMG src=x>"],
+)
+def test_the_image_defang_is_case_insensitive(spelling):
+    """HTML tag names are case-insensitive — the parser lowercases the node
+    before GitHub's sanitiser allowlist is consulted — so <IMG SRC=...> is the
+    same element and rendered the same remote request."""
+    assert "<img" not in m._defang_images(spelling).lower()
+
+
+def test_two_distinct_rules_on_one_line_are_both_reported():
+    """Many house rules fall back to line 1 when they cannot locate their
+    subject, so distinct CI-failing rules collide there routinely. Blocking on
+    position alone told the author about one of four stub-README findings, and
+    the posted one then occupied the proximity zone so the other three were
+    never told on any later round."""
+    diff = _diff_n_added_lines(3, path="contrib/python/x/README.md")
+    anchors, line_text = m.walk_right_side(diff)
+    findings = [
+        {
+            "path": "contrib/python/x/README.md",
+            "line": 1,
+            "source": "checker",
+            "verify_steps": "read it",
+            "body": "README is 40 words, minimum is 100",
+        },
+        {
+            "path": "contrib/python/x/README.md",
+            "line": 1,
+            "source": "checker",
+            "verify_steps": "read it",
+            "body": "README has no setup or prerequisites heading",
+        },
+        {
+            "path": "contrib/python/x/README.md",
+            "line": 1,
+            "source": "checker",
+            "verify_steps": "read it",
+            "body": "README has no fenced code block anywhere in it",
+        },
+    ]
+    comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 3, "distinct rules were collapsed by their anchor"
+
+
+def test_a_checker_finding_is_not_blocked_by_an_unrelated_comment_on_its_line():
+    """Across rounds, too: one comment on line 1 silenced every other rule
+    that anchors there, permanently."""
+    existing = [
+        {
+            "kind": "inline",
+            "path": "contrib/python/x/README.md",
+            "line": 1,
+            "body": "README is 40 words, minimum is 100",
+        }
+    ]
+    zones, texts = m.build_exclusions(existing)
+    assert not m.already_raised(
+        "contrib/python/x/README.md",
+        1,
+        "README has no setup or prerequisites heading",
+        zones,
+        texts,
+        trusted=True,
+    )
+    # A model finding keeps the positional rule: two comments on one line are
+    # usually the same observation restated.
+    assert m.already_raised(
+        "contrib/python/x/README.md",
+        1,
+        "something else entirely here now",
+        zones,
+        texts,
+        trusted=False,
+    )

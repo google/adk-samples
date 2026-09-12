@@ -1414,3 +1414,47 @@ def test_h27_counts_the_whole_recipe_not_just_the_changed_files(
     what = h27[0]["what"]
     assert "9" in what, f"the 9 headed files were not counted: {what}"
     assert "no .py file in this recipe" not in what
+
+
+@pytest.mark.parametrize(
+    ("label", "body"),
+    [
+        ("a bare date", "2026-01-01\n"),
+        ("a timestamp", "2026-01-01 10:00:00\n"),
+        ("a set", "!!set\n? a\n? b\n"),
+        ("binary", "!!binary |\n  aGVsbG8=\n"),
+        ("a list", "- a\n- b\n"),
+        ("a scalar", "just a string\n"),
+    ],
+)
+def test_any_non_mapping_manifest_is_skipped_not_fatal(tmp_path, label, body):
+    """The guard was a blocklist of the types someone thought of — list, str,
+    int, float, bool — and yaml.safe_load also returns dates, timestamps, sets
+    and bytes. Each of those still reached .get() and discarded the recipe's
+    entire review. The question is "is it a mapping", so it asks that now."""
+    root, rel = recipe(
+        tmp_path / label.replace(" ", "-"), **{"manifest.yaml": body}
+    )
+    chr.SKIPPED = []
+    out = []
+    chr.check_manifest(out, root, rel, None)
+    assert any(r.startswith("H17") for r, _ in chr.SKIPPED), (
+        "the unreadable manifest was not reported as unchecked"
+    )
+
+
+def test_an_absurdly_long_version_does_not_crash_the_checker(tmp_path):
+    """int() on a string of more than 4300 digits raises, and this one is
+    reachable straight from PR content: a one-line way for a contributor to
+    make the deterministic lane skip their own recipe."""
+    root, rel = recipe(
+        tmp_path,
+        **{
+            "manifest.yaml": "type: standalone\n",
+            "pyproject.toml": '[project]\nname = "my-recipe"\n'
+            'requires-python = ">=3.' + "9" * 5000 + '"\n',
+        },
+    )
+    out = []
+    chr.check_pyproject(out, root, rel, "my-recipe")
+    assert isinstance(out, list)
