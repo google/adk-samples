@@ -1,0 +1,92 @@
+Acetic Acid
+Acetone
+Acetylene
+Acrylonitrile
+Aluminum Phosphide
+Ammonia
+Ammonium Nitrate
+Aniline
+Anthracene
+Arsenic Trioxide
+Atrazine
+Barium Chloride
+Benzene
+Beryllium Oxide
+Bisphenol A
+Bromine
+Butane
+Cadmium Chloride
+Calcium Carbide
+Carbon Dioxide
+Carbon Monoxide
+Chlorine
+Chloroform
+Chromium Trioxide
+Cobalt Chloride
+Copper Sulfate
+Cyanogen Chloride
+DDT
+Diazomethane
+Dichloromethane
+Diethyl Ether
+Dimethyl Sulfate
+Dioxin
+Epichlorohydrin
+Ethanol
+Ethylene Glycol
+Ethylene Oxide
+Fluorine
+Formaldehyde
+Glyphosate
+Hexane
+Hydrazine
+Hydrochloric Acid
+Hydrofluoric Acid
+Hydrogen Peroxide
+Hydrogen Sulfide
+Iodine
+Isopropyl Alcohol
+Lead Acetate
+Lead Nitrate
+Magnesium Powder
+Malathion
+Maleic Anhydride
+Mercuric Oxide
+Methanol
+Methyl Isocyanate
+Methyl Methacrylate
+Naphthalene
+Nickel Sulfate
+Nitric Acid
+Nitrobenzene
+Nitrogen Dioxide
+Paraquat
+Parathion
+Peracetic Acid
+Phenol
+Phosgene
+Phthalic Anhydride
+Picric Acid
+Polychlorinated Biphenyls
+Potassium Chlorate
+Potassium Cyanide
+Potassium Hydroxide
+Propane
+Propylene Glycol
+Propylene Oxide
+Pyridine
+Sodium Azide
+Sodium Cyanide
+Sodium Hydroxide
+Sodium Hypochlorite
+Sodium Nitrate
+Strychnine
+Styrene
+Sulfur Dioxide
+Sulfur
+Sulfuric Acid
+Tetrahydrofuran
+Toluene
+Vinyl Chloride
+Warfarin
+Xylene
