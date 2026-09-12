@@ -1883,7 +1883,14 @@ def check_text_wide(out, root, rel):
         )
         banned = None
     else:
-        banned = re.compile(r"gemini-2\.0-flash|gemini-2\.5-flash")
+        # The negative lookahead is the whole point: `gemini-2.5-flash-image`
+        # is a CURRENT model and `gemini-2.5-flash-lite` another, and a
+        # prefix match told the author of skills/retail/virtual-tryon to
+        # replace a correct image model with a text one, 21 times. A trailing
+        # `-` followed by a letter starts a different model name; a digit
+        # (`-001`) is a version pin of the same deprecated one, so that still
+        # matches.
+        banned = re.compile(r"gemini-2\.[05]-flash(?!-[a-zA-Z])")
     hits = []
     for dirpath, dirnames, filenames in os.walk(recipe_abs) if banned else []:
         dirnames[:] = [

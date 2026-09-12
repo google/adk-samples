@@ -1519,6 +1519,37 @@ def test_h10_anchors_on_a_file_the_pr_changed(tmp_path, monkeypatch):
     """It anchored on the first hit in walk order, and _is_ours then dropped
     the finding unless the PR happened to touch that exact file — which a
     recipe's own docs mentioning the ids made routine."""
+    # zzz FIRST: os.walk yields filesystem order, which here is creation
+    # order, so an unsorted implementation anchors on the changed file by
+    # luck and the test cannot tell the difference. Sorted, aaa comes first
+    # and the anchor has to be chosen deliberately.
+    root, rel = recipe(
+        tmp_path,
+        **{
+            "zzz_changed.py": 'MODEL = "gemini-2.5-flash"\n',
+            "aaa_first.py": 'FALLBACK = "gemini-2.0-flash"\n',
+        },
+    )
+    Path(root, "AGENTS.md").write_text("Use gemini-3.5-flash instead.\n")
+    # BOTH changed, so `_anchor_in_diff` cannot decide it: what is left is
+    # the order of `hits`, and os.walk's order is the filesystem's. Sorted,
+    # the same pull request always produces the same comment.
+    monkeypatch.setattr(
+        chr, "CHANGED", {f"{rel}/zzz_changed.py", f"{rel}/aaa_first.py"}
+    )
+    monkeypatch.setattr(chr, "FILTERED", [])
+    out = []
+    chr.check_text_wide(out, root, rel)
+    h10 = [f for f in out if f["rule"] == "H10"]
+    assert h10, "the finding was filtered away as pre-existing"
+    assert h10[0]["path"].endswith("aaa_first.py"), (
+        f"anchored on {h10[0]['path']} — the order os.walk happened to give"
+    )
+
+
+def test_h10_anchors_on_a_changed_file_when_only_one_changed(
+    tmp_path, monkeypatch
+):
     root, rel = recipe(
         tmp_path,
         **{
@@ -1532,5 +1563,36 @@ def test_h10_anchors_on_a_file_the_pr_changed(tmp_path, monkeypatch):
     out = []
     chr.check_text_wide(out, root, rel)
     h10 = [f for f in out if f["rule"] == "H10"]
-    assert h10, "the finding was filtered away as pre-existing"
-    assert h10[0]["path"].endswith("zzz_changed.py")
+    assert h10 and h10[0]["path"].endswith("zzz_changed.py")
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "gemini-2.5-flash-image",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash-preview",
+    ],
+)
+def test_h10_does_not_flag_a_current_model_by_prefix(tmp_path, model):
+    """`gemini-2.5-flash-image` is a CURRENT model and the pattern had no
+    right-hand boundary, so it matched the prefix: skills/retail/virtual-tryon
+    carries 21 occurrences and not one deprecated id, and any PR touching it
+    was told to replace a correct image model with a text one."""
+    root, rel = recipe(tmp_path / model, **{"agent.py": f'MODEL = "{model}"\n'})
+    Path(root, "AGENTS.md").write_text("Use gemini-3.5-flash instead.\n")
+    out = []
+    chr.check_text_wide(out, root, rel)
+    assert not [f for f in out if f["rule"] == "H10"], f"{model} was flagged"
+
+
+def test_h10_still_flags_a_pinned_deprecated_version(tmp_path):
+    """A trailing `-001` is a version pin of the deprecated model itself; a
+    trailing letter starts a different model name."""
+    root, rel = recipe(
+        tmp_path, **{"agent.py": 'MODEL = "gemini-2.5-flash-001"\n'}
+    )
+    Path(root, "AGENTS.md").write_text("Use gemini-3.5-flash instead.\n")
+    out = []
+    chr.check_text_wide(out, root, rel)
+    assert [f for f in out if f["rule"] == "H10"]

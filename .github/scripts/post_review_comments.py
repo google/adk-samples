@@ -840,7 +840,7 @@ def _tokens(text: str) -> set[str]:
 
 # A bullet in one of our review bodies, as build_payload renders it:
 #     - `path/to/file.py:42` — the finding text
-_NOTE_BULLET = re.compile(r"^- `([^`]+):(\d+)` — (.*)$")
+_NOTE_BULLET = re.compile(r"^- `([^`]+):(\d{1,12})` — (.*)$")
 
 
 def _notes_in(review_body) -> list[dict]:
@@ -1117,6 +1117,18 @@ def build_exclusions(
     return zones, texts
 
 
+def _same_path(comment: dict, path: str) -> bool:
+    """Is this comment about `path`?
+
+    Compares the rendered spelling too: a note's path is recovered from the
+    bullet we wrote, which went through `_safe_span` — so a path carrying a
+    backtick, or longer than the 160-character cap, never matched itself and
+    its note repeated on every push.
+    """
+    stored = str(comment.get("path") or "")
+    return stored in (path, _safe_span(path))
+
+
 def already_raised(
     path: str,
     line: int,
@@ -1144,9 +1156,15 @@ def already_raised(
         # tokenise to three, and the exempt House Rules lane re-posts them on
         # every push unless something stops it.
         for _tokens_unused, comment in texts:
-            if (
-                comment.get("path") == path
-                and _base_body(comment.get("body")) == _safe_line(body).strip()
+            if not _same_path(comment, path):
+                continue
+            # Both spellings. A note is stored flattened by `_safe_line`; an
+            # inline comment is stored as written. Comparing only one of them
+            # fixed notes and broke comments, and a short body carrying a
+            # newline or a double space then repeated on every push.
+            if _base_body(comment.get("body")) in (
+                body.strip(),
+                _safe_line(body).strip(),
             ):
                 return "identical to a comment already on this PR"
         return ""
@@ -1164,7 +1182,7 @@ def already_raised(
         # phrase one defect four ways, so the same observation elsewhere
         # SHOULD suppress. Prose bodies do not collide by construction the
         # way a format string does.
-        if trusted and comment.get("path") and comment.get("path") != path:
+        if trusted and comment.get("path") and not _same_path(comment, path):
             continue
         if _similarity(mine, tokens) >= SIMILARITY:
             verdict = comment.get("verdict")
@@ -1196,7 +1214,7 @@ GROUP_SIMILARITY = 0.5
 _RECIPE_KEY = re.compile(r"^((?:core|contrib|skills)/[^/]+(?:/[^/]+)?)")
 
 
-def _group_scope(path: str) -> str:
+def _group_scope(path: str, trusted: bool = False) -> str:
     """The recipe a comment belongs to, for grouping purposes.
 
     Outside a recipe — repo tooling, a workflow, a root-level file — the scope
@@ -1205,6 +1223,16 @@ def _group_scope(path: str) -> str:
     grouping wherever recipes are not involved.
     """
     text = str(path)
+    if trusted:
+        # A checker finding groups only with others in the SAME FILE.
+        # Grouping across files drops the other members with no record of
+        # them anywhere, and the path-aware suppression a checker gets cannot
+        # recognise them next round — so the class dripped one comment per
+        # push for N-1 pushes, each round re-claiming "same thing in N other
+        # places" about the places it was about to comment on. The
+        # deterministic lane is exempt from the comment budget, so there is
+        # nothing to save by collapsing them.
+        return text
     match = _RECIPE_KEY.match(text)
     if match:
         return match.group(1)
@@ -1280,8 +1308,10 @@ def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
                 # cleared the threshold: three recipes with a deprecated model
                 # id produced ONE comment on the first of them, and the other
                 # two authors were told nothing.
-                if _group_scope(_other["path"]) != _group_scope(
-                    comment["path"]
+                if _group_scope(
+                    _other["path"], _other.get("trusted", False)
+                ) != _group_scope(
+                    comment["path"], comment.get("trusted", False)
                 ):
                     continue
                 if _similarity(tokens, other) >= GROUP_SIMILARITY:
@@ -1445,7 +1475,16 @@ def build_comments(
 
         if line in anchors.get(path, frozenset()):
             comments.append(
-                {"path": path, "line": line, "side": "RIGHT", "body": body}
+                {
+                    "path": path,
+                    "line": line,
+                    "side": "RIGHT",
+                    "body": body,
+                    # Internal, stripped before the payload is written: tells
+                    # group_repeats that this body came from a format string
+                    # rather than from prose.
+                    "trusted": trusted,
+                }
             )
         elif verified:
             notes.append({"path": path, "line": line, "body": body})
@@ -1458,6 +1497,10 @@ def build_comments(
     comments, grouped = group_repeats(comments)
     skipped.extend(grouped)
 
+    # `trusted` is ours, not GitHub's.
+    comments = [
+        {k: v for k, v in c.items() if k != "trusted"} for c in comments
+    ]
     return comments, notes, skipped
 
 

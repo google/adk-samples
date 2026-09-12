@@ -2798,3 +2798,134 @@ def test_a_grouped_comment_suppresses_its_own_repeat_next_round():
         [{"kind": "inline", "path": "a.py", "line": 1, "body": stored}]
     )
     assert m.already_raised("a.py", 1, base, zones, texts, trusted=True)
+
+
+def _round_trip(findings, existing, diff):
+    """One review round: what gets posted, given what is already on the PR."""
+    anchors, line_text = m.walk_right_side(diff)
+    comments, notes, _skipped = m.build_comments(
+        findings, anchors, line_text, existing
+    )
+    return comments, notes
+
+
+def test_a_grouped_checker_class_does_not_drip_one_comment_per_push():
+    """group_repeats drops the other members with no record of them, and the
+    path-aware suppression a checker gets cannot recognise them next round —
+    so round 2 posted exactly the places round 1 claimed it had covered, and
+    the class dripped one comment per push for N-1 pushes, each round
+    re-claiming "same thing in N other places"."""
+    paths = [f"core/python/alpha/{n}" for n in ("a.tsx", "b.js", "c.ts")]
+    diff = "".join(
+        f"diff --git a/{p} b/{p}\n--- a/{p}\n+++ b/{p}\n@@ -0,0 +1,2 @@\n+x\n+y\n"
+        for p in paths
+    )
+    body = "no licence header on this file; 3 files have none while 9 carry it"
+    findings = [
+        {
+            "path": p,
+            "line": 1,
+            "body": body,
+            "source": "checker",
+            "verify_steps": "read it",
+        }
+        for p in paths
+    ]
+    posted, _notes = _round_trip(findings, [], diff)
+    assert len(posted) == 3, "the class was collapsed across files"
+
+    # Next push, nothing new: every one is recognised and nothing re-posts.
+    existing = [
+        {
+            "kind": "inline",
+            "path": c["path"],
+            "line": c["line"],
+            "body": c["body"],
+        }
+        for c in posted
+    ]
+    again, _notes = _round_trip(findings, existing, diff)
+    assert again == [], f"round 2 re-posted {[c['path'] for c in again]}"
+
+
+def test_a_model_class_still_groups_across_files_in_one_recipe():
+    """Grouping exists to stop one defect spending N of a bounded budget, and
+    the model lanes are the ones with the budget."""
+    paths = [f"core/python/alpha/{n}.py" for n in ("a", "b", "c")]
+    diff = "".join(
+        f"diff --git a/{p} b/{p}\n--- a/{p}\n+++ b/{p}\n@@ -0,0 +1,2 @@\n+x\n+y\n"
+        for p in paths
+    )
+    body = "this import of os is never used anywhere below"
+    findings = [
+        {"path": p, "line": 1, "body": body, "verify_steps": "read it"}
+        for p in paths
+    ]
+    posted, _notes = _round_trip(findings, [], diff)
+    assert len(posted) == 1
+    assert "2 other places" in posted[0]["body"]
+
+
+def test_the_internal_trusted_flag_never_reaches_github():
+    """Through build_comments, which is what adds the key. Asserting on
+    build_payload alone proves nothing: it never sees the flag, so the test
+    passed with the stripping removed."""
+    diff = _diff_n_added_lines(3, path="a.py")
+    anchors, line_text = m.walk_right_side(diff)
+    comments, _notes, _skipped = m.build_comments(
+        [
+            {
+                "path": "a.py",
+                "line": 1,
+                "source": "checker",
+                "verify_steps": "read it",
+                "body": "required file missing: uv.lock",
+            }
+        ],
+        anchors,
+        line_text,
+    )
+    assert comments, "nothing was posted, so the assertion below is vacuous"
+    assert all("trusted" not in c for c in comments), (
+        "an internal flag would be sent to GitHub as a comment field"
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "core/python/alpha/we`ird.py",
+        "core/python/alpha/" + "d" * 200 + ".py",
+    ],
+)
+def test_a_path_the_renderer_rewrites_still_matches_its_own_note(path):
+    """A note's path is recovered from the bullet we wrote, which went through
+    _safe_span — so a path carrying a backtick, or past the 160-char cap,
+    never matched itself and repeated on every push."""
+    body = "required file missing: uv.lock"
+    rendered = m.build_payload(
+        "House Rules", [], [{"path": path, "line": 1, "body": body}], []
+    )["body"]
+    _zones, texts = m.build_exclusions(
+        [{"kind": "review-body", "body": rendered}]
+    )
+    assert m.already_raised(path, 1, body, {}, texts, trusted=True), (
+        f"{path!r} would be posted again next push"
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["committed  private  key", "committed\nprivate key", "a short one here"],
+)
+def test_a_whitespace_lossy_inline_body_matches_its_own_comment(body):
+    """Notes are stored flattened and inline comments are not; comparing only
+    the flattened spelling fixed one and broke the other."""
+    existing = [{"kind": "inline", "path": "a.py", "line": 1, "body": body}]
+    zones, texts = m.build_exclusions(existing)
+    assert m.already_raised("a.py", 1, body, zones, texts, trusted=True)
+
+
+def test_a_bullet_with_an_absurd_line_number_is_not_fatal():
+    body = f"- `a.py:{'9' * 5000}` — something"
+    assert m._notes_in(body) == []
