@@ -527,7 +527,9 @@ async def generate_and_render_deck(
 
         images = await asyncio.gather(*visual_tasks, return_exceptions=True)
         for s, img in zip(slides_with_visuals, images, strict=True):
-            if not isinstance(img, Exception):
+            if not isinstance(img, Exception) and (
+                not isinstance(img, str) or not img.startswith("Error:")
+            ):
                 s.image_data = img
             else:
                 log.warning(
