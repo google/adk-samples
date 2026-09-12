@@ -1523,7 +1523,7 @@ def test_three_of_a_kind_become_one_comment():
         [
             _c("a.py", 1, "this import of os is never used anywhere below"),
             _c("b.py", 2, "the import of sys is never used anywhere below"),
-            _c("c.py", 3, "import json is never used anywhere in this module"),
+            _c("c.py", 3, "the import of json is never used anywhere below"),
         ]
     )
     assert len(comments) == 1
@@ -1562,7 +1562,7 @@ def test_the_kept_comment_keeps_its_own_anchor():
         [
             _c("a.py", 11, "this import of os is never used anywhere below"),
             _c("b.py", 22, "the import of sys is never used anywhere below"),
-            _c("c.py", 33, "import json is never used anywhere in this module"),
+            _c("c.py", 33, "the import of json is never used anywhere below"),
         ]
     )
     assert comments[0]["path"] == "a.py"
@@ -1575,7 +1575,7 @@ def test_grouping_does_not_list_the_other_places():
         [
             _c("a.py", 1, "this import of os is never used anywhere below"),
             _c("b.py", 2, "the import of sys is never used anywhere below"),
-            _c("c.py", 3, "import json is never used anywhere in this module"),
+            _c("c.py", 3, "the import of json is never used anywhere below"),
         ]
     )
     assert "b.py" not in comments[0]["body"]
@@ -2277,16 +2277,22 @@ def test_the_within_run_check_never_reaches_across_files():
 
 
 def test_the_within_run_check_still_catches_a_repeat_in_one_file():
+    """Exact repeats only, on the same line. The same body on a DIFFERENT
+    line is a second instance of the defect, and the repo's rule is that two
+    instances stay two comments — a similarity leg here dropped genuinely
+    distinct findings (two stub values in one .env.example score 0.84) with
+    no note saying anything had been dropped."""
     diff = _diff_n_added_lines(5)
     anchors, line_text = m.walk_right_side(diff)
     path = "contrib/python/x/pyproject.toml"
     body = "this subprocess call has no timeout argument at all"
     findings = [
         {"path": path, "line": 1, "body": body, "verify_steps": "read it"},
+        {"path": path, "line": 1, "body": body, "verify_steps": "read it"},
         {"path": path, "line": 4, "body": body, "verify_steps": "read it"},
     ]
     comments, _notes, skipped = m.build_comments(findings, anchors, line_text)
-    assert len(comments) == 1
+    assert len(comments) == 2, "the second LINE is a second instance"
     assert any("already said in this review" in s for s in skipped)
 
 
@@ -2929,3 +2935,105 @@ def test_a_whitespace_lossy_inline_body_matches_its_own_comment(body):
 def test_a_bullet_with_an_absurd_line_number_is_not_fatal():
     body = f"- `a.py:{'9' * 5000}` — something"
     assert m._notes_in(body) == []
+
+
+def test_a_top_level_comment_cannot_silence_a_checker_rule():
+    """An issue comment carries no path, so the same-file guard was skipped
+    for the one comment class any user can post. The checker's messages are
+    format strings in a public file, so one comment quoting one — verbatim or
+    paraphrased — silenced that rule on every file, on every later push."""
+    body = "required file missing: tests/test_runnability.py"
+    hostile = [
+        {"kind": "top-level", "path": None, "line": None, "body": body},
+        {
+            "kind": "top-level",
+            "path": None,
+            "line": None,
+            "body": "the missing required file tests test_runnability is fine",
+        },
+    ]
+    zones, texts = m.build_exclusions(hostile)
+    for recipe_path in ("core/python/alpha/x.py", "core/python/beta/x.py"):
+        assert not m.already_raised(
+            recipe_path, 1, body, zones, texts, trusted=True
+        ), "a top-level comment silenced the deterministic lane"
+    # A model finding still defers to it: that is what the leg is for.
+    assert m.already_raised(
+        "core/python/alpha/x.py", 1, body, zones, texts, trusted=False
+    )
+
+
+def test_two_findings_worded_alike_are_both_reported():
+    """Two H39 stub values in one .env.example differ only in the quoted
+    value and score 0.84. The within-run similarity leg dropped the second
+    silently — no group note, nothing telling the author it existed."""
+    path = "contrib/python/x/.env.example"
+    diff = _diff_n_added_lines(3, path=path)
+    anchors, line_text = m.walk_right_side(diff)
+    # The checker's REAL wording. The two bodies differ only in the quoted
+    # value and score 0.769 — above the bar the removed leg used. A
+    # paraphrase of them scores 0.5 and so cannot fail.
+    stub = (
+        " is a stub committed as if it were a real value. Someone copying "
+        "this file has no way to tell it needs replacing; use "
+        "<TODO: update-this-value>"
+    )
+    findings = [
+        {
+            "path": path,
+            "line": 1,
+            "source": "checker",
+            "verify_steps": "read",
+            "body": '"my-project-id"' + stub,
+        },
+        {
+            "path": path,
+            "line": 2,
+            "source": "checker",
+            "verify_steps": "read",
+            "body": '"us-central1-placeholder"' + stub,
+        },
+    ]
+    comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 2, "a distinct finding was dropped with no trace"
+
+
+def test_anything_grouped_is_recognisable_next_round():
+    """GROUP_SIMILARITY below SIMILARITY leaves a band where grouping
+    collapses members that suppression cannot then recognise, so the class
+    drips one comment per push."""
+    assert m.GROUP_SIMILARITY >= m.SIMILARITY, (
+        "a pair can be grouped and then not recognised, which drips"
+    )
+
+
+def test_a_finding_that_is_never_posted_does_not_suppress_a_later_one():
+    """run_texts was fed before the classification, so a finding dropped as
+    "not a line this PR adds" still suppressed a later one — and the log said
+    "already said in this review" when nothing had been said.
+
+    Removing the within-run similarity leg made that unreachable as well:
+    only an exact (path, line, body) match suppresses now, and the dropped
+    finding is on a different line. Both the ordering and this test are kept
+    as the invariant they assert, not as the last line of defence.
+    """
+    path = "contrib/python/x/a.py"
+    diff = _diff_n_added_lines(3, path=path)
+    anchors, line_text = m.walk_right_side(diff)
+    body = "this subprocess call has no timeout argument at all"
+    findings = [
+        {"path": path, "line": 500, "body": body, "verify_steps": "read it"},
+        {"path": path, "line": 1, "body": body, "verify_steps": "read it"},
+    ]
+    comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 1, "the unpostable finding suppressed a real one"
+
+
+def test_two_long_paths_sharing_a_prefix_do_not_collide():
+    """Paths differ at the END. Head-truncation mapped two files in one long
+    directory onto the same span, and one file's note then suppressed the
+    other's."""
+    prefix = "core/python/alpha/" + "deep/" * 30
+    a, b = prefix + "first.py", prefix + "second.py"
+    assert m._safe_span(a) != m._safe_span(b)
+    assert not m._same_path({"path": m._safe_span(a)}, b)

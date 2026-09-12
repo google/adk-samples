@@ -1182,7 +1182,14 @@ def already_raised(
         # phrase one defect four ways, so the same observation elsewhere
         # SHOULD suppress. Prose bodies do not collide by construction the
         # way a format string does.
-        if trusted and comment.get("path") and not _same_path(comment, path):
+        if trusted and not _same_path(comment, path):
+            # Note the missing `comment.get("path") and`. An issue comment
+            # carries no path, so that clause skipped the guard for the one
+            # class an arbitrary user controls: a single top-level comment
+            # quoting a checker's message -- they are format strings in a
+            # public file -- silenced that rule on every file of every later
+            # push. A checker finding is only ever a repeat of a comment
+            # about the same file.
             continue
         if _similarity(mine, tokens) >= SIMILARITY:
             verdict = comment.get("verdict")
@@ -1205,7 +1212,12 @@ GROUP_AT = 3
 # wrong here collapses real information rather than merely suppressing noise,
 # which is why it sits above the duplicate bar in spirit and is measured
 # symmetrically.
-GROUP_SIMILARITY = 0.5
+# Equal to SIMILARITY on purpose. Below it, `group_repeats` collapses pairs
+# that `already_raised` cannot recognise next round -- the grouped comment
+# goes out again and the members it swallowed arrive one per push, each round
+# re-claiming "same thing in N other places" about the places it is about to
+# comment on. Anything grouped must be recognisable later.
+GROUP_SIMILARITY = SIMILARITY
 
 
 # Where a path's recipe begins. Two findings in different recipes are never
@@ -1268,14 +1280,13 @@ def _said_in_this_run(
             and accepted.get("body") == body
         ):
             return True
-    mine = _tokens(body)
-    if len(mine) < 4:
-        return False
-    for tokens, accepted in texts:
-        if accepted.get("path") != path or len(tokens) < 4:
-            continue
-        if _similarity(mine, tokens) >= SIMILARITY:
-            return True
+    # Exact repeats only. A similarity leg here dropped findings that are
+    # genuinely different and merely worded alike -- two H39 stub values in
+    # one .env.example differ only in the quoted value and score 0.84 -- and
+    # it dropped them SILENTLY, with no "(Same thing in N other places)" note
+    # and no way for the author to learn the others exist. Near-duplicates
+    # within one run are group_repeats' job, and grouping announces itself.
+    # The repo's own rule is that two instances stay two comments.
     return False
 
 
@@ -1471,6 +1482,11 @@ def build_comments(
             continue
 
         accepted = {"kind": "inline", "path": path, "line": line, "body": body}
+
+        # Recorded only once it is actually going out. Fed before the
+        # classification below, a finding dropped as "not a line this PR
+        # adds" still suppressed a later one -- reported as "already said in
+        # this review" when nothing had been said.
         run_texts.append((_tokens(body), accepted))
 
         if line in anchors.get(path, frozenset()):
@@ -1609,9 +1625,18 @@ _UNSAFE_IN_SPAN = re.compile(r"[`\r\n]")
 
 
 def _safe_span(text: str, limit: int = 160) -> str:
-    """A path, safe to drop inside a markdown code span."""
+    """A path, safe to drop inside a markdown code span.
+
+    Over-long paths are cut in the MIDDLE, not at the end. Paths differ at
+    the end -- that is where the filename is -- so head-truncation mapped two
+    files sharing a long directory prefix onto one span, and `_same_path`
+    then let one file's note suppress the other's.
+    """
     cleaned = _UNSAFE_IN_SPAN.sub("", str(text))
-    return cleaned if len(cleaned) <= limit else cleaned[: limit - 1] + "…"
+    if len(cleaned) <= limit:
+        return cleaned
+    head = (limit - 1) // 2
+    return cleaned[:head] + "…" + cleaned[-(limit - 1 - head) :]
 
 
 # Case-insensitive: HTML tag names are, and the parser lowercases the node
