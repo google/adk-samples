@@ -23,6 +23,7 @@ from google.genai import types
 from pptx import Presentation
 from pptx.enum.shapes import PP_PLACEHOLDER_TYPE
 from pptx.enum.text import MSO_ANCHOR, PP_PARAGRAPH_ALIGNMENT
+from pptx.presentation import Presentation as PresentationType
 from pptx.util import Inches
 
 from ..shared_libraries.config import (
@@ -37,7 +38,7 @@ from .pptx_editor import _insert_visual_into_slide
 from .visual_generator import generate_visual
 
 
-def get_smart_layout(prs: Presentation, requested_name: str):
+def get_smart_layout(prs: PresentationType, requested_name: str):
     """
     Intelligently maps a requested layout name to the best available layout in the current presentation.
     """
@@ -338,7 +339,7 @@ async def render_deck_from_spec(
             # No need to add a slide, just render content onto existing one
             try:
                 render_slide_content(cover_slide, cover_spec, is_cover=True)
-            except (KeyError, Exception) as e:
+            except Exception as e:
                 log.warning(
                     f"Could not render cover text on existing slide: {e}"
                 )
@@ -349,7 +350,7 @@ async def render_deck_from_spec(
                     get_smart_layout(prs, "Title Slide")
                 )
                 render_slide_content(cover_slide, cover_spec, is_cover=True)
-            except (KeyError, Exception) as e:
+            except Exception as e:
                 log.warning(f"Could not generate/render cover slide: {e}")
 
         # Body Slides
@@ -363,7 +364,7 @@ async def render_deck_from_spec(
                     get_smart_layout(prs, s_spec.layout_name)
                 )
                 render_slide_content(slide, s_spec)
-            except (KeyError, Exception) as e:
+            except Exception as e:
                 log.error(
                     f"Failed to render slide '{s_data.get('title')}': {e}"
                 )
@@ -399,7 +400,7 @@ async def render_deck_from_spec(
             )
             if t_ph:
                 t_ph.text = spec_dict.get("closing_title", "Thank You")
-        except (KeyError, Exception) as e:
+        except Exception as e:
             log.warning(f"Could not generate closing slide: {e}")
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:

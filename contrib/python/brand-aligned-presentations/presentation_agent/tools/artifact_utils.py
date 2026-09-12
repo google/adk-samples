@@ -17,7 +17,6 @@ import os
 import tempfile
 from typing import Any
 
-import matplotlib.pyplot as plt
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 from pydantic import ValidationError
@@ -29,8 +28,6 @@ from ..shared_libraries.config import (
     get_logger,
 )
 from ..shared_libraries.models import DeckSpec
-
-plt.style.use("seaborn-v0_8-whitegrid")
 
 
 async def list_available_artifacts(tool_context: ToolContext) -> list[str]:
@@ -89,7 +86,7 @@ async def get_artifact_as_local_path(
 
 
 async def get_gcs_file_as_local_path(
-    gcs_uri: str = DEFAULT_TEMPLATE_URI,
+    gcs_uri: str | None = None,
 ) -> str:
     """
     Downloads a file from a specific GCS URI to a local temporary file.
@@ -98,11 +95,12 @@ async def get_gcs_file_as_local_path(
     """
     log = get_logger("get_gcs_file_as_local_path")
     try:
-        if not gcs_uri.startswith("gs://"):
+        target_uri = gcs_uri or DEFAULT_TEMPLATE_URI
+        if not target_uri or not target_uri.startswith("gs://"):
             return "Error: Invalid GCS URI. It must start with 'gs://'."
 
         # Parse the bucket and blob name from the URI
-        bucket_name, blob_name = gcs_uri[5:].split("/", 1)
+        bucket_name, blob_name = target_uri[5:].split("/", 1)
         storage_client = get_gcs_client()
         if not storage_client:
             raise RuntimeError("GCS client could not be initialized.")
@@ -111,7 +109,7 @@ async def get_gcs_file_as_local_path(
         blob = bucket.blob(blob_name)
 
         if not blob.exists():
-            return f"Error: The file does not exist at the specified GCS path: {gcs_uri}"
+            return f"Error: The file does not exist at the specified GCS path: {target_uri}"
 
         # Create a unique local file in the system's temp directory
         with tempfile.NamedTemporaryFile(
@@ -127,7 +125,7 @@ async def get_gcs_file_as_local_path(
 
     except Exception as e:
         log.error(
-            f"Failed to download default template from '{gcs_uri}': {e}",
+            f"Failed to download default template from '{target_uri}': {e}",
             exc_info=True,
         )
         return f"Error: Could not access default GCS template. Details: {e}"

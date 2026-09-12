@@ -59,20 +59,23 @@ The project follows a modular structure to separate core logic from deployment u
 
 ```
 .
-├── .env                  # Environment variables for configuration
+├── .env.example          # Template for environment variables configuration
 ├── pyproject.toml        # Project metadata and dependencies (managed by uv)
+├── manifest.yaml         # Recipe metadata manifest
+├── Makefile              # Common targets (install, backend, update, test)
 ├── README.md             # Documentation
-├── docs/                 # Architectural diagrams and templates
-├── presentation_agent/   # Core logic package
-│   ├── __init__.py
-│   ├── agent.py          # Main agent definition and ADK runner
-│   ├── prompt.py         # Agent instructions and workflows
-│   ├── shared_libraries/ # Configs, Data Models (DeckSpec), Utils
-│   ├── sub_agents/       # Specialist agents (Deep Research, Synthesis, RAG)
-│   └── tools/            # Presentation manipulation and artifact tools
-├── deployment/           # Deployment scripts
-│   └── deploy.py         # Script to deploy/update the Agent Engine app
-
+├── docs/                 # Architectural diagrams, templates, and guides
+├── tests/                # Unit and integration test suite
+├── eval/                 # Multi-scenario evaluation pipeline
+└── presentation_agent/   # Core logic package
+    ├── __init__.py
+    ├── agent.py          # Main agent definition and ADK runner
+    ├── prompt.py         # Agent instructions and workflows
+    ├── shared_libraries/ # Configs, Data Models (DeckSpec), Utils
+    ├── sub_agents/       # Specialist agents (Deep Research, Synthesis, RAG)
+    ├── tools/            # Presentation manipulation and artifact tools
+    └── deployment/       # Deployment scripts
+        └── deploy.py     # Script to deploy/update the Agent Engine app
 ```
 
 ---

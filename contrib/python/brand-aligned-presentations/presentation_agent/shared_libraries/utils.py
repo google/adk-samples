@@ -21,8 +21,8 @@ from typing import Any
 from PIL import Image
 
 # Presentation & Image Imports
-from pptx import Presentation
 from pptx.dml.color import RGBColor
+from pptx.presentation import Presentation as PresentationType
 from pptx.util import Inches, Pt
 
 # Local Application Imports
@@ -70,7 +70,7 @@ def _decode_base64_to_bytes(base64_string: str) -> bytes | None:
 
 
 def _insert_image(
-    prs: Presentation,
+    prs: PresentationType,
     slide: Any,
     image_data: str | bytes,
     box_hint: tuple[int, int, int, int] | None,

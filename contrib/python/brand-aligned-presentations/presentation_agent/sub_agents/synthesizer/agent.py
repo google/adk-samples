@@ -163,7 +163,6 @@ async def batch_generate_slides(
             "message": "Missing research data. Please provide research_summary or ensure research was conducted.",
         }
 
-    print(f"Research summary: {active_summary}")
     # 2. Resolve Slides (Priority: Direct List > Session State)
     active_slides = slides or []
     state_spec = None

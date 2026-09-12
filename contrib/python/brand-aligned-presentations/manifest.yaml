@@ -19,7 +19,7 @@ dependencies:
     - "Cloud Storage"
 
 ownership:
-  team: "whisper88-lgtm"
+  team: "FDE@Google-Cloud"
   poc: "whisper88-lgtm"
   contributors:
     - "xiaolizhang"
