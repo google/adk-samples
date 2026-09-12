@@ -1911,11 +1911,19 @@ def test_a_note_already_said_in_an_earlier_review_is_suppressed():
         "required file missing: tests/test_runnability.py",
         "required file missing: uv.lock",
     )
-    texts = [(m._tokens(previous["body"]), previous)]
+    # The path the bullet names. Passing a different one used to "pass"
+    # because the leg ignored the path entirely — which is the bug that
+    # silenced every recipe after the first.
+    _zones, texts = m.build_exclusions([previous])
     why = m.already_raised(
-        "p", 1, "required file missing: tests/test_runnability.py", {}, texts
+        "x.py",
+        1,
+        "required file missing: tests/test_runnability.py",
+        {},
+        texts,
+        trusted=True,
     )
-    assert why and "earlier review" in why
+    assert why and "already" in why
 
 
 def test_a_new_note_is_not_swallowed_by_an_old_review_body():
@@ -2054,12 +2062,17 @@ def test_our_own_review_body_still_suppresses_its_own_repeat(monkeypatch):
     # The SAME path the earlier review named. This test used to pass "x.py"
     # against a note about "a/b.py" and so encoded the path-blindness that
     # silenced every recipe after the first.
+    # trusted=True: the checker's bodies are one format string per rule, so
+    # they are byte-identical across recipes and the path is what separates
+    # them. A model finding keeps the path-blind behaviour, which is how the
+    # four overlapping lanes avoid saying one thing four ways.
     assert m.already_raised(
         "a/b.py",
         1,
         "required file missing: tests/test_runnability.py",
         zones,
         texts,
+        trusted=True,
     )
     assert not m.already_raised(
         "other/c.py",
@@ -2067,6 +2080,7 @@ def test_our_own_review_body_still_suppresses_its_own_repeat(monkeypatch):
         "required file missing: tests/test_runnability.py",
         zones,
         texts,
+        trusted=True,
     ), "a note about one file suppressed the same finding about another"
 
 
@@ -2673,3 +2687,114 @@ def test_a_note_about_one_recipe_does_not_silence_another():
         assert not m.already_raised(
             "core/python/beta/x.py", 1, body, zones, texts, trusted=True
         ), f"beta's author was silenced by alpha's note: {body!r}"
+
+
+def test_a_note_is_matched_bullet_by_bullet_not_by_substring():
+    """The path and the text used to be tested as two independent substrings
+    of the whole review body, so they could be satisfied by two DIFFERENT
+    bullets: a body naming alpha's path and (separately) beta's finding text
+    suppressed alpha's genuinely new finding. Review bodies are now parsed
+    back into individual notes, which removes the whole class."""
+    previous = {
+        "kind": "review-body",
+        "body": f"{m.REVIEW_MARKER}\nAutomated **House Rules** review.\n\n"
+        "Also, on lines this PR does not change:\n\n"
+        '- `alpha/.env.example:2` — "api_key" is not UPPER_SNAKE_CASE\n'
+        "- `beta/.env.example:5` — placeholder should be the exact string",
+    }
+    _zones, texts = m.build_exclusions([previous])
+    # alpha's NEW finding, whose text belongs to beta's bullet.
+    assert not m.already_raised(
+        "alpha/.env.example",
+        9,
+        "placeholder should be the exact string",
+        {},
+        texts,
+        trusted=True,
+    ), "two different bullets combined to suppress a new finding"
+    # Each bullet still suppresses its own repeat.
+    assert m.already_raised(
+        "alpha/.env.example",
+        2,
+        '"api_key" is not UPPER_SNAKE_CASE',
+        {},
+        texts,
+        trusted=True,
+    )
+
+
+def test_notes_are_parsed_back_out_of_a_review_body():
+    body = (
+        f"{m.REVIEW_MARKER}\nAutomated **House Rules** review — 0 finding(s).\n"
+        "\nAlso, on lines this PR does not change:\n\n"
+        "- `a/b.py:12` — required file missing: uv.lock\n"
+        "- `c/d.py:1` — a committed private key\n"
+        "\n---\n\n_Round 2 · 4 of 25 used._"
+    )
+    notes = m._notes_in(body)
+    assert [(n["path"], n["line"]) for n in notes] == [
+        ("a/b.py", 12),
+        ("c/d.py", 1),
+    ]
+    assert notes[0]["body"] == "required file missing: uv.lock"
+
+
+def test_a_checker_finding_is_not_silenced_by_the_same_text_elsewhere():
+    """The checker's bodies come from one format string per rule, so
+    `[build-system] missing or lacks requires / build-backend` is identical
+    for every recipe and CI-failing. Path-blind, the first author was told
+    and every one after them silenced."""
+    body = "[build-system] missing or lacks requires / build-backend"
+    existing = [
+        {
+            "kind": "inline",
+            "path": "core/python/alpha/pyproject.toml",
+            "line": 1,
+            "body": body,
+        }
+    ]
+    zones, texts = m.build_exclusions(existing)
+    assert not m.already_raised(
+        "core/python/beta/pyproject.toml", 1, body, zones, texts, trusted=True
+    )
+    assert m.already_raised(
+        "core/python/alpha/pyproject.toml", 1, body, zones, texts, trusted=True
+    )
+
+
+def test_a_model_finding_keeps_cross_file_suppression():
+    """The opposite is wanted for the four overlapping model lanes: they
+    phrase one defect four ways, and the second phrasing should not be
+    posted just because it is about a different file."""
+    existing = [
+        {
+            "kind": "inline",
+            "path": "other.py",
+            "line": 99,
+            "body": "filename is interpolated into os.system unsanitised",
+        }
+    ]
+    zones, texts = m.build_exclusions(existing)
+    assert m.already_raised(
+        "x.py",
+        3,
+        "unsanitised filename interpolated into os.system",
+        zones,
+        texts,
+        trusted=False,
+    )
+
+
+def test_a_grouped_comment_suppresses_its_own_repeat_next_round():
+    """grouping runs AFTER the duplicate check and appends five distinctive
+    tokens, so the stored body was not the compared body: a short one fell
+    under the bar against its own grouped form and went out every push."""
+    # Enough distinctive tokens to reach the Jaccard leg: the short-body
+    # branch has its own stripping, so a two-token fixture tests the wrong
+    # one. Five tokens against the note's five is 0.5, under SIMILARITY.
+    base = "the subprocess timeout retry socket handler is never configured"
+    stored = f"{base}\n\n(Same thing in 2 other places in this review.)"
+    zones, texts = m.build_exclusions(
+        [{"kind": "inline", "path": "a.py", "line": 1, "body": stored}]
+    )
+    assert m.already_raised("a.py", 1, base, zones, texts, trusted=True)

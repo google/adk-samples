@@ -1854,6 +1854,22 @@ def _looks_like_a_stub(val):
     return bool(v) and v in _STUB_VALUES
 
 
+# A line that names a deprecated model in order to BAN it is documentation,
+# not a use. Two recipes in this repo carry exactly that in their own
+# AGENTS.md -- "don't use deprecated ones (`gemini-2.0-flash`,
+# `gemini-2.5-flash`)" -- and reporting it is a confidently wrong comment
+# from the one lane whose reason for existing is that it cannot produce one.
+_PROHIBITION = re.compile(
+    r"\b(deprecated|do not|don't|dont|never|avoid|instead of|no longer|"
+    r"rather than|forbidden|banned|not use)\b",
+    re.IGNORECASE,
+)
+
+
+def _forbids_rather_than_uses(line):
+    return bool(_PROHIBITION.search(line))
+
+
 def check_text_wide(out, root, rel):
     """H10, H13, H14 and H39 -- literal scans across the recipe."""
     recipe_abs = os.path.join(root, rel)
@@ -1893,11 +1909,20 @@ def check_text_wide(out, root, rel):
             if not t:
                 continue
             for i, line in enumerate(t.split("\n"), 1):
-                if banned.search(line):
+                if banned.search(line) and not _forbids_rather_than_uses(line):
                     hits.append((os.path.relpath(fp, root), i))
+    # Sorted, so the same pull request always produces the same comment.
+    # os.walk yields filesystem order, not alphabetical, so which file the
+    # finding anchored on varied with the order the files happened to be
+    # created in.
+    hits.sort()
     if hits:
-        # ONE finding, not one per hit.
-        p, first_line = hits[0]
+        # ONE finding, not one per hit -- anchored on a file the PR touched,
+        # like every other whole-recipe rule. Anchored on the first hit in
+        # walk order, _is_ours dropped it whenever an earlier file happened
+        # to mention a banned id, which a recipe's own AGENTS.md often does.
+        anchored = _anchor_in_diff([h[0] for h in hits])
+        p, first_line = next((h for h in hits if h[0] == anchored), hits[0])
         find(
             out,
             "H10",

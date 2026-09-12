@@ -816,12 +816,57 @@ def _similarity(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(union) if union else 0.0
 
 
+# The suffix group_repeats appends. Stripped before any comparison: grouping
+# runs after the duplicate check, so the body that gets STORED carries five
+# extra tokens the next round's body does not, which dropped Jaccard under
+# the bar and re-posted the grouped comment on every push.
+_GROUP_NOTE = re.compile(
+    r"\n*\(Same thing in \d+ other places? in this review\.\)\s*$"
+)
+
+
+def _base_body(text: str) -> str:
+    """A comment body with the grouping suffix removed."""
+    return _GROUP_NOTE.sub("", str(text or "")).strip()
+
+
 def _tokens(text: str) -> set[str]:
     return {
         word
         for word in re.findall(r"[a-z_][a-z_0-9]{3,}", str(text).lower())
         if word not in _STOPWORDS
     }
+
+
+# A bullet in one of our review bodies, as build_payload renders it:
+#     - `path/to/file.py:42` — the finding text
+_NOTE_BULLET = re.compile(r"^- `([^`]+):(\d+)` — (.*)$")
+
+
+def _notes_in(review_body) -> list[dict]:
+    """Our own notes, parsed back out of a review body we posted.
+
+    Each becomes an ordinary entry with its own path and text, so the
+    duplicate check compares like with like instead of hunting substrings in
+    one large string. That substring approach was the root of four
+    consecutive rounds of defects: the path and the body could be matched by
+    two DIFFERENT bullets, and every transformation applied on the way in
+    (defanging, whitespace flattening, path truncation) had to be replayed
+    exactly on the way out or a note repeated on every push forever.
+    """
+    notes = []
+    for raw in str(review_body or "").split("\n"):
+        match = _NOTE_BULLET.match(raw.strip())
+        if match:
+            notes.append(
+                {
+                    "kind": "note",
+                    "path": match.group(1),
+                    "line": int(match.group(2)),
+                    "body": match.group(3).strip(),
+                }
+            )
+    return notes
 
 
 def _our_review(item: dict) -> bool:
@@ -897,6 +942,14 @@ def fetch_existing_comments(repo: str, pr: int) -> list[dict]:
                 batch, index = decoder.raw_decode(text, start)
             except json.JSONDecodeError:
                 break
+            if kind == "review-body":
+                for item in batch:
+                    if not _our_review(item):
+                        continue
+                    existing.append(
+                        {"kind": "review-body", "body": item.get("body")}
+                    )
+                continue
             for item in batch:
                 # OUR review bodies only. This call site has now been the
                 # bug three times running: a review body is large, so
@@ -1030,9 +1083,24 @@ def build_exclusions(
     """(line zones, tokenised bodies) from comments already on the PR."""
     zones: dict[str, dict[int, dict]] = {}
     texts: list[tuple[set[str], dict]] = []
+    # Expand any review body into the notes it carries, so a caller that
+    # hands one over whole gets the same treatment as the fetch path. One
+    # place does the parsing; everything downstream sees individual notes
+    # with their own path and text.
+    expanded: list[dict] = []
     for comment in existing or []:
+        if comment.get("kind") == "review-body":
+            expanded.extend(_notes_in(comment.get("body")))
+        else:
+            expanded.append(comment)
+    for comment in expanded:
         if (comment.get("body") or "").strip():
-            texts.append((_tokens(comment["body"]), comment))
+            # Compared without the grouping suffix: grouping runs AFTER the
+            # duplicate check, so the stored body carries five tokens the
+            # next round's body will not, and the difference was enough to
+            # drop a short body under the bar and re-post it every push.
+            stripped = {**comment, "body": _base_body(comment["body"])}
+            texts.append((_tokens(stripped["body"]), stripped))
         if comment.get("kind") != "inline":
             continue
         path = comment.get("path")
@@ -1047,23 +1115,6 @@ def build_exclusions(
             for delta in range(-PROXIMITY, PROXIMITY + 1):
                 zones.setdefault(path, {}).setdefault(anchor + delta, comment)
     return zones, texts
-
-
-def _note_in_review_body(review_body, path: str, body: str) -> bool:
-    """Did an earlier review of ours already carry this note, for this file?
-
-    Compares what was actually WRITTEN. A note is rendered through
-    `_safe_line`, which flattens whitespace, so a body containing a newline
-    or two consecutive spaces never matched itself and repeated on every
-    push. And it matches on the path as well as the text, because
-    `a committed private key` is byte-identical for every recipe and the
-    bare substring silenced every recipe after the first.
-    """
-    text = str(review_body or "")
-    rendered = _safe_line(body)
-    if not rendered.strip():
-        return False
-    return f"`{_safe_span(path)}:" in text and rendered in text
 
 
 def already_raised(
@@ -1093,37 +1144,27 @@ def already_raised(
         # tokenise to three, and the exempt House Rules lane re-posts them on
         # every push unless something stops it.
         for _tokens_unused, comment in texts:
-            if comment.get("kind") == "review-body":
-                if _note_in_review_body(comment.get("body"), path, body):
-                    return "already said in an earlier review on this PR"
-            elif (
+            if (
                 comment.get("path") == path
-                and str(comment.get("body") or "").strip() == body.strip()
+                and _base_body(comment.get("body")) == _safe_line(body).strip()
             ):
                 return "identical to a comment already on this PR"
         return ""
     for tokens, comment in texts:
         if len(tokens) < 4:
             continue
-        if comment.get("kind") == "review-body":
-            # A review body holds EVERY note from that round at once, plus a
-            # header and a progress line, so it is many times the size of any
-            # one note and Jaccard scores it near zero. The question here is
-            # not "are these the same comment" but "did we already say this
-            # about this file inside that body".
-            #
-            # The exact bullet is checked first: it is path-aware, where
-            # token containment is not, so `a committed private key` about
-            # recipe beta was silenced by the same sentence about recipe
-            # alpha and beta's author was told nothing.
-            if _note_in_review_body(comment.get("body"), path, body):
-                return "already said in an earlier review on this PR"
-            if len(mine & tokens) / len(
-                mine
-            ) >= NOTE_CONTAINMENT and _safe_span(path) in str(
-                comment.get("body") or ""
-            ):
-                return "already said in an earlier review on this PR"
+        # For a CHECKER finding, same file only. Its bodies come from one
+        # format string per rule, so `[build-system] missing or lacks
+        # requires / build-backend` is byte-identical for every recipe and
+        # CI-failing: path-blind, the first author was told and every one
+        # after them silenced.
+        #
+        # For a MODEL finding the opposite is wanted, and is why this leg
+        # exists: four lanes review the same PR with overlapping remits and
+        # phrase one defect four ways, so the same observation elsewhere
+        # SHOULD suppress. Prose bodies do not collide by construction the
+        # way a format string does.
+        if trusted and comment.get("path") and comment.get("path") != path:
             continue
         if _similarity(mine, tokens) >= SIMILARITY:
             verdict = comment.get("verdict")

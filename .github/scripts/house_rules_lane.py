@@ -354,6 +354,18 @@ def main() -> int:
         # A rule that could not be evaluated is not a rule that passed.
         for rule, why in skipped:
             print(f"  not checked — {rule}: {why}")
+        # Nor is one dropped as pre-existing. Without this line a rule that
+        # fired and was filtered is indistinguishable from a rule that found
+        # nothing, which is what made an anchor landing outside the diff
+        # invisible rather than merely wrong.
+        if module.FILTERED:
+            from collections import Counter
+
+            counts = Counter(rule for rule, _ in module.FILTERED)
+            print(
+                "  not attributed to this PR: "
+                + ", ".join(f"{r}x{n}" for r, n in sorted(counts.items()))
+            )
         recipe_findings += len(raw)
         findings.extend(to_reviewer_finding(f) for f in raw)
 

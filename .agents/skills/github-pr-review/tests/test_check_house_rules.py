@@ -1485,3 +1485,52 @@ def test_a_punctuation_only_team_still_names_nobody(tmp_path, team):
     )
     chr.check_manifest(out, root, rel, None)
     assert h48(out)
+
+
+def test_h10_does_not_flag_documentation_that_forbids_the_model(tmp_path):
+    """Two recipes in this repo carry "don't use deprecated ones
+    (gemini-2.0-flash, gemini-2.5-flash)" in their own AGENTS.md. Reporting
+    it is a confidently wrong comment from the one lane whose reason for
+    existing is that it cannot produce one. The existing tests wrote
+    AGENTS.md at the repo root, outside the scanned subtree, which is why
+    they never saw it."""
+    root, rel = recipe(
+        tmp_path,
+        **{
+            "AGENTS.md": "Do NOT use gemini-2.0-flash or gemini-2.5-flash — "
+            "both are deprecated.\n",
+        },
+    )
+    Path(root, "AGENTS.md").write_text("Use gemini-3.5-flash instead.\n")
+    out = []
+    chr.check_text_wide(out, root, rel)
+    assert not [f for f in out if f["rule"] == "H10"]
+
+
+def test_h10_still_flags_a_real_use(tmp_path):
+    root, rel = recipe(tmp_path, **{"agent.py": 'MODEL = "gemini-2.5-flash"\n'})
+    Path(root, "AGENTS.md").write_text("Use gemini-3.5-flash instead.\n")
+    out = []
+    chr.check_text_wide(out, root, rel)
+    assert [f for f in out if f["rule"] == "H10"]
+
+
+def test_h10_anchors_on_a_file_the_pr_changed(tmp_path, monkeypatch):
+    """It anchored on the first hit in walk order, and _is_ours then dropped
+    the finding unless the PR happened to touch that exact file — which a
+    recipe's own docs mentioning the ids made routine."""
+    root, rel = recipe(
+        tmp_path,
+        **{
+            "aaa_first.py": 'FALLBACK = "gemini-2.0-flash"\n',
+            "zzz_changed.py": 'MODEL = "gemini-2.5-flash"\n',
+        },
+    )
+    Path(root, "AGENTS.md").write_text("Use gemini-3.5-flash instead.\n")
+    monkeypatch.setattr(chr, "CHANGED", {f"{rel}/zzz_changed.py"})
+    monkeypatch.setattr(chr, "FILTERED", [])
+    out = []
+    chr.check_text_wide(out, root, rel)
+    h10 = [f for f in out if f["rule"] == "H10"]
+    assert h10, "the finding was filtered away as pre-existing"
+    assert h10[0]["path"].endswith("zzz_changed.py")
