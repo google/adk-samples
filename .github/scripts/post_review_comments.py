@@ -1049,6 +1049,23 @@ def build_exclusions(
     return zones, texts
 
 
+def _note_in_review_body(review_body, path: str, body: str) -> bool:
+    """Did an earlier review of ours already carry this note, for this file?
+
+    Compares what was actually WRITTEN. A note is rendered through
+    `_safe_line`, which flattens whitespace, so a body containing a newline
+    or two consecutive spaces never matched itself and repeated on every
+    push. And it matches on the path as well as the text, because
+    `a committed private key` is byte-identical for every recipe and the
+    bare substring silenced every recipe after the first.
+    """
+    text = str(review_body or "")
+    rendered = _safe_line(body)
+    if not rendered.strip():
+        return False
+    return f"`{_safe_span(path)}:" in text and rendered in text
+
+
 def already_raised(
     path: str,
     line: int,
@@ -1077,10 +1094,7 @@ def already_raised(
         # every push unless something stops it.
         for _tokens_unused, comment in texts:
             if comment.get("kind") == "review-body":
-                # A note is one bullet inside a much larger body, so it never
-                # EQUALS it. Substring, and only for our own bodies -- which
-                # is all `texts` holds for this kind, by _our_review.
-                if body.strip() and body.strip() in str(comment.get("body")):
+                if _note_in_review_body(comment.get("body"), path, body):
                     return "already said in an earlier review on this PR"
             elif (
                 comment.get("path") == path
@@ -1096,10 +1110,19 @@ def already_raised(
             # header and a progress line, so it is many times the size of any
             # one note and Jaccard scores it near zero. The question here is
             # not "are these the same comment" but "did we already say this
-            # inside that body", which is containment. The bar is high
-            # because the body is large: nearly every distinctive word of
-            # this note has to have appeared in it.
-            if len(mine & tokens) / len(mine) >= NOTE_CONTAINMENT:
+            # about this file inside that body".
+            #
+            # The exact bullet is checked first: it is path-aware, where
+            # token containment is not, so `a committed private key` about
+            # recipe beta was silenced by the same sentence about recipe
+            # alpha and beta's author was told nothing.
+            if _note_in_review_body(comment.get("body"), path, body):
+                return "already said in an earlier review on this PR"
+            if len(mine & tokens) / len(
+                mine
+            ) >= NOTE_CONTAINMENT and _safe_span(path) in str(
+                comment.get("body") or ""
+            ):
                 return "already said in an earlier review on this PR"
             continue
         if _similarity(mine, tokens) >= SIMILARITY:

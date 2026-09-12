@@ -2051,13 +2051,23 @@ def test_our_own_review_body_still_suppresses_its_own_repeat(monkeypatch):
     monkeypatch.setattr(m, "fetch_verdicts", lambda repo, pr: {})
 
     zones, texts = m.build_exclusions(m.fetch_existing_comments("o/r", 1))
+    # The SAME path the earlier review named. This test used to pass "x.py"
+    # against a note about "a/b.py" and so encoded the path-blindness that
+    # silenced every recipe after the first.
     assert m.already_raised(
-        "x.py",
+        "a/b.py",
         1,
         "required file missing: tests/test_runnability.py",
         zones,
         texts,
     )
+    assert not m.already_raised(
+        "other/c.py",
+        1,
+        "required file missing: tests/test_runnability.py",
+        zones,
+        texts,
+    ), "a note about one file suppressed the same finding about another"
 
 
 def test_a_grouped_body_never_exceeds_the_shape_cap():
@@ -2616,3 +2626,50 @@ def test_a_short_body_about_another_file_is_not_suppressed():
         texts,
         trusted=True,
     )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Unused import.  Remove it.",  # two spaces
+        "Unused import.\nRemove it.",  # a newline
+        "a committed private key (.gitignore)",
+    ],
+)
+def test_a_note_is_compared_as_it_was_written(body):
+    """A note is rendered through `_safe_line`, which flattens whitespace. The
+    comparison used the RAW body, so anything with a newline or a double
+    space never matched itself and repeated on every push — notes being the
+    channel with no cap and no counter, so one occurrence is unbounded."""
+    rendered = m.build_payload(
+        "House Rules", [], [{"path": "a/b.py", "line": 2, "body": body}], []
+    )["body"]
+    previous = {"kind": "review-body", "body": rendered}
+    zones, texts = m.build_exclusions([previous])
+    assert m.already_raised("a/b.py", 2, body, zones, texts, trusted=True), (
+        f"{body!r} would be posted again next push"
+    )
+
+
+def test_a_note_about_one_recipe_does_not_silence_another():
+    """`a committed private key` is byte-identical for every recipe, and it is
+    CI-failing. Both review-body legs ignored the path, so recipe beta's
+    author was told nothing once alpha had been told."""
+    short = "a committed private key (.gitignore)"
+    long_body = "required file missing: tests/test_runnability.py"
+    for body in (short, long_body):
+        rendered = m.build_payload(
+            "House Rules",
+            [],
+            [{"path": "core/python/alpha/x.py", "line": 1, "body": body}],
+            [],
+        )["body"]
+        zones, texts = m.build_exclusions(
+            [{"kind": "review-body", "body": rendered}]
+        )
+        assert m.already_raised(
+            "core/python/alpha/x.py", 1, body, zones, texts, trusted=True
+        )
+        assert not m.already_raised(
+            "core/python/beta/x.py", 1, body, zones, texts, trusted=True
+        ), f"beta's author was silenced by alpha's note: {body!r}"
