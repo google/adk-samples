@@ -2965,7 +2965,7 @@ def test_a_top_level_comment_cannot_silence_a_checker_rule():
 
 def test_two_findings_worded_alike_are_both_reported():
     """Two H39 stub values in one .env.example differ only in the quoted
-    value and score 0.84. The within-run similarity leg dropped the second
+    value and score 0.77. The within-run similarity leg dropped the second
     silently — no group note, nothing telling the author it existed."""
     path = "contrib/python/x/.env.example"
     diff = _diff_n_added_lines(3, path=path)
@@ -3037,3 +3037,89 @@ def test_two_long_paths_sharing_a_prefix_do_not_collide():
     a, b = prefix + "first.py", prefix + "second.py"
     assert m._safe_span(a) != m._safe_span(b)
     assert not m._same_path({"path": m._safe_span(a)}, b)
+
+
+def test_findings_at_one_position_are_never_grouped():
+    """The note says "in N other places", and for these there is no other
+    place — it is the same place, N times. Several house rules fall back to
+    line 1 when they cannot locate their subject, so three unknown manifest
+    keys all land on manifest.yaml:1: one comment went out with a false count
+    and two real CI-failing findings were dropped."""
+    path = "contrib/python/x/manifest.yaml"
+    body = '"{}" is not a key in manifest-schema.json'
+    comments = [
+        {
+            "path": path,
+            "line": 1,
+            "side": "RIGHT",
+            "trusted": True,
+            "body": body.format(k),
+        }
+        for k in ("owner", "author", "maintainer")
+    ]
+    kept, dropped = m.group_repeats(comments)
+    assert len(kept) == 3, "three findings at one line were collapsed"
+    assert dropped == []
+    assert all("other place" not in c["body"] for c in kept)
+
+
+def test_findings_at_different_lines_still_group():
+    path = "contrib/python/x/.env.example"
+    # The checker's real H39 wording. A short paraphrase shares too few
+    # tokens to clear the bar (0.5 against 0.55), so a synthetic fixture
+    # asserts nothing about grouping.
+    body = (
+        '"{}" is a stub committed as if it were a real value. Someone '
+        "copying this file has no way to tell it needs replacing; use "
+        "<TODO: update-this-value>"
+    )
+    comments = [
+        {
+            "path": path,
+            "line": i + 1,
+            "side": "RIGHT",
+            "trusted": True,
+            "body": body.format(v),
+        }
+        for i, v in enumerate(("my-project-id", "changeme", "your-bucket"))
+    ]
+    kept, dropped = m.group_repeats(comments)
+    assert len(kept) == 1 and len(dropped) == 2
+    assert "2 other places" in kept[0]["body"]
+
+
+def test_an_unpostable_finding_does_not_enter_the_dedupe_pool():
+    """Recorded before the classification, a finding dropped as "not a line
+    this PR adds" suppressed a later one under the reason "already said in
+    this review", when nothing had been said. The previous commit claimed
+    this ordering and added only a comment saying so."""
+    # A CONTEXT line: in the diff, so a window can verify against it, but not
+    # an ADDED line — which is exactly what becomes a note rather than an
+    # inline comment.
+    path = "contrib/python/x/a.py"
+    diff = (
+        f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
+        "@@ -1,3 +1,3 @@\n context_line = 1\n+added = 2\n context_tail = 3\n"
+    )
+    anchors, line_text = m.walk_right_side(diff)
+    body = "this subprocess call has no timeout argument at all"
+    findings = [
+        # No window, on a line the PR does not add: dropped, and it must
+        # leave no trace in the pool.
+        {"path": path, "line": 1, "body": body, "verify_steps": "read it"},
+        # Same text and line, but with a window that verifies. This one
+        # belongs in the review body as a note.
+        {
+            "path": path,
+            "line": 1,
+            "body": body,
+            "verify_steps": "read it",
+            "window": "   1: context_line = 1",
+        },
+    ]
+    comments, notes, skipped = m.build_comments(findings, anchors, line_text)
+    assert not any("already said in this review" in s for s in skipped), (
+        f"an unpostable finding poisoned the pool: {skipped}"
+    )
+    assert len(notes) == 1, f"the note was lost: {skipped}"
+    assert comments == []

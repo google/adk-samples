@@ -1282,7 +1282,7 @@ def _said_in_this_run(
             return True
     # Exact repeats only. A similarity leg here dropped findings that are
     # genuinely different and merely worded alike -- two H39 stub values in
-    # one .env.example differ only in the quoted value and score 0.84 -- and
+    # one .env.example differ only in the quoted value and score 0.77 -- and
     # it dropped them SILENTLY, with no "(Same thing in N other places)" note
     # and no way for the author to learn the others exist. Near-duplicates
     # within one run are group_repeats' job, and grouping announces itself.
@@ -1323,6 +1323,18 @@ def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
                     _other["path"], _other.get("trusted", False)
                 ) != _group_scope(
                     comment["path"], comment.get("trusted", False)
+                ):
+                    continue
+                # Never group two findings at the SAME position. The note
+                # says "in N other places", and for these there is no other
+                # place -- it is the same place, N times. Several house rules
+                # fall back to line 1 when they cannot locate their subject,
+                # so three unknown manifest keys all land on manifest.yaml:1,
+                # and collapsing them posted one comment with a false count
+                # and dropped two real CI-failing findings.
+                if (
+                    _other["path"] == comment["path"]
+                    and _other["line"] == comment["line"]
                 ):
                     continue
                 if _similarity(tokens, other) >= GROUP_SIMILARITY:
@@ -1483,12 +1495,6 @@ def build_comments(
 
         accepted = {"kind": "inline", "path": path, "line": line, "body": body}
 
-        # Recorded only once it is actually going out. Fed before the
-        # classification below, a finding dropped as "not a line this PR
-        # adds" still suppressed a later one -- reported as "already said in
-        # this review" when nothing had been said.
-        run_texts.append((_tokens(body), accepted))
-
         if line in anchors.get(path, frozenset()):
             comments.append(
                 {
@@ -1506,6 +1512,14 @@ def build_comments(
             notes.append({"path": path, "line": line, "body": body})
         else:
             skipped.append(f"{path}:{line}: not a line this PR adds")
+            # NOT recorded, and this really is the ordering now: the previous
+            # commit claimed it and added only a comment saying so. Recorded
+            # before the classification, a finding dropped here suppressed a
+            # later one under the reason "already said in this review", when
+            # nothing had been said.
+            continue
+
+        run_texts.append((_tokens(body), accepted))
 
     # Last, so grouping sees only what actually survived every filter above.
     # Grouping first would collapse a class onto an instance that is then
