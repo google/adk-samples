@@ -172,6 +172,9 @@ RUN uv sync --frozen --no-dev
 COPY app/ ./app/
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8080
 CMD ["uv", "run", "uvicorn", "app.fast_api_app:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
