@@ -1335,3 +1335,82 @@ def test_h21_still_reports_a_genuinely_absent_eval_yaml(tmp_path, monkeypatch):
     chr.check_layout(out, str(tmp_path), rel, "no-eval")
     missing = {f["path"].rsplit("/", 1)[-1] for f in out if f["rule"] == "H21"}
     assert "EVAL.yaml" in missing
+
+
+@pytest.mark.parametrize(
+    "key_line",
+    [
+        "on: true",
+        "no: something",
+        "2026: notes",
+        "1.0: notes",
+        "2026-01-01: notes",
+        "~: notes",
+    ],
+)
+def test_a_manifest_key_yaml_reads_as_a_non_string_does_not_crash(
+    tmp_path, key_line
+):
+    """`on:` is YAML 1.1's Norway problem — it parses as the boolean True —
+    and a bare year is an int, a date is a date. re.escape on any of them
+    raises TypeError, which the lane catches per recipe: every finding for
+    that recipe is discarded and the PR reported clean. The key IS invalid
+    under additionalProperties: false, so the rule must say so."""
+    schema = tmp_path / "schema.json"
+    schema.write_text(json.dumps(FULL_SCHEMA))
+    root, rel = recipe(
+        tmp_path / key_line.split(":")[0].strip("~ "),
+        **{
+            "manifest.yaml": "type: standalone\nstatus: active\n"
+            'language: python\ndescription: "A real description here."\n'
+            f"{key_line}\n"
+        },
+    )
+    out = []
+    chr.check_manifest(out, root, rel, str(schema))
+    assert isinstance(out, list)
+    assert any(f["rule"] == "H19" for f in out), (
+        "the invalid key went unreported"
+    )
+
+
+def test_h27_anchors_on_a_file_the_pr_changed(tmp_path, monkeypatch):
+    """H27 counts the whole recipe, but _is_ours filters it on
+    `path in CHANGED`. Anchoring on the first offender in WALK order threw
+    the finding away unless that exact file happened to be in the diff — a
+    one-in-eight chance on a sixteen-file offender list, so the fix to the
+    arithmetic quietly traded a false positive for a false negative."""
+    files = {f"headed{i}.py": FULL + "\nimport os\n" for i in range(8)}
+    files.update({f"bare{i}.py": "import os\n" for i in range(3)})
+    root, rel = recipe(tmp_path, **files)
+    # The PR touches the LAST bare file, not the first in walk order.
+    changed = f"{rel}/bare2.py"
+    monkeypatch.setattr(chr, "CHANGED", {changed})
+    monkeypatch.setattr(chr, "FILTERED", [])
+    out = []
+    chr.check_license_headers(out, root, rel)
+    h27 = [f for f in out if f["rule"] == "H27"]
+    assert h27, "the finding was filtered away as pre-existing"
+    assert h27[0]["path"] == changed
+    assert "8" in h27[0]["what"], "the count is not the whole-recipe tally"
+
+
+def test_h27_counts_the_whole_recipe_not_just_the_changed_files(
+    tmp_path, monkeypatch
+):
+    """The tally is a claim about the RECIPE's convention. Counting only
+    changed files made a PR touching two of the unheaded files report "no .py
+    file in this recipe carries the standard Apache header" while most of
+    them did — the filter chose the branch as well as the numbers."""
+    files = {f"headed{i}.py": FULL + "\nimport os\n" for i in range(9)}
+    files.update({f"bare{i}.py": "import os\n" for i in range(2)})
+    root, rel = recipe(tmp_path, **files)
+    monkeypatch.setattr(chr, "CHANGED", {f"{rel}/bare0.py", f"{rel}/bare1.py"})
+    monkeypatch.setattr(chr, "FILTERED", [])
+    out = []
+    chr.check_license_headers(out, root, rel)
+    h27 = [f for f in out if f["rule"] == "H27"]
+    assert h27
+    what = h27[0]["what"]
+    assert "9" in what, f"the 9 headed files were not counted: {what}"
+    assert "no .py file in this recipe" not in what

@@ -405,6 +405,20 @@ def _header_state(text, marker):
     return "none", 0
 
 
+def _anchor_in_diff(paths):
+    """The first of these paths the PR actually changed, else the first.
+
+    H27 counts the whole recipe -- it is a claim about the recipe's
+    convention -- but `_is_ours` filters it on `path in CHANGED`. Anchoring
+    on the first offender in WALK order therefore threw the finding away
+    unless that exact file happened to be in the diff, which on a sixteen-file
+    offender list is about a one-in-eight chance.
+    """
+    if CHANGED is None:
+        return paths[0]
+    return next((p for p in paths if p in CHANGED), paths[0])
+
+
 def check_license_headers(out, root, rel):
     """H27 -- the licence header must be consistent WITHIN each file type.
 
@@ -471,7 +485,7 @@ def check_license_headers(out, root, rel):
                         out,
                         "H27",
                         CI_ADV,
-                        g["partial"][0],
+                        _anchor_in_diff(g["partial"]),
                         1,
                         f"licence header is truncated here; {len(g['partial'])} "
                         f"{ext} file(s) differ from the {full} carrying the full "
@@ -485,7 +499,7 @@ def check_license_headers(out, root, rel):
                         out,
                         "H27",
                         CI_ADV,
-                        g["none"][0],
+                        _anchor_in_diff(g["none"]),
                         1,
                         f"no licence header on this file; {len(g['none'])} {ext} "
                         f"file(s) have none while {full} carry the full block",
@@ -499,7 +513,7 @@ def check_license_headers(out, root, rel):
                     out,
                     "H27",
                     CI_ADV,
-                    g["partial"][0] if g["partial"] else g["none"][0],
+                    _anchor_in_diff(g["partial"] or g["none"]),
                     1,
                     f"the {ext} files carry two different headers: "
                     f"{len(g['partial'])} a shorter notice, {len(g['none'])} none, "
@@ -513,7 +527,7 @@ def check_license_headers(out, root, rel):
                     out,
                     "H27",
                     CI_ADV,
-                    (g["partial"] or g["none"])[0],
+                    _anchor_in_diff(g["partial"] or g["none"]),
                     1,
                     f"no {ext} file in this recipe carries the standard Apache "
                     f"header ({len(g['partial'])} have a shorter notice, "
@@ -1106,7 +1120,14 @@ def check_manifest(out, root, rel, schema_path):
             schema = None
     if schema:
         allowed = set(schema.get("properties", {}))
-        for k in data:
+        for raw_key in data:
+            # str(): YAML turns `on:` into True, a bare year into an int and
+            # `2026-01-01:` into a date, and re.escape on any of them raises
+            # TypeError -- which the lane catches per recipe, discarding every
+            # finding for it and reporting the PR clean. The key IS invalid
+            # under additionalProperties: false, so the rule should say so
+            # rather than die on it.
+            k = str(raw_key)
             if k not in allowed:
                 find(
                     out,

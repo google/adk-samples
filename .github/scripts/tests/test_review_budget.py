@@ -1066,3 +1066,36 @@ def test_an_exempt_lane_is_not_skipped_by_another_lanes_review():
 
     # A budgeted lane on the same commit still skips.
     assert rb.decide(state, policy(), "Security", 5, head_sha="abc123")["skip"]
+
+
+def test_an_amended_commit_does_not_make_the_decay_run_backwards():
+    """`git commit --amend` lands back on a sha that was already reviewed.
+    Keying the per-round tally on commit_id alone pooled every round that ever
+    saw it, so the basis GREW: the allowance ran 20, 12, 7, 16, 16, 25, 31, 44
+    instead of decaying, and the lifetime cap went two pushes early."""
+    reviews, comments, rid = [], [], 0
+    allowances = []
+    # A ping-pong between two shas, as an amend-and-force cycle produces.
+    for index, sha in enumerate(["A", "B", "A", "B", "A", "B"]):
+        state = rb.summarise_history(
+            reviews, comments, POLICY["exempt_lanes"], head_sha=sha
+        )
+        decision = rb.decide(state, policy(), "Security", 5)
+        allowances.append(decision["allowance"])
+        rid += 1
+        reviews.append(
+            review(sha, f"2026-01-{index + 1:02d}T00:00:00Z", rid=rid)
+        )
+        comments += [comment(rid)] * (8 if index == 0 else 2)
+
+    assert allowances == sorted(allowances, reverse=True), (
+        f"the allowance grew across rounds: {allowances}"
+    )
+    # The values, not just the shape. A tally keyed on the wrong space makes
+    # every lookup miss, which floors the allowance at 1 from round 2 on --
+    # monotonically non-increasing, and wrong. Round 2 must decay off the 8
+    # comments round 1 actually posted: floor(0.6 * 8) == 4.
+    assert allowances[1] == 4, (
+        f"round 2 did not decay off round 1's real count: {allowances}"
+    )
+    assert allowances[-1] <= POLICY["min_allowance"] + 1

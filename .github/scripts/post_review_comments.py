@@ -611,7 +611,7 @@ def _coerce_line(value: object) -> int | None:
         return None
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().isdigit():
+    if isinstance(value, str) and value.strip().isdecimal():
         return int(value.strip())
     return None
 
@@ -1096,6 +1096,33 @@ def _group_scope(path: str) -> str:
     return text.split("/", maxsplit=1)[0] if "/" in text else ""
 
 
+def _said_in_this_run(
+    path: str,
+    line: int,
+    body: str,
+    zones: dict[str, dict[int, dict]],
+    texts: list[tuple[set[str], dict]],
+) -> bool:
+    """Has this run already accepted this finding, for THIS file?
+
+    Deliberately narrower than `already_raised`: same path, and either the
+    same line or near-identical wording. Cross-file repetition inside one run
+    is what `group_repeats` is for, and it says "same thing in N other
+    places" rather than silently dropping the others.
+    """
+    if zones.get(path, {}).get(line):
+        return True
+    mine = _tokens(body)
+    if len(mine) < 4:
+        return False
+    for tokens, accepted in texts:
+        if accepted.get("path") != path or len(tokens) < 4:
+            continue
+        if _similarity(mine, tokens) >= SIMILARITY:
+            return True
+    return False
+
+
 def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
     """Collapse 3+ comments of one class onto the first instance.
 
@@ -1267,15 +1294,23 @@ def build_comments(
             skipped.append(f"{path}:{line}: {duplicate}")
             continue
 
-        # ...and against what THIS run has already accepted. Everything above
-        # compares against comments already on the PR, so the system
-        # suppressed a near-duplicate from a previous round two lines away
-        # and happily posted an exact duplicate on the same line in one run.
-        this_run = already_raised(path, line, body, run_zones, run_texts)
-        if this_run:
+        # ...and against what THIS run has already accepted.
+        #
+        # A dedicated check, NOT already_raised: that helper's similarity leg
+        # ignores the path, which is right for "did we say this on the PR
+        # before" and catastrophic here. The deterministic lane builds each
+        # rule's body from one format string, so two recipes' findings for
+        # one rule are byte-identical -- and reusing it dropped 13 of 21
+        # findings on a three-recipe PR, telling two of the three authors
+        # nothing about their own recipe. Same file only.
+        if _said_in_this_run(path, line, body, run_zones, run_texts):
             skipped.append(f"{path}:{line}: already said in this review")
             continue
 
+        # Inline bodies go out unflattened -- a comment may legitimately span
+        # lines -- but an image in one is the same remote request as an image
+        # in a note, and nothing was touching them at all.
+        body = _defang_images(body)
         accepted = {"kind": "inline", "path": path, "line": line, "body": body}
         run_texts.append((_tokens(body), accepted))
         # EXACT line only, not the ±2 proximity zone used against comments
@@ -1412,6 +1447,18 @@ def _safe_span(text: str, limit: int = 160) -> str:
     return cleaned if len(cleaned) <= limit else cleaned[: limit - 1] + "…"
 
 
+def _defang_images(text: str) -> str:
+    """Neutralise an inline image without touching anything else.
+
+    An image is a request the reader's browser makes to a URL the pull
+    request chose, fired merely by rendering the page. A link is fine; an
+    image is not. BOTH spellings have to go: `<img src=...>` is in GitHub's
+    markdown sanitiser allowlist, so closing only the `![]()` form left the
+    same request one tag away.
+    """
+    return text.replace("![", "!\u200b[").replace("<img", "&lt;img")
+
+
 def _safe_line(text: str) -> str:
     """A finding body, safe to splice into a bullet in the review body.
 
@@ -1421,10 +1468,7 @@ def _safe_line(text: str) -> str:
     request on render, and an italic line forges a second progress footer
     above the real one. All three reproduced.
     """
-    flat = " ".join(str(text).split())
-    # An image is a request the reader's browser makes to a URL the pull
-    # request chose. A link is fine; an inline image is not.
-    return flat.replace("![", "!\u200b[")
+    return _defang_images(" ".join(str(text).split()))
 
 
 def build_payload(

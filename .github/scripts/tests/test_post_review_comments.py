@@ -2227,3 +2227,88 @@ def test_two_distinct_defects_near_each_other_are_both_posted():
     ]
     comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
     assert len(comments) == 2
+
+
+def test_the_within_run_check_never_reaches_across_files():
+    """`already_raised`'s similarity leg ignores the path, which is right for
+    "did we say this on the PR before" and catastrophic within one run: the
+    deterministic lane builds each rule's body from one format string, so two
+    recipes' findings for one rule are byte-identical. Reusing it dropped 13
+    of 21 findings on a three-recipe PR and told two of the three authors
+    nothing about their own recipe."""
+    body = "deprecated model id (use gemini-3.5-flash); 1 occurrence(s)"
+    paths = [f"core/python/{n}/agent.py" for n in ("alpha", "beta", "gamma")]
+    diff = "".join(
+        f"diff --git a/{p} b/{p}\n--- a/{p}\n+++ b/{p}\n@@ -0,0 +1,2 @@\n"
+        "+import os\n+x = 1\n"
+        for p in paths
+    )
+    anchors, line_text = m.walk_right_side(diff)
+    findings = [
+        {"path": p, "line": 1, "body": body, "verify_steps": "read it"}
+        for p in paths
+    ]
+    comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 3, "a recipe's author was silently told nothing"
+
+
+def test_the_within_run_check_still_catches_a_repeat_in_one_file():
+    diff = _diff_n_added_lines(5)
+    anchors, line_text = m.walk_right_side(diff)
+    path = "contrib/python/x/pyproject.toml"
+    body = "this subprocess call has no timeout argument at all"
+    findings = [
+        {"path": path, "line": 1, "body": body, "verify_steps": "read it"},
+        {"path": path, "line": 4, "body": body, "verify_steps": "read it"},
+    ]
+    comments, _notes, skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 1
+    assert any("already said in this review" in s for s in skipped)
+
+
+@pytest.mark.parametrize(
+    "attack",
+    [
+        "![](https://evil.example/pixel.png)",
+        '<img src="https://evil.example/pixel.png">',
+    ],
+)
+def test_neither_image_spelling_survives_into_the_review_body(attack):
+    """An image is a remote request fired by rendering the page. `<img>` is in
+    GitHub's markdown sanitiser allowlist, so closing only the `![]()` form
+    left the same request one tag away."""
+    note = {"path": "a.py", "line": 1, "body": f"see {attack} here"}
+    body = m.build_payload("Correctness", [], [note], [])["body"]
+    assert "![](" not in body
+    assert "<img" not in body
+
+
+@pytest.mark.parametrize(
+    "attack",
+    [
+        "![](https://evil.example/pixel.png)",
+        '<img src="https://evil.example/pixel.png">',
+    ],
+)
+def test_an_inline_comment_cannot_carry_an_image_either(attack):
+    """Inline bodies went out with nothing applied to them at all."""
+    diff = _diff_n_added_lines(3)
+    anchors, line_text = m.walk_right_side(diff)
+    findings = [
+        {
+            "path": "contrib/python/x/pyproject.toml",
+            "line": 1,
+            "body": f"the timeout here looks short {attack}",
+            "verify_steps": "read it",
+        }
+    ]
+    comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
+    assert comments, "the finding was dropped instead of cleaned"
+    assert "![](" not in comments[0]["body"]
+    assert "<img" not in comments[0]["body"]
+
+
+def test_a_superscript_digit_line_number_does_not_crash():
+    """ "²".isdigit() is True and int("²") raises, which escapes as a CI fault."""
+    assert m._coerce_line("²") is None
+    assert m._coerce_line("42") == 42
