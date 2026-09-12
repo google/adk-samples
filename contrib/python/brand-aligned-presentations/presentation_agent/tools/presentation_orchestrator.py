@@ -37,6 +37,9 @@ from .artifact_utils import get_gcs_file_as_local_path, save_presentation
 from .pptx_editor import _insert_visual_into_slide
 from .visual_generator import generate_visual
 
+VISUAL_GENERATION_TIMEOUT_SECONDS: float = 60.0
+MAX_VISUALS_PER_PRESENTATION: int = 5
+
 
 def get_smart_layout(prs: PresentationType, requested_name: str):
     """
@@ -488,24 +491,22 @@ async def generate_and_render_deck(
 
         all_content = [validated_spec.cover, *validated_spec.slides]
 
-        # Allow up to 5 visuals per presentation
-        hard_limit = 5
-
+        # Allow up to MAX_VISUALS_PER_PRESENTATION visuals per presentation
         visuals_kept = 0
-        for slide in validated_spec.slides:
-            if slide.visual_prompt:
-                if visuals_kept < hard_limit:
+        for current_slide in validated_spec.slides:
+            if current_slide.visual_prompt:
+                if visuals_kept < MAX_VISUALS_PER_PRESENTATION:
                     visuals_kept += 1
                     # REMOVED "Title and Chart" from allowed list to prevent squeezed content
-                    if slide.layout_name not in [
+                    if current_slide.layout_name not in [
                         "Title and Image",
                         "Two Content",
                         "Comparison",
                     ]:
-                        slide.layout_name = "Title and Image"
+                        current_slide.layout_name = "Title and Image"
                 else:
                     # Strip excess visuals programmatically
-                    slide.visual_prompt = None
+                    current_slide.visual_prompt = None
 
         visual_tasks = []
         slides_with_visuals = []
@@ -514,7 +515,8 @@ async def generate_and_render_deck(
                 visual_tasks.append(
                     asyncio.create_task(
                         asyncio.wait_for(
-                            generate_visual(item.visual_prompt), timeout=60.0
+                            generate_visual(item.visual_prompt),
+                            timeout=VISUAL_GENERATION_TIMEOUT_SECONDS,
                         )
                     )
                 )
