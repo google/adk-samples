@@ -32,6 +32,10 @@ Each command below says which directory to run it from. Replace
 - [The recipe sits at the wrong path](#recipe-is-in-the-wrong-folder)
 - [The recipe lives in a folder that no longer accepts edits](#changes-inside-a-retired-folder)
 
+**Containers (Dockerfile)**
+- [Dockerfile failed to build](#dockerfile-build-failed)
+- [Recipe container does not serve](#recipe-container-does-not-serve)
+
 ### Python
 
 **pyproject.toml**
@@ -585,6 +589,36 @@ different fixes:
 
 **Confirm**, from the repo root —
 `grep -n "google-adk" <recipe-path>/pyproject.toml <recipe-path>/uv.lock`
+
+## Dockerfile build failed
+
+**Symptom** — `[docker-build]` or `Docker image failed to build`
+
+**Cause** — a `Dockerfile` at the root of the recipe directory failed to build. Every recipe that provides a root Dockerfile must build cleanly.
+
+**Fix**
+
+1. Build the image locally to reproduce the failure:
+   ```bash
+   docker build -f <recipe-path>/Dockerfile <recipe-path>
+   ```
+2. If files are missing in a `COPY` instruction, ensure all referenced files are committed or created conditionally during build.
+3. If dependency synchronization fails during `uv sync`, ensure `uv.lock` is up to date and compatible with the container's Python version.
+
+## Recipe container does not serve
+
+**Symptom** — `[docker-serves]` or `Container exited unexpectedly` or `Service inside container did not become accessible`
+
+**Cause** — the built container image exited prematurely on startup or did not respond to HTTP requests on port 8080.
+
+**Fix**
+
+1. Run the container locally with test environment variables:
+   ```bash
+   docker run -p 8080:8080 -e USE_IN_MEMORY_SESSION=true -e INTEGRATION_TEST=1 -e MODEL_NAME=gemini-3.5-flash <image-tag>
+   ```
+2. Inspect the container logs (`docker logs <container-id>`) for startup exceptions.
+3. Ensure required configuration variables have defaults in code or `.env.example`, and that import-time GCP calls handle missing credentials gracefully when running offline or in tests.
 
 ## Non-blocking notices
 
