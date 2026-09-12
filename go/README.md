@@ -67,7 +67,7 @@ Follow these steps to set up and run the sample agents:
     *   Choose an agent from the `agents/` directory.
     *   Navigate into that agent's specific directory (e.g., `cd agents/llm-auditor`).
     *   Follow the instructions in *that agent's* `README.md` file for specific
-        setup (like installing dependencies via `poetry install`) and running
+        setup (like installing dependencies via `go mod tidy`) and running
         the agent.
     *   Browse the folders in this repository. Each agent and tool have its own
         `README.md` file with detailed instructions.
