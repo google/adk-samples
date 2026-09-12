@@ -100,7 +100,12 @@ async def get_gcs_file_as_local_path(
             return "Error: Invalid GCS URI. It must start with 'gs://'."
 
         # Parse the bucket and blob name from the URI
-        bucket_name, blob_name = target_uri[5:].split("/", 1)
+        path_part = target_uri[5:]
+        if "/" not in path_part:
+            return f"Error: Invalid GCS URI. Missing object path in '{target_uri}'."
+        bucket_name, blob_name = path_part.split("/", 1)
+        if not blob_name:
+            return f"Error: Invalid GCS URI. Missing object path in '{target_uri}'."
         storage_client = get_gcs_client()
         if not storage_client:
             raise RuntimeError("GCS client could not be initialized.")

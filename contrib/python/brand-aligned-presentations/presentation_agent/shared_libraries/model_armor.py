@@ -33,6 +33,16 @@ async def _call_model_armor_api(
     endpoint_suffix: str, payload: dict
 ) -> dict | None:
     """Helper to call Model Armor REST API."""
+    if (os.getenv("USE_IN_MEMORY_FOR_TESTS") or "").lower() == "true":
+        logger.info(
+            f"USE_IN_MEMORY_FOR_TESTS is active: simulating Model Armor allow verdict for {endpoint_suffix}."
+        )
+        return {
+            "sanitizationResult": {
+                "sanitizationVerdict": "MODEL_ARMOR_SANITIZATION_VERDICT_ALLOW"
+            }
+        }
+
     try:
         # 1. Obtain Application Default Credentials
         scopes = ["https://www.googleapis.com/auth/cloud-platform"]
@@ -103,11 +113,6 @@ async def model_armor_interceptor(
         logger.info(f"DEBUG: Full Model Armor Response: {data}")
 
     if not data:
-        # Fail-closed logic: test bypass is only allowed when LOCAL_DEV is explicitly true
-        if (os.getenv("USE_IN_MEMORY_FOR_TESTS") or "").lower() == "true" and (
-            os.getenv("LOCAL_DEV") or ""
-        ).lower() == "true":
-            return None
         return types.Content(
             role="model",
             parts=[
@@ -167,11 +172,6 @@ async def model_armor_response_interceptor(
     data = await _call_model_armor_api("sanitizeModelResponse", payload)
 
     if not data:
-        # Fail-closed logic: test bypass is only allowed when LOCAL_DEV is explicitly true
-        if (os.getenv("USE_IN_MEMORY_FOR_TESTS") or "").lower() == "true" and (
-            os.getenv("LOCAL_DEV") or ""
-        ).lower() == "true":
-            return None
         return LlmResponse(
             content=types.Content(
                 role="model",

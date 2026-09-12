@@ -39,6 +39,13 @@ from .visual_generator import generate_visual
 
 VISUAL_GENERATION_TIMEOUT_SECONDS: float = 60.0
 MAX_VISUALS_PER_PRESENTATION: int = 5
+ALLOWED_VISUAL_LAYOUTS: frozenset[str] = frozenset(
+    {
+        "Title and Image",
+        "Two Content",
+        "Comparison",
+    }
+)
 
 
 def get_smart_layout(prs: PresentationType, requested_name: str):
@@ -498,11 +505,7 @@ async def generate_and_render_deck(
                 if visuals_kept < MAX_VISUALS_PER_PRESENTATION:
                     visuals_kept += 1
                     # REMOVED "Title and Chart" from allowed list to prevent squeezed content
-                    if current_slide.layout_name not in [
-                        "Title and Image",
-                        "Two Content",
-                        "Comparison",
-                    ]:
+                    if current_slide.layout_name not in ALLOWED_VISUAL_LAYOUTS:
                         current_slide.layout_name = "Title and Image"
                 else:
                     # Strip excess visuals programmatically
@@ -526,6 +529,10 @@ async def generate_and_render_deck(
         for s, img in zip(slides_with_visuals, images, strict=True):
             if not isinstance(img, Exception):
                 s.image_data = img
+            else:
+                log.warning(
+                    f"Visual generation failed for slide '{getattr(s, 'title', 'unknown')}': {img}"
+                )
 
         out_name = f"{validated_spec.cover.title}_{uuid.uuid4().hex[:6]}.pptx"
 

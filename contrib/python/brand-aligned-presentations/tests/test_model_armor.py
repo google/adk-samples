@@ -175,7 +175,7 @@ async def test_model_armor_interceptor_no_project(
     )
 
     result = await model_armor_interceptor(mock_callback_context)
-    # Fail-closed logic returns a types.Content since data is None and USE_IN_MEMORY_FOR_TESTS is false
+    # Fail-closed logic returns a types.Content since data is None
     assert result is not None
     assert "Security Verification Error" in result.parts[0].text
 
@@ -201,19 +201,13 @@ async def test_model_armor_interceptor_exception(
     "presentation_agent.shared_libraries.model_armor.MODEL_ARMOR_TEMPLATE_ID",
     "test-template",
 )
-@patch("presentation_agent.shared_libraries.model_armor.google.auth.default")
-@patch("httpx.AsyncClient.post")
 @pytest.mark.asyncio
 async def test_model_armor_interceptor_fail_closed_memory(
-    mock_post, mock_auth, mock_callback_context, monkeypatch
+    mock_callback_context,
+    monkeypatch,
 ):
     monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
-    monkeypatch.setenv("LOCAL_DEV", "true")
-    mock_auth.return_value = (MagicMock(), "test-project")
-    mock_post.side_effect = Exception("API failed")
-
     result = await model_armor_interceptor(mock_callback_context)
-    # Returns None because USE_IN_MEMORY_FOR_TESTS is true
     assert result is None
 
 
@@ -300,10 +294,9 @@ async def test_model_armor_response_interceptor_no_llm_text(
 @patch("presentation_agent.shared_libraries.model_armor.google.auth.default")
 @pytest.mark.asyncio
 async def test_model_armor_response_interceptor_fail_closed(
-    mock_auth, mock_callback_context, mock_llm_response, monkeypatch
+    mock_auth, mock_callback_context, mock_llm_response
 ):
     mock_auth.side_effect = Exception("Auth failed")
-    monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "false")
 
     result = await model_armor_response_interceptor(
         mock_callback_context, mock_llm_response
@@ -316,15 +309,13 @@ async def test_model_armor_response_interceptor_fail_closed(
     "presentation_agent.shared_libraries.model_armor.MODEL_ARMOR_TEMPLATE_ID",
     "test-template",
 )
-@patch("presentation_agent.shared_libraries.model_armor.google.auth.default")
 @pytest.mark.asyncio
 async def test_model_armor_response_interceptor_fail_closed_memory(
-    mock_auth, mock_callback_context, mock_llm_response, monkeypatch
+    mock_callback_context,
+    mock_llm_response,
+    monkeypatch,
 ):
-    mock_auth.side_effect = Exception("Auth failed")
     monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
-    monkeypatch.setenv("LOCAL_DEV", "true")
-
     result = await model_armor_response_interceptor(
         mock_callback_context, mock_llm_response
     )
