@@ -2524,3 +2524,95 @@ def test_a_hunk_header_with_absurd_counts_does_not_crash():
     diff = f"diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,{'9' * 5000} +1,2 @@\n+x\n"
     anchors, _text = m.walk_right_side(diff)
     assert isinstance(anchors, dict)
+
+
+def test_a_short_note_is_not_repeated_on_every_push():
+    """A note lives as one bullet inside a much larger review body, so the
+    exact-equality leg never matched it and the containment leg sat below the
+    four-token floor. The House Rules lane is exempt from the budget and
+    produces mostly notes, so its short findings — `"api_key" is not
+    UPPER_SNAKE_CASE`, `a committed private key` — went out on every push
+    forever, which is the non-convergence this branch exists to end."""
+    for short in SHORT_BODIES:
+        assert len(m._tokens(short)) < 4, (
+            "fixture no longer exercises the floor"
+        )
+        previous = {
+            "kind": "review-body",
+            "body": f"{m.REVIEW_MARKER}\nAutomated **House Rules** review — 0 "
+            f"finding(s).\n\nAlso, on lines this PR does not change:\n\n"
+            f"- `a/b.py:2` — {short}",
+        }
+        zones, texts = m.build_exclusions([previous])
+        assert m.already_raised(
+            "a/b.py", 2, short, zones, texts, trusted=True
+        ), f"{short!r} would be re-posted on the next push"
+
+
+def test_an_unrelated_short_note_is_not_suppressed():
+    previous = {
+        "kind": "review-body",
+        "body": f"{m.REVIEW_MARKER}\nAutomated **House Rules** review.\n\n"
+        "- `a/b.py:2` — a committed private key (.gitignore)",
+    }
+    zones, texts = m.build_exclusions([previous])
+    assert not m.already_raised(
+        "a/b.py",
+        2,
+        '"api_key" is not UPPER_SNAKE_CASE',
+        zones,
+        texts,
+        trusted=True,
+    )
+
+
+def test_a_short_body_with_image_markup_is_still_deduplicated():
+    """The comparison legs saw the raw body while what is stored and posted is
+    the defanged one, so a short body carrying image markup matched neither."""
+    diff = _diff_n_added_lines(3, path="a/b.py")
+    anchors, line_text = m.walk_right_side(diff)
+    body = "a remote <img> in the README"
+    findings = [
+        {
+            "path": "a/b.py",
+            "line": 1,
+            "body": body,
+            "source": "checker",
+            "verify_steps": "read it",
+            "window": "",
+        },
+        {
+            "path": "a/b.py",
+            "line": 1,
+            "body": body,
+            "source": "checker",
+            "verify_steps": "read it",
+            "window": " ",
+        },
+    ]
+    comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 1
+    assert "<img" not in comments[0]["body"]
+
+
+def test_a_short_body_about_another_file_is_not_suppressed():
+    """`a committed private key` is byte-identical for every recipe, so an
+    equality leg that ignores the path tells one author and silences the
+    rest — the shape _group_scope and _said_in_this_run both exist to stop."""
+    existing = [
+        {
+            "kind": "inline",
+            "path": "core/python/alpha/x.pem",
+            "line": 1,
+            "body": "a committed private key (.gitignore)",
+        }
+    ]
+    zones, texts = m.build_exclusions(existing)
+    assert not m.already_raised(
+        "core/python/beta/y.pem",
+        1,
+        "a committed private key (.gitignore)",
+        zones,
+        texts,
+        trusted=True,
+    )

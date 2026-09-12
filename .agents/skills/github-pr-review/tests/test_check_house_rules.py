@@ -1458,3 +1458,30 @@ def test_an_absurdly_long_version_does_not_crash_the_checker(tmp_path):
     out = []
     chr.check_pyproject(out, root, rel, "my-recipe")
     assert isinstance(out, list)
+
+
+@pytest.mark.parametrize(
+    "team", ["チーム", "Команда", "大数据平台组", "Ελλάδα", "Équipe Données"]
+)
+def test_a_team_name_in_a_non_latin_script_is_a_team(tmp_path, team):
+    """`[^A-Za-z0-9]+` is ASCII-only, so any name written wholly in another
+    script matched "names nobody" — the exact false positive the closed
+    GENERIC_TEAMS list exists to avoid."""
+    out = []
+    root, rel = manifest_with(
+        tmp_path / str(abs(hash(team)))[:6],
+        f'  team: "{team}"\n  poc: "someone"\n',
+    )
+    chr.check_manifest(out, root, rel, None)
+    assert not h48(out), f"{team} was reported as naming nobody"
+
+
+@pytest.mark.parametrize("team", ["---", "!!", "..."])
+def test_a_punctuation_only_team_still_names_nobody(tmp_path, team):
+    out = []
+    root, rel = manifest_with(
+        tmp_path / str(abs(hash(team)))[:6],
+        f'  team: "{team}"\n  poc: "someone"\n',
+    )
+    chr.check_manifest(out, root, rel, None)
+    assert h48(out)

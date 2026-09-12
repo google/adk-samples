@@ -1028,7 +1028,10 @@ def check_ownership_team(out, r, text, data):
         )
         return
 
-    if len(raw) < 2 or re.fullmatch(r"[^A-Za-z0-9]+", raw):
+    # `isalnum()`, not an ASCII character class: [^A-Za-z0-9]+ matched any
+    # name written wholly in a non-Latin script, so チーム, Команда and
+    # 大数据平台组 were each reported as naming nobody.
+    if len(raw) < 2 or not any(c.isalnum() for c in raw):
         find(
             out,
             "H48",

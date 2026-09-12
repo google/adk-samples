@@ -1070,13 +1070,22 @@ def already_raised(
 
     mine = _tokens(body)
     if len(mine) < 4:
-        # Too few distinctive words to compare by similarity — but an exact
-        # repeat is still a repeat, and skipping the check entirely let the
-        # short bodies through forever. `"api_key" is not UPPER_SNAKE_CASE`
-        # and `a committed private key` both tokenise to three, and the
-        # exempt House Rules lane re-posted them on every push.
+        # Too few distinctive words for a similarity comparison, but an exact
+        # repeat is still a repeat. Both shapes have to be checked:
+        # `"api_key" is not UPPER_SNAKE_CASE` and `a committed private key`
+        # tokenise to three, and the exempt House Rules lane re-posts them on
+        # every push unless something stops it.
         for _tokens_unused, comment in texts:
-            if str(comment.get("body") or "").strip() == body.strip():
+            if comment.get("kind") == "review-body":
+                # A note is one bullet inside a much larger body, so it never
+                # EQUALS it. Substring, and only for our own bodies -- which
+                # is all `texts` holds for this kind, by _our_review.
+                if body.strip() and body.strip() in str(comment.get("body")):
+                    return "already said in an earlier review on this PR"
+            elif (
+                comment.get("path") == path
+                and str(comment.get("body") or "").strip() == body.strip()
+            ):
                 return "identical to a comment already on this PR"
         return ""
     for tokens, comment in texts:
@@ -1291,6 +1300,12 @@ def build_comments(
             skipped.append(f"{path or '<no path>'}:{line}: empty path or body")
             continue
 
+        # Defang FIRST, so every comparison below -- and the duplicate legs
+        # in particular -- sees the same string that will be stored and
+        # posted. Cleaning it later meant a short body containing image
+        # markup matched neither exact-match leg.
+        body = _defang_images(body)
+
         # Before anything that could promote this body onto the PR — inline or
         # as a note in the review body, both of which are public.
         malformed = implausible_body(body)
@@ -1361,10 +1376,6 @@ def build_comments(
             skipped.append(f"{path}:{line}: already said in this review")
             continue
 
-        # Inline bodies go out unflattened -- a comment may legitimately span
-        # lines -- but an image in one is the same remote request as an image
-        # in a note, and nothing was touching them at all.
-        body = _defang_images(body)
         accepted = {"kind": "inline", "path": path, "line": line, "body": body}
         run_texts.append((_tokens(body), accepted))
 
