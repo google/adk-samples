@@ -100,7 +100,11 @@ REVIEW_MARKER = "<!-- adk-ai-review -->"
 
 # Group 2 is the old-side length, groups 3/4 the new-side start and length.
 # A length is absent for a one-line side ("@@ -1 +1 @@"), which means 1.
-HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+# Digit runs bounded like every other int() on parsed text in this file: a
+# longer one is not a line count, and int() past 4300 digits raises.
+HUNK_HEADER = re.compile(
+    r"^@@ -(\d{1,12})(?:,(\d{1,12}))? \+(\d{1,12})(?:,(\d{1,12}))? @@"
+)
 
 # The fenced block, captured whole from its opening "[" to the closing
 # fence. Regex cannot find where the array ends: a "]" inside a comment body
@@ -601,7 +605,10 @@ def _salvage_findings(block: str, decoder: json.JSONDecoder) -> list[dict]:
     while (start := block.find("{", index)) != -1:
         try:
             candidate, index = decoder.raw_decode(block, start)
-        except json.JSONDecodeError:
+        except ValueError:
+            # ValueError, like its two siblings: a >4300-digit integer
+            # literal makes json's number parser raise the base class, and
+            # this is the fallback path the other two hand off to.
             index = start + 1
             continue
         if (
@@ -1063,6 +1070,14 @@ def already_raised(
 
     mine = _tokens(body)
     if len(mine) < 4:
+        # Too few distinctive words to compare by similarity — but an exact
+        # repeat is still a repeat, and skipping the check entirely let the
+        # short bodies through forever. `"api_key" is not UPPER_SNAKE_CASE`
+        # and `a committed private key` both tokenise to three, and the
+        # exempt House Rules lane re-posted them on every push.
+        for _tokens_unused, comment in texts:
+            if str(comment.get("body") or "").strip() == body.strip():
+                return "identical to a comment already on this PR"
         return ""
     for tokens, comment in texts:
         if len(tokens) < 4:
@@ -1127,7 +1142,6 @@ def _said_in_this_run(
     path: str,
     line: int,
     body: str,
-    zones: dict[str, dict[int, dict]],
     texts: list[tuple[set[str], dict]],
 ) -> bool:
     """Has this run already accepted this finding, for THIS file?
@@ -1142,14 +1156,23 @@ def _said_in_this_run(
     # README produces four separate CI-failing H20 findings, all at line 1,
     # and blocking on position alone told the author about one of them. What
     # makes two findings the same finding is what they SAY.
+    # The exact-match leg runs FIRST, above the token floor: a two-token body
+    # repeated verbatim on one line is the clearest duplicate there is, and
+    # putting it below the floor made it unreachable for exactly the bodies
+    # the removed line-zone leg used to cover.
+    for _tokens_unused, accepted in texts:
+        if (
+            accepted.get("path") == path
+            and accepted.get("line") == line
+            and accepted.get("body") == body
+        ):
+            return True
     mine = _tokens(body)
     if len(mine) < 4:
         return False
     for tokens, accepted in texts:
         if accepted.get("path") != path or len(tokens) < 4:
             continue
-        if accepted.get("line") == line and accepted.get("body") == body:
-            return True
         if _similarity(mine, tokens) >= SIMILARITY:
             return True
     return False
@@ -1249,8 +1272,7 @@ def build_comments(
     notes: list[dict] = []
     skipped: list[str] = []
     zones, texts = build_exclusions(existing or [])
-    # The same structures, accumulated as this run accepts findings.
-    run_zones: dict[str, dict[int, dict]] = {}
+    # Accumulated as this run accepts findings.
     run_texts: list[tuple[set[str], dict]] = []
 
     for finding in findings:
@@ -1335,7 +1357,7 @@ def build_comments(
         # one rule are byte-identical -- and reusing it dropped 13 of 21
         # findings on a three-recipe PR, telling two of the three authors
         # nothing about their own recipe. Same file only.
-        if _said_in_this_run(path, line, body, run_zones, run_texts):
+        if _said_in_this_run(path, line, body, run_texts):
             skipped.append(f"{path}:{line}: already said in this review")
             continue
 
@@ -1345,11 +1367,6 @@ def build_comments(
         body = _defang_images(body)
         accepted = {"kind": "inline", "path": path, "line": line, "body": body}
         run_texts.append((_tokens(body), accepted))
-        # EXACT line only, not the ±2 proximity zone used against comments
-        # already on the PR. Within one run two distinct defects a line apart
-        # are both worth saying; across rounds, proximity is the right bar
-        # because the second one is usually the first one restated.
-        run_zones.setdefault(path, {}).setdefault(line, accepted)
 
         if line in anchors.get(path, frozenset()):
             comments.append(

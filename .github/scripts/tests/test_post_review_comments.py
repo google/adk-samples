@@ -2422,3 +2422,105 @@ def test_a_checker_finding_is_not_blocked_by_an_unrelated_comment_on_its_line():
         texts,
         trusted=False,
     )
+
+
+# --------------------------- short bodies: below the similarity token floor
+
+SHORT_BODIES = [
+    '"api_key" is not UPPER_SNAKE_CASE (extract_env_vars.py:444)',  # H13
+    "a committed private key (.gitignore)",  # H43
+]
+
+
+@pytest.mark.parametrize("body", SHORT_BODIES)
+def test_a_short_finding_is_not_repeated_on_every_push(body):
+    """These tokenise to three distinctive words, and the similarity check
+    returns early below four — so nothing suppressed them in either leg. The
+    House Rules lane is exempt from the budget and never hits the same-commit
+    guard, so it re-posted them on every push forever: the precise
+    non-convergence this branch exists to end. Both are real checker bodies,
+    and H43's are the security-relevant ones."""
+    assert len(m._tokens(body)) < 4, "fixture no longer exercises the floor"
+    existing = [{"kind": "inline", "path": "a/b.py", "line": 1, "body": body}]
+    zones, texts = m.build_exclusions(existing)
+    assert m.already_raised("a/b.py", 1, body, zones, texts, trusted=True)
+
+
+@pytest.mark.parametrize("body", SHORT_BODIES)
+def test_a_short_finding_is_not_posted_twice_in_one_run(body):
+    """The exact-match leg sat BELOW the same token floor, so it was
+    unreachable for exactly the bodies the removed line-zone leg covered, and
+    two of them on one line both went out."""
+    diff = _diff_n_added_lines(3, path="a/b.py")
+    anchors, line_text = m.walk_right_side(diff)
+    findings = [
+        {
+            "path": "a/b.py",
+            "line": 1,
+            "body": body,
+            "source": "checker",
+            "verify_steps": "read it",
+            "window": "",
+        },
+        {
+            "path": "a/b.py",
+            "line": 1,
+            "body": body,
+            "source": "checker",
+            "verify_steps": "read it",
+            "window": " ",
+        },
+    ]
+    comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 1
+
+
+def test_distinct_short_findings_on_one_line_both_survive():
+    """The floor fix must not reinstate the collision it replaced."""
+    diff = _diff_n_added_lines(3, path="a/b.py")
+    anchors, line_text = m.walk_right_side(diff)
+    findings = [
+        {
+            "path": "a/b.py",
+            "line": 1,
+            "source": "checker",
+            "verify_steps": "read it",
+            "body": SHORT_BODIES[0],
+        },
+        {
+            "path": "a/b.py",
+            "line": 1,
+            "source": "checker",
+            "verify_steps": "read it",
+            "body": SHORT_BODIES[1],
+        },
+    ]
+    comments, _notes, _skipped = m.build_comments(findings, anchors, line_text)
+    assert len(comments) == 2
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        '```json\n[{"line": ' + "9" * 5000 + "}]\n```",
+        '```json\n[{"body":"x","path":"a.py","line":' + "9" * 5000 + "}]\n```",
+        '```json\n[{"path":"a.py","line":' + "9" * 5000 + '},{"path":"b.py",'
+        '"line":3,"body":"y"}]\n```',
+    ],
+)
+def test_every_decode_site_survives_a_giant_integer(block):
+    """Three sites decode JSON; round 7 widened two. The third is the
+    fallback the other two hand off to, so the shapes that reach salvage
+    still escaped as a CI fault."""
+    try:
+        m.extract_findings(block)
+    except m.ReviewerOutputError:
+        pass
+    except Exception as exc:
+        raise AssertionError(f"escaped as {type(exc).__name__}") from exc
+
+
+def test_a_hunk_header_with_absurd_counts_does_not_crash():
+    diff = f"diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,{'9' * 5000} +1,2 @@\n+x\n"
+    anchors, _text = m.walk_right_side(diff)
+    assert isinstance(anchors, dict)
