@@ -39,9 +39,10 @@ from .visual_generator import generate_visual
 
 VISUAL_GENERATION_TIMEOUT_SECONDS: float = 60.0
 MAX_VISUALS_PER_PRESENTATION: int = 5
+DEFAULT_VISUAL_LAYOUT: str = "Title and Image"
 ALLOWED_VISUAL_LAYOUTS: frozenset[str] = frozenset(
     {
-        "Title and Image",
+        DEFAULT_VISUAL_LAYOUT,
         "Two Content",
         "Comparison",
     }
@@ -55,12 +56,12 @@ def get_smart_layout(prs: PresentationType, requested_name: str):
     log = get_logger("layout_mapper")
     requested_name = requested_name.lower()
 
-    #  Avoid "Title and Chart" as it requies data (demo ignore this) placeholders
+    #  Avoid "Title and Chart" as it requires data (demo ignore this) placeholders
     if "chart" in requested_name:
         log.info(
-            f"Overriding layout request '{requested_name}' to 'Title and Image' for better spacing."
+            f"Overriding layout request '{requested_name}' to '{DEFAULT_VISUAL_LAYOUT}' for better spacing."
         )
-        requested_name = "title and image"
+        requested_name = DEFAULT_VISUAL_LAYOUT.lower()
 
     layouts = prs.slide_layouts
 
@@ -368,6 +369,7 @@ async def render_deck_from_spec(
             if "title" not in s_data or not s_data["title"]:
                 s_data["title"] = "Slide Content"
 
+            s_spec = None
             try:
                 s_spec = SlideSpec(**s_data)
                 slide = prs.slides.add_slide(
@@ -375,9 +377,8 @@ async def render_deck_from_spec(
                 )
                 render_slide_content(slide, s_spec)
             except Exception as e:
-                log.error(
-                    f"Failed to render slide '{s_data.get('title')}': {e}"
-                )
+                title = getattr(s_spec, "title", "unknown")
+                log.error(f"Failed to render slide '{title}': {e}")
                 continue
 
             # Speaker Notes/Citations
@@ -506,7 +507,7 @@ async def generate_and_render_deck(
                     visuals_kept += 1
                     # REMOVED "Title and Chart" from allowed list to prevent squeezed content
                     if current_slide.layout_name not in ALLOWED_VISUAL_LAYOUTS:
-                        current_slide.layout_name = "Title and Image"
+                        current_slide.layout_name = DEFAULT_VISUAL_LAYOUT
                 else:
                     # Strip excess visuals programmatically
                     current_slide.visual_prompt = None

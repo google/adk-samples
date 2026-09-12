@@ -16,17 +16,14 @@ import asyncio
 import tempfile
 import uuid
 
-from google import genai
 from google.genai import types
 
 from ..shared_libraries.config import (
     GCS_BUCKET_NAME,
-    GOOGLE_CLOUD_LOCATION,
-    GOOGLE_CLOUD_PROJECT,
     IMAGE_GENERATION_MODEL,
-    _genai_client,
     get_gcs_client,
     get_logger,
+    initialize_genai_client,
 )
 
 
@@ -53,22 +50,16 @@ async def generate_visual(prompt: str) -> str:
 
     try:
         log.info("Attempting to generate image...")
-        # Step 1: Generate the image bytes (same as before)
-        global _genai_client
-        if _genai_client is None:
-            log.warning(
-                "Global genai client was None. Re-initializing for Vertex AI."
-            )
-            _genai_client = genai.Client(
-                vertexai=True,
-                project=GOOGLE_CLOUD_PROJECT,
-                location=GOOGLE_CLOUD_LOCATION,
-            )
+        # Step 1: Generate the image bytes
+        client = initialize_genai_client()
+        if client is None:
+            log.error("Failed to initialize GenAI client.")
+            return "Error: Visual generation failed."
 
         model_name = IMAGE_GENERATION_MODEL
         log.info(f"Calling {model_name} to generate visual...")
         response = await asyncio.to_thread(
-            _genai_client.models.generate_content,
+            client.models.generate_content,
             model=model_name,
             contents=[prompt],
             config=types.GenerateContentConfig(
@@ -109,7 +100,6 @@ async def generate_visual(prompt: str) -> str:
             blob = bucket.blob(image_filename)
 
             # Upload from the in-memory bytes
-            # #blob.upload_from_string(image_bytes, content_type='image/png')
             await asyncio.to_thread(
                 blob.upload_from_string,
                 image_bytes,

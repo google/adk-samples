@@ -202,7 +202,7 @@ async def test_model_armor_interceptor_exception(
     "test-template",
 )
 @pytest.mark.asyncio
-async def test_model_armor_interceptor_fail_closed_memory(
+async def test_model_armor_interceptor_in_memory_allow(
     mock_callback_context,
     monkeypatch,
 ):
@@ -310,7 +310,7 @@ async def test_model_armor_response_interceptor_fail_closed(
     "test-template",
 )
 @pytest.mark.asyncio
-async def test_model_armor_response_interceptor_fail_closed_memory(
+async def test_model_armor_response_interceptor_in_memory_allow(
     mock_callback_context,
     mock_llm_response,
     monkeypatch,
