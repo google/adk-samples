@@ -213,6 +213,22 @@ async def test_model_armor_interceptor_in_memory_allow(
 
 @patch(
     "presentation_agent.shared_libraries.model_armor.MODEL_ARMOR_TEMPLATE_ID",
+    "test-template",
+)
+@pytest.mark.asyncio
+async def test_model_armor_interceptor_in_memory_blocked_in_production(
+    mock_callback_context,
+    monkeypatch,
+):
+    monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
+    monkeypatch.setenv("K_SERVICE", "presentation-agent-service")
+    result = await model_armor_interceptor(mock_callback_context)
+    assert result is not None
+    assert "Security Verification Error" in result.parts[0].text
+
+
+@patch(
+    "presentation_agent.shared_libraries.model_armor.MODEL_ARMOR_TEMPLATE_ID",
     None,
 )
 @pytest.mark.asyncio
@@ -320,6 +336,25 @@ async def test_model_armor_response_interceptor_in_memory_allow(
         mock_callback_context, mock_llm_response
     )
     assert result is None
+
+
+@patch(
+    "presentation_agent.shared_libraries.model_armor.MODEL_ARMOR_TEMPLATE_ID",
+    "test-template",
+)
+@pytest.mark.asyncio
+async def test_model_armor_response_interceptor_in_memory_blocked_in_production(
+    mock_callback_context,
+    mock_llm_response,
+    monkeypatch,
+):
+    monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    result = await model_armor_response_interceptor(
+        mock_callback_context, mock_llm_response
+    )
+    assert result is not None
+    assert "Security Verification Error" in result.content.parts[0].text
 
 
 @patch(

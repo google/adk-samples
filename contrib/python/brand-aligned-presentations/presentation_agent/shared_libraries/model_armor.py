@@ -34,6 +34,16 @@ async def _call_model_armor_api(
 ) -> dict | None:
     """Helper to call Model Armor REST API."""
     if (os.getenv("USE_IN_MEMORY_FOR_TESTS") or "").lower() == "true":
+        # Disallow in deployed / production environments (e.g. Cloud Run) to enforce security controls
+        if os.getenv("K_SERVICE") or os.getenv("ENVIRONMENT") in (
+            "production",
+            "staging",
+            "prod",
+        ):
+            logger.error(
+                "Security violation: USE_IN_MEMORY_FOR_TESTS is forbidden in deployed environments."
+            )
+            return None
         logger.info(
             f"USE_IN_MEMORY_FOR_TESTS is active: simulating Model Armor allow verdict for {endpoint_suffix}."
         )
