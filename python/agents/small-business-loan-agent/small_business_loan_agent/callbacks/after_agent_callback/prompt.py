@@ -30,17 +30,30 @@ The Small Business Loan Agent has 4 sub-agents called in sequence:
 ## Validation Criteria
 
 ### 1. Trajectory Correctness
+This is a MULTI-TURN process. A single loan application is processed across several
+separate user turns (extract/underwrite/price, then a later turn for approval, then
+possibly a later turn to resume after a repair). The tool calls shown in "Tool Call
+Sequence" below are ONLY the calls made in the CURRENT turn — they will legitimately
+NOT include steps that were already completed in an earlier turn.
+
+Use the "Process History" section below to see which steps were already completed
+BEFORE this turn. A step is a valid, expected skip in this turn's Tool Call Sequence
+if Process History marks it "already completed (prior turn)". Only treat a step as
+genuinely skipped/missing if Process History marks it "not completed" AND it is a
+prerequisite for what this turn is trying to do.
+
 VALID patterns:
 - New process: check_process_status -> DocumentExtractionAgent -> UnderwritingAgent -> PricingAgent -> STOP (ask for approval)
-- After approval ("yes"): LoanDecisionAgent
+- After approval ("yes"): LoanDecisionAgent only (Extraction/Underwriting/Pricing were already completed in a prior turn — see Process History)
 - Status check only: check_process_status alone
-- Resume after repair: check_process_status -> [skip completed] -> continue from next step
+- Resume after repair: check_process_status -> [skip steps Process History marks as already completed] -> continue from the next incomplete step
 
 INVALID patterns:
 - Missing check_process_status at the start of a new request
 - Calling all 4 agents in one turn (should stop after PricingAgent)
-- Calling LoanDecisionAgent without prior user approval
+- Calling LoanDecisionAgent when Process History shows PricingAgent has NOT been completed, or without prior user approval
 - Agents called out of order
+- A step is missing from BOTH this turn's Tool Call Sequence AND Process History's completed list, yet the response presents it as done
 
 ### 2. Grounding (No Hallucination) -- CRITICAL
 All values in the response MUST exactly match the agent outputs. Check:
@@ -62,8 +75,11 @@ eligibility assessment, pricing terms, and a clear next step.
 ## Agent Outputs (Ground Truth)
 {agent_outputs}
 
-## Tool Call Sequence
+## Tool Call Sequence (this turn only)
 {tool_sequence}
+
+## Process History (all steps completed so far, across all turns, for this request)
+{process_history}
 
 ## User Message Context
 {user_message}
