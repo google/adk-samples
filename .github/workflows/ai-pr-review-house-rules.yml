@@ -316,6 +316,16 @@ jobs:
           # the diff in the previous job, so the realistic cause left is a push
           # between fetching the diff and posting, which shifts every position.
           echo '::warning::Batch review POST failed; retrying one at a time.'
+
+          # The summary body FIRST, on its own. It carries the notes --
+          # findings on lines the PR does not change, the class that held all
+          # three hard CI failures on PR #2373 -- and the per-comment payloads
+          # below replace it with a stub, so without this they were dropped
+          # silently whenever a batch failed.
+          jq '{event: "COMMENT", body: .body, commit_id: .commit_id}
+              | with_entries(select(.value != null))' review_payload.json \
+            | gh api --method POST "${REVIEWS_ENDPOINT}" --input - > /dev/null \
+            || echo "::warning::the review summary could not be posted either"
           POSTED=0
           while IFS= read -r single; do
             if printf '%s' "${single}" \

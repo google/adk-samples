@@ -1332,9 +1332,15 @@ def group_repeats(comments: list[dict]) -> tuple[list[dict], list[str]]:
                 # so three unknown manifest keys all land on manifest.yaml:1,
                 # and collapsing them posted one comment with a false count
                 # and dropped two real CI-failing findings.
-                if (
-                    _other["path"] == comment["path"]
-                    and _other["line"] == comment["line"]
+                # Against every member already in the group, not just the
+                # anchor: two members sharing a line with each OTHER still
+                # inflated "(Same thing in N other places)" and collapsed a
+                # real finding. Same class as the bug this guard fixed, one
+                # step removed.
+                if any(
+                    _other["path"] == tokenised[k][0]["path"]
+                    and _other["line"] == tokenised[k][0]["line"]
+                    for k in members
                 ):
                     continue
                 if _similarity(tokens, other) >= GROUP_SIMILARITY:

@@ -3123,3 +3123,54 @@ def test_an_unpostable_finding_does_not_enter_the_dedupe_pool():
     )
     assert len(notes) == 1, f"the note was lost: {skipped}"
     assert comments == []
+
+
+def test_the_same_position_guard_covers_every_member_not_just_the_anchor():
+    """Two members sharing a line with each OTHER still counted toward
+    "(Same thing in N other places)" and one of them was collapsed away:
+    lines 7, 8, 1, 1 produced a claim of 3 other places when there are 2."""
+    path = "contrib/python/x/manifest.yaml"
+    body = (
+        '"{}" is a stub committed as if it were a real value. Someone '
+        "copying this file has no way to tell it needs replacing; use "
+        "<TODO: update-this-value>"
+    )
+    comments = [
+        {
+            "path": path,
+            "line": ln,
+            "side": "RIGHT",
+            "trusted": True,
+            "body": body.format(v),
+        }
+        for ln, v in (
+            (7, "a-value"),
+            (8, "b-value"),
+            (1, "c-value"),
+            (1, "d-value"),
+        )
+    ]
+    kept, _dropped = m.group_repeats(comments)
+    grouped = [c for c in kept if "other place" in c["body"]]
+    assert grouped, "nothing grouped at all"
+    import re as _re
+
+    claimed = int(
+        _re.search(
+            r"Same thing in (\d+) other place", grouped[0]["body"]
+        ).group(1)
+    )
+    # Against DISTINCT positions, not against the number dropped: those two
+    # are equal whether or not the guard covers every member, so comparing
+    # them asserts nothing. "N other places" is a claim about places.
+    anchor = (grouped[0]["path"], grouped[0]["line"])
+    other_positions = {
+        (c["path"], c["line"])
+        for c in comments
+        if (c["path"], c["line"]) != anchor
+    }
+    assert claimed <= len(other_positions), (
+        f"claimed {claimed} other places; there are {len(other_positions)}"
+    )
+    positions = {(c["path"], c["line"]) for c in kept}
+    assert len(positions) == len(kept), "two kept comments share a position"
