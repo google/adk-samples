@@ -201,30 +201,19 @@ async def test_model_armor_interceptor_exception(
     "presentation_agent.shared_libraries.model_armor.MODEL_ARMOR_TEMPLATE_ID",
     "test-template",
 )
+@patch("presentation_agent.shared_libraries.model_armor._call_model_armor_api")
 @pytest.mark.asyncio
-async def test_model_armor_interceptor_in_memory_allow(
+async def test_model_armor_interceptor_mocked_allow(
+    mock_call_api,
     mock_callback_context,
-    monkeypatch,
 ):
-    monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
+    mock_call_api.return_value = {
+        "sanitizationResult": {
+            "sanitizationVerdict": "MODEL_ARMOR_SANITIZATION_VERDICT_ALLOW"
+        }
+    }
     result = await model_armor_interceptor(mock_callback_context)
     assert result is None
-
-
-@patch(
-    "presentation_agent.shared_libraries.model_armor.MODEL_ARMOR_TEMPLATE_ID",
-    "test-template",
-)
-@pytest.mark.asyncio
-async def test_model_armor_interceptor_in_memory_blocked_in_production(
-    mock_callback_context,
-    monkeypatch,
-):
-    monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
-    monkeypatch.setenv("K_SERVICE", "presentation-agent-service")
-    result = await model_armor_interceptor(mock_callback_context)
-    assert result is not None
-    assert "Security Verification Error" in result.parts[0].text
 
 
 @patch(
@@ -325,36 +314,22 @@ async def test_model_armor_response_interceptor_fail_closed(
     "presentation_agent.shared_libraries.model_armor.MODEL_ARMOR_TEMPLATE_ID",
     "test-template",
 )
+@patch("presentation_agent.shared_libraries.model_armor._call_model_armor_api")
 @pytest.mark.asyncio
-async def test_model_armor_response_interceptor_in_memory_allow(
+async def test_model_armor_response_interceptor_mocked_allow(
+    mock_call_api,
     mock_callback_context,
     mock_llm_response,
-    monkeypatch,
 ):
-    monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
+    mock_call_api.return_value = {
+        "sanitizationResult": {
+            "sanitizationVerdict": "MODEL_ARMOR_SANITIZATION_VERDICT_ALLOW"
+        }
+    }
     result = await model_armor_response_interceptor(
         mock_callback_context, mock_llm_response
     )
     assert result is None
-
-
-@patch(
-    "presentation_agent.shared_libraries.model_armor.MODEL_ARMOR_TEMPLATE_ID",
-    "test-template",
-)
-@pytest.mark.asyncio
-async def test_model_armor_response_interceptor_in_memory_blocked_in_production(
-    mock_callback_context,
-    mock_llm_response,
-    monkeypatch,
-):
-    monkeypatch.setenv("USE_IN_MEMORY_FOR_TESTS", "true")
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    result = await model_armor_response_interceptor(
-        mock_callback_context, mock_llm_response
-    )
-    assert result is not None
-    assert "Security Verification Error" in result.content.parts[0].text
 
 
 @patch(
