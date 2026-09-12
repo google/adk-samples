@@ -52,8 +52,8 @@ class ResearchConfiguration:
         max_search_iterations (int): Maximum search iterations allowed.
     """
 
-    critic_model: str = os.getenv("MODEL_NAME", "gemini-3.5-flash")
-    worker_model: str = os.getenv("MODEL_NAME", "gemini-3.5-flash")
+    critic_model: str = os.getenv("MODEL_NAME")
+    worker_model: str = os.getenv("MODEL_NAME")
     max_search_iterations: int = 5
 
 

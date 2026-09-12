@@ -181,7 +181,6 @@ CMD ["uv", "run", "uvicorn", "app.fast_api_app:app", "--host", "0.0.0.0", "--por
 ```python
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 frontend_dist = Path("frontend/dist")
 if frontend_dist.exists():
