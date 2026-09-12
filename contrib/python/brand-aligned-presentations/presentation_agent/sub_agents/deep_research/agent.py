@@ -16,7 +16,7 @@
 
 import re
 
-from google.adk.agents import LlmAgent
+from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools import FunctionTool
@@ -27,9 +27,10 @@ from .prompt import DEEP_RESEARCH_INSTRUCTION
 from .tools.deep_research_tool import deep_research_tool
 
 # 1. Define the core specialist agent
-research_agent = LlmAgent(
+research_agent = Agent(
     model=ROOT_MODEL,
     name="deep_research_specialist",
+    mode="single_turn",
     description="Perform deep web research to gather comprehensive information, statistics, and facts.",
     instruction=DEEP_RESEARCH_INSTRUCTION,
     tools=[deep_research_tool],

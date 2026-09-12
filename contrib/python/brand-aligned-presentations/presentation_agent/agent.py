@@ -14,7 +14,7 @@
 
 import os
 
-from google.adk.agents import LlmAgent
+from google.adk.agents import Agent
 from google.adk.apps import App
 from google.adk.artifacts import (
     GcsArtifactService,
@@ -101,7 +101,7 @@ class PresentationExpertApp:
         #    agent_kwargs["after_model_callback"] = model_armor_response_interceptor
 
         # Instantiate the Main Agent
-        self._agent = LlmAgent(**agent_kwargs)
+        self._agent = Agent(**agent_kwargs)
 
         # Configure Artifact Service (GCS or In-Memory)
         artifact_service = None

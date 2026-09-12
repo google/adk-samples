@@ -18,7 +18,7 @@ import asyncio
 import json
 from typing import Any
 
-from google.adk.agents import LlmAgent
+from google.adk.agents import Agent
 from google.adk.tools import AgentTool, FunctionTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
@@ -39,18 +39,20 @@ from .prompt import (
 )
 
 # Agent 1: The Outliner (Creates the structural plan)
-outline_specialist_agent = LlmAgent(
+outline_specialist_agent = Agent(
     model=ROOT_MODEL,
     name="outline_specialist",
+    mode="single_turn",
     description="A specialist agent that creates the high-level outline and strategic briefing for a presentation.",
     instruction=SYNTHESIZER_OUTLINE_INSTRUCTION,
     output_schema=SynthesizerResponse,
 )
 
 # Agent 2: The Slide Writer (Writes individual slides)
-slide_writer_agent = LlmAgent(
+slide_writer_agent = Agent(
     model=ROOT_MODEL,
     name="slide_writer_specialist",
+    mode="single_turn",
     description="A specialist agent that writes the detailed content (bullets, titles, visual prompts) for a single presentation slide.",
     instruction=SYNTHESIZER_SLIDE_INSTRUCTION,
     output_schema=SlideSpec,

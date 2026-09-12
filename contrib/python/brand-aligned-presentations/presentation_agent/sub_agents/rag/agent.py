@@ -14,7 +14,7 @@
 
 """Specialist agent for retrieving internal Consulting Agency knowledge using Vertex AI Search."""
 
-from google.adk.agents import LlmAgent
+from google.adk.agents import Agent
 from google.adk.tools import AgentTool, FunctionTool, VertexAiSearchTool
 
 from ...shared_libraries.config import DATASTORE_ID, ROOT_MODEL
@@ -33,9 +33,10 @@ else:
     vertex_search_tool = FunctionTool(func=dummy_search)
 
 # 2. Define the Internal Researcher Agent
-rag_agent = LlmAgent(
+rag_agent = Agent(
     model=ROOT_MODEL,
     name="cymbal_internal_knowledge_expert_agent",
+    mode="single_turn",
     description="A specialist agent that retrieves proprietary Consulting Agency assets, frameworks, "
     "and precedents relevant to a client's project using the Vertex AI Search tool.",
     instruction=RAG_AGENT_INSTRUCTION,
