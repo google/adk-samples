@@ -369,7 +369,7 @@ async def render_deck_from_spec(
             if "title" not in s_data or not s_data["title"]:
                 s_data["title"] = "Slide Content"
 
-            s_spec = None
+            slide_title = s_data.get("title", "unknown")
             try:
                 s_spec = SlideSpec(**s_data)
                 slide = prs.slides.add_slide(
@@ -377,8 +377,7 @@ async def render_deck_from_spec(
                 )
                 render_slide_content(slide, s_spec)
             except Exception as e:
-                title = getattr(s_spec, "title", "unknown")
-                log.error(f"Failed to render slide '{title}': {e}")
+                log.error(f"Failed to render slide '{slide_title}': {e}")
                 continue
 
             # Speaker Notes/Citations
