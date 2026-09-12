@@ -160,7 +160,7 @@ skill_toolset = SkillToolset(
 )
 
 root_agent = Agent(
-    model="gemini-2.5-flash",
+    model="gemini-2.5-flash-lite",
     name="blog_skills_agent",
     description="A blog-writing agent powered by reusable skills.",
     instruction=(
@@ -174,7 +174,11 @@ root_agent = Agent(
         "1. Load the relevant skill(s) to get detailed instructions\n"
         "2. Use `load_skill_resource` to access reference materials\n"
         "3. Follow the skill's step-by-step instructions\n"
-        "4. Apply multiple skills together when appropriate\n\n"
+        "4. Apply multiple skills together when appropriate\n"
+        "5. Do not call `run_skill_script` unless the loaded skill explicitly "
+        "contains a `scripts/` resource for that file\n"
+        "6. If script execution returns `SCRIPT_NOT_FOUND`, do not retry script "
+        "execution; continue using available skill instructions and references\n\n"
         "When the user asks you to create a new skill:\n"
         "1. Load the skill-creator skill\n"
         "2. Read the specification and example references\n"

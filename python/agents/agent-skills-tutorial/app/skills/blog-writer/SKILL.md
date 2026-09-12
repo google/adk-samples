@@ -1,3 +1,4 @@
+
 ---
 name: blog-writer
 description: Blog post writing skill with structure templates and style guidelines. Guides the agent through writing well-structured, engaging technical blog posts with proper formatting, section flow, and reader engagement techniques.
@@ -6,6 +7,11 @@ description: Blog post writing skill with structure templates and style guidelin
 # Blog Writer Instructions
 
 When asked to write a blog post, follow these steps:
+
+## Important Constraint
+This skill does not provide a `scripts/` directory.
+Do not call `run_skill_script` for this skill.
+Use `load_skill_resource` for `references/style-guide.md`, then write content directly.
 
 ## Step 1: Structure
 Use `load_skill_resource` to read `references/style-guide.md` for the writing style rules.
