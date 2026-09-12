@@ -1,0 +1,122 @@
+[project]
+name = "product-strategy"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Your Name", email = "your@email.com"},
+]
+dependencies = [
+    "google-adk>=1.29.0,<2.0.0",
+    "a2a-sdk~=0.3.22",
+    "nest-asyncio>=1.6.0,<2.0.0",
+    "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
+    "gcsfs>=2024.11.0",
+    "google-cloud-logging>=3.12.0,<4.0.0",
+    "google-cloud-aiplatform[evaluation]>=1.130.0",
+    "fastapi>=0.115.8,<1.0.0",
+    "uvicorn~=0.34.0",
+    "asyncpg>=0.30.0,<1.0.0",
+    "python-dotenv>=1.2.1",
+    "google-cloud-storage>=2.18.0,<3.0.0",
+    "google-api-python-client>=2.150.0,<3.0.0",
+]
+requires-python = ">=3.10,<3.14"
+
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4,<9.0.0",
+    "pytest-asyncio>=0.23.8,<1.0.0",
+    "nest-asyncio>=1.6.0,<2.0.0",
+]
+
+[project.optional-dependencies]
+jupyter = [
+    "jupyter>=1.0.0,<2.0.0",
+]
+eval = [
+    "google-adk[eval]>=1.29.0,<2.0.0",
+]
+lint = [
+    "ruff>=0.4.6,<1.0.0",
+    "ty>=0.0.1a0",
+    "codespell>=2.2.0,<3.0.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "C",  # flake8-comprehensions
+    "B",   # flake8-bugbear
+    "UP", # pyupgrade
+    "RUF", # ruff specific rules
+]
+ignore = ["E501", "C901", "B006"] # ignore line too long, too complex
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "frontend"]
+
+[tool.ty]
+# ty is Astral's Rust-based type checker (same team as ruff/uv)
+# See: https://docs.astral.sh/ty/
+
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ty.src]
+exclude = [".venv/**"]
+
+[tool.ty.rules]
+# Ignore common issues with third-party libraries and dynamic code patterns
+unresolved-import = "ignore"
+unresolved-attribute = "ignore"
+invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+invalid-return-type = "ignore"
+possibly-missing-attribute = "ignore"
+not-subscriptable = "ignore"
+deprecated = "ignore"
+
+[tool.codespell]
+ignore-words-list = "rouge"
+skip = "./locust_env/*,uv.lock,.venv,./frontend,**/*.ipynb,**/package-lock.json"
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[tool.pytest.ini_options]
+pythonpath = "."
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app","frontend"]
+
+[tool.agent-starter-pack]
+# Generation metadata - enables CLI commands to understand project context
+# These fields allow any generated project to work as a remote template
+name = "product-strategy"
+description = "ReAct agent with A2A protocol [experimental]"
+base_template = "adk_a2a"
+agent_directory = "app"
+
+# Generation context
+generated_at = "2026-02-25T01:18:58.920319+00:00"
+asp_version = "0.38.0"
+
+[tool.agent-starter-pack.create_params]
+# Parameters used during project creation
+deployment_target = "cloud_run"
+session_type = "in_memory"
+cicd_runner = "skip"
+include_data_ingestion = false
+datastore = "none"
