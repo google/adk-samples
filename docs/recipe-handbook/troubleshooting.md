@@ -1,4 +1,4 @@
-<!-- word count: 3010 (target 500+, no cap) -->
+<!-- word count: 3305 (target 500+, no cap) -->
 
 # Troubleshooting
 
@@ -66,6 +66,7 @@ Each command below says which directory to run it from. Replace
 
 **Nothing here matches**
 - [The failure is ours, not yours](#ci-infrastructure-failure)
+- [The AI reviewer keeps finding new things](#the-ai-reviewer-keeps-finding-new-things)
 - [Something else](#something-else)
 
 ---
@@ -596,6 +597,42 @@ different fixes:
 | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` or `MODEL_NAME` absent from `.env.example` | Add them if the recipe reads them — see [Env var missing from .env.example](#env-var-missing-from-envexample). |
 | Core recipe behind the current ADK major | See [the section above](#core-recipe-is-behind-the-current-adk-major). |
 | Recipe marked `status: inactive` | See [the section above](#recipe-is-marked-inactive). |
+
+## The AI reviewer keeps finding new things
+
+**Symptom** — you fix everything the automated review said, push, and get a
+fresh batch of comments. It feels like it will never end.
+
+**Cause** — it used to work that way. Every push re-reviewed the whole pull
+request, and anything already said was filtered out, so each round was forced
+to surface findings you had not seen yet. On a big PR that could go on for a
+long time.
+
+**What happens now**
+
+- A round reads only what changed **since the last review**, so a push that
+  just fixes comments has almost nothing new to look at.
+- Each round is allowed fewer comments than the last one actually produced.
+- There is a hard ceiling on how many comments one PR can ever receive.
+- After the second round only the Correctness and Security lanes run, so the
+  smaller stuff stops.
+
+The last line of every automated review tells you where you are:
+
+> _Round 3 · 18 of this PR's 25 automated comments used · this round is capped
+> at 4 · from here only Correctness and Security run._
+
+**Fix** — nothing to fix; keep going and it will go quiet. Two things worth
+knowing:
+
+- The **House Rules** lane is exempt from all of the above. It is a script,
+  not a model, and it reports repository rules that mostly fail CI — so it
+  keeps commenting until you fix them. Those are the ones to act on.
+- A comment you disagree with: resolve the thread or react 👎 to it, and the
+  reviewer will not raise anything like it again on that PR.
+
+The numbers live in [`.github/policy.yml`](../../.github/policy.yml) under
+`pr_review_budget`.
 
 ## CI infrastructure failure
 
