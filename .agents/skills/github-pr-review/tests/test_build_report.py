@@ -165,3 +165,92 @@ def test_common_prefix_strips_shared_directories():
 
 def test_common_prefix_empty_when_nothing_shared():
     assert br.common_prefix(["a/x.py", "b/y.py"]) == ""
+
+
+def test_a_candidate_without_a_line_does_not_kill_the_report(tmp_path):
+    """Candidates are model-authored JSON. A lane that omitted `line` raised
+    KeyError inside the sort comparator, six frames from the cause, and the
+    whole review -- every other lane's findings included -- was lost."""
+    c = cand()
+    del c["line"]
+    md = run(tmp_path, [c, cand(path="a/c.py", line=9)])
+    # Both findings survive, and the one with no line reports 0 rather than
+    # taking the other one down with it.
+    assert "`b.py`" in md and "`c.py`" in md
+    assert "**Comments** 2" in md
+
+
+def test_a_non_numeric_line_is_coerced_rather_than_crashing(tmp_path):
+    md = run(tmp_path, [cand(line="not a number"), cand(line=None)])
+    assert "**Comments** 2" in md
+
+
+def test_csv_defuses_a_leading_formula(tmp_path):
+    """The CSV is opened in a spreadsheet, and every string in it comes from
+    the PR's own diff. A source line starting with = ran as a formula."""
+    csv_path = tmp_path / "out.csv"
+    run(
+        tmp_path,
+        [cand(comment="=cmd|'/c calc'!A1", window="   3: =HYPERLINK(x)")],
+        out_csv=csv_path,
+    )
+    text = csv_path.read_text(encoding="utf-8")
+    assert '"\t=cmd' in text, "formula comment was not defused"
+    assert "=cmd" in text, "the original text must survive, just inert"
+
+
+def test_csv_leaves_ordinary_values_alone(tmp_path):
+    csv_path = tmp_path / "out.csv"
+    run(tmp_path, [cand(comment="plain text")], out_csv=csv_path)
+    text = csv_path.read_text(encoding="utf-8")
+    assert '"plain text"' in text
+    assert "\tplain" not in text
+
+
+def test_csv_safe_covers_every_formula_lead():
+    for lead in ("=", "+", "-", "@"):
+        assert br.csv_safe(f"{lead}x") == f"\t{lead}x"
+    assert br.csv_safe("x=1") == "x=1"
+    assert br.csv_safe(None) == ""
+
+
+def test_report_is_written_as_utf8_regardless_of_locale(tmp_path):
+    """truncate() emits U+2026. Under a non-UTF-8 locale a bare open(..., "w")
+    picks ASCII, raises UnicodeEncodeError on that character, and the run ends
+    with no report at all -- every finding lost to the reviewer's LANG."""
+    import os
+
+    cj = tmp_path / "c.json"
+    cj.write_text(json.dumps([cand(window="   3: " + "x" * 400)]))
+    md = tmp_path / "r.md"
+    csv_out = tmp_path / "r.csv"
+    env = {
+        **os.environ,
+        "LC_ALL": "C",
+        "LANG": "C",
+        "PYTHONUTF8": "0",
+        "PYTHONCOERCECLOCALE": "0",
+    }
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--candidates",
+            str(cj),
+            "--repo",
+            "o/r",
+            "--pr",
+            "1",
+            "--out-md",
+            str(md),
+            "--out-csv",
+            str(csv_out),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "…" in md.read_text(encoding="utf-8")
+    assert csv_out.exists()

@@ -76,6 +76,8 @@ def _scalar_value(raw):
 
 def _parse_manifest(text):
     """(data, degraded). Falls back to a top-level-key scan without pyyaml."""
+    if not text:
+        return {}, False
     try:
         import yaml
 
@@ -129,11 +131,18 @@ def _is_ours(rule, path):
         return True
     if rule in ALWAYS_RULES:
         return True
-    if rule in WHOLE_RECIPE_RULES:
-        return NEW_RECIPE
+    # H22 and H23 sit in BOTH sets, and the two questions are independent:
+    # "is this PR adding a recipe at all" and "is THIS the recipe it adds".
+    # Returning on the first set made the second unaskable, so a PR that added
+    # recipe A and touched one file in recipe B reported B's folder name and
+    # skill depth as if the PR had authored them.
+    if rule in WHOLE_RECIPE_RULES and not NEW_RECIPE:
+        return False
     if rule in DIRECTORY_RULES:
         prefix = path.rstrip("/") + "/"
         return any(changed.startswith(prefix) for changed in CHANGED)
+    if rule in WHOLE_RECIPE_RULES:
+        return True
     return path in CHANGED
 
 

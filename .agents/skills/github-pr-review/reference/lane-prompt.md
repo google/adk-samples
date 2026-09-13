@@ -4,8 +4,8 @@ Templates for the analysis workers in Step 3. Workers share no context with the
 orchestrator or with each other, so every prompt must be self-contained: fill in
 every `<placeholder>` before dispatching.
 
-Both lane types use `subagent_type: general` (they need to read files and run `gh`
-and `grep`).
+All three lane types use `subagent_type: general` (they need to read files and run
+`gh` and `grep`).
 
 ## Assembling a prompt
 

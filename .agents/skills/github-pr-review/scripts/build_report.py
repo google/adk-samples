@@ -105,6 +105,19 @@ def code_block_cell(text):
     return "<code>" + "<br>".join(lines) + "</code>"
 
 
+def csv_safe(value):
+    """Defuse a spreadsheet formula before it reaches the triage CSV.
+
+    Every string in these rows is derived from the PR's own diff, and the CSV
+    exists to be opened in a spreadsheet. Excel and Sheets both execute a cell
+    beginning with = + - or @, so a contributor could land a line of source
+    that runs a formula on the reviewer's machine. Quoting does not stop it --
+    the leading tab does, and it survives a round-trip as the same text.
+    """
+    s = "" if value is None else str(value)
+    return "\t" + s if s[:1] in ("=", "+", "-", "@") else s
+
+
 def group_key(c):
     return c.get("severity", "no_critical")
 
@@ -181,10 +194,19 @@ def main():
     ap.add_argument("--title", default="")
     args = ap.parse_args()
 
-    cands = json.load(open(args.candidates))
+    with open(args.candidates, encoding="utf-8") as fh:
+        cands = json.load(fh)
     for c in cands:
         if "comment" not in c and "body" in c:
             c["comment"] = c["body"]
+        # Candidates come from model-authored JSON, and a lane that omits
+        # `line` used to take the whole report down with a KeyError six
+        # frames from the cause. Normalise once, here, so every `c["line"]`
+        # below is safe and the un-anchorable row still names the file.
+        try:
+            c["line"] = int(c.get("line") or 0)
+        except (TypeError, ValueError):
+            c["line"] = 0
     missing = [c for c in cands if not c.get("comment") or not c.get("path")]
     if missing:
         sys.exit(f"{len(missing)} candidate(s) missing path or comment")
@@ -284,7 +306,7 @@ def main():
     os.makedirs(
         os.path.dirname(os.path.expanduser(args.out_md)) or ".", exist_ok=True
     )
-    with open(os.path.expanduser(args.out_md), "w") as fh:
+    with open(os.path.expanduser(args.out_md), "w", encoding="utf-8") as fh:
         fh.write("\n".join(m) + "\n")
 
     # ---------------- csv (opt-in) ----------------
@@ -293,7 +315,12 @@ def main():
             os.path.dirname(os.path.expanduser(args.out_csv)) or ".",
             exist_ok=True,
         )
-        with open(os.path.expanduser(args.out_csv), "w", newline="") as fh:
+        with open(
+            os.path.expanduser(args.out_csv),
+            "w",
+            newline="",
+            encoding="utf-8",
+        ) as fh:
             wr = csv.writer(fh, quoting=csv.QUOTE_ALL)
             wr.writerow(
                 [
@@ -312,16 +339,16 @@ def main():
             for c in inline + unanchorable:
                 wr.writerow(
                     [
-                        c["path"],
+                        csv_safe(c["path"]),
                         c["line"],
-                        c.get("severity", ""),
+                        csv_safe(c.get("severity", "")),
                         "no" if c.get("anchorable") is False else "yes",
-                        c.get("ci", ""),
-                        c.get("rule", ""),
-                        c["comment"],
-                        anchor_line(c.get("window", ""), c["line"]),
-                        c.get("verify_steps", ""),
-                        c.get("window", ""),
+                        csv_safe(c.get("ci", "")),
+                        csv_safe(c.get("rule", "")),
+                        csv_safe(c["comment"]),
+                        csv_safe(anchor_line(c.get("window", ""), c["line"])),
+                        csv_safe(c.get("verify_steps", "")),
+                        csv_safe(c.get("window", "")),
                     ]
                 )
 

@@ -1596,3 +1596,63 @@ def test_h10_still_flags_a_pinned_deprecated_version(tmp_path):
     out = []
     chr.check_text_wide(out, root, rel)
     assert [f for f in out if f["rule"] == "H10"]
+
+
+def test_whole_recipe_rules_are_also_scoped_to_their_own_directory():
+    """H22/H23 sit in WHOLE_RECIPE_RULES and DIRECTORY_RULES both, and the
+    two conditions are independent. `_is_ours` returned on the first set, so
+    the directory branch was unreachable for them: a PR that ADDS recipe A
+    set NEW_RECIPE=True, and every OTHER recipe the walker reached -- none of
+    whose files the PR touches at all -- collected CI-FAILs for a folder name
+    and a skill depth that predate the PR by years."""
+    added = "contrib/python/new-recipe"
+    untouched = "contrib/python/old-recipe"
+    chr.CHANGED = {f"{added}/manifest.yaml", f"{added}/agent.py"}
+    chr.NEW_RECIPE = True
+    try:
+        for rule in ("H22", "H23"):
+            assert chr._is_ours(rule, added), (
+                f"{rule} must still fire on the recipe the PR is adding"
+            )
+            out = []
+            chr.find(out, rule, chr.CI_FAIL, untouched, 1, "w", "e", "v")
+            assert out == [], (
+                f"{rule} fired on {untouched}, which the PR never touches"
+            )
+    finally:
+        chr.CHANGED = None
+        chr.NEW_RECIPE = True
+
+
+def test_whole_recipe_rules_stay_off_an_edit_only_pr():
+    """The original guard must survive: NEW_RECIPE=False silences them even
+    though every file under the recipe is in CHANGED."""
+    rel = "contrib/python/old-recipe"
+    chr.CHANGED = {f"{rel}/agent.py"}
+    chr.NEW_RECIPE = False
+    try:
+        for rule in ("H21", "H22", "H23"):
+            assert not chr._is_ours(rule, rel)
+    finally:
+        chr.CHANGED = None
+        chr.NEW_RECIPE = True
+
+
+def test_h21_is_not_directory_scoped():
+    """H21 is whole-recipe only. It must not acquire a directory condition
+    from the restructure -- required files can be missing from a recipe whose
+    own directory has no changed file under the exact prefix."""
+    chr.CHANGED = {"contrib/python/new-recipe/agent.py"}
+    chr.NEW_RECIPE = True
+    try:
+        assert chr._is_ours("H21", "contrib/python/other-recipe")
+    finally:
+        chr.CHANGED = None
+        chr.NEW_RECIPE = True
+
+
+def test_parse_manifest_tolerates_empty_and_missing_text():
+    """`text.split` on None is an AttributeError that takes the whole run
+    down. Both callers guard today; the parser must not depend on that."""
+    assert chr._parse_manifest(None) == ({}, False)
+    assert chr._parse_manifest("") == ({}, False)
