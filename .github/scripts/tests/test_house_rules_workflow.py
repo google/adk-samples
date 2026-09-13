@@ -164,6 +164,52 @@ def test_the_pr_tree_is_only_ever_the_subject(workflow):
         )
 
 
+def test_only_the_pr_checkout_opts_out_of_the_fork_guard(workflow):
+    """`allow-unsafe-pr-checkout` is what lets a FORK pull request be checked
+    at all -- without it org policy blocks the step and the lane is dead on
+    most contrib PRs, which is how it failed on PR #2612. It is safe here only
+    because of invariants 1-4, so it must sit on the PR-head checkout and
+    nowhere else: on the base checkout it is meaningless, and in any other job
+    it would mean that job has fork code in front of it."""
+    opted = [
+        step["with"].get("path")
+        for step in _steps(workflow["jobs"]["check"])
+        if "actions/checkout" in str(step.get("uses", ""))
+        and step["with"].get("allow-unsafe-pr-checkout") is True
+    ]
+    assert opted == ["pr-head"], (
+        f"expected the opt-in on the pr-head checkout alone, got {opted}"
+    )
+    for name, job in workflow["jobs"].items():
+        if name == "check":
+            continue
+        for step in _steps(job):
+            assert "allow-unsafe-pr-checkout" not in (step.get("with") or {}), (
+                f"job {name!r} opts into a fork checkout. Only `check` is "
+                "built to hold PR code, and only because it holds nothing else"
+            )
+
+
+def test_the_fork_opt_in_is_paid_for_by_the_read_only_token(workflow):
+    """The opt-in and invariant 1 are one decision, not two. If the check job
+    ever gains a write scope or a secret, the opt-in has to go with it, and
+    this is the assertion that makes that impossible to miss."""
+    check = workflow["jobs"]["check"]
+    opted_in = any(
+        (step.get("with") or {}).get("allow-unsafe-pr-checkout") is True
+        for step in _steps(check)
+    )
+    if not opted_in:
+        pytest.skip("no fork opt-in to justify")
+    assert set(check["permissions"].values()) == {"read"}, (
+        f"check holds {check['permissions']}. A job that checks out fork "
+        "code under pull_request_target must be read-only"
+    )
+    assert "secrets." not in yaml.dump(check), (
+        "the check job reads a secret while holding fork code on disk"
+    )
+
+
 def test_both_checkouts_are_separate_directories(workflow):
     paths = [
         step["with"]["path"]
