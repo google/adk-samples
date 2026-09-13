@@ -60,6 +60,59 @@ def _run_scripts(job: dict) -> str:
     return "\n".join(str(s.get("run", "")) for s in _steps(job))
 
 
+def _with(step: dict) -> dict:
+    """A step's `with:` block. `run:` steps have none, and `with:` present but
+    empty parses as None, so neither may be an AttributeError here."""
+    return step.get("with") or {}
+
+
+# `secrets.FOO` and `secrets['FOO']` are the same reference, and GitHub
+# resolves context names case-insensitively, so `SECRETS.FOO` is too. Matching
+# only the lowercase dotted spelling leaves two ways to hand this job a
+# credential without tripping the test that exists to stop exactly that.
+SECRET_REF = re.compile(r"secrets\s*(?:\.\s*[A-Za-z_]\w*|\[)", re.IGNORECASE)
+
+
+def _secret_reference(node) -> str | None:
+    """The first secret reference anywhere in a YAML subtree, or None.
+
+    Serialising and searching beats walking the structure: a secret can arrive
+    through `env:`, `with:`, an action input, a `run:` body or a job-level
+    `secrets: inherit`, and enumerating those is how one gets missed.
+    """
+    if node is None:
+        return None
+    text = yaml.dump(node, default_flow_style=False)
+    m = SECRET_REF.search(text)
+    if m:
+        return m.group(0)
+    # `secrets: inherit` on a reusable-workflow call names no secret and so
+    # matches nothing above, while handing over every secret there is.
+    if isinstance(node, dict) and str(node.get("secrets", "")) == "inherit":
+        return "secrets: inherit"
+    return None
+
+
+def _write_scopes(permissions) -> set[str]:
+    """Every scope a `permissions:` value grants beyond read.
+
+    Three shapes are legal and all three have to be handled: omitted (inherits
+    the workflow default, which this file pins to `{}`), a bare string
+    (`read-all` / `write-all`), or a mapping. Indexing straight into it
+    assumed the mapping and turned a genuine `write-all` regression into a
+    KeyError or an AttributeError somewhere unrelated.
+    """
+    if permissions is None or permissions == {}:
+        return set()
+    if isinstance(permissions, str):
+        return set() if permissions == "read-all" else {permissions}
+    return {
+        scope
+        for scope, level in permissions.items()
+        if str(level) not in ("read", "none")
+    }
+
+
 # ------------------------------------------------------- 1. no credentials
 
 
@@ -80,7 +133,7 @@ def test_the_checking_job_holds_no_secret(raw):
     places it could hide is how one gets missed.
     """
     check_span = raw.split("jobs:", 1)[1].split("\n  post:", 1)[0]
-    leaked = re.findall(r"secrets\.[A-Za-z_]+", check_span)
+    leaked = SECRET_REF.findall(check_span)
     assert not leaked, (
         f"the check job references {sorted(set(leaked))}. It sees untrusted "
         "code; it must hold nothing worth stealing."
@@ -164,6 +217,64 @@ def test_the_pr_tree_is_only_ever_the_subject(workflow):
         )
 
 
+def test_only_the_pr_checkout_opts_out_of_the_fork_guard(workflow):
+    """`allow-unsafe-pr-checkout` is what lets a FORK pull request be checked
+    at all -- without it org policy blocks the step and the lane is dead on
+    most contrib PRs, which is how it failed on PR #2612. It is safe here only
+    because of invariants 1-4, so it must sit on the PR-head checkout and
+    nowhere else: on the base checkout it is meaningless, and in any other job
+    it would mean that job has fork code in front of it."""
+    opted = [
+        _with(step).get("path")
+        for step in _steps(workflow["jobs"]["check"])
+        if "actions/checkout" in str(step.get("uses", ""))
+        and _with(step).get("allow-unsafe-pr-checkout") is True
+    ]
+    assert opted == ["pr-head"], (
+        f"expected the opt-in on the pr-head checkout alone, got {opted}"
+    )
+    for name, job in workflow["jobs"].items():
+        if name == "check":
+            continue
+        for step in _steps(job):
+            assert "allow-unsafe-pr-checkout" not in _with(step), (
+                f"job {name!r} opts into a fork checkout. Only `check` is "
+                "built to hold PR code, and only because it holds nothing else"
+            )
+
+
+def test_the_fork_opt_in_is_paid_for_by_the_read_only_token(workflow):
+    """The opt-in and invariant 1 are one decision, not two. If the check job
+    ever gains a write scope or a secret, the opt-in has to go with it, and
+    this is the assertion that makes that impossible to miss."""
+    check = workflow["jobs"]["check"]
+    opted_in = any(
+        _with(step).get("allow-unsafe-pr-checkout") is True
+        for step in _steps(check)
+    )
+    if not opted_in:
+        pytest.skip("no fork opt-in to justify")
+
+    writable = _write_scopes(check.get("permissions"))
+    assert not writable, (
+        f"check can write {sorted(writable)}. A job that checks out fork "
+        "code under pull_request_target must be read-only"
+    )
+
+    # Workflow-level `env` and `defaults` are inherited by every job, so a
+    # secret parked there is in front of the fork's code just as surely as one
+    # written inside the job.
+    for label, node in (
+        ("the check job", check),
+        ("workflow-level env", workflow.get("env")),
+        ("workflow-level defaults", workflow.get("defaults")),
+    ):
+        ref = _secret_reference(node)
+        assert ref is None, (
+            f"{label} reads a secret ({ref!r}) while fork code is on disk"
+        )
+
+
 def test_both_checkouts_are_separate_directories(workflow):
     paths = [
         step["with"]["path"]
@@ -200,3 +311,69 @@ def test_a_dry_run_posts_nothing(workflow):
     assert body.index("exit 0") < body.index("--method POST"), (
         "the dry-run branch must return before anything is posted"
     )
+
+
+# ------------------------------- the helpers the invariants are asserted with
+#
+# The bypasses below are not in the workflow today. That is the point: these
+# assertions are the reason a future edit introducing one would be caught
+# rather than quietly passing a test that only ever saw the good case.
+
+
+def test_with_survives_a_step_that_has_none():
+    assert _with({"run": "echo hi"}) == {}
+    assert _with({"uses": "x", "with": None}) == {}
+    assert _with({"with": {"path": "base"}}) == {"path": "base"}
+
+
+@pytest.mark.parametrize(
+    "permissions,expected",
+    [
+        (None, set()),  # omitted: inherits the top-level {}
+        ({}, set()),
+        ("read-all", set()),
+        ({"contents": "read", "pull-requests": "read"}, set()),
+        ({"contents": "read", "pull-requests": "none"}, set()),
+        ("write-all", {"write-all"}),
+        ({"contents": "read", "pull-requests": "write"}, {"pull-requests"}),
+        ({"id-token": "write"}, {"id-token"}),
+    ],
+)
+def test_write_scopes_handles_every_legal_permissions_shape(
+    permissions, expected
+):
+    assert _write_scopes(permissions) == expected
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        {"env": {"K": "${{ secrets.APP_PRIVATE_KEY }}"}},
+        {"env": {"K": "${{ SECRETS.APP_PRIVATE_KEY }}"}},  # contexts are
+        {"env": {"K": "${{ Secrets.App_Private_Key }}"}},  # case-insensitive
+        {"env": {"K": "${{ secrets['APP_PRIVATE_KEY'] }}"}},  # bracket access
+        {"env": {"K": "${{ secrets . APP_PRIVATE_KEY }}"}},  # spaced
+        {"steps": [{"uses": "a/b", "with": {"key": "${{ secrets.X }}"}}]},
+        {"steps": [{"run": "echo ${{ secrets.X }}"}]},
+        {"secrets": "inherit"},  # names nothing, hands over everything
+    ],
+)
+def test_secret_reference_catches_every_spelling(node):
+    assert _secret_reference(node) is not None, f"missed a secret in {node}"
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        None,
+        {},
+        {"env": {"GH_TOKEN": "${{ github.token }}"}},
+        {"run": "python3 base/.github/scripts/house_rules_lane.py"},
+        # A word ending in "secrets" is not a reference to the context, and a
+        # test that fired on prose would be turned off within the week.
+        {"name": "No secrets are read here"},
+        {"secrets": "none"},
+    ],
+)
+def test_secret_reference_does_not_fire_on_innocent_yaml(node):
+    assert _secret_reference(node) is None, f"false positive on {node}"

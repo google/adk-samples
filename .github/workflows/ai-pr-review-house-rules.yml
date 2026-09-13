@@ -37,8 +37,13 @@ name: '📐 AI PR Review — House Rules'
 #   4. Posting happens in a separate job that holds the write token, takes no
 #      checkout, and reads only a findings artifact.
 #
+# Those four are also the entire justification for the
+# `allow-unsafe-pr-checkout: true` on the PR-head checkout, without which a
+# fork's pull request -- most contrib PRs -- cannot be checked at all.
+#
 # Reassess ALL of that if a step is ever added that runs, imports or installs
-# anything out of `pr-head/`. `test_house_rules_workflow.py` pins 1-4.
+# anything out of `pr-head/`. `test_house_rules_workflow.py` pins 1-4 and
+# fails if the opt-in is ever present without them.
 on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     types:
@@ -150,6 +155,19 @@ jobs:
           # PR's answer. A shallow clone still knows its own index, so depth 1
           # is enough and keeps a large repo cheap.
           fetch-depth: 1
+          # Required for a FORK pull request, which is most contrib PRs -- org
+          # policy blocks a fork checkout under `pull_request_target` without
+          # it, and PR #2612 failed here on exactly that. The usual shape of
+          # that combination is a job holding secrets and a write token that
+          # then builds the fork's code; this job is the other shape, and the
+          # four invariants at the top of this file are what make it so:
+          # read-only token, no secrets, the checker taken from `base/`,
+          # PyYAML from PyPI, and posting split into a job that takes no
+          # checkout. `pr-head/` is data this job reads, never code it runs.
+          # Break any one of those and this line turns into a live pwn
+          # request, so test_house_rules_workflow.py asserts the opt-in only
+          # ever appears next to all four.
+          allow-unsafe-pr-checkout: true
 
       - name: 'Set up Python'
         uses: 'actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065' # ratchet:actions/setup-python@v5
