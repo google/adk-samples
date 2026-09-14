@@ -339,6 +339,23 @@ def _big(path: str, n: int) -> str:
     return _section(path, *rows)
 
 
+def _many_hunks(path: str, hunks: int) -> str:
+    """A section of `hunks` small complete hunks.
+
+    `_big` emits a single enormous hunk, and cutting that always destroys the
+    only hunk it has, so such a file is omitted rather than shown in part.
+    Exercising the partial path needs a file that can be cut BETWEEN hunks.
+    """
+    rows = []
+    for h in range(hunks):
+        rows += [
+            f"@@ -{h * 20 + 1},2 +{h * 20 + 1},3 @@",
+            " ctx",
+            "+" + "w" * 120,
+        ]
+    return _section(path, *rows)
+
+
 def test_no_budget_leaves_the_diff_alone():
     diff = CODE + "\n"
     assert m.pack_to_budget(diff, 0) == (diff, [], [])
@@ -600,3 +617,94 @@ def test_a_budget_too_small_for_the_notice_spends_it_on_diff_instead():
     diff = "preamble line\n" * 4000 + _big("a.py", 9000) + "\n"
     packed, _partial, _omitted = m.pack_to_budget(diff, 300)
     assert len(packed.encode()) <= 300
+
+
+# ------------------------------- review comments on PR #2632
+
+
+def test_a_complete_trailing_hunk_is_kept_when_the_cut_lands_on_it():
+    """Backing off to the last `@@` unconditionally threw away a whole hunk
+    whenever the byte limit happened to land exactly on a hunk boundary --
+    the one case where the trailing hunk is perfectly good. Reported as
+    "unconditionally discards the last complete hunk"."""
+    rows = [
+        "diff --git a/x.py b/x.py",
+        "index 1..2 100644",
+        "--- a/x.py",
+        "+++ b/x.py",
+        "@@ -1,1 +1,2 @@",
+        " ctx",
+        "+one",
+        "@@ -9,1 +9,2 @@",
+        " ctx",
+        "+two",
+        "@@ -20,1 +20,2 @@",
+        " ctx",
+        "+three",
+    ]
+    text = "\n".join(rows)
+    exact = len("\n".join(rows[:10]).encode()) + 1
+    out = m._truncate_at_hunk(text, exact)
+    assert "+two" in out, "a complete hunk that fitted was discarded"
+    assert "+three" not in out, "kept a hunk that did not fit"
+
+
+def test_an_incomplete_trailing_hunk_is_still_dropped():
+    """The original behaviour has to survive: a hunk cut in half mid-body is
+    worse than no hunk, because the model reasons about code whose end it
+    cannot see."""
+    rows = [
+        "diff --git a/x.py b/x.py",
+        "index 1..2 100644",
+        "--- a/x.py",
+        "+++ b/x.py",
+        "@@ -1,1 +1,2 @@",
+        " ctx",
+        "+one",
+        "@@ -9,1 +9,5 @@",
+        " ctx",
+        "+two",
+    ]
+    text = "\n".join(rows) + "\n+three\n+four\n+five"
+    cut_to = len("\n".join(rows).encode()) + 1
+    out = m._truncate_at_hunk(text, cut_to)
+    assert "+one" in out
+    assert "@@ -9,1 +9,5 @@" not in out, "kept a half-finished hunk"
+
+
+def test_truncate_returns_the_text_unchanged_when_it_all_fits():
+    text = _big("x.py", 100)
+    assert m._truncate_at_hunk(text, 10**6) == text
+
+
+@pytest.mark.parametrize(
+    "rows,complete",
+    [
+        (["@@ -1,1 +1,2 @@", " ctx", "+a"], True),
+        (["@@ -1,1 +1,2 @@", " ctx"], False),
+        (["@@ -1 +1 @@", " ctx"], True),  # absent counts mean 1
+        (["@@ -1,0 +1,2 @@", "+a", "+b"], True),
+        (["@@ -1,2 +1,2 @@", " ctx"], False),
+        (["not a hunk header"], False),
+        ([], False),
+        # "\ No newline at end of file" belongs to neither side's count.
+        (["@@ -1,0 +1,1 @@", "+a", "\\ No newline at end of file"], True),
+    ],
+)
+def test_hunk_completeness_is_read_off_the_header(rows, complete):
+    assert m._hunk_is_complete(rows) is complete
+
+
+def test_the_truncation_marker_fits_the_bytes_reserved_for_it():
+    """`TRUNCATED_MARKER_BYTES` is what the packer holds back before cutting.
+    If the marker outgrows it, every partial file overruns the budget."""
+    assert len(m.TRUNCATED_MARKER.encode()) + 2 <= m.TRUNCATED_MARKER_BYTES
+
+
+def test_the_partial_marker_in_the_output_is_the_shared_constant():
+    """The test file used to carry its own copy of the wording, so editing
+    the real one left the assertion passing against a string nothing emits."""
+    diff = "\n".join(_many_hunks(f"f{i}.py", 60) for i in range(6)) + "\n"
+    packed, partial, _omitted = m.pack_to_budget(diff, 50000)
+    assert partial, "no file was truncated, so the marker proves nothing"
+    assert m.TRUNCATED_MARKER in packed

@@ -236,6 +236,56 @@ PROSE_EXT = {".md", ".markdown", ".rst", ".txt", ".adoc"}
 # the unreviewed list instead, which at least names it honestly.
 MIN_PARTIAL_BYTES = 3000
 
+# Appended to a file that had to be cut short, so the model knows the silence
+# after it is a budget boundary and not the end of the change. Shared with the
+# tests, which would otherwise assert against their own copy of the wording
+# and keep passing after someone edited this one.
+TRUNCATED_MARKER = "[... this file was truncated here ...]"
+
+# Bytes held back when cutting a file, so TRUNCATED_MARKER and its newline
+# always fit inside the room the caller measured.
+TRUNCATED_MARKER_BYTES = len(TRUNCATED_MARKER.encode()) + 2
+
+# The path reported for a section whose own header does not name one. Should
+# not survive `filter_diff`, which drops deletions, but `pack_to_budget` is
+# callable on its own and an omission list is worse than useless if an entry
+# in it is blank.
+UNKNOWN_PATH = "<unknown>"
+
+# How many omitted paths to print in the job log. The count above the list is
+# the complete figure; this only bounds the log on a PR with hundreds.
+MAX_OMITTED_LOGGED = 20
+
+# `@@ -old[,count] +new[,count] @@`. An absent count means 1.
+HUNK_COUNTS = re.compile(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
+
+
+def _hunk_is_complete(rows: list[str]) -> bool:
+    """Did every line the header of `rows` promises actually survive?
+
+    `rows[0]` is the `@@` header and the rest is its body. A hunk header
+    declares how many lines each side spans, so completeness is a fact the
+    diff states about itself rather than something to infer from where the
+    bytes happened to stop.
+    """
+    header = HUNK_COUNTS.match(rows[0]) if rows else None
+    if not header:
+        return False
+    want_old = int(header.group(1) or 1)
+    want_new = int(header.group(2) or 1)
+    old = new = 0
+    for row in rows[1:]:
+        if row.startswith("\\"):  # "\ No newline at end of file"
+            continue
+        if row.startswith("+"):
+            new += 1
+        elif row.startswith("-"):
+            old += 1
+        else:
+            old += 1
+            new += 1
+    return old >= want_old and new >= want_new
+
 
 def review_tier(path: str) -> int:
     """0 source, 1 test, 2 prose. Lower is packed first."""
@@ -253,18 +303,25 @@ def _truncate_at_hunk(text: str, limit: int) -> str:
     statement and it had to guess the rest. Cutting at a `@@` keeps every hunk
     it does see intact.
     """
+    rows = text.split("\n")
     kept: list[str] = []
     size = 0
-    for row in text.split("\n"):
+    for row in rows:
         cost = len(row.encode()) + 1
         if size + cost > limit:
             break
         kept.append(row)
         size += cost
-    # Back off to the start of the last hunk, unless that discards everything.
+    if len(kept) == len(rows):
+        return text
+
+    # Drop the trailing hunk only when it is INCOMPLETE. Backing off to the
+    # last `@@` unconditionally threw away a whole hunk whenever the byte
+    # limit happened to land on a hunk boundary -- the one case where the
+    # trailing hunk is perfectly good -- so the reader lost content that fit.
     for index in range(len(kept) - 1, 0, -1):
         if kept[index].startswith("@@"):
-            if index > 1:
+            if index > 1 and not _hunk_is_complete(kept[index:]):
                 kept = kept[:index]
             break
     return "\n".join(kept)
@@ -350,13 +407,13 @@ def _fallback_cut(
     # the function that already answers it everywhere else in this file.
     _preamble, cut_sections = split_sections(cut)
     survived = {
-        _section_path(s) or "<unknown>"
+        _section_path(s) or UNKNOWN_PATH
         for s in cut_sections
         if _section_churn(s) > 0
     }
     lost = [
         path
-        for path in (_section_path(s) or "<unknown>" for s in sections)
+        for path in (_section_path(s) or UNKNOWN_PATH for s in sections)
         if path not in survived
     ]
     notice = _omission_notice(lost, []) if notice_room else ""
@@ -386,7 +443,7 @@ def pack_to_budget(
         return _fallback_cut(diff, sections, max_bytes)
 
     by_path = [
-        (_section_path(s) or "<unknown>", "\n".join(s)) for s in sections
+        (_section_path(s) or UNKNOWN_PATH, "\n".join(s)) for s in sections
     ]
     order = sorted(
         range(len(by_path)),
@@ -407,9 +464,9 @@ def pack_to_budget(
             chosen[i] = text
             room -= cost
         elif room >= MIN_PARTIAL_BYTES and not partial:
-            cut = _truncate_at_hunk(text, room - 64)
+            cut = _truncate_at_hunk(text, room - TRUNCATED_MARKER_BYTES)
             if len(cut.encode()) >= MIN_PARTIAL_BYTES:
-                chosen[i] = f"{cut}\n[... this file was truncated here ...]"
+                chosen[i] = f"{cut}\n{TRUNCATED_MARKER}"
                 partial.append(path)
                 room = 0
             else:
@@ -452,7 +509,7 @@ def filter_diff(diff: str) -> tuple[str, dict]:
             # a space and hides which file was actually dropped.
             header = GIT_HEADER_PATHS.match(section[0]) if section else None
             skipped.append(
-                (header.group(2) if header else "<unknown>", "deleted", churn)
+                (header.group(2) if header else UNKNOWN_PATH, "deleted", churn)
             )
             continue
         # A section with no churn is a pure rename or a mode change. There is
@@ -570,8 +627,11 @@ def main() -> int:
             f"  {len(omitted)} file(s) did not fit the "
             f"{args.max_bytes}-byte prompt budget:"
         )
-        for path in omitted[:20]:
+        for path in omitted[:MAX_OMITTED_LOGGED]:
             print(f"    unreviewed: {path}")
+        if len(omitted) > MAX_OMITTED_LOGGED:
+            hidden = len(omitted) - MAX_OMITTED_LOGGED
+            print(f"    ...and {hidden} more (all of them in --unreviewed-out)")
 
     lines = stats["reviewable_lines"]
     budget = budget_for(lines)
