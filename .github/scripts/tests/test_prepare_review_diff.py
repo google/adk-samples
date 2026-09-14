@@ -708,3 +708,371 @@ def test_the_partial_marker_in_the_output_is_the_shared_constant():
     packed, partial, _omitted = m.pack_to_budget(diff, 50000)
     assert partial, "no file was truncated, so the marker proves nothing"
     assert m.TRUNCATED_MARKER in packed
+
+
+# --------------------------------------------------------------------------
+# Only this PR's files (the #2628 contamination)
+#
+# The lanes review `compare/<last reviewed>...<head>` so a push that only
+# fixes earlier comments has little new to say. Merge the BASE branch in and
+# that compare also carries everything that landed on base in between. On
+# #2628 the PR changed 10 files and the lanes read 37; the other 27 were
+# #2626's, and the author was told 31 files "were not looked at".
+# --------------------------------------------------------------------------
+
+
+def test_files_outside_the_pr_are_dropped():
+    diff = "\n".join(
+        [
+            _section("mine/a.py", "@@ -1 +1,2 @@", " ctx", "+mine"),
+            _section("theirs/b.py", "@@ -1 +1,2 @@", " ctx", "+theirs"),
+        ]
+    )
+    out, stats = m.filter_diff(diff, {"mine/a.py"})
+    assert "mine/a.py" in out
+    assert "theirs/b.py" not in out
+    assert stats["foreign"] == ["theirs/b.py"]
+    assert stats["kept_files"] == 1
+
+
+def test_a_foreign_file_is_not_reported_as_skipped_or_unreviewed():
+    """It is not something the author declined to have reviewed. Listing it
+    is the same confusion with the sign flipped -- #2628's author was handed
+    31 filenames they had never touched."""
+    diff = _section("theirs/b.py", "@@ -1 +1,2 @@", " ctx", "+theirs")
+    _out, stats = m.filter_diff(diff, {"mine/a.py"})
+    assert stats["foreign"] == ["theirs/b.py"]
+    assert stats["skipped"] == [], "a foreign file was reported to the author"
+
+
+def test_no_list_means_no_filtering():
+    diff = _section("anything.py", "@@ -1 +1,2 @@", " ctx", "+x")
+    out, stats = m.filter_diff(diff, None)
+    assert "anything.py" in out
+    assert stats["foreign"] == []
+
+
+def test_the_pr_file_list_is_applied_before_every_other_rule():
+    """A foreign lockfile must be dropped as foreign, not counted as a skip:
+    the two mean different things and only one of them is the author's."""
+    diff = _section("theirs/uv.lock", "@@ -1 +1,2 @@", " ctx", "+dep")
+    _out, stats = m.filter_diff(diff, {"mine/a.py"})
+    assert stats["foreign"] == ["theirs/uv.lock"]
+    assert stats["skipped"] == []
+
+
+def test_an_empty_list_fails_open_rather_than_reviewing_nothing(tmp_path):
+    """Reviewing too much is a bug. Reviewing nothing and reporting no
+    findings is indistinguishable from a clean PR, which is a lie."""
+    diff = tmp_path / "d.txt"
+    diff.write_text(_section("a.py", "@@ -1 +1,2 @@", " ctx", "+x"))
+    empty = tmp_path / "none.txt"
+    empty.write_text("")
+    out = tmp_path / "o.txt"
+    rc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(m.__file__)),
+            "--diff",
+            str(diff),
+            "--out",
+            str(out),
+            "--only-files",
+            str(empty),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rc.returncode == 0, rc.stderr
+    assert "a.py" in out.read_text(), "an empty list silenced the whole review"
+
+
+def test_a_missing_list_file_fails_open(tmp_path):
+    diff = tmp_path / "d.txt"
+    diff.write_text(_section("a.py", "@@ -1 +1,2 @@", " ctx", "+x"))
+    out = tmp_path / "o.txt"
+    rc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(m.__file__)),
+            "--diff",
+            str(diff),
+            "--out",
+            str(out),
+            "--only-files",
+            str(tmp_path / "does-not-exist.txt"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rc.returncode == 0, rc.stderr
+    assert "a.py" in out.read_text()
+
+
+def test_the_2628_shape_end_to_end():
+    """The real case, reduced: one file the PR owns, many it does not,
+    because the author merged the base branch in."""
+    pr_files = {"docs/guide.md"}
+    diff = "\n".join(
+        [_section("docs/guide.md", "@@ -1 +1,2 @@", " ctx", "+theirs")]
+        + [
+            _section(f"other/f{i}.py", "@@ -1 +1,2 @@", " ctx", "+x")
+            for i in range(27)
+        ]
+    )
+    out, stats = m.filter_diff(diff, pr_files)
+    shown = re.findall(r"^diff --git a/(\S+)", out, re.M)
+    assert shown == ["docs/guide.md"]
+    assert len(stats["foreign"]) == 27
+
+
+def test_the_workflow_passes_the_pr_file_list_to_the_filter():
+    """The flag is useless unless the workflow actually supplies it, and the
+    list has to be PAGED — the unpaged endpoint stops at 100 silently."""
+    import yaml
+
+    workflow = (
+        Path(__file__).resolve().parents[3]
+        / ".github"
+        / "workflows"
+        / "_ai-pr-review-core.yml"
+    )
+    steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"][
+        "review"
+    ]["steps"]
+    prepare = next(s for s in steps if s.get("id") == "prepare_diff")
+    run = str(prepare["run"])
+    assert "--only-files pr_files.txt" in run
+    assert "pulls/${PR_NUMBER}/files" in run
+    assert "--paginate" in run, "an unpaged list silently stops at 100 files"
+
+
+# ------------------------------------- paths as git prints them vs the API
+#
+# With `core.quotePath` on (the default) git wraps any path holding a space,
+# a quote or a non-ASCII byte in double quotes and C-escapes it. The API
+# reports the real name. Now that the two are COMPARED to decide whether a
+# file is reviewed at all, a mismatch is not cosmetic: the file drops out of
+# the review and nothing says so.
+
+
+@pytest.mark.parametrize(
+    "plus_line,expected",
+    [
+        ("+++ b/plain.py", "plain.py"),
+        ('+++ "b/my recipe/agent.py"', "my recipe/agent.py"),
+        ('+++ "b/caf\\303\\251.py"', "café.py"),
+        ('+++ "b/tab\\there.py"', "tab\there.py"),
+        ('+++ "b/quote\\".py"', 'quote".py'),
+        ('+++ "b/back\\\\slash.py"', "back\\slash.py"),
+    ],
+)
+def test_a_quoted_path_is_read_as_the_name_the_api_reports(plus_line, expected):
+    section = [
+        "diff --git a/x b/x",
+        "index 1..2 100644",
+        "--- a/x",
+        plus_line,
+        "@@ -1 +1,2 @@",
+        " ctx",
+        "+x",
+    ]
+    assert m._section_path(section) == expected
+
+
+def test_a_quoted_rename_falls_back_to_the_header_and_still_unquotes():
+    """A pure rename carries no `+++` line, so the `diff --git` header is the
+    only source — and it is quoted too."""
+    section = [
+        'diff --git "a/old name.py" "b/new name.py"',
+        "similarity index 100%",
+        "rename from old name.py",
+        "rename to new name.py",
+    ]
+    assert m._section_path(section) == "new name.py"
+
+
+def test_a_path_with_a_space_is_not_dropped_as_foreign():
+    """The failure this guards: parsed as `\"b/my recipe/a.py\"`, compared
+    against the API's `my recipe/a.py`, never equal, silently unreviewed."""
+    diff = "\n".join(
+        [
+            'diff --git "a/my recipe/a.py" "b/my recipe/a.py"',
+            "index 1..2 100644",
+            '--- "a/my recipe/a.py"',
+            '+++ "b/my recipe/a.py"',
+            "@@ -1 +1,2 @@",
+            " ctx",
+            "+x = 1",
+        ]
+    )
+    out, stats = m.filter_diff(diff, {"my recipe/a.py"})
+    assert stats["foreign"] == [], "a real PR file was dropped as foreign"
+    assert stats["kept_files"] == 1
+    assert "my recipe/a.py" in out
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '"b/\\377\\376.py"',  # valid bytes, not valid UTF-8
+        '"b/bad\\777.py"',  # 511: the grammar allows it, bytes() will not
+        '"b/hi\\400.py"',  # 256: the first value off the end of a byte
+    ],
+)
+def test_an_undecodable_escape_is_left_alone_rather_than_mangled(raw):
+    """A wrong name is worse than a quoted one: it would match nothing AND
+    read as though it were the real path. And it must not RAISE -- `\\400`
+    upward are inside the escape grammar and outside `bytes()`, so catching
+    only UnicodeDecodeError let a malformed path kill the whole lane."""
+    assert m._unquote_git_path(raw) == raw
+
+
+def test_a_malformed_path_does_not_take_the_filter_down_with_it():
+    diff = "\n".join(
+        [
+            'diff --git "a/bad\\777.py" "b/bad\\777.py"',
+            "index 1..2 100644",
+            '--- "a/bad\\777.py"',
+            '+++ "b/bad\\777.py"',
+            "@@ -1 +1,2 @@",
+            " ctx",
+            "+x",
+        ]
+    )
+    out, stats = m.filter_diff(diff, {"something/else.py"})
+    assert stats["foreign"], "expected it dropped, but the point is no crash"
+    assert out is not None
+
+
+def test_unquoting_leaves_an_unquoted_path_untouched():
+    assert m._unquote_git_path("b/plain.py") == "b/plain.py"
+    assert m._unquote_git_path("") == ""
+    assert m._unquote_git_path('"') == '"'
+
+
+def test_the_workflow_retries_the_file_list_and_fails_open():
+    """This step made no network call before, so an unretried blip would turn
+    a transient API hiccup into a failed lane on a good PR. And a list that
+    could not be fetched must filter NOTHING — treated as authoritative it
+    would review nothing and report a clean PR."""
+    import yaml
+
+    workflow = (
+        Path(__file__).resolve().parents[3]
+        / ".github"
+        / "workflows"
+        / "_ai-pr-review-core.yml"
+    )
+    steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"][
+        "review"
+    ]["steps"]
+    run = str(next(s for s in steps if s.get("id") == "prepare_diff")["run"])
+    assert "for attempt in 1 2 3; do" in run, "no retry on the file list"
+    # Written aside and moved only on success: a run that dies mid-pagination
+    # must not leave a SHORT list behind, which filters silently.
+    assert "pr_files.partial" in run
+    assert "mv pr_files.partial pr_files.txt" in run
+    assert ": > pr_files.txt" in run, "no fail-open branch"
+
+
+# ------------------------------------------- review comments on PR #2635
+
+
+def test_a_deletion_from_the_base_branch_is_foreign_not_the_authors():
+    """`_section_path` is None for a deletion, so the ownership test used to
+    be reached with nothing to test and the file fell through to `skipped` as
+    one the AUTHOR deleted. It is dropped either way -- deletions carry
+    nothing to review -- but the log is what someone reads to work out why a
+    review looks wrong, and it was naming the wrong person."""
+    deletion = "\n".join(
+        [
+            "diff --git a/theirs/gone.py b/theirs/gone.py",
+            "deleted file mode 100644",
+            "index 1..0000000",
+            "--- a/theirs/gone.py",
+            "+++ /dev/null",
+            "@@ -1,2 +0,0 @@",
+            "-was",
+            "-here",
+        ]
+    )
+    _out, stats = m.filter_diff(deletion, {"mine/a.py"})
+    assert stats["foreign"] == ["theirs/gone.py"]
+    assert stats["skipped"] == [], "reported as the author's own deletion"
+
+
+def test_the_authors_own_deletion_is_still_reported_as_skipped():
+    """The other half: a deletion the PR really does own is not foreign."""
+    deletion = "\n".join(
+        [
+            "diff --git a/mine/gone.py b/mine/gone.py",
+            "deleted file mode 100644",
+            "--- a/mine/gone.py",
+            "+++ /dev/null",
+            "@@ -1 +0,0 @@",
+            "-was",
+        ]
+    )
+    _out, stats = m.filter_diff(deletion, {"mine/gone.py"})
+    assert stats["foreign"] == []
+    assert [(p, r) for p, r, _ in stats["skipped"]] == [
+        ("mine/gone.py", "deleted")
+    ]
+
+
+def test_a_quoted_deletion_matches_the_api_spelling_too():
+    deletion = "\n".join(
+        [
+            'diff --git "a/my recipe/gone.py" "b/my recipe/gone.py"',
+            "deleted file mode 100644",
+            '--- "a/my recipe/gone.py"',
+            "+++ /dev/null",
+            "@@ -1 +0,0 @@",
+            "-was",
+        ]
+    )
+    _out, stats = m.filter_diff(deletion, {"my recipe/gone.py"})
+    assert stats["foreign"] == []
+
+
+def test_an_unparseable_section_is_not_called_foreign():
+    """ "I could not parse this" and "this belongs to someone else" are
+    different answers, and only one of them is a fact."""
+    junk = "\n".join(["diff --git nonsense", "+++ /dev/null", "@@ -1 +0,0 @@"])
+    _out, stats = m.filter_diff(junk, {"mine/a.py"})
+    assert stats["foreign"] == []
+    assert stats["skipped"] == [(m.UNKNOWN_PATH, "deleted", 0)]
+
+
+def test_an_unreadable_file_list_reports_once_and_does_not_claim_empty(
+    tmp_path, capsys
+):
+    """The OSError branch fell through into the shared empty-check, so one
+    unreadable file produced both "cannot read" and "is empty" -- two
+    messages, the second untrue."""
+    diff = tmp_path / "d.txt"
+    diff.write_text(_section("a.py", "@@ -1 +1,2 @@", " ctx", "+x"))
+    out = tmp_path / "o.txt"
+    unreadable = tmp_path / "nope.txt"
+    rc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(m.__file__)),
+            "--diff",
+            str(diff),
+            "--out",
+            str(out),
+            "--only-files",
+            str(unreadable),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rc.returncode == 0, rc.stderr
+    assert "cannot read" in rc.stdout
+    assert "is empty" not in rc.stdout, "claimed an unreadable file was empty"
+    assert "a.py" in out.read_text(), "should still fail open"
