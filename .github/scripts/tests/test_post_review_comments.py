@@ -23,6 +23,7 @@ Every test below pins one of those.
 """
 
 import json
+import re
 import subprocess
 import sys
 import time
@@ -3377,3 +3378,70 @@ def test_stripping_the_tag_does_not_swallow_an_unrelated_finding():
 def test_base_body_strips_a_tag_and_the_grouping_suffix_together():
     body = "[CRITICAL] uv.lock missing\n(Same thing in 3 other places in this review.)"
     assert m._base_body(body) == "uv.lock missing"
+
+
+def test_tagging_drops_internal_state_from_notes_as_well_as_comments():
+    """Notes are rendered into the review body rather than posted as JSON, so
+    a stray `_ci` on one is invisible rather than harmful -- which is exactly
+    why it would survive. Both go through one function so neither can drift."""
+    tagged = m._tagged(
+        [
+            {"path": "a.py", "line": 1, "body": "one", "_ci": "fail"},
+            {"path": "b.py", "line": 2, "body": "two"},
+        ],
+        "House Rules",
+    )
+    assert [t["body"] for t in tagged] == ["[CRITICAL] one", "[MINOR] two"]
+    assert not any("_ci" in t for t in tagged)
+
+
+def test_tagging_preserves_every_other_field():
+    tagged = m._tagged(
+        [{"path": "a.py", "line": 1, "side": "RIGHT", "body": "x"}], "Security"
+    )
+    assert tagged[0] == {
+        "path": "a.py",
+        "line": 1,
+        "side": "RIGHT",
+        "body": "[MAJOR] x",
+    }
+
+
+def test_already_raised_also_sees_past_a_grouping_suffix():
+    """Both sides now reduce through `_base_body`, so an incoming body that
+    somehow carries the grouping suffix matches the stored form too. It does
+    not happen today -- grouping runs after this check -- and that is the
+    point: the comparison no longer depends on that ordering holding."""
+    previous = {
+        "kind": "inline",
+        "path": "x.py",
+        "line": 2,
+        "body": "uv.lock is missing",
+    }
+    _zones, texts = m.build_exclusions([previous])
+    incoming = (
+        "[CRITICAL] uv.lock is missing\n"
+        "(Same thing in 3 other places in this review.)"
+    )
+    assert m.already_raised("x.py", 2, incoming, {}, texts, trusted=True)
+
+
+def test_the_ci_fail_signal_matches_the_checker_that_writes_it():
+    """`CI_FAIL` here and `CI_FAIL` in check_house_rules.py are one value
+    written in two files, because the two run in separate jobs. If they drift,
+    every CI failure is silently downgraded to a nit."""
+    checker = (
+        Path(__file__).resolve().parents[3]
+        / ".agents"
+        / "skills"
+        / "github-pr-review"
+        / "scripts"
+        / "check_house_rules.py"
+    )
+    if not checker.exists():
+        pytest.skip("checker not present in this checkout")
+    found = re.search(
+        r"^CI_FAIL\s*=\s*[\"'](\w+)[\"']", checker.read_text(), re.M
+    )
+    assert found, "check_house_rules.py no longer defines CI_FAIL"
+    assert found.group(1) == m.CI_FAIL

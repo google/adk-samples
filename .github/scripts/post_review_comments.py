@@ -130,6 +130,15 @@ DEFAULT_TAG = TAG_MINOR
 # every open PR collects one duplicate of every comment already on it.
 TAG_PREFIX = re.compile(r"^\s*\[(?:CRITICAL|MAJOR|MINOR)\]\s*", re.IGNORECASE)
 
+# The value a finding's `ci` field carries when the deterministic checker says
+# CI will fail on it. Must match `CI_FAIL` in
+# `.agents/skills/github-pr-review/scripts/check_house_rules.py`, which is
+# where the findings this reads are written. The two run in separate jobs, so
+# this is a literal rather than an import -- and a literal that drifts silently
+# downgrades every CI failure to a nit, which is why it is named here and the
+# coupling is written down.
+CI_FAIL = "fail"
+
 
 def severity_tag(label: str, ci: object = None) -> str:
     """The tag for a finding from `label`, given its CI signal if it has one.
@@ -137,7 +146,7 @@ def severity_tag(label: str, ci: object = None) -> str:
     Only the deterministic lane sets `ci`; a model finding passes None and is
     graded by its lane alone.
     """
-    if str(ci or "").strip().lower() == "fail":
+    if str(ci or "").strip().lower() == CI_FAIL:
         return TAG_CRITICAL
     return LANE_TAGS.get(str(label or "").strip(), DEFAULT_TAG)
 
@@ -145,6 +154,25 @@ def severity_tag(label: str, ci: object = None) -> str:
 def apply_tag(body: str, tag: str) -> str:
     """`body` prefixed with `tag`, without stacking a second one."""
     return f"{tag} {TAG_PREFIX.sub('', str(body or '')).lstrip()}"
+
+
+def _tagged(findings: list[dict], label: str) -> list[dict]:
+    """Each finding with its body tagged and the internal `_ci` dropped.
+
+    Comments and notes go through the same function on purpose. They differ in
+    where they are rendered -- a comment is posted as JSON, a note becomes a
+    bullet in the review body -- but neither should carry internal state, and
+    handling them separately is how one of them ends up keeping it.
+    """
+    return [
+        {
+            **{k: v for k, v in f.items() if k != "_ci"},
+            "body": apply_tag(
+                f.get("body", ""), severity_tag(label, f.get("_ci"))
+            ),
+        }
+        for f in findings
+    ]
 
 
 # The invisible signature every review we post carries, so a later run can
@@ -1203,13 +1231,15 @@ def already_raised(
     trusted: bool = False,
 ) -> str:
     """Why this finding repeats something already on the PR, or ""."""
-    # Tag-blind on BOTH sides. The stored side is handled by `_base_body`,
-    # and callers pass an untagged body today because tagging is the last
-    # step before the payload is written -- but "today" is the whole of that
-    # guarantee, and if it ever stops holding the failure is silent: every
-    # comment on the PR is posted a second time. One `sub` costs nothing and
-    # makes the comparison true by construction rather than by ordering.
-    body = TAG_PREFIX.sub("", str(body or ""))
+    # Both sides of every comparison below go through `_base_body`, so the
+    # two are reduced the same way by construction rather than by two pieces
+    # of code that have to be kept in agreement.
+    #
+    # Callers pass an untagged body today, because tagging is the last step
+    # before the payload is written -- but that is an ordering guarantee, and
+    # if it ever stops holding the failure is silent: every comment already on
+    # the PR is posted a second time.
+    body = _base_body(body)
     if zones.get(path, {}).get(line) and not trusted:
         # Position is good evidence of repetition for a MODEL finding: two
         # comments on one line are usually the same observation restated.
@@ -1784,24 +1814,8 @@ def build_payload(
     # the duplicate check, grouping, the comment budget -- compares bodies,
     # and a prefix on one side of those comparisons makes a finding look new.
     # Tag at the end and every one of them still sees the prose alone.
-    comments = [
-        {
-            **{k: v for k, v in c.items() if k != "_ci"},
-            "body": apply_tag(
-                c.get("body", ""), severity_tag(label, c.get("_ci"))
-            ),
-        }
-        for c in comments
-    ]
-    notes = [
-        {
-            **n,
-            "body": apply_tag(
-                n.get("body", ""), severity_tag(label, n.get("_ci"))
-            ),
-        }
-        for n in notes
-    ]
+    comments = _tagged(comments, label)
+    notes = _tagged(notes, label)
     header = f"Automated **{label}** review — {len(comments)} finding(s)."
     # An invisible signature, so a later run can recognise its own reviews and
     # work out which round it is on. The header below is the fallback for
