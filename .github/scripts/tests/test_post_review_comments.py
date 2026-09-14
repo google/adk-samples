@@ -1695,14 +1695,31 @@ def test_the_workflow_passes_the_unreviewed_list():
     assert "--unreviewed-out unreviewed_files.txt" in assemble, (
         "nothing creates the file that --unreviewed points at"
     )
-    # Not behind an `if`: the guarantee is that it always runs.
-    packer = next(
-        line
-        for line in assemble.splitlines()
-        if "--unreviewed-out unreviewed_files.txt" in line
+    # Not behind an `if`: the guarantee is that it always runs, and the step
+    # reads the file with `wc -l` immediately afterwards, so a conditional
+    # packer means a missing file and a dead step under `set -e`.
+    #
+    # Measured by nesting depth rather than by reading the line itself. The
+    # flag sits on a backslash continuation, which can never begin with
+    # `if` — the first version of this assertion looked there and was
+    # therefore true however the workflow was written.
+    build_step = next(
+        s
+        for s in steps
+        if "--unreviewed-out unreviewed_files.txt" in str(s.get("run", ""))
     )
-    assert not packer.lstrip().startswith(("if ", "elif ")), (
-        "the packer must not be conditional; the file has to exist either way"
+    depth, depth_at_packer = 0, None
+    for line in str(build_step["run"]).splitlines():
+        stripped = line.strip()
+        if stripped == "if" or stripped.startswith("if "):
+            depth += 1
+        elif stripped in ("fi", "fi;"):
+            depth -= 1
+        if "prepare_review_diff.py" in stripped:
+            depth_at_packer = depth
+    assert depth_at_packer == 0, (
+        f"the packer runs at `if` nesting depth {depth_at_packer}; it must "
+        "be unconditional or unreviewed_files.txt will not exist"
     )
 
 

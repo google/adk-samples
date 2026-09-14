@@ -270,26 +270,120 @@ def _truncate_at_hunk(text: str, limit: int) -> str:
     return "\n".join(kept)
 
 
+def _hard_cut(text: str, max_bytes: int) -> str:
+    """`text` cut to at most `max_bytes`, on a line boundary.
+
+    The fallback for a diff that cannot be packed at all. It exists because
+    the CALLER asserts the assembled prompt fits and exits non-zero when it
+    does not (`_ai-pr-review-core.yml`, "Assembled prompt is N bytes"), so
+    returning something oversized here does not degrade the review, it
+    deletes it -- a red check on a PR nobody reviewed. `head -c` could never
+    do that, and neither may this.
+    """
+    kept: list[str] = []
+    size = 0
+    for row in text.split("\n"):
+        cost = len(row.encode()) + 1
+        if size + cost > max_bytes:
+            break
+        kept.append(row)
+        size += cost
+    return "\n".join(kept)
+
+
+# Reserved so the notice below cannot itself push the prompt over budget.
+# Only spent when something was actually withheld, and by then the diff is
+# over budget by definition, so the reservation costs nothing real.
+OMISSION_NOTICE_BYTES = 256
+
+
+def _omission_notice(omitted: list[str], partial: list[str]) -> str:
+    """What to tell the MODEL about the files it is not being shown.
+
+    Not the same audience as the unreviewed list in the review body, which is
+    for the author. The model is handed the PR's full changed-file list, so
+    without this it sees 37 names and 10 diffs and has every reason to reason
+    about the other 27 from their filenames alone. `head -c` said "review
+    only what is shown above" for exactly this reason; packing must not drop
+    the instruction along with the mechanism.
+    """
+    if not omitted and not partial:
+        return ""
+    parts = []
+    if omitted:
+        parts.append(f"{len(omitted)} file(s) omitted entirely")
+    if partial:
+        parts.append(f"{len(partial)} shown only in part")
+    return (
+        f"\n[... {', '.join(parts)} to fit the prompt budget. Review ONLY "
+        f"what is shown above; say nothing about code you were not shown "
+        f"...]"
+    )
+
+
+def _fallback_cut(
+    diff: str, sections: list[list[str]], max_bytes: int
+) -> tuple[str, list[str], list[str]]:
+    """Pack's last resort: cut to fit, and say what the cut cost.
+
+    Reached when there is nothing to choose between (no `diff --git` at all)
+    or the preamble alone fills the budget. Two things have to hold even
+    here. The result must FIT, because the caller rejects an oversized prompt
+    outright. And whatever was lost must be NAMED: an empty omitted list
+    leaves unreviewed_files.txt empty and the review body silent, so a PR
+    whose diff could not be shown collects a green check, and a review of
+    nothing looks exactly like a clean bill of health.
+    """
+    # Leave room for the notice, as the packing path does. A budget too small
+    # to hold even that spends the bytes on diff instead: a sentence of
+    # explanation is worth less than the only lines the reader will get.
+    notice_room = (
+        OMISSION_NOTICE_BYTES if max_bytes > OMISSION_NOTICE_BYTES * 2 else 0
+    )
+    cut = _hard_cut(diff, max_bytes - notice_room)
+
+    # A file survives only if CHANGED LINES of it made the cut. Matching the
+    # `diff --git` header called a file reviewed when all the reader got was
+    # its name; matching `@@` called it reviewed when all the reader got was
+    # a hunk header with nothing under it. Churn is the question actually
+    # being asked -- was there anything here to review -- so ask that, with
+    # the function that already answers it everywhere else in this file.
+    _preamble, cut_sections = split_sections(cut)
+    survived = {
+        _section_path(s) or "<unknown>"
+        for s in cut_sections
+        if _section_churn(s) > 0
+    }
+    lost = [
+        path
+        for path in (_section_path(s) or "<unknown>" for s in sections)
+        if path not in survived
+    ]
+    notice = _omission_notice(lost, []) if notice_room else ""
+    if notice:
+        cut = cut.rstrip("\n") + "\n" + notice.lstrip("\n") + "\n"
+    return cut, [], lost
+
+
 def pack_to_budget(
     diff: str, max_bytes: int
 ) -> tuple[str, list[str], list[str]]:
     """(diff that fits, partially shown paths, omitted paths).
 
-    `max_bytes <= 0` means no budget was given, and the diff is returned as
-    it came. Never raises on a diff it cannot parse: an unparsed diff is
-    returned whole, because a review of everything is the safe failure and a
-    review of nothing looks exactly like a clean bill of health.
+    `max_bytes <= 0` means no budget was given and the diff is returned as it
+    came. Otherwise the result NEVER exceeds `max_bytes`, including on every
+    path where packing is impossible -- see `_hard_cut`.
     """
     if max_bytes <= 0 or len(diff.encode()) <= max_bytes:
         return diff, [], []
 
     preamble, sections = split_sections(diff)
-    if not sections:
-        return diff, [], []
     head = "\n".join(preamble)
-    room = max_bytes - len(head.encode()) - 1
-    if room <= 0:
-        return diff, [], []
+    room = max_bytes - len(head.encode()) - 1 - OMISSION_NOTICE_BYTES
+    if not sections or room <= 0:
+        # Nothing to choose between (no `diff --git` at all), or the preamble
+        # alone fills the budget.
+        return _fallback_cut(diff, sections, max_bytes)
 
     by_path = [
         (_section_path(s) or "<unknown>", "\n".join(s)) for s in sections
@@ -305,7 +399,7 @@ def pack_to_budget(
 
     chosen: dict[int, str] = {}
     partial: list[str] = []
-    omitted: list[str] = []
+    dropped: list[int] = []
     for i in order:
         path, text = by_path[i]
         cost = len(text.encode()) + 1
@@ -319,16 +413,25 @@ def pack_to_budget(
                 partial.append(path)
                 room = 0
             else:
-                omitted.append(path)
+                dropped.append(i)
         else:
-            omitted.append(path)
+            dropped.append(i)
 
-    # Emit in the diff's ORIGINAL order. The packing decides what is shown;
-    # the model should still read the PR in the shape git describes it.
+    # Report omissions in DIFF order, not pack order. The author reads this
+    # list against their own PR, and "tier, then size ascending" is an
+    # internal detail that makes it look arbitrary to them.
+    omitted = [by_path[i][0] for i in sorted(dropped)]
+
+    # Emit in the diff's ORIGINAL order too. The packing decides what is
+    # shown; the model should still read the PR in the shape git describes.
     rows = [head] if head else []
     rows.extend(chosen[i] for i in sorted(chosen))
     out = "\n".join(rows).strip("\n")
-    return (out + "\n" if out else ""), partial, omitted
+    out = (out + "\n") if out else ""
+    notice = _omission_notice(omitted, partial)
+    if notice:
+        out += notice.lstrip("\n") + "\n"
+    return out, partial, omitted
 
 
 def filter_diff(diff: str) -> tuple[str, dict]:

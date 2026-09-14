@@ -472,9 +472,131 @@ def test_the_packed_diff_keeps_the_original_file_order():
     ]
 
 
-def test_an_unparseable_diff_is_returned_whole_rather_than_dropped():
-    """A review of everything is the safe failure; a review of nothing looks
-    exactly like a clean bill of health."""
+def test_an_unparseable_diff_is_cut_to_budget_not_handed_back_whole():
+    """It has no `diff --git` sections, so there is nothing to pack -- but
+    the result still has to FIT. The caller asserts the assembled prompt is
+    within budget and exits non-zero when it is not, so returning the diff
+    whole here does not degrade the review, it deletes it: a red check on a
+    PR that nobody reviewed. `head -c` could never do that."""
     junk = "not a diff at all\njust some text\n" * 500
     packed, partial, omitted = m.pack_to_budget(junk, 100)
-    assert packed == junk and partial == [] and omitted == []
+    assert len(packed.encode()) <= 100, "handed the caller an oversized diff"
+    assert packed and junk.startswith(packed.rstrip("\n"))
+    assert partial == [] and omitted == []
+
+
+def test_a_preamble_larger_than_the_budget_is_cut_not_returned_whole():
+    """Same failure by the other route: `diff --git` sections exist, but the
+    preamble alone already fills the budget, so there is no room to pack
+    into."""
+    diff = "preamble line\n" * 4000 + CODE + "\n"
+    packed, _partial, _omitted = m.pack_to_budget(diff, 500)
+    assert len(packed.encode()) <= 500
+
+
+@pytest.mark.parametrize("budget", [80, 500, 5000, 20000, 60000])
+def test_the_result_never_exceeds_the_budget_on_any_shape_of_input(budget):
+    """One assertion over every packing path: normal, unparseable, huge
+    preamble, single oversized file. Whatever route the code takes, the
+    caller's contract is the same and it is absolute."""
+    shapes = {
+        "normal": "\n".join(_big(f"f{i}.py", 9000) for i in range(6)) + "\n",
+        "unparseable": "just text\n" * 3000,
+        "huge preamble": "preamble\n" * 3000 + CODE + "\n",
+        "one giant file": _big("one.py", 200000) + "\n",
+        "empty": "",
+    }
+    for name, diff in shapes.items():
+        packed, _partial, _omitted = m.pack_to_budget(diff, budget)
+        assert len(packed.encode()) <= budget, f"{name} overran at {budget}"
+
+
+def test_the_model_is_told_when_files_were_withheld():
+    """The prompt carries the PR's full changed-file list, so a model shown
+    ten diffs out of thirty-seven will otherwise reason about the other
+    twenty-seven from their names. `head -c` appended "review only what is
+    shown above" for that reason; the packer has to say it too."""
+    diff = "\n".join(_big(f"f{i}.py", 15000) for i in range(10)) + "\n"
+    packed, _partial, omitted = m.pack_to_budget(diff, 40000)
+    assert omitted
+    assert "Review ONLY what is shown above" in packed
+    assert f"{len(omitted)} file(s) omitted entirely" in packed
+
+
+def test_no_withholding_notice_when_everything_fits():
+    diff = "\n".join(_big(f"f{i}.py", 2000) for i in range(3)) + "\n"
+    packed, _partial, omitted = m.pack_to_budget(diff, 10**6)
+    assert omitted == []
+    assert "Review ONLY" not in packed
+
+
+def test_omitted_files_are_listed_in_diff_order():
+    """The author reads this list against their own PR. Pack order is tier
+    then size ascending, which looks arbitrary from outside."""
+    diff = (
+        "\n".join(
+            [
+                _big("z_last.py", 30000),
+                _big("a_first.py", 30000),
+                _big("m_mid.py", 30000),
+            ]
+        )
+        + "\n"
+    )
+    _packed, _partial, omitted = m.pack_to_budget(diff, 35000)
+    assert omitted == sorted(
+        omitted, key=["z_last.py", "a_first.py", "m_mid.py"].index
+    )
+
+
+def test_the_hard_cut_still_reports_what_it_dropped():
+    """The fallback path used to return an empty omitted list. That makes
+    unreviewed_files.txt empty, the review body silent, and a PR whose diff
+    could not be shown collects a green check — a review of nothing looking
+    exactly like a clean bill of health."""
+    diff = (
+        "preamble line\n" * 4000
+        + _big("a.py", 9000)
+        + "\n"
+        + _big("b.py", 9000)
+    )
+    packed, _partial, omitted = m.pack_to_budget(diff + "\n", 500)
+    assert len(packed.encode()) <= 500
+    assert set(omitted) == {"a.py", "b.py"}, (
+        f"files vanished without being reported: {omitted}"
+    )
+
+
+def test_a_diff_cut_to_nothing_still_names_every_file():
+    """One line longer than the whole budget leaves no diff at all. The
+    author must still be told, or the lane reports silence on everything."""
+    diff = _section("giant.py", "@@ -1 +1,2 @@", "+" + "z" * 200000) + "\n"
+    packed, _partial, omitted = m.pack_to_budget(diff, 100)
+    assert len(packed.encode()) <= 100
+    assert omitted == ["giant.py"]
+
+
+def test_the_omission_notice_fits_the_bytes_reserved_for_it():
+    """The reservation is what stops the notice pushing the prompt back over
+    budget. If the wording grows past it, every packed diff overruns."""
+    worst = m._omission_notice(["x"] * 10**6, ["y"] * 10**6)
+    assert len(worst.encode()) <= m.OMISSION_NOTICE_BYTES
+
+
+def test_the_hard_cut_path_also_tells_the_model_what_it_cannot_see():
+    """The fallback is the path where the model sees LEAST, so it is the one
+    that most needs the instruction. Adding the notice on the packing path
+    and not this one left the worst case as the unguarded one."""
+    diff = "preamble line\n" * 4000 + _big("a.py", 9000) + "\n"
+    packed, _partial, omitted = m.pack_to_budget(diff, 2000)
+    assert len(packed.encode()) <= 2000
+    assert omitted == ["a.py"]
+    assert "Review ONLY what is shown above" in packed
+
+
+def test_a_budget_too_small_for_the_notice_spends_it_on_diff_instead():
+    """A sentence of explanation is worth less than the only diff lines the
+    reader is going to get, and the byte ceiling is absolute either way."""
+    diff = "preamble line\n" * 4000 + _big("a.py", 9000) + "\n"
+    packed, _partial, _omitted = m.pack_to_budget(diff, 300)
+    assert len(packed.encode()) <= 300
