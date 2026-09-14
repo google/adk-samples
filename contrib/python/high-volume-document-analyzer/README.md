@@ -84,7 +84,7 @@ Would you like me to continue reading the older documents?
 2.  **Clone the repository:**
     ```bash
     git clone https://github.com/google/adk-samples.git
-    cd adk-samples/python/agents/high-volume-document-analyzer
+    cd adk-samples/contrib/python/high-volume-document-analyzer
     # Install the package and dependencies.
     uv sync
 
@@ -261,10 +261,10 @@ Use the [Google Agents CLI](https://github.com/google/agents-cli) to create a pr
 uvx google-agents-cli setup
 ```
 
-**Create the project from this sample** (run from the root of the `adk-samples` repository, replace `my-document-analyzer` with your project name):
+**Create the project from this recipe** (run from the root of the `adk-samples` repository, replace `my-document-analyzer` with your project name):
 
 ```bash
-agents-cli create my-document-analyzer -a local@python/agents/high-volume-document-analyzer
+agents-cli create my-document-analyzer -a local@contrib/python/high-volume-document-analyzer
 ```
 
 The Google Agents CLI will prompt you to select deployment options and provides additional production-ready features including automated CI/CD deployment scripts.

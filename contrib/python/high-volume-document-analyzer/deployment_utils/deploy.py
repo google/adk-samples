@@ -88,9 +88,9 @@ common_args = {
         "URL_TOKEN_API_URL": os.getenv("URL_TOKEN_API_URL", ""),
         "DOCUMENT_API_BASE_URL": os.getenv("DOCUMENT_API_BASE_URL", ""),
         "MODEL_NAME_DOC_PROCESSING": os.getenv(
-            "MODEL_NAME_DOC_PROCESSING", "gemini-2.5-flash"
+            "MODEL_NAME_DOC_PROCESSING", "gemini-3.5-flash"
         ),
-        "MODEL_NAME_AGENT": os.getenv("MODEL_NAME_AGENT", "gemini-2.5-flash"),
+        "MODEL_NAME_AGENT": os.getenv("MODEL_NAME_AGENT", "gemini-3.5-flash"),
         "BATCH_SIZE": os.getenv("BATCH_SIZE", "10"),
         "MAX_CONCURRENT_DOWNLOADS": os.getenv("MAX_CONCURRENT_DOWNLOADS", "20"),
     },

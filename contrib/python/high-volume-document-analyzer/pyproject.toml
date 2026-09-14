@@ -44,27 +44,6 @@ dev = [
 ]
 
 
-[tool.ruff]
-extend = "../../../pyproject.toml"
-target-version = "py311"
-
-
-[tool.ruff.lint]
-select = [
-    "E",   # pycodestyle
-    "F",   # pyflakes
-    "W",   # pycodestyle warnings
-    "I",   # isort
-    "C",  # flake8-comprehensions
-    "B",   # flake8-bugbear
-    "UP", # pyupgrade
-    "RUF", # ruff specific rules
-]
-ignore = ["E501", "C901"] # ignore line too long, too complex
-
-[tool.ruff.lint.isort]
-known-first-party = ["high_volume_document_analyzer"]
-
 [tool.mypy]
 disallow_untyped_calls = true
 disallow_untyped_defs = true
