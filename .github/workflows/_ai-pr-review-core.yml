@@ -569,12 +569,59 @@ jobs:
           steps.fetch_diff.outputs.empty != 'true'
         env:
           BUDGET_CEILING: '${{ steps.budget.outputs.max_comments }}'
+          GH_TOKEN: '${{ github.token }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
         run: |-
           set -euo pipefail
+
+          # The files THIS PR changes, asked of the API rather than read off
+          # the diff we fetched. The two differ exactly when it matters: an
+          # incremental diff taken across a merge of the BASE branch also
+          # carries whatever landed on base in between, and that is not this
+          # PR's code to review. On #2628 the PR changed 10 files and the
+          # lanes read 37, the other 27 belonging to #2626.
+          #
+          # Paged: the unpaged endpoint stops at 100 without saying so, and a
+          # short list here would drop real files out of the review.
+          #
+          # Retried three times like every other `gh` call in this workflow,
+          # and for a sharper reason than the others. This step made no
+          # network call at all before, so an unretried blip here would turn a
+          # transient API hiccup into a failed lane on a perfectly good PR.
+          #
+          # Written to a temporary file and moved into place only on success,
+          # so a run that dies mid-pagination cannot leave a SHORT list behind
+          # -- a short list is not a failure, it is a filter that silently
+          # drops real files out of the review.
+          FETCHED_FILES='false'
+          for attempt in 1 2 3; do
+            if gh api --paginate \
+                 "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+                 --jq '.[].filename' > pr_files.partial; then
+              FETCHED_FILES='true'
+              break
+            fi
+            echo "::warning::gh api pulls/files failed (attempt ${attempt}/3); retrying in 5s..."
+            sleep 5
+          done
+
+          if [[ "${FETCHED_FILES}" == 'true' ]]; then
+            mv pr_files.partial pr_files.txt
+            echo "$(wc -l < pr_files.txt | tr -d ' ') file(s) belong to this PR."
+          else
+            # Fail OPEN, matching the script: an empty list filters nothing.
+            # Reviewing the whole diff is a bug we can see in the log; a list
+            # we could not fetch, treated as authoritative, would silently
+            # review nothing and report a clean PR.
+            rm -f pr_files.partial
+            : > pr_files.txt
+            echo "::warning::could not list this PR's files after 3 attempts; reviewing the diff unfiltered"
+          fi
 
           python3 .github/scripts/prepare_review_diff.py \
             --diff pr_diff.txt \
             --out pr_diff_reviewable.txt \
+            --only-files pr_files.txt \
             --budget-ceiling "${BUDGET_CEILING:-0}" \
             --github-output "${GITHUB_OUTPUT}"
 
@@ -586,7 +633,12 @@ jobs:
           steps.diff_size_guard.outputs.skip != 'true' &&
           steps.prepare_diff.outputs.reviewable == 'false'
         run: |-
-          echo "Every changed file is generated, vendored or a lockfile. Nothing to review."
+          # Two reasons reach here now, and the log is where someone goes to
+          # find out which: everything in the diff was generated/vendored/a
+          # lockfile, OR everything in it belonged to the base branch rather
+          # than to this PR, which is what a merge-only push looks like. The
+          # filter step above names the files for each.
+          echo "Nothing left to review: every file in the diff was either generated, vendored or a lockfile, or was not part of this PR at all (see the filter step for which)."
 
       # agy authenticates headlessly via Application Default Credentials, which
       # this step provides by exporting GOOGLE_APPLICATION_CREDENTIALS.
