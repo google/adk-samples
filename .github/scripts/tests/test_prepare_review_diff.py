@@ -976,3 +976,103 @@ def test_the_workflow_retries_the_file_list_and_fails_open():
     assert "pr_files.partial" in run
     assert "mv pr_files.partial pr_files.txt" in run
     assert ": > pr_files.txt" in run, "no fail-open branch"
+
+
+# ------------------------------------------- review comments on PR #2635
+
+
+def test_a_deletion_from_the_base_branch_is_foreign_not_the_authors():
+    """`_section_path` is None for a deletion, so the ownership test used to
+    be reached with nothing to test and the file fell through to `skipped` as
+    one the AUTHOR deleted. It is dropped either way -- deletions carry
+    nothing to review -- but the log is what someone reads to work out why a
+    review looks wrong, and it was naming the wrong person."""
+    deletion = "\n".join(
+        [
+            "diff --git a/theirs/gone.py b/theirs/gone.py",
+            "deleted file mode 100644",
+            "index 1..0000000",
+            "--- a/theirs/gone.py",
+            "+++ /dev/null",
+            "@@ -1,2 +0,0 @@",
+            "-was",
+            "-here",
+        ]
+    )
+    _out, stats = m.filter_diff(deletion, {"mine/a.py"})
+    assert stats["foreign"] == ["theirs/gone.py"]
+    assert stats["skipped"] == [], "reported as the author's own deletion"
+
+
+def test_the_authors_own_deletion_is_still_reported_as_skipped():
+    """The other half: a deletion the PR really does own is not foreign."""
+    deletion = "\n".join(
+        [
+            "diff --git a/mine/gone.py b/mine/gone.py",
+            "deleted file mode 100644",
+            "--- a/mine/gone.py",
+            "+++ /dev/null",
+            "@@ -1 +0,0 @@",
+            "-was",
+        ]
+    )
+    _out, stats = m.filter_diff(deletion, {"mine/gone.py"})
+    assert stats["foreign"] == []
+    assert [(p, r) for p, r, _ in stats["skipped"]] == [
+        ("mine/gone.py", "deleted")
+    ]
+
+
+def test_a_quoted_deletion_matches_the_api_spelling_too():
+    deletion = "\n".join(
+        [
+            'diff --git "a/my recipe/gone.py" "b/my recipe/gone.py"',
+            "deleted file mode 100644",
+            '--- "a/my recipe/gone.py"',
+            "+++ /dev/null",
+            "@@ -1 +0,0 @@",
+            "-was",
+        ]
+    )
+    _out, stats = m.filter_diff(deletion, {"my recipe/gone.py"})
+    assert stats["foreign"] == []
+
+
+def test_an_unparseable_section_is_not_called_foreign():
+    """ "I could not parse this" and "this belongs to someone else" are
+    different answers, and only one of them is a fact."""
+    junk = "\n".join(["diff --git nonsense", "+++ /dev/null", "@@ -1 +0,0 @@"])
+    _out, stats = m.filter_diff(junk, {"mine/a.py"})
+    assert stats["foreign"] == []
+    assert stats["skipped"] == [(m.UNKNOWN_PATH, "deleted", 0)]
+
+
+def test_an_unreadable_file_list_reports_once_and_does_not_claim_empty(
+    tmp_path, capsys
+):
+    """The OSError branch fell through into the shared empty-check, so one
+    unreadable file produced both "cannot read" and "is empty" -- two
+    messages, the second untrue."""
+    diff = tmp_path / "d.txt"
+    diff.write_text(_section("a.py", "@@ -1 +1,2 @@", " ctx", "+x"))
+    out = tmp_path / "o.txt"
+    unreadable = tmp_path / "nope.txt"
+    rc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(m.__file__)),
+            "--diff",
+            str(diff),
+            "--out",
+            str(out),
+            "--only-files",
+            str(unreadable),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rc.returncode == 0, rc.stderr
+    assert "cannot read" in rc.stdout
+    assert "is empty" not in rc.stdout, "claimed an unreadable file was empty"
+    assert "a.py" in out.read_text(), "should still fail open"

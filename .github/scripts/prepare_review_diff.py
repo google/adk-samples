@@ -565,6 +565,24 @@ def filter_diff(diff: str, only: set[str] | None = None) -> tuple[str, dict]:
         path = _section_path(section)
         churn = _section_churn(section)
 
+        # The name to report this section by. `_section_path` is None for a
+        # deletion (`+++ /dev/null`), so recover it from the `diff --git`
+        # header — the one line every section has. Resolved BEFORE the
+        # ownership test below, because a deletion has an owner too: computing
+        # it afterwards meant a file deleted on the base branch was reported
+        # as one the author had deleted.
+        #
+        # Slicing off "diff --git " left the raw "a/x b/x" pair here, which
+        # reads as a path containing a space and hides which file was dropped.
+        header = GIT_HEADER_PATHS.match(section[0]) if section else None
+        name = path
+        if name is None:
+            name = (
+                _unquote_git_path(f'"{header.group(2)}"')
+                if header
+                else UNKNOWN_PATH
+            )
+
         # FIRST, before every other rule: is this file even part of the PR?
         #
         # The lanes review `compare/<last reviewed>...<head>` so a push that
@@ -580,19 +598,16 @@ def filter_diff(diff: str, only: set[str] | None = None) -> tuple[str, dict]:
         # not something the author declined to have reviewed, and naming it
         # would be the same confusion with the sign flipped. The job log
         # records the count.
-        if only is not None and path is not None and path not in only:
-            foreign.append(path)
+        #
+        # A section whose name could not be recovered at all is NOT called
+        # foreign. "I could not parse this" and "this belongs to somebody
+        # else" are different answers, and only one of them is a fact.
+        if only is not None and name != UNKNOWN_PATH and name not in only:
+            foreign.append(name)
             continue
 
         if path is None:
-            # `_section_path` returns None for a deletion, so recover the name
-            # from the `diff --git` header. Slicing off "diff --git " left the
-            # raw "a/x b/x" pair in the log, which reads as a path containing
-            # a space and hides which file was actually dropped.
-            header = GIT_HEADER_PATHS.match(section[0]) if section else None
-            skipped.append(
-                (header.group(2) if header else UNKNOWN_PATH, "deleted", churn)
-            )
+            skipped.append((name, "deleted", churn))
             continue
         # A section with no churn is a pure rename or a mode change. There is
         # nothing in it to comment on, and on a migration PR it can be most of
@@ -693,6 +708,10 @@ def main() -> int:
     # empty diff and reporting no findings, which is indistinguishable from a
     # clean PR. Reviewing too much is a bug; reviewing nothing and saying so
     # is a lie.
+    # Each outcome reports itself and then stops. Falling through from the
+    # OSError branch into a shared empty-check printed both "cannot read" and
+    # "is empty" for one unreadable file -- two messages, the second of them
+    # untrue, in the log someone reads to find out why nothing was filtered.
     only: set[str] | None = None
     if args.only_files:
         try:
@@ -705,11 +724,13 @@ def main() -> int:
             }
         except OSError as exc:
             print(f"  cannot read {args.only_files} ({exc}); not filtering")
-            listed = set()
-        if listed:
-            only = listed
         else:
-            print(f"  {args.only_files} is empty; not filtering by PR files")
+            if listed:
+                only = listed
+            else:
+                print(
+                    f"  {args.only_files} is empty; not filtering by PR files"
+                )
 
     filtered, stats = filter_diff(diff, only)
     filtered, partial, omitted = pack_to_budget(filtered, args.max_bytes)
