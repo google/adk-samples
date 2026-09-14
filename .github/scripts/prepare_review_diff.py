@@ -147,6 +147,61 @@ def skip_reason(path: str, churn: int) -> str | None:
     return None
 
 
+# A C-style escape inside a quoted git path: \\ \" \t \n \r, or \nnn octal.
+C_ESCAPE = re.compile(r"\\(?:([\\\"abfnrtv])|([0-7]{3}))")
+_C_SIMPLE = {
+    "\\": b"\\",
+    '"': b'"',
+    "a": b"\a",
+    "b": b"\b",
+    "f": b"\f",
+    "n": b"\n",
+    "r": b"\r",
+    "t": b"\t",
+    "v": b"\v",
+}
+
+
+def _unquote_git_path(raw: str) -> str:
+    """A path as git printed it, turned back into the real name.
+
+    With `core.quotePath` on -- the default -- git wraps any path holding a
+    space, a quote or a non-ASCII byte in double quotes and C-escapes it, so
+    `café.py` prints as `"caf\\303\\251.py"`. The GitHub API reports the real
+    name. Comparing one against the other silently fails to match, and since
+    that comparison now decides whether a file is reviewed at all, every path
+    with a space or an accent in it would drop out of the review unnoticed.
+    """
+    if len(raw) < 2 or not (raw.startswith('"') and raw.endswith('"')):
+        return raw
+    body = raw[1:-1]
+    # Anything undecodable comes back exactly as written -- never mangled and
+    # never raised. A wrong name is worse than a quoted one, and this parses
+    # text nobody here controls. `\400` to `\777` are why the whole build sits
+    # inside the try rather than just the decode: the escape grammar admits
+    # them and `bytes()` rejects them, so an octal git would never emit took
+    # the lane down with a ValueError from four frames away.
+    try:
+        out = bytearray()
+        index = 0
+        for match in C_ESCAPE.finditer(body):
+            out.extend(body[index : match.start()].encode("utf-8"))
+            simple, octal = match.group(1), match.group(2)
+            out.extend(_C_SIMPLE[simple] if simple else bytes([int(octal, 8)]))
+            index = match.end()
+        out.extend(body[index:].encode("utf-8"))
+        return out.decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return raw
+
+
+def _strip_side_prefix(path: str) -> str:
+    """`a/x` or `b/x` -> `x`. Applied AFTER unquoting, never before: in
+    `"b/x"` the prefix is inside the quotes, so testing the raw string for a
+    leading `b/` sees the quote and leaves the whole thing untouched."""
+    return path[2:] if path.startswith(("a/", "b/")) else path
+
+
 def _section_path(section: list[str]) -> str | None:
     """The new-side path a diff section is about, or None when it is deleted.
 
@@ -160,10 +215,12 @@ def _section_path(section: list[str]) -> str | None:
             target = row[4:].strip()
             if target == "/dev/null":
                 return None
-            return target[2:] if target.startswith(("a/", "b/")) else target
+            return _strip_side_prefix(_unquote_git_path(target))
     header = GIT_HEADER_PATHS.match(section[0]) if section else None
     if header:
-        return header.group(2)
+        # The regex peels the quotes off the outside but leaves any escape
+        # inside them, so the same unquoting has to run here too.
+        return _unquote_git_path(f'"{header.group(2)}"')
     return None
 
 

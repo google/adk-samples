@@ -847,3 +847,132 @@ def test_the_workflow_passes_the_pr_file_list_to_the_filter():
     assert "--only-files pr_files.txt" in run
     assert "pulls/${PR_NUMBER}/files" in run
     assert "--paginate" in run, "an unpaged list silently stops at 100 files"
+
+
+# ------------------------------------- paths as git prints them vs the API
+#
+# With `core.quotePath` on (the default) git wraps any path holding a space,
+# a quote or a non-ASCII byte in double quotes and C-escapes it. The API
+# reports the real name. Now that the two are COMPARED to decide whether a
+# file is reviewed at all, a mismatch is not cosmetic: the file drops out of
+# the review and nothing says so.
+
+
+@pytest.mark.parametrize(
+    "plus_line,expected",
+    [
+        ("+++ b/plain.py", "plain.py"),
+        ('+++ "b/my recipe/agent.py"', "my recipe/agent.py"),
+        ('+++ "b/caf\\303\\251.py"', "café.py"),
+        ('+++ "b/tab\\there.py"', "tab\there.py"),
+        ('+++ "b/quote\\".py"', 'quote".py'),
+        ('+++ "b/back\\\\slash.py"', "back\\slash.py"),
+    ],
+)
+def test_a_quoted_path_is_read_as_the_name_the_api_reports(plus_line, expected):
+    section = [
+        "diff --git a/x b/x",
+        "index 1..2 100644",
+        "--- a/x",
+        plus_line,
+        "@@ -1 +1,2 @@",
+        " ctx",
+        "+x",
+    ]
+    assert m._section_path(section) == expected
+
+
+def test_a_quoted_rename_falls_back_to_the_header_and_still_unquotes():
+    """A pure rename carries no `+++` line, so the `diff --git` header is the
+    only source — and it is quoted too."""
+    section = [
+        'diff --git "a/old name.py" "b/new name.py"',
+        "similarity index 100%",
+        "rename from old name.py",
+        "rename to new name.py",
+    ]
+    assert m._section_path(section) == "new name.py"
+
+
+def test_a_path_with_a_space_is_not_dropped_as_foreign():
+    """The failure this guards: parsed as `\"b/my recipe/a.py\"`, compared
+    against the API's `my recipe/a.py`, never equal, silently unreviewed."""
+    diff = "\n".join(
+        [
+            'diff --git "a/my recipe/a.py" "b/my recipe/a.py"',
+            "index 1..2 100644",
+            '--- "a/my recipe/a.py"',
+            '+++ "b/my recipe/a.py"',
+            "@@ -1 +1,2 @@",
+            " ctx",
+            "+x = 1",
+        ]
+    )
+    out, stats = m.filter_diff(diff, {"my recipe/a.py"})
+    assert stats["foreign"] == [], "a real PR file was dropped as foreign"
+    assert stats["kept_files"] == 1
+    assert "my recipe/a.py" in out
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '"b/\\377\\376.py"',  # valid bytes, not valid UTF-8
+        '"b/bad\\777.py"',  # 511: the grammar allows it, bytes() will not
+        '"b/hi\\400.py"',  # 256: the first value off the end of a byte
+    ],
+)
+def test_an_undecodable_escape_is_left_alone_rather_than_mangled(raw):
+    """A wrong name is worse than a quoted one: it would match nothing AND
+    read as though it were the real path. And it must not RAISE -- `\\400`
+    upward are inside the escape grammar and outside `bytes()`, so catching
+    only UnicodeDecodeError let a malformed path kill the whole lane."""
+    assert m._unquote_git_path(raw) == raw
+
+
+def test_a_malformed_path_does_not_take_the_filter_down_with_it():
+    diff = "\n".join(
+        [
+            'diff --git "a/bad\\777.py" "b/bad\\777.py"',
+            "index 1..2 100644",
+            '--- "a/bad\\777.py"',
+            '+++ "b/bad\\777.py"',
+            "@@ -1 +1,2 @@",
+            " ctx",
+            "+x",
+        ]
+    )
+    out, stats = m.filter_diff(diff, {"something/else.py"})
+    assert stats["foreign"], "expected it dropped, but the point is no crash"
+    assert out is not None
+
+
+def test_unquoting_leaves_an_unquoted_path_untouched():
+    assert m._unquote_git_path("b/plain.py") == "b/plain.py"
+    assert m._unquote_git_path("") == ""
+    assert m._unquote_git_path('"') == '"'
+
+
+def test_the_workflow_retries_the_file_list_and_fails_open():
+    """This step made no network call before, so an unretried blip would turn
+    a transient API hiccup into a failed lane on a good PR. And a list that
+    could not be fetched must filter NOTHING — treated as authoritative it
+    would review nothing and report a clean PR."""
+    import yaml
+
+    workflow = (
+        Path(__file__).resolve().parents[3]
+        / ".github"
+        / "workflows"
+        / "_ai-pr-review-core.yml"
+    )
+    steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"][
+        "review"
+    ]["steps"]
+    run = str(next(s for s in steps if s.get("id") == "prepare_diff")["run"])
+    assert "for attempt in 1 2 3; do" in run, "no retry on the file list"
+    # Written aside and moved only on success: a run that dies mid-pagination
+    # must not leave a SHORT list behind, which filters silently.
+    assert "pr_files.partial" in run
+    assert "mv pr_files.partial pr_files.txt" in run
+    assert ": > pr_files.txt" in run, "no fail-open branch"
