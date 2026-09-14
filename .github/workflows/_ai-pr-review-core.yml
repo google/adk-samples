@@ -569,12 +569,29 @@ jobs:
           steps.fetch_diff.outputs.empty != 'true'
         env:
           BUDGET_CEILING: '${{ steps.budget.outputs.max_comments }}'
+          GH_TOKEN: '${{ github.token }}'
+          PR_NUMBER: '${{ steps.get_pr.outputs.pr_number || steps.get_pr_comment.outputs.pr_number }}'
         run: |-
           set -euo pipefail
+
+          # The files THIS PR changes, asked of the API rather than read off
+          # the diff we fetched. The two differ exactly when it matters: an
+          # incremental diff taken across a merge of the BASE branch also
+          # carries whatever landed on base in between, and that is not this
+          # PR's code to review. On #2628 the PR changed 10 files and the
+          # lanes read 37, the other 27 belonging to #2626.
+          #
+          # Paged: the unpaged endpoint stops at 100 without saying so, and a
+          # short list here would drop real files out of the review.
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --jq '.[].filename' > pr_files.txt
+          echo "$(wc -l < pr_files.txt | tr -d ' ') file(s) belong to this PR."
 
           python3 .github/scripts/prepare_review_diff.py \
             --diff pr_diff.txt \
             --out pr_diff_reviewable.txt \
+            --only-files pr_files.txt \
             --budget-ceiling "${BUDGET_CEILING:-0}" \
             --github-output "${GITHUB_OUTPUT}"
 

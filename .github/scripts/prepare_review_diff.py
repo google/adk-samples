@@ -491,16 +491,41 @@ def pack_to_budget(
     return out, partial, omitted
 
 
-def filter_diff(diff: str) -> tuple[str, dict]:
-    """Drop unreviewable file sections. Returns (diff, stats)."""
+def filter_diff(diff: str, only: set[str] | None = None) -> tuple[str, dict]:
+    """Drop unreviewable file sections. Returns (diff, stats).
+
+    `only` is the set of paths the PULL REQUEST itself changes. Anything
+    outside it is discarded before any other rule runs -- see FOREIGN_REASON.
+    None means no list was supplied and nothing is filtered on that basis.
+    """
     preamble, sections = split_sections(diff)
     kept: list[list[str]] = []
     skipped: list[tuple[str, str, int]] = []
+    foreign: list[str] = []
     reviewable = 0
 
     for section in sections:
         path = _section_path(section)
         churn = _section_churn(section)
+
+        # FIRST, before every other rule: is this file even part of the PR?
+        #
+        # The lanes review `compare/<last reviewed>...<head>` so a push that
+        # only fixes earlier comments has almost nothing new to say. But when
+        # the author merges the BASE branch in, that compare also contains
+        # everything that landed on base in the meantime -- other people's
+        # merged work. On #2628 the PR changed 10 files and the lanes read
+        # 37, the extra 27 belonging to #2626. They spent the prompt budget
+        # on code the author never wrote, then told them 31 files "were not
+        # looked at".
+        #
+        # Dropped SILENTLY, not added to `skipped`: a file outside the PR is
+        # not something the author declined to have reviewed, and naming it
+        # would be the same confusion with the sign flipped. The job log
+        # records the count.
+        if only is not None and path is not None and path not in only:
+            foreign.append(path)
+            continue
 
         if path is None:
             # `_section_path` returns None for a deletion, so recover the name
@@ -537,6 +562,7 @@ def filter_diff(diff: str) -> tuple[str, dict]:
         "reviewable_lines": reviewable,
         "kept_files": len(kept),
         "skipped": skipped,
+        "foreign": foreign,
     }
 
 
@@ -569,6 +595,15 @@ def build_parser() -> argparse.ArgumentParser:
         "and the filtered diff is written as-is",
     )
     parser.add_argument(
+        "--only-files",
+        type=Path,
+        default=None,
+        help="the paths this PR actually changes, one per line. Anything in "
+        "the diff and not in this list is dropped: an incremental diff taken "
+        "across a merge of the base branch also contains whatever landed on "
+        "base in between, which is not this PR's code to review",
+    )
+    parser.add_argument(
         "--unreviewed-out",
         type=Path,
         default=None,
@@ -596,7 +631,30 @@ def main() -> int:
             infra_fault(CHECKER, f"cannot read diff {args.diff}: {exc}")
         )
 
-    filtered, stats = filter_diff(diff)
+    # FAIL OPEN. An unreadable or empty list means "filter on nothing", never
+    # "filter out everything": the second would leave the lane reviewing an
+    # empty diff and reporting no findings, which is indistinguishable from a
+    # clean PR. Reviewing too much is a bug; reviewing nothing and saying so
+    # is a lie.
+    only: set[str] | None = None
+    if args.only_files:
+        try:
+            listed = {
+                line.strip()
+                for line in args.only_files.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
+                if line.strip()
+            }
+        except OSError as exc:
+            print(f"  cannot read {args.only_files} ({exc}); not filtering")
+            listed = set()
+        if listed:
+            only = listed
+        else:
+            print(f"  {args.only_files} is empty; not filtering by PR files")
+
+    filtered, stats = filter_diff(diff, only)
     filtered, partial, omitted = pack_to_budget(filtered, args.max_bytes)
 
     try:
@@ -618,6 +676,19 @@ def main() -> int:
                 )
             )
 
+    if stats["foreign"]:
+        # Worth its own line in the log: a large number here means the diff
+        # was taken across a merge of the base branch, and before this filter
+        # existed every one of these was reviewed as if the author wrote it.
+        print(
+            f"  {len(stats['foreign'])} file(s) in the diff are not part of "
+            "this PR (base-branch merge?); dropped before review:"
+        )
+        for path in stats["foreign"][:MAX_OMITTED_LOGGED]:
+            print(f"    not in this PR: {path}")
+        if len(stats["foreign"]) > MAX_OMITTED_LOGGED:
+            hidden = len(stats["foreign"]) - MAX_OMITTED_LOGGED
+            print(f"    ...and {hidden} more")
     for path, reason, churn in stats["skipped"]:
         print(f"  skipped {path} ({reason}, {churn} lines)")
     for path in partial:

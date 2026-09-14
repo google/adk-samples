@@ -708,3 +708,142 @@ def test_the_partial_marker_in_the_output_is_the_shared_constant():
     packed, partial, _omitted = m.pack_to_budget(diff, 50000)
     assert partial, "no file was truncated, so the marker proves nothing"
     assert m.TRUNCATED_MARKER in packed
+
+
+# --------------------------------------------------------------------------
+# Only this PR's files (the #2628 contamination)
+#
+# The lanes review `compare/<last reviewed>...<head>` so a push that only
+# fixes earlier comments has little new to say. Merge the BASE branch in and
+# that compare also carries everything that landed on base in between. On
+# #2628 the PR changed 10 files and the lanes read 37; the other 27 were
+# #2626's, and the author was told 31 files "were not looked at".
+# --------------------------------------------------------------------------
+
+
+def test_files_outside_the_pr_are_dropped():
+    diff = "\n".join(
+        [
+            _section("mine/a.py", "@@ -1 +1,2 @@", " ctx", "+mine"),
+            _section("theirs/b.py", "@@ -1 +1,2 @@", " ctx", "+theirs"),
+        ]
+    )
+    out, stats = m.filter_diff(diff, {"mine/a.py"})
+    assert "mine/a.py" in out
+    assert "theirs/b.py" not in out
+    assert stats["foreign"] == ["theirs/b.py"]
+    assert stats["kept_files"] == 1
+
+
+def test_a_foreign_file_is_not_reported_as_skipped_or_unreviewed():
+    """It is not something the author declined to have reviewed. Listing it
+    is the same confusion with the sign flipped -- #2628's author was handed
+    31 filenames they had never touched."""
+    diff = _section("theirs/b.py", "@@ -1 +1,2 @@", " ctx", "+theirs")
+    _out, stats = m.filter_diff(diff, {"mine/a.py"})
+    assert stats["foreign"] == ["theirs/b.py"]
+    assert stats["skipped"] == [], "a foreign file was reported to the author"
+
+
+def test_no_list_means_no_filtering():
+    diff = _section("anything.py", "@@ -1 +1,2 @@", " ctx", "+x")
+    out, stats = m.filter_diff(diff, None)
+    assert "anything.py" in out
+    assert stats["foreign"] == []
+
+
+def test_the_pr_file_list_is_applied_before_every_other_rule():
+    """A foreign lockfile must be dropped as foreign, not counted as a skip:
+    the two mean different things and only one of them is the author's."""
+    diff = _section("theirs/uv.lock", "@@ -1 +1,2 @@", " ctx", "+dep")
+    _out, stats = m.filter_diff(diff, {"mine/a.py"})
+    assert stats["foreign"] == ["theirs/uv.lock"]
+    assert stats["skipped"] == []
+
+
+def test_an_empty_list_fails_open_rather_than_reviewing_nothing(tmp_path):
+    """Reviewing too much is a bug. Reviewing nothing and reporting no
+    findings is indistinguishable from a clean PR, which is a lie."""
+    diff = tmp_path / "d.txt"
+    diff.write_text(_section("a.py", "@@ -1 +1,2 @@", " ctx", "+x"))
+    empty = tmp_path / "none.txt"
+    empty.write_text("")
+    out = tmp_path / "o.txt"
+    rc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(m.__file__)),
+            "--diff",
+            str(diff),
+            "--out",
+            str(out),
+            "--only-files",
+            str(empty),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rc.returncode == 0, rc.stderr
+    assert "a.py" in out.read_text(), "an empty list silenced the whole review"
+
+
+def test_a_missing_list_file_fails_open(tmp_path):
+    diff = tmp_path / "d.txt"
+    diff.write_text(_section("a.py", "@@ -1 +1,2 @@", " ctx", "+x"))
+    out = tmp_path / "o.txt"
+    rc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(m.__file__)),
+            "--diff",
+            str(diff),
+            "--out",
+            str(out),
+            "--only-files",
+            str(tmp_path / "does-not-exist.txt"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rc.returncode == 0, rc.stderr
+    assert "a.py" in out.read_text()
+
+
+def test_the_2628_shape_end_to_end():
+    """The real case, reduced: one file the PR owns, many it does not,
+    because the author merged the base branch in."""
+    pr_files = {"docs/guide.md"}
+    diff = "\n".join(
+        [_section("docs/guide.md", "@@ -1 +1,2 @@", " ctx", "+theirs")]
+        + [
+            _section(f"other/f{i}.py", "@@ -1 +1,2 @@", " ctx", "+x")
+            for i in range(27)
+        ]
+    )
+    out, stats = m.filter_diff(diff, pr_files)
+    shown = re.findall(r"^diff --git a/(\S+)", out, re.M)
+    assert shown == ["docs/guide.md"]
+    assert len(stats["foreign"]) == 27
+
+
+def test_the_workflow_passes_the_pr_file_list_to_the_filter():
+    """The flag is useless unless the workflow actually supplies it, and the
+    list has to be PAGED — the unpaged endpoint stops at 100 silently."""
+    import yaml
+
+    workflow = (
+        Path(__file__).resolve().parents[3]
+        / ".github"
+        / "workflows"
+        / "_ai-pr-review-core.yml"
+    )
+    steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"][
+        "review"
+    ]["steps"]
+    prepare = next(s for s in steps if s.get("id") == "prepare_diff")
+    run = str(prepare["run"])
+    assert "--only-files pr_files.txt" in run
+    assert "pulls/${PR_NUMBER}/files" in run
+    assert "--paginate" in run, "an unpaged list silently stops at 100 files"
