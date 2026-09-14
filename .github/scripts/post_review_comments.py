@@ -91,6 +91,62 @@ CHECKER = "post_review_comments.py"
 # model writes.
 TRUSTED_SOURCE = "checker"
 
+# ---------------------------------------------------------- severity tags
+#
+# Every posted comment is prefixed `[CRITICAL] `, `[MAJOR] ` or `[MINOR] `.
+# An inline comment does not show which lane produced it -- the lane name is
+# only in the review body header -- so without this the author cannot tell a
+# merge blocker from a nit without opening the review.
+#
+# The tag is derived from the LANE, never from a model's opinion of its own
+# finding. A model asked to grade its own severity inflates, and a confident,
+# precise, false "this is critical" is the most expensive comment this system
+# can produce. `review-voice.md` therefore still forbids the model to write a
+# severity label: it writes the prose, and the tag is prepended here.
+#
+# CRITICAL is reserved for the deterministic checker, and only for a finding
+# it marked CI-failing. Those are the only ones where "this blocks your merge"
+# is a fact rather than a guess.
+TAG_CRITICAL = "[CRITICAL]"
+TAG_MAJOR = "[MAJOR]"
+TAG_MINOR = "[MINOR]"
+
+# Lane name -> tag for anything the lane reports. Security and Correctness are
+# the `blocker_lanes` in policy.yml, so MAJOR here and blocker there are the
+# same judgement written twice; keep them in step.
+LANE_TAGS = {
+    "Security": TAG_MAJOR,
+    "Correctness": TAG_MAJOR,
+    "Maintainability": TAG_MINOR,
+    "Hygiene": TAG_MINOR,
+    "House Rules": TAG_MINOR,
+}
+# An unrecognised lane gets the tag that claims least.
+DEFAULT_TAG = TAG_MINOR
+
+# Any tag at the head of a body, with the space after it. Used to strip a tag
+# back off before comparison, so a comment posted BEFORE tagging shipped still
+# suppresses the tagged form of the same finding on the next push. Without it
+# every open PR collects one duplicate of every comment already on it.
+TAG_PREFIX = re.compile(r"^\s*\[(?:CRITICAL|MAJOR|MINOR)\]\s*", re.IGNORECASE)
+
+
+def severity_tag(label: str, ci: object = None) -> str:
+    """The tag for a finding from `label`, given its CI signal if it has one.
+
+    Only the deterministic lane sets `ci`; a model finding passes None and is
+    graded by its lane alone.
+    """
+    if str(ci or "").strip().lower() == "fail":
+        return TAG_CRITICAL
+    return LANE_TAGS.get(str(label or "").strip(), DEFAULT_TAG)
+
+
+def apply_tag(body: str, tag: str) -> str:
+    """`body` prefixed with `tag`, without stacking a second one."""
+    return f"{tag} {TAG_PREFIX.sub('', str(body or '')).lstrip()}"
+
+
 # The invisible signature every review we post carries, so a later run can
 # recognise its own work and know which round it is on. Defined in
 # review_budget.py, which is the reader; duplicated as a literal rather than
@@ -826,8 +882,17 @@ _GROUP_NOTE = re.compile(
 
 
 def _base_body(text: str) -> str:
-    """A comment body with the grouping suffix removed."""
-    return _GROUP_NOTE.sub("", str(text or "")).strip()
+    """A comment body reduced to what the finding actually said.
+
+    Strips the grouping suffix and any leading severity tag. The tag matters
+    because it is added at post time, so the SAME finding is untagged in a
+    comment posted before tagging shipped and tagged in one posted after.
+    Comparing those two forms as written makes every comment already on an
+    open PR look new, and each one is posted a second time -- the convergence
+    failure the whole comment budget exists to prevent.
+    """
+    text = _GROUP_NOTE.sub("", str(text or ""))
+    return TAG_PREFIX.sub("", text).strip()
 
 
 def _tokens(text: str) -> set[str]:
@@ -1138,6 +1203,13 @@ def already_raised(
     trusted: bool = False,
 ) -> str:
     """Why this finding repeats something already on the PR, or ""."""
+    # Tag-blind on BOTH sides. The stored side is handled by `_base_body`,
+    # and callers pass an untagged body today because tagging is the last
+    # step before the payload is written -- but "today" is the whole of that
+    # guarantee, and if it ever stops holding the failure is silent: every
+    # comment on the PR is posted a second time. One `sub` costs nothing and
+    # makes the comparison true by construction rather than by ordering.
+    body = TAG_PREFIX.sub("", str(body or ""))
     if zones.get(path, {}).get(line) and not trusted:
         # Position is good evidence of repetition for a MODEL finding: two
         # comments on one line are usually the same observation restated.
@@ -1501,6 +1573,15 @@ def build_comments(
 
         accepted = {"kind": "inline", "path": path, "line": line, "body": body}
 
+        # Internal, and only ever present on a deterministic-lane finding: it
+        # is what separates CRITICAL from MAJOR, because "CI will fail on
+        # this" is a fact there and a guess anywhere else. Attached only when
+        # it has a value, so a model lane's comments keep exactly the shape
+        # they had before tagging existed. build_payload reads it and drops
+        # it; it never reaches GitHub.
+        _ci_value = finding.get("ci") or finding.get("_ci")
+        ci_key = {"_ci": _ci_value} if _ci_value else {}
+
         if line in anchors.get(path, frozenset()):
             comments.append(
                 {
@@ -1512,10 +1593,11 @@ def build_comments(
                     # group_repeats that this body came from a format string
                     # rather than from prose.
                     "trusted": trusted,
+                    **ci_key,
                 }
             )
         elif verified:
-            notes.append({"path": path, "line": line, "body": body})
+            notes.append({"path": path, "line": line, "body": body, **ci_key})
         else:
             skipped.append(f"{path}:{line}: not a line this PR adds")
             # NOT recorded, and this really is the ordering now: the previous
@@ -1698,6 +1780,28 @@ def build_payload(
     commit_id: str = "",
 ) -> dict:
     """The review payload. `body` is required whenever `event` is COMMENT."""
+    # Tagging happens HERE, last, and deliberately so. Everything upstream --
+    # the duplicate check, grouping, the comment budget -- compares bodies,
+    # and a prefix on one side of those comparisons makes a finding look new.
+    # Tag at the end and every one of them still sees the prose alone.
+    comments = [
+        {
+            **{k: v for k, v in c.items() if k != "_ci"},
+            "body": apply_tag(
+                c.get("body", ""), severity_tag(label, c.get("_ci"))
+            ),
+        }
+        for c in comments
+    ]
+    notes = [
+        {
+            **n,
+            "body": apply_tag(
+                n.get("body", ""), severity_tag(label, n.get("_ci"))
+            ),
+        }
+        for n in notes
+    ]
     header = f"Automated **{label}** review — {len(comments)} finding(s)."
     # An invisible signature, so a later run can recognise its own reviews and
     # work out which round it is on. The header below is the fallback for

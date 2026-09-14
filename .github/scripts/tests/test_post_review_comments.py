@@ -505,7 +505,14 @@ def test_main_writes_a_payload_the_rest_api_accepts(tmp_path):
     assert payload["event"] == "COMMENT"
     assert payload["body"]  # required by the API for a COMMENT event
     assert payload["comments"] == [
-        {"path": "x.py", "line": 2, "side": "RIGHT", "body": "Off by one."}
+        {
+            "path": "x.py",
+            "line": 2,
+            "side": "RIGHT",
+            # Tagged at post time. The lane decides it: this run is the
+            # default Correctness lane, so MAJOR.
+            "body": "[MAJOR] Off by one.",
+        }
     ]
 
 
@@ -960,7 +967,7 @@ def test_notes_are_listed_in_the_review_body():
         [{"path": "x.py", "line": 2, "side": "RIGHT", "body": "inline"}],
         [{"path": "y.toml", "line": 9, "body": "requires-python is 3.10"}],
     )
-    assert "`y.toml:9` — requires-python is 3.10" in payload["body"]
+    assert "`y.toml:9` — [MAJOR] requires-python is 3.10" in payload["body"]
     assert len(payload["comments"]) == 1
 
 
@@ -1784,7 +1791,8 @@ def test_the_most_serious_findings_are_the_ones_kept(tmp_path):
         check=False,
     )
     kept = json.loads(out.read_text())["comments"]
-    assert kept[0]["body"] == _SUBJECTS[0]
+    # These findings carry no `ci`, so House Rules grades them advisory.
+    assert kept[0]["body"] == f"[MINOR] {_SUBJECTS[0]}"
 
 
 def test_no_ceiling_means_no_ceiling(tmp_path):
@@ -3174,3 +3182,198 @@ def test_the_same_position_guard_covers_every_member_not_just_the_anchor():
     )
     positions = {(c["path"], c["line"]) for c in kept}
     assert len(positions) == len(kept), "two kept comments share a position"
+
+
+# --------------------------------------------------------- severity tags
+#
+# An inline comment does not show which lane produced it -- the lane name is
+# only in the review body header -- so the tag is the author's only signal at
+# the line of whether something blocks the merge.
+
+
+@pytest.mark.parametrize(
+    "label,expected",
+    [
+        ("Security", "[MAJOR]"),
+        ("Correctness", "[MAJOR]"),
+        ("Maintainability", "[MINOR]"),
+        ("Hygiene", "[MINOR]"),
+        ("House Rules", "[MINOR]"),
+        # A lane nobody mapped must claim the least, not the most.
+        ("Some New Lane", "[MINOR]"),
+        ("", "[MINOR]"),
+    ],
+)
+def test_a_model_lane_is_graded_by_its_lane_alone(label, expected):
+    assert m.severity_tag(label) == expected
+
+
+def test_only_a_failing_deterministic_check_earns_critical():
+    """CRITICAL means "this blocks your merge", which is a fact only when a
+    deterministic check says so. A model lane never reaches it, however
+    serious it believes its finding to be."""
+    assert m.severity_tag("House Rules", "fail") == "[CRITICAL]"
+    assert m.severity_tag("House Rules", "advisory") == "[MINOR]"
+    assert m.severity_tag("House Rules", None) == "[MINOR]"
+    assert m.severity_tag("House Rules", "") == "[MINOR]"
+
+
+def test_the_ci_signal_outranks_the_lane_whatever_the_lane_is():
+    assert m.severity_tag("Hygiene", "fail") == "[CRITICAL]"
+
+
+def test_apply_tag_does_not_stack_a_second_prefix():
+    """build_payload runs once per review, but a body that already carries a
+    tag -- a note parsed back out of a review we posted last round -- must not
+    come back as `[MINOR] [MINOR] ...`."""
+    assert m.apply_tag("plain", "[MINOR]") == "[MINOR] plain"
+    assert m.apply_tag("[MINOR] plain", "[MINOR]") == "[MINOR] plain"
+    assert m.apply_tag("[MAJOR] plain", "[CRITICAL]") == "[CRITICAL] plain"
+
+
+def test_the_payload_is_tagged_and_carries_no_internal_keys():
+    payload = m.build_payload(
+        "Security",
+        [
+            {
+                "path": "x.py",
+                "line": 2,
+                "side": "RIGHT",
+                "body": "shell=True with a user-controlled value",
+                "_ci": None,
+            }
+        ],
+        [],
+    )
+    comment = payload["comments"][0]
+    assert comment["body"] == "[MAJOR] shell=True with a user-controlled value"
+    assert "_ci" not in comment, "internal state must not reach GitHub"
+
+
+def test_a_ci_failing_finding_is_tagged_critical_end_to_end():
+    payload = m.build_payload(
+        "House Rules",
+        [
+            {
+                "path": "x/pyproject.toml",
+                "line": 1,
+                "side": "RIGHT",
+                "body": "[build-system] missing",
+                "_ci": "fail",
+            },
+            {
+                "path": "x/manifest.yaml",
+                "line": 4,
+                "side": "RIGHT",
+                "body": "ownership.team names a company",
+                "_ci": "advisory",
+            },
+        ],
+        [],
+    )
+    bodies = [c["body"] for c in payload["comments"]]
+    assert bodies[0].startswith("[CRITICAL] ")
+    assert bodies[1].startswith("[MINOR] ")
+
+
+def test_notes_in_the_review_body_are_tagged_too():
+    """A note is a finding that had nowhere to anchor, not a lesser one. On
+    PR #2373 this class held all three hard CI failures."""
+    payload = m.build_payload(
+        "House Rules",
+        [],
+        [
+            {
+                "path": "y.toml",
+                "line": 9,
+                "body": "uv.lock missing",
+                "_ci": "fail",
+            }
+        ],
+    )
+    assert "`y.toml:9` — [CRITICAL] uv.lock missing" in payload["body"]
+
+
+# ------------------------------- the migration: tagged vs untagged bodies
+
+
+def test_an_untagged_comment_still_suppresses_its_tagged_successor():
+    """THE regression this feature could cause. Every comment already on an
+    open PR was posted before tagging existed, so it has no prefix. The next
+    push produces the same finding, now tagged. Compared as written the two
+    differ, every one of them looks new, and the whole review is posted a
+    second time -- the non-convergence the comment budget exists to end."""
+    previous = {
+        "kind": "inline",
+        "path": "x.py",
+        "line": 2,
+        "body": "subprocess call carries no timeout argument",
+    }
+    _zones, texts = m.build_exclusions([previous])
+    why = m.already_raised(
+        "x.py",
+        2,
+        "[MINOR] subprocess call carries no timeout argument",
+        {},
+        texts,
+        trusted=True,
+    )
+    assert why, "a tagged repeat of an untagged comment was not suppressed"
+
+
+def test_a_tagged_comment_suppresses_the_same_tagged_finding():
+    previous = {
+        "kind": "inline",
+        "path": "x.py",
+        "line": 2,
+        "body": "[CRITICAL] [build-system] missing",
+    }
+    _zones, texts = m.build_exclusions([previous])
+    assert m.already_raised(
+        "x.py", 2, "[CRITICAL] [build-system] missing", {}, texts, trusted=True
+    )
+
+
+def test_a_retagged_finding_is_still_the_same_finding():
+    """A rule reclassified from advisory to CI-failing changes its tag. It is
+    the same sentence about the same line and must not be posted again."""
+    previous = {
+        "kind": "inline",
+        "path": "x.py",
+        "line": 2,
+        "body": "[MINOR] ownership.team names a company",
+    }
+    _zones, texts = m.build_exclusions([previous])
+    assert m.already_raised(
+        "x.py",
+        2,
+        "[CRITICAL] ownership.team names a company",
+        {},
+        texts,
+        trusted=True,
+    )
+
+
+def test_stripping_the_tag_does_not_swallow_an_unrelated_finding():
+    """The tag is dropped before comparison, which must not make two
+    different findings compare equal."""
+    previous = {
+        "kind": "inline",
+        "path": "x.py",
+        "line": 2,
+        "body": "[MINOR] ownership.team names a company",
+    }
+    _zones, texts = m.build_exclusions([previous])
+    assert not m.already_raised(
+        "x.py",
+        7,
+        "[MINOR] requires-python is 3.10, the repo minimum is 3.11",
+        {},
+        texts,
+        trusted=True,
+    )
+
+
+def test_base_body_strips_a_tag_and_the_grouping_suffix_together():
+    body = "[CRITICAL] uv.lock missing\n(Same thing in 3 other places in this review.)"
+    assert m._base_body(body) == "uv.lock missing"

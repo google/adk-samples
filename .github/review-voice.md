@@ -88,6 +88,14 @@ sign-offs, "Thanks for the PR!" · any claim about code you were not shown.
 `I suggest …`, `You may …` and `Please …` are fine — it is those three
 phrasings that are banned, not the act of proposing a fix.
 
+Every posted comment does end up carrying a `[CRITICAL]` / `[MAJOR]` /
+`[MINOR]` prefix, because an inline comment does not otherwise show which lane
+found it. That prefix is added mechanically after you have written the comment
+(`post_review_comments.py`, `severity_tag`), from the lane and from whether a
+deterministic check failed. Do not write one yourself: yours would be a guess
+about your own finding, and two prefixes on one comment is worse than none.
+Write the prose; the tag is not your job.
+
 ### Habits
 
 Backticks around every identifier, path and filename. A remedy is welcome as
