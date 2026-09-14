@@ -1,0 +1,1 @@
+Market Research Agent — performs deep web research using Gemini Deep Research to produce detailed, cited reports on millennial consumer trends, digital life insurance market dynamics, and competitive landscapes for FS Corp / FS Direct.
