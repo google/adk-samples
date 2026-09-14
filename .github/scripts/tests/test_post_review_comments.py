@@ -1687,10 +1687,22 @@ def test_the_workflow_passes_the_unreviewed_list():
     assert "--unreviewed unreviewed_files.txt" in build["run"]
 
     # And the step that writes that file must always write it, or the flag
-    # points at nothing on the (common) untruncated path.
+    # points at nothing on the (common) path where everything fits. The
+    # packer is what writes it now, and it writes it unconditionally --
+    # `--unreviewed-out` truncates the file even when nothing was omitted, so
+    # there is no branch on which it fails to exist.
     assemble = "\n".join(str(s.get("run", "")) for s in steps)
-    assert ": > unreviewed_files.txt" in assemble, (
-        "the untruncated branch does not create the file the flag names"
+    assert "--unreviewed-out unreviewed_files.txt" in assemble, (
+        "nothing creates the file that --unreviewed points at"
+    )
+    # Not behind an `if`: the guarantee is that it always runs.
+    packer = next(
+        line
+        for line in assemble.splitlines()
+        if "--unreviewed-out unreviewed_files.txt" in line
+    )
+    assert not packer.lstrip().startswith(("if ", "elif ")), (
+        "the packer must not be conditional; the file has to exist either way"
     )
 
 

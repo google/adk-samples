@@ -22,6 +22,7 @@ noisy for the PR it is on.
 Every test below pins one of those.
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -318,3 +319,162 @@ def test_the_budget_the_workflow_reads_is_the_one_this_script_writes():
     ).read_text(encoding="utf-8")
     for name in ("budget", "reviewable_lines", "reviewable"):
         assert f"steps.prepare_diff.outputs.{name}" in core
+
+
+# --------------------------------------------------------------------------
+# Packing the diff into the prompt's byte budget
+#
+# The budget is real (agy takes the prompt as one argv string, Linux caps that
+# at 131072) and it is routinely smaller than the diff. What matters is how it
+# is SPENT. `head -c` spent it in git's order, which is roughly alphabetical:
+# on PR #2626 that meant 662KB of diff, ~100KB of budget, four markdown files
+# eating most of it, and not one of the fourteen source files reviewed.
+# --------------------------------------------------------------------------
+
+
+def _big(path: str, n: int) -> str:
+    """A diff section for `path` with roughly `n` bytes of added lines."""
+    rows = [f"@@ -1,1 +1,{n} @@", " context"]
+    rows += ["+" + "x" * 58 for _ in range(max(1, n // 60))]
+    return _section(path, *rows)
+
+
+def test_no_budget_leaves_the_diff_alone():
+    diff = CODE + "\n"
+    assert m.pack_to_budget(diff, 0) == (diff, [], [])
+    assert m.pack_to_budget(diff, -1) == (diff, [], [])
+
+
+def test_a_diff_that_already_fits_is_untouched():
+    diff = CODE + "\n"
+    assert m.pack_to_budget(diff, 10**6) == (diff, [], [])
+
+
+@pytest.mark.parametrize(
+    "path,tier",
+    [
+        ("pkg/agent.py", 0),
+        ("src/main.go", 0),
+        (".github/workflows/ci.yml", 0),
+        ("tests/test_agent.py", 1),
+        ("pkg/tests/helpers.py", 1),
+        ("pkg/test_agent.py", 1),
+        ("pkg/agent_test.go", 1),
+        ("README.md", 2),
+        ("docs/design.rst", 2),
+        ("notes.txt", 2),
+    ],
+)
+def test_source_outranks_tests_which_outrank_prose(path, tier):
+    assert m.review_tier(path) == tier
+
+
+def test_source_is_packed_before_prose_of_the_same_size():
+    """The regression in one assertion. Alphabetically `a_docs.md` sorts
+    first and used to take the budget; the source file must win regardless."""
+    diff = _big("a_docs.md", 40000) + "\n" + _big("z_code.py", 40000) + "\n"
+    packed, _partial, omitted = m.pack_to_budget(diff, 45000)
+    assert "z_code.py" in packed
+    assert omitted == ["a_docs.md"]
+
+
+def test_source_is_packed_before_tests():
+    diff = _big("a_tests/test_x.py", 40000) + "\n" + _big("z_impl.py", 40000)
+    packed, _partial, omitted = m.pack_to_budget(diff + "\n", 45000)
+    assert "z_impl.py" in packed
+    assert omitted == ["a_tests/test_x.py"]
+
+
+def test_a_file_too_big_for_the_budget_does_not_take_it_all():
+    diff = "\n".join(
+        [_big("huge.py", 80000)]
+        + [_big(f"small{i}.py", 4000) for i in range(8)]
+    )
+    packed, _partial, omitted = m.pack_to_budget(diff + "\n", 45000)
+    shown = re.findall(r"^diff --git a/(\S+)", packed, re.M)
+    assert "huge.py" not in shown, "the huge file starved the others again"
+    assert len([p for p in shown if p.startswith("small")]) >= 7
+    assert omitted == ["huge.py"]
+
+
+def test_a_big_file_that_fits_still_does_not_starve_the_small_ones():
+    """The sharper case, and the one the first version of this test missed:
+    `big.py` FITS inside the budget, so a largest-first packer takes it and
+    has room for one small file after. Smallest-first spends the same budget
+    on eight files instead of two. On PR #2626 that difference was ten source
+    files reviewed against none."""
+    diff = "\n".join(
+        [_big("big.py", 40000)] + [_big(f"small{i}.py", 4000) for i in range(8)]
+    )
+    packed, _partial, _omitted = m.pack_to_budget(diff + "\n", 45000)
+    shown = re.findall(r"^diff --git a/(\S+)", packed, re.M)
+    smalls = [p for p in shown if p.startswith("small")]
+    assert len(smalls) == 8, (
+        f"expected all eight small files, got {len(smalls)}: {shown}"
+    )
+    assert "big.py" not in shown
+
+
+def test_every_shown_file_is_whole_or_explicitly_marked_truncated():
+    diff = "\n".join(_big(f"f{i}.py", 20000) for i in range(6)) + "\n"
+    packed, partial, _omitted = m.pack_to_budget(diff, 50000)
+    for path in re.findall(r"^diff --git a/(\S+)", packed, re.M):
+        if path in partial:
+            continue
+        body = packed.split(f"diff --git a/{path} ")[1]
+        assert "truncated" not in body.split("diff --git")[0]
+
+
+def test_a_partial_file_is_cut_on_a_hunk_boundary():
+    """`head -c` cut mid-line, so the model's last file ended in half a
+    statement and it reasoned about code it could not see the end of."""
+    rows = []
+    for h in range(40):
+        rows += [f"@@ -{h * 10},2 +{h * 10},3 @@", " ctx", "+" + "y" * 200]
+    diff = _section("one.py", *rows) + "\n"
+    packed, partial, _omitted = m.pack_to_budget(diff, 9000)
+    assert partial == ["one.py"]
+    body = packed[: packed.index("[... this file was truncated here ...]")]
+    # Nothing after the final complete hunk header may be a dangling fragment:
+    # every retained line is a whole line from the original.
+    original = set(diff.split("\n"))
+    assert all(line in original for line in body.split("\n") if line)
+
+
+def test_the_packed_diff_never_exceeds_the_budget():
+    diff = "\n".join(_big(f"f{i}.py", 13000) for i in range(12)) + "\n"
+    for budget in (8000, 20000, 45000, 90000):
+        packed, _partial, _omitted = m.pack_to_budget(diff, budget)
+        assert len(packed.encode()) <= budget, f"overran at {budget}"
+
+
+def test_every_file_is_either_shown_or_named_unreviewed():
+    """Silence on a file reads as approval. A file must never simply vanish."""
+    diff = "\n".join(_big(f"f{i}.py", 15000) for i in range(10)) + "\n"
+    packed, partial, omitted = m.pack_to_budget(diff, 40000)
+    shown = set(re.findall(r"^diff --git a/(\S+)", packed, re.M))
+    assert shown | set(omitted) == {f"f{i}.py" for i in range(10)}
+    assert not (shown & set(omitted)), "a file was both shown and reported"
+    assert set(partial) <= shown
+
+
+def test_the_packed_diff_keeps_the_original_file_order():
+    """Packing decides WHAT is shown, not what order the PR is read in."""
+    diff = (
+        "\n".join([_big("z.py", 4000), _big("a.py", 4000), _big("m.py", 4000)])
+        + "\n"
+    )
+    packed, _partial, _omitted = m.pack_to_budget(diff, 10**6)
+    assert re.findall(r"^diff --git a/(\S+)", packed, re.M) == [
+        "z.py",
+        "a.py",
+        "m.py",
+    ]
+
+
+def test_an_unparseable_diff_is_returned_whole_rather_than_dropped():
+    """A review of everything is the safe failure; a review of nothing looks
+    exactly like a clean bill of health."""
+    junk = "not a diff at all\njust some text\n" * 500
+    packed, partial, omitted = m.pack_to_budget(junk, 100)
+    assert packed == junk and partial == [] and omitted == []

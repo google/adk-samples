@@ -205,6 +205,132 @@ def split_sections(diff: str) -> tuple[list[str], list[list[str]]]:
     return preamble, sections
 
 
+# ------------------------------------------------------- fitting the budget
+#
+# The prompt has a hard byte budget (agy takes it as one argv string, and
+# Linux caps that at 131072). Until this existed the workflow met the budget
+# with `head -c`, which cuts at a byte offset in git's own order -- roughly
+# alphabetical. That is not a review policy, it is an accident, and on PR
+# #2626 it produced this: 662KB of diff, ~100KB of budget, and the budget went
+# to the six paths that sorted first. Four of the six were markdown. Not one
+# of the fourteen source files was reviewed in full, 31 files were invisible,
+# and the author was told to split the PR up.
+#
+# So pack the budget deliberately instead:
+#
+#   1. SOURCE before tests before prose. A defect in shipped code costs more
+#      than one in a test, which costs more than one in documentation, and
+#      when there is not room for everything that ranking is the decision.
+#   2. Smallest first WITHIN a tier, which maximises how many files are seen
+#      whole. One 79KB file would otherwise take four fifths of the budget.
+#   3. Whole files, with at most one partial at the end. A 2.7KB slice of a
+#      74KB file is not a review of anything -- an equal split across 37 files
+#      sounds fairer and tells the model nothing about any of them.
+#
+# Reordering is safe: a hunk header carries its own line numbers, so an anchor
+# does not depend on where its file sits in the diff.
+TEST_PATH = re.compile(r"(^|/)tests?/|(^|/)test_[^/]*$|_test\.[a-z]+$", re.I)
+PROSE_EXT = {".md", ".markdown", ".rst", ".txt", ".adoc"}
+
+# Below this a partial file is a fragment rather than a sample, so it goes to
+# the unreviewed list instead, which at least names it honestly.
+MIN_PARTIAL_BYTES = 3000
+
+
+def review_tier(path: str) -> int:
+    """0 source, 1 test, 2 prose. Lower is packed first."""
+    if Path(path).suffix.lower() in PROSE_EXT:
+        return 2
+    if TEST_PATH.search(path):
+        return 1
+    return 0
+
+
+def _truncate_at_hunk(text: str, limit: int) -> str:
+    """`text` cut to at most `limit` bytes, on a hunk boundary where possible.
+
+    `head -c` cut mid-line, so the last file the model saw ended in half a
+    statement and it had to guess the rest. Cutting at a `@@` keeps every hunk
+    it does see intact.
+    """
+    kept: list[str] = []
+    size = 0
+    for row in text.split("\n"):
+        cost = len(row.encode()) + 1
+        if size + cost > limit:
+            break
+        kept.append(row)
+        size += cost
+    # Back off to the start of the last hunk, unless that discards everything.
+    for index in range(len(kept) - 1, 0, -1):
+        if kept[index].startswith("@@"):
+            if index > 1:
+                kept = kept[:index]
+            break
+    return "\n".join(kept)
+
+
+def pack_to_budget(
+    diff: str, max_bytes: int
+) -> tuple[str, list[str], list[str]]:
+    """(diff that fits, partially shown paths, omitted paths).
+
+    `max_bytes <= 0` means no budget was given, and the diff is returned as
+    it came. Never raises on a diff it cannot parse: an unparsed diff is
+    returned whole, because a review of everything is the safe failure and a
+    review of nothing looks exactly like a clean bill of health.
+    """
+    if max_bytes <= 0 or len(diff.encode()) <= max_bytes:
+        return diff, [], []
+
+    preamble, sections = split_sections(diff)
+    if not sections:
+        return diff, [], []
+    head = "\n".join(preamble)
+    room = max_bytes - len(head.encode()) - 1
+    if room <= 0:
+        return diff, [], []
+
+    by_path = [
+        (_section_path(s) or "<unknown>", "\n".join(s)) for s in sections
+    ]
+    order = sorted(
+        range(len(by_path)),
+        key=lambda i: (
+            review_tier(by_path[i][0]),
+            len(by_path[i][1].encode()),
+            by_path[i][0],
+        ),
+    )
+
+    chosen: dict[int, str] = {}
+    partial: list[str] = []
+    omitted: list[str] = []
+    for i in order:
+        path, text = by_path[i]
+        cost = len(text.encode()) + 1
+        if cost <= room:
+            chosen[i] = text
+            room -= cost
+        elif room >= MIN_PARTIAL_BYTES and not partial:
+            cut = _truncate_at_hunk(text, room - 64)
+            if len(cut.encode()) >= MIN_PARTIAL_BYTES:
+                chosen[i] = f"{cut}\n[... this file was truncated here ...]"
+                partial.append(path)
+                room = 0
+            else:
+                omitted.append(path)
+        else:
+            omitted.append(path)
+
+    # Emit in the diff's ORIGINAL order. The packing decides what is shown;
+    # the model should still read the PR in the shape git describes it.
+    rows = [head] if head else []
+    rows.extend(chosen[i] for i in sorted(chosen))
+    out = "\n".join(rows).strip("\n")
+    return (out + "\n" if out else ""), partial, omitted
+
+
 def filter_diff(diff: str) -> tuple[str, dict]:
     """Drop unreviewable file sections. Returns (diff, stats)."""
     preamble, sections = split_sections(diff)
@@ -275,6 +401,20 @@ def build_parser() -> argparse.ArgumentParser:
         "the poster enforces. 0 means no ceiling",
     )
     parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=0,
+        help="byte budget for the diff in the prompt. The script packs whole "
+        "files into it, source before tests before prose; 0 means no budget "
+        "and the filtered diff is written as-is",
+    )
+    parser.add_argument(
+        "--unreviewed-out",
+        type=Path,
+        default=None,
+        help="write the paths that did not fit here, one per line",
+    )
+    parser.add_argument(
         "--github-output",
         type=Path,
         default=None,
@@ -297,6 +437,7 @@ def main() -> int:
         )
 
     filtered, stats = filter_diff(diff)
+    filtered, partial, omitted = pack_to_budget(filtered, args.max_bytes)
 
     try:
         args.out.write_text(filtered, encoding="utf-8")
@@ -305,8 +446,29 @@ def main() -> int:
             infra_fault(CHECKER, f"cannot write {args.out}: {exc}")
         )
 
+    if args.unreviewed_out:
+        try:
+            args.unreviewed_out.write_text(
+                "".join(f"{p}\n" for p in omitted), encoding="utf-8"
+            )
+        except OSError as exc:
+            return report_infra_fault(
+                infra_fault(
+                    CHECKER, f"cannot write {args.unreviewed_out}: {exc}"
+                )
+            )
+
     for path, reason, churn in stats["skipped"]:
         print(f"  skipped {path} ({reason}, {churn} lines)")
+    for path in partial:
+        print(f"  partial {path} (did not fit whole)")
+    if omitted:
+        print(
+            f"  {len(omitted)} file(s) did not fit the "
+            f"{args.max_bytes}-byte prompt budget:"
+        )
+        for path in omitted[:20]:
+            print(f"    unreviewed: {path}")
 
     lines = stats["reviewable_lines"]
     budget = budget_for(lines)
