@@ -23,10 +23,7 @@ import time
 
 import aiohttp
 import google.auth
-from dotenv import load_dotenv
 from google.cloud import secretmanager
-
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -128,11 +125,10 @@ def get_credentials() -> tuple[str | None, str | None]:
 
 
 async def get_auth_token_async() -> str:
-    """
-    Obtains access token asynchronously.
+    """Obtains access token asynchronously.
+
     Avoids repeated calls to the authentication server.
     """
-    global _TOKEN_CACHE
     current_time = time.time()
 
     if _TOKEN_CACHE["access_token"] and current_time < (
