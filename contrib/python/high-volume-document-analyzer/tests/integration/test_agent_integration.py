@@ -56,6 +56,14 @@ async def test_agent_responds():
     """Agent should securely fetch mock documents and return a basic response."""
     # This invokes Vertex AI using default GCP Application Credentials.
     # Because USE_MOCK_API is True by default, it doesn't need Secret Manager or OAuth APIs.
+    import os
+
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+    if not project or project.startswith("<"):
+        pytest.skip(
+            "Integration test requires a configured GOOGLE_CLOUD_PROJECT."
+        )
+
     response = await _run_agent(
         "Please summarize the latest updates for collection 12345"
     )

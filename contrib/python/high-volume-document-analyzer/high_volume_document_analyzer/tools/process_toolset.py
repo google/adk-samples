@@ -23,10 +23,7 @@ import time
 
 import aiohttp
 import google.auth
-from dotenv import load_dotenv
 from google.cloud import secretmanager
-
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"

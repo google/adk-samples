@@ -15,18 +15,32 @@
 """High-Volume Document Analyzer Agent: query and synthesize information from documents."""
 
 import os
+from pathlib import Path
 
 import google.auth
 from dotenv import load_dotenv
 
-from high_volume_document_analyzer import agent
+# Environment bootstrap for the whole package. Real values come from .env
+# (gitignored) or the ambient environment. The committed .env.example is the
+# fallback so the unit tests and the runnability test import cleanly with no
+# .env present. override=False throughout, so a real environment variable wins.
+_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_ROOT / ".env", override=False)
+load_dotenv(_ROOT / ".env.example", override=False)
 
-# Load variables from .env if present. In production the environment is
-# already populated by the platform (Cloud Run, GKE, etc.), so a missing
-# .env is expected and not an error.
-load_dotenv()
+try:
+    _, project_id = google.auth.default()
+    if project_id and (
+        not os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT", "").startswith("<")
+    ):
+        os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
+except Exception:
+    pass
 
-_, project_id = google.auth.default()
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id)
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+
+from . import agent  # noqa: E402 -- must come after load_dotenv()
+
+__all__ = ["agent"]
