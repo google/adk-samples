@@ -94,16 +94,18 @@ class LoanApplicationData(BaseModel):
         default="",
         description="Amount of loan requested (e.g., '$150,000')",
     )
-    loan_purpose: Literal[
-        "Equipment",
-        "Expansion",
-        "Working Capital",
-        "Real Estate",
-        "Refinance",
-        "Other",
-        "",
-    ] = Field(
-        default="",
+    loan_purpose: (
+        Literal[
+            "Equipment",
+            "Expansion",
+            "Working Capital",
+            "Real Estate",
+            "Refinance",
+            "Other",
+        ]
+        | None
+    ) = Field(
+        default=None,
         description="Purpose of the loan",
     )
     loan_term_months: str = Field(
