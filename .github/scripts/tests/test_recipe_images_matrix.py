@@ -137,9 +137,7 @@ def test_changed_paths_returns_none_when_the_diff_fails(tmp_path: Path) -> None:
     assert m._changed_paths("no-such-ref", tmp_path) is None
 
 
-def test_self_paths_cover_both_files_that_define_the_matrix(
-    tmp_path: Path,
-) -> None:
+def test_self_paths_cover_both_files_that_define_the_matrix() -> None:
     """A push touching only these matches no recipe prefix.
 
     Without the escape they would filter down to an empty matrix and merge
