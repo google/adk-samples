@@ -12,24 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Sub-agents package for brand search optimization."""
+"""Tools module for brand search optimization."""
 
-from .comparison import (
-    TitleOptimizationReport,
-    TitleRecommendation,
-    comparison_critic_agent,
-    comparison_generator_agent,
-    comparison_root_agent,
+from .bq_connector import (
+    BrandCatalogResponse,
+    ProductRecord,
+    get_product_details_for_brand,
 )
-from .keyword_finding.agent import keyword_finding_agent
-from .search_results.agent import search_results_agent
+from .browser_computer import (
+    MockBrowserComputer,
+    PlaywrightBrowserComputer,
+    get_browser_computer,
+    get_computer_use_toolset,
+)
 
 __all__ = [
-    "TitleOptimizationReport",
-    "TitleRecommendation",
-    "comparison_critic_agent",
-    "comparison_generator_agent",
-    "comparison_root_agent",
-    "keyword_finding_agent",
-    "search_results_agent",
+    "BrandCatalogResponse",
+    "MockBrowserComputer",
+    "PlaywrightBrowserComputer",
+    "ProductRecord",
+    "get_browser_computer",
+    "get_computer_use_toolset",
+    "get_product_details_for_brand",
 ]
