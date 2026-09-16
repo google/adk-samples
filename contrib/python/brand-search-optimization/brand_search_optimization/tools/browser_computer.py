@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import re
 import socket
 import urllib.parse
 from typing import Any, Literal
@@ -52,11 +53,30 @@ _ALLOWED_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 _DISALLOWED_HOSTS: frozenset[str] = frozenset(
     {"localhost", "127.0.0.1", "metadata.google.internal", "instance-data"}
 )
+# Hostnames are restricted to the characters a browser accepts verbatim.
+# Anything else -- in particular non-ASCII labels, which Chromium IDNA-encodes
+# and urllib.parse does not -- is rejected rather than guessed at.
+_SAFE_HOSTNAME_PATTERN = re.compile(r"^[a-z0-9.\-:\[\]]+$")
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Reports whether an address belongs to a range the agent must not reach."""
     return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+
+
+def _has_parser_confusion_chars(url: str) -> bool:
+    """Reports characters that Chromium and urllib.parse disagree about.
+
+    Chromium strips ASCII control characters (notably tab, CR and LF) anywhere
+    in a URL before parsing it, and treats a backslash as a separator inside the
+    authority. urllib.parse does neither, so a URL containing any of them can
+    designate one host here and a different one in the browser. Such URLs are
+    rejected rather than normalised, since normalisation would mean
+    reimplementing the WHATWG URL parser.
+    """
+    return "\\" in url or any(
+        ord(char) < 0x20 or ord(char) == 0x7F for char in url
+    )
 
 
 def _validate_navigation_url(url: str) -> bool:
@@ -66,13 +86,21 @@ def _validate_navigation_url(url: str) -> bool:
     use :func:`validate_navigation_target`, which also resolves the hostname.
     """
     try:
+        if _has_parser_confusion_chars(url):
+            return False
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme.lower() not in _ALLOWED_URL_SCHEMES:
+            return False
+        if parsed.username or parsed.password:
+            # "https://www.google.com@metadata.google.internal/" reads as a
+            # trusted host but resolves to the userinfo-suffixed one.
             return False
         hostname = parsed.hostname
         if not hostname:
             return False
         hostname_lower = hostname.lower()
+        if not _SAFE_HOSTNAME_PATTERN.match(hostname_lower):
+            return False
         if hostname_lower in _DISALLOWED_HOSTS or hostname_lower.endswith(
             (".internal", ".local")
         ):
@@ -112,7 +140,16 @@ def _resolved_addresses_allowed(hostname: str) -> bool:
 
 
 async def validate_navigation_target(url: str) -> bool:
-    """Validates a URL and the addresses its hostname resolves to."""
+    """Validates a URL and the addresses its hostname resolves to.
+
+    The resolution check is best-effort defence in depth, not a security
+    boundary: this function and the browser resolve the hostname separately, so
+    a DNS rebinding attacker controlling the authoritative server can return a
+    public address here and a private one to Chromium. Deployments that navigate
+    to untrusted URLs must additionally restrict egress at the network layer
+    (VPC firewall rules, or an egress proxy the browser is pinned to). See the
+    "Security Notes" section of the recipe README.
+    """
     if not _validate_navigation_url(url):
         return False
     hostname = urllib.parse.urlparse(url).hostname
@@ -242,7 +279,13 @@ class MockBrowserComputer(BaseComputer):
         return await self.current_state()
 
     async def navigate(self, url: str) -> ComputerState:
-        formatted_url = _format_url(url)
+        try:
+            formatted_url = _format_url(url)
+        except ValueError:
+            # The model can emit any string here, so a bad scheme is an
+            # expected outcome rather than a programming error.
+            logger.warning("Rejected navigation to malformed URL: %s", url)
+            return await self.current_state()
         if not await validate_navigation_target(formatted_url):
             logger.warning(
                 "Rejected navigation to disallowed URL: %s", formatted_url
@@ -442,7 +485,13 @@ class PlaywrightBrowserComputer(BaseComputer):
         return await self.current_state()
 
     async def navigate(self, url: str) -> ComputerState:
-        formatted_url = _format_url(url)
+        try:
+            formatted_url = _format_url(url)
+        except ValueError:
+            # The model can emit any string here, so a bad scheme is an
+            # expected outcome rather than a programming error.
+            logger.warning("Rejected navigation to malformed URL: %s", url)
+            return await self.current_state()
         if not await validate_navigation_target(formatted_url):
             logger.warning(
                 "Rejected navigation to disallowed URL: %s", formatted_url

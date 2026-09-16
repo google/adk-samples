@@ -139,6 +139,31 @@ Environment variables are declared in `.env.example`:
 
 See `tests/example_interaction.md` for a complete example interaction trace.
 
+## Security Notes
+
+The Computer Use agent drives a real Chromium instance, so any URL the model
+emits becomes an outbound request from wherever the agent runs.
+`brand_search_optimization/tools/browser_computer.py` filters navigation
+targets before handing them to Playwright: it allows only `http`/`https`,
+rejects loopback, private, link-local and metadata hosts, rejects URLs whose
+host Chromium and `urllib.parse` would disagree about (embedded control
+characters, backslashes, userinfo, non-ASCII labels), and resolves the hostname
+to check the resulting addresses.
+
+**That filtering is defence in depth, not a security boundary.** The validator
+and the browser resolve DNS independently, so an attacker who controls an
+authoritative name server can answer with a public address for the check and a
+private one for Chromium (DNS rebinding). Closing that gap requires a control
+below the application:
+
+- Run the agent in a VPC whose egress firewall denies RFC1918, loopback and
+  `169.254.0.0/16` (including `169.254.169.254`), or
+- Launch Chromium behind an egress proxy that enforces a destination allowlist,
+  and block direct egress from the container.
+
+Treat the recipe's own checks as a way to fail fast and log, not as the thing
+keeping the metadata server unreachable.
+
 ## Disclaimer
 
 This recipe is for educational and prototyping use. It is not production hardened and should be reviewed, tested, and secured before production deployment.

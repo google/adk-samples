@@ -172,6 +172,32 @@ class TestBrowserComputer:
         assert _validate_navigation_url("http://192.168.1.1/") is False
         assert _validate_navigation_url("invalid-url") is False
 
+    def test_validate_navigation_url_rejects_parser_confusion(self):
+        # Chromium strips tab/CR/LF before parsing, so the host it reaches
+        # differs from the one urllib.parse reports.
+        assert (
+            _validate_navigation_url("http://metadata.google\t.internal/")
+            is False
+        )
+        assert _validate_navigation_url("http://127.0.0\n.1/admin") is False
+
+        # Chromium treats a backslash as an authority separator.
+        assert (
+            _validate_navigation_url("http://www.google.com\\@127.0.0.1/")
+            is False
+        )
+
+        # Userinfo makes a blocked host read as a trusted one.
+        assert (
+            _validate_navigation_url(
+                "http://www.google.com@metadata.google.internal/"
+            )
+            is False
+        )
+
+        # Non-ASCII hosts would be IDNA-encoded by the browser only.
+        assert _validate_navigation_url("http://exämple.com/") is False
+
     @pytest.mark.asyncio
     async def test_validate_navigation_target_resolves_hostname(self):
         # A public-looking hostname that resolves to a private address is
@@ -245,8 +271,11 @@ class TestBrowserComputer:
     @pytest.mark.asyncio
     async def test_mock_browser_computer_rejects_unsafe_schemes(self):
         computer = MockBrowserComputer()
-        with pytest.raises(ValueError, match="Invalid URL scheme"):
-            await computer.navigate("file:///etc/passwd")
+        before = (await computer.current_state()).url
+        # An unsupported scheme is reported back as an unchanged state rather
+        # than raised, so the agent loop can recover.
+        state = await computer.navigate("file:///etc/passwd")
+        assert state.url == before
 
     @pytest.mark.asyncio
     async def test_playwright_browser_computer_key_combination(self):
