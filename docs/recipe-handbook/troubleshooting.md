@@ -31,6 +31,7 @@ Each command below says which directory to run it from. Replace
 - [A file or directory the recipe must have is absent](#required-file-or-directory-missing)
 - [The recipe sits at the wrong path](#recipe-is-in-the-wrong-folder)
 - [The recipe lives in a folder that no longer accepts edits](#changes-inside-a-retired-folder)
+- [Only repository admins may modify files under .github/](#only-repository-admins-may-modify-files-under-github)
 
 **Containers (Dockerfile)**
 - [Dockerfile failed to build](#dockerfile-build-failed)
@@ -221,6 +222,22 @@ out is never blocked.
 
 **Confirm**, from the repo root —
 `uv run validate structure contrib/<language>/<recipe>`
+
+## Only repository admins may modify files under .github/
+
+**Symptom** — `[github-dir-admin-only] ... is under .github/, which can only be modified by repository administrators.`
+
+**Cause** — files in the `.github/` directory (CI workflows, issue templates, automation scripts, and repository policy configuration) control repository-wide infrastructure and security. Only repository administrators are permitted to create, modify, or delete files under `.github/`.
+
+**Fix** — revert all additions, modifications, or deletions under `.github/` in your pull request:
+
+    git checkout origin/main -- .github/
+    git commit -m "Revert changes under .github/"
+
+If CI workflow or repository configuration changes are needed, please open an issue describing the requested changes or reach out to a repository administrator.
+
+**Confirm**, from the repo root —
+`git diff --name-only origin/main...HEAD | uv run python tools/check_github_dir_changes.py --author <your-username>`
 
 ## README.md is missing or empty
 
