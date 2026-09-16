@@ -112,6 +112,9 @@ class Doc(str, Enum):
     ADK_MAJOR = "core-recipe-is-behind-the-current-adk-major"
     RECIPE_INACTIVE = "recipe-is-marked-inactive"
 
+    DOCKER_BUILD = "dockerfile-build-failed"
+    DOCKER_SERVES = "recipe-container-does-not-serve"
+
     CI_FAULT = "ci-infrastructure-failure"
 
     @property
