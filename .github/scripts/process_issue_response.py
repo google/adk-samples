@@ -180,8 +180,65 @@ def parse_option(raw_option: Any) -> Option:
     return Option.ACKNOWLEDGE_AND_ASSIGN
 
 
+def _strip_trailing_commas(text: str) -> str:
+    """Remove trailing commas before '}' or ']' outside of JSON string literals."""
+    result: list[str] = []
+    in_string = False
+    escape = False
+    i = 0
+    length = len(text)
+    while i < length:
+        char = text[i]
+        if escape:
+            escape = False
+            result.append(char)
+            i += 1
+            continue
+        if char == "\\":
+            if in_string:
+                escape = True
+            result.append(char)
+            i += 1
+            continue
+        if char == '"':
+            in_string = not in_string
+            result.append(char)
+            i += 1
+            continue
+        if not in_string and char == ",":
+            j = i + 1
+            while j < length and text[j] in " \t\r\n":
+                j += 1
+            if j < length and text[j] in ("}", "]"):
+                i += 1
+                continue
+        result.append(char)
+        i += 1
+    return "".join(result)
+
+
+def _parse_json_dict(text: str) -> dict[str, Any] | None:
+    """Attempt to parse a candidate string into a dict, handling strictness and trailing commas."""
+    text = text.strip()
+    if not text:
+        return None
+
+    cleaned = _strip_trailing_commas(text)
+    candidates = (text, cleaned) if cleaned != text else (text,)
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate, strict=False)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            continue
+
+    return None
+
+
 def find_json_objects(text: str) -> list[dict[str, Any]]:
-    """Find and parse all valid JSON objects in text, balancing braces."""
+    """Find all top-level balanced JSON objects `{...}` within text."""
     results: list[dict[str, Any]] = []
     text_len = len(text)
     i = 0
@@ -214,12 +271,9 @@ def find_json_objects(text: str) -> list[dict[str, Any]]:
                             break
             if end_idx != -1:
                 candidate = text[start_idx : end_idx + 1]
-                try:
-                    parsed = json.loads(candidate)
-                    if isinstance(parsed, dict):
-                        results.append(parsed)
-                except json.JSONDecodeError:
-                    pass
+                parsed_obj = _parse_json_dict(candidate)
+                if parsed_obj is not None:
+                    results.append(parsed_obj)
                 i = end_idx + 1
                 continue
         i += 1
@@ -252,39 +306,30 @@ def extract_decision_json(raw_text: str) -> dict[str, Any]:
     text_to_search = raw_text
 
     # Check if raw_text is the agy envelope JSON: {"status": ..., "response": ...}
-    try:
-        envelope = json.loads(raw_text)
-        if isinstance(envelope, dict) and "status" in envelope:
-            if "response" in envelope:
-                if isinstance(envelope["response"], str):
-                    text_to_search = envelope["response"].strip()
-                elif isinstance(envelope["response"], dict):
-                    return envelope["response"]
-    except json.JSONDecodeError:
-        pass
+    envelope = _parse_json_dict(raw_text)
+    if envelope is not None and "status" in envelope:
+        if "response" in envelope:
+            if isinstance(envelope["response"], str):
+                text_to_search = envelope["response"].strip()
+            elif isinstance(envelope["response"], dict):
+                return envelope["response"]
 
     # Try direct parse of text_to_search first
-    try:
-        parsed = json.loads(text_to_search)
-        if (
-            isinstance(parsed, dict)
-            and ("option" in parsed or "response" in parsed)
-            and "status" not in parsed
-        ):
-            return parsed
-    except json.JSONDecodeError:
-        pass
+    parsed = _parse_json_dict(text_to_search)
+    if (
+        parsed is not None
+        and ("option" in parsed or "response" in parsed)
+        and "status" not in parsed
+    ):
+        return parsed
 
     # Search for markdown code fences
     fenced_matches = FENCED_JSON.findall(text_to_search)
     fenced_candidates: list[dict[str, Any]] = []
     for match_str in fenced_matches:
-        try:
-            parsed = json.loads(match_str)
-            if isinstance(parsed, dict):
-                fenced_candidates.append(parsed)
-        except json.JSONDecodeError:
-            pass
+        fenced_obj = _parse_json_dict(match_str)
+        if fenced_obj is not None:
+            fenced_candidates.append(fenced_obj)
 
     if fenced_candidates:
         fenced_candidates.sort(key=_score_decision_candidate, reverse=True)

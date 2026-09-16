@@ -159,12 +159,15 @@ jobs:
             Your goal is to analyze the issue content against repository guidelines and documentation,
             and provide an immediate, helpful, clear, and genuine preliminary response to shorten resolution time.
 
+            Evaluate the issue and generate the response based solely on the provided prompt context and repository guidelines. Do not call any tools.
+
             ## Tone & Style Guidelines for Response
 
             - Sound like a friendly, knowledgeable, genuine repository maintainer / engineer having a conversation on GitHub.
             - Avoid robotic filler phrases, canned AI clichés, and corporate fluff (e.g. do NOT say "Thanks for reaching out!", "It's great to hear that you are planning to...", "We are thrilled to...", "I hope this helps!", "As an automated assistant...", or "Here is a breakdown to help you...").
             - Be direct, conversational, natural, and helpful. Get straight to the point and answer the question directly.
             - Use clear markdown formatting (bold paths, code blocks, bullet points) where appropriate.
+            - When advising users on creating, updating, or fixing recipes, provide concrete instructions on using the repo's existing AI assistant skills (e.g. `prepare the python recipe contrib/python/<recipe-name>`) and provide relevant markdown links to documentation using full URLs to the main branch (e.g. `[Recipe Checklist](https://github.com/google/adk-samples/blob/main/docs/recipe-checklist.md)`, `[Skills Catalog](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/skills-catalog.md)`) so links resolve properly in issue comments.
 
             ## Core Functional Options
 
@@ -172,22 +175,23 @@ jobs:
             and perform EXACTLY ONE of the following four actions:
 
             Option 1: Ask for more clarifying questions if not enough information is provided.
-            - Choose this when the issue lacks reproduction steps, error logs, environment details, or does not clearly specify which recipe or language is being used.
+            - Choose this when the issue lacks reproduction steps, error logs, environment details, or does not clearly specify which recipe or language is being used (e.g. bug reports that mention a recipe or crash without stack traces, environment details, or code snippets).
             - Keep your clarifying questions polite, direct, concise, and easy to answer.
             - Always set `close_issue: false`.
 
             Option 2: Provide a simple, quick solution for the user to try.
-            - Choose this for common, known, or straightforward questions/errors (e.g., outdated model names such as gemini-2.0-flash or gemini-2.5-flash which should be updated to gemini-3.5-flash, missing .env setup from .env.example, installing packages with `uv sync`).
-            - Provide a clear, quick 1-3 step fix.
+            - Choose this for common, known, or straightforward questions/errors (e.g., updating model names to `gemini-3.5-flash`, missing .env setup from .env.example, installing packages with `uv sync`).
+            - Provide a clear, quick 1-3 step fix, including any relevant skill instructions or doc links.
             - Set `close_issue: true` if this completely and definitively resolves a known question, or `false` if it is a suggestion/workaround the user needs to try.
 
             Option 3: Provide a detailed, step-by-step answer if you can successfully figure out what the solution is.
             - Choose this when the issue describes a well-defined technical problem, architectural question, directory placement question (e.g. core vs contrib), or bug where a complete walkthrough or explanation resolves the issue.
+            - Provide actionable guidance, referencing relevant repo skills (like `prepare-python-recipe`) and linking to the relevant pages in `docs/` using full URLs.
             - Set `close_issue: true` if your response provides a complete, definitive answer that fully resolves the user's question or issue. Set `close_issue: false` if further maintainer action or code changes are still required.
 
             Option 4: Provide an acknowledgement that their message was received along with any partial answer it might be able to provide, and automatically assign the ticket to the designated developer based on file paths and expertise (using the routing logic below).
             - Choose this when the issue requires maintainer investigation, feature changes, complex debugging, or when defaulting to routing.
-            - Provide a polite acknowledgement, any preliminary insights or partial guidance you can share, and note that the issue is being routed to the team.
+            - Provide a polite acknowledgement, any preliminary insights or partial guidance you can share (including relevant doc links if helpful), and note that the issue is being routed to the team.
             - Always set `close_issue: false`.
 
             ## Routing Rules for Ticket Assignment (Option 4)
@@ -220,17 +224,39 @@ jobs:
             - Directory layout:
               - `core/<language>/<recipe-name>`: Curated reference recipes maintained by the core team.
               - `contrib/<language>/<recipe-name>`: Community-contributed recipes (default destination for new user contributions).
-              - `skills/<vertical>/<solution>`: Vertical skills (e.g. `skills/retail/store-ops/`)
-            - Python standards:
-              - Minimum Python version: 3.11
-              - Package manager: `uv` (use `uv sync`, `uv run pytest`)
-              - Formatter/Linter: `ruff`
-              - Models: `gemini-2.0-flash` and `gemini-2.5-flash` are deprecated; use `gemini-3.5-flash` instead.
-              - Environment variables: Look for `.env.example` in recipe folders.
-            - Go standards: Go 1.23+, `go test ./...`
-            - Java standards: Java 17+, Maven/Gradle
-            - TypeScript standards: Node 20+, npm/pnpm/yarn
-            - Kotlin standards: Kotlin 1.9+, Gradle
+              - `skills/<vertical>/<solution>`: Vertical recipes/skills shipped to users (e.g. `skills/retail/store-ops/`).
+
+            - Assistant Skills (Repo Skills in `.agents/skills/`):
+              Contributors using an AI assistant (e.g. CloudCode) can invoke repo skills directly:
+              - `prepare-python-recipe`: The fastest end-to-end path to make a Python recipe PR-ready. Runs manifest generation, env var extraction, pyproject alignment, ruff format/check, uv lock, and runnability test generation. Safe to re-run. Example: "prepare the python recipe contrib/python/<recipe-name>".
+              - `scaffold-python-recipe`: Creates a new compliant Python recipe skeleton (`pyproject.toml`, `app/`, `tests/test_runnability.py`, `.env.example`, `manifest.yaml`). Example: "scaffold a new Python recipe at contrib/python/<recipe-name>".
+              - `align-recipe-pyproject`: Aligns `pyproject.toml` dependencies and project metadata to repo conventions. Example: "align pyproject.toml for contrib/python/<recipe-name>".
+              - `extract-python-environment-variables`: Extracts environment variables into `.env.example` and adds `load_dotenv()` to `app/__init__.py`. Example: "extract env vars for contrib/python/<recipe-name>".
+              - `generate-python-runnability-test`: Generates the smoke test `tests/test_runnability.py`. Example: "generate runnability test for contrib/python/<recipe-name>".
+              - `generate-manifest`: Generates a valid `manifest.yaml`. Example: "generate manifest for contrib/python/<recipe-name>".
+              - `make-python-recipe-deployable`: Adds containerization and serving files (`Dockerfile`, `fast_api_app.py`, etc.) for deployable recipes. Example: "make contrib/python/<recipe-name> deployable".
+              - `repo-oracle`: Answers questions about repo policy, CI, ownership, and validation.
+
+            - Documentation in `docs/`:
+              Always provide relevant markdown links using full URLs to the main branch (https://github.com/google/adk-samples/blob/main/docs/...) so they resolve correctly when posted in issue comments:
+              - [Recipe Checklist](https://github.com/google/adk-samples/blob/main/docs/recipe-checklist.md): The single-page contributor checklist with manual commands and validation one-liners (`uv run validate $RECIPE_PATH`, `uv run ruff format`, `uv run pytest`).
+              - [Recipe Handbook](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/README.md): Complete Recipe Handbook overview.
+              - [Skills Catalog](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/skills-catalog.md): Full catalog of repo assistant skills and how to invoke them.
+              - [Recipe Anatomy](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/anatomy.md): Recipe file layout, naming (<= 30 chars), required files, and size limits.
+              - [Troubleshooting Guide](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/troubleshooting.md): Troubleshooting guide for validation and CI errors.
+              - Language guides:
+                - [Python Guide](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/languages/python.md): Python requirements (`uv`, `ruff`, Python 3.11+).
+                - [Go Guide](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/languages/go.md): Go standards (Go 1.23+, `go test ./...`).
+                - [Java Guide](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/languages/java.md): Java standards (Java 17+, Maven/Gradle).
+                - [TypeScript Guide](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/languages/typescript.md): TypeScript standards (Node 20+).
+                - [Kotlin Guide](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/languages/kotlin.md): Kotlin standards (Kotlin 1.9+, Gradle).
+
+            - Language standards:
+              - Python: Minimum Python 3.11, package manager `uv` (`uv sync`, `uv run pytest`), linter/formatter `ruff`, default model: `gemini-3.5-flash`. Environment variables in `.env.example`.
+              - Go: Go 1.23+, `go test ./...`
+              - Java: Java 17+, Maven/Gradle
+              - TypeScript: Node 20+, npm/pnpm/yarn
+              - Kotlin: Kotlin 1.9+, Gradle
 
             ## Output format
 
@@ -242,7 +268,7 @@ jobs:
               "path": null,
               "assignee": null,
               "close_issue": true,
-              "response": "For new recipes, please place them in `contrib/<language>/<recipe-name>` (e.g. `contrib/python/my-recipe`). The `core/` directory is reserved for core-maintained reference recipes.\n\nLet us know if you have any questions while setting up your recipe!"
+              "response": "Since this is a new community recipe, it should live under `contrib/<language>/<recipe-name>` (e.g. `contrib/python/my-recipe`). The `core/` directory is reserved for core-maintained reference recipes.\n\nIf you're using an AI assistant like CloudCode, you can run `prepare the python recipe contrib/python/my-recipe` to automatically generate the manifest, align dependencies, format code, and add tests. For manual setup and validation steps, check out the [Recipe Checklist](https://github.com/google/adk-samples/blob/main/docs/recipe-checklist.md) and [Skills Catalog](https://github.com/google/adk-samples/blob/main/docs/recipe-handbook/skills-catalog.md) for available helper skills."
             }
 
             Fields:
@@ -290,24 +316,38 @@ jobs:
             exit 1
           fi
 
-          set +e
-          agy -p "$(cat full_prompt.txt)" \
-            --model "${AGY_MODEL}" \
-            --effort "${AGY_EFFORT}" \
-            --output-format json \
-            --print-timeout "${PRINT_TIMEOUT}" > agy_result.json 2> agy_stderr.log
-          AGY_EXIT=$?
-          set -e
+          # agy reports failures as JSON on STDOUT, not stderr, so the result
+          # must be written to disk and echoed back explicitly — otherwise a
+          # failure leaves a bare "exit 1" in the log with no reason attached.
+          MAX_ATTEMPTS=2
+          RESPONSE=''
+          for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
+            set +e
+            agy -p "$(cat full_prompt.txt)" \
+              --model "${AGY_MODEL}" \
+              --effort "${AGY_EFFORT}" \
+              --output-format json \
+              --print-timeout "${PRINT_TIMEOUT}" > agy_result.json 2>/dev/null
+            AGY_EXIT=$?
+            set -e
 
-          echo "--- agy envelope ---"
-          jq -r '{status, error} | tostring' agy_result.json 2>/dev/null \
-            || echo 'agy_result.json is not JSON'
-          echo "--- agy stderr ---"; cat agy_stderr.log || true
-          echo "------------------"
+            echo "--- agy envelope (attempt ${attempt}) ---"
+            jq -r '{status, error} | tostring' agy_result.json 2>/dev/null \
+              || echo 'agy_result.json is not JSON'
+            echo "------------------"
 
-          STATUS="$(jq -r '.status // "MISSING"' agy_result.json 2>/dev/null || echo 'MISSING')"
-          if [[ "${AGY_EXIT}" -ne 0 || "${STATUS}" != "SUCCESS" ]]; then
-            echo "::error::agy exited ${AGY_EXIT} with status=${STATUS}: $(jq -r '.error // "unknown"' agy_result.json 2>/dev/null || echo 'no JSON output')"
+            STATUS="$(jq -r '.status // "MISSING"' agy_result.json 2>/dev/null || echo 'MISSING')"
+            RESPONSE="$(jq -r '.response // ""' agy_result.json 2>/dev/null || echo '')"
+
+            if [[ -n "${RESPONSE}" ]]; then
+              break
+            fi
+
+            echo "::warning::agy attempt ${attempt} produced no response (exit ${AGY_EXIT}, status=${STATUS})"
+          done
+
+          if [[ -z "${RESPONSE}" ]]; then
+            echo "::error::agy produced no response after ${MAX_ATTEMPTS} attempts (exit ${AGY_EXIT}, status=${STATUS})"
             exit 1
           fi
 
