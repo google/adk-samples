@@ -79,6 +79,19 @@ def _has_parser_confusion_chars(url: str) -> bool:
     )
 
 
+def _normalize_hostname(hostname: str) -> str:
+    """Lower-cases a hostname and drops the explicit DNS root label.
+
+    A trailing dot marks the root of a fully qualified name and does not change
+    what the name resolves to, so "metadata.google.internal." reaches the same
+    host as "metadata.google.internal" while matching neither _DISALLOWED_HOSTS
+    nor the blocked suffixes. Removing it keeps the literal checks from being
+    sidestepped that way. The same applies to IP literals, where "127.0.0.1."
+    would otherwise fail to parse as an address and fall through the check.
+    """
+    return hostname.lower().rstrip(".")
+
+
 def _validate_navigation_url(url: str) -> bool:
     """Validates navigation URLs to prevent SSRF against internal/metadata endpoints.
 
@@ -98,7 +111,9 @@ def _validate_navigation_url(url: str) -> bool:
         hostname = parsed.hostname
         if not hostname:
             return False
-        hostname_lower = hostname.lower()
+        hostname_lower = _normalize_hostname(hostname)
+        if not hostname_lower:
+            return False
         if not _SAFE_HOSTNAME_PATTERN.match(hostname_lower):
             return False
         if hostname_lower in _DISALLOWED_HOSTS or hostname_lower.endswith(
@@ -155,8 +170,11 @@ async def validate_navigation_target(url: str) -> bool:
     hostname = urllib.parse.urlparse(url).hostname
     if not hostname:
         return False
+    hostname = _normalize_hostname(hostname)
+    if not hostname:
+        return False
     try:
-        ipaddress.ip_address(hostname.lower())
+        ipaddress.ip_address(hostname)
     except ValueError:
         # Hostname rather than an IP literal, so resolution is still needed.
         return await asyncio.to_thread(_resolved_addresses_allowed, hostname)

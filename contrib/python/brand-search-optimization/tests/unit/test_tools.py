@@ -198,6 +198,23 @@ class TestBrowserComputer:
         # Non-ASCII hosts would be IDNA-encoded by the browser only.
         assert _validate_navigation_url("http://exämple.com/") is False
 
+    def test_validate_navigation_url_rejects_trailing_root_label(self):
+        # A trailing dot is the explicit DNS root label: it resolves to the
+        # same host but would not match the blocklists without normalisation.
+        assert (
+            _validate_navigation_url(
+                "http://metadata.google.internal./computeMetadata/v1/"
+            )
+            is False
+        )
+        assert _validate_navigation_url("http://localhost./secret") is False
+        assert _validate_navigation_url("http://127.0.0.1./admin") is False
+        assert _validate_navigation_url("http://foo.local./") is False
+        assert _validate_navigation_url("http://10.0.0.1../") is False
+
+        # A root label on a public host stays allowed.
+        assert _validate_navigation_url("https://www.google.com./") is True
+
     @pytest.mark.asyncio
     async def test_validate_navigation_target_resolves_hostname(self):
         # A public-looking hostname that resolves to a private address is
