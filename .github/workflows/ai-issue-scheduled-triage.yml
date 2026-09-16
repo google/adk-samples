@@ -10,7 +10,11 @@ name: '✨ AI Scheduled Issue Triage'
 
 on:
   schedule:
-    - cron: '0 * * * *' # Runs every hour
+    # Every 4 hours. This is a safety net behind the on-open automated
+    # triage, not the primary path, and since the sweep now converges (see
+    # the TRIAGED_LABEL marker below) a steady state finds nothing to do.
+    # Hourly bought no extra responsiveness for 6x the run records.
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -24,6 +28,13 @@ concurrency:
 defaults:
   run:
     shell: 'bash'
+
+env:
+  # The convergence marker. Stamped by the `mark` job on every issue this
+  # sweep hands to the model, and the sole thing the `find` job uses to
+  # decide what is still untriaged. Changing this string re-opens the whole
+  # backlog for one sweep, which is recoverable but noisy.
+  TRIAGED_LABEL: 'status/ai-triaged'
 
 # Declared per job rather than here. At workflow level every job inherits
 # these — including any added later that only needs to read — which is what
@@ -43,6 +54,7 @@ jobs:
       issues: 'read'
     outputs:
       issues: '${{ steps.find_issues.outputs.issues_to_triage }}'
+      numbers: '${{ steps.find_issues.outputs.issue_numbers }}'
     steps:
       - name: 'Find untriaged issues'
         id: 'find_issues'
@@ -73,28 +85,42 @@ jobs:
 
           echo "🔍 Finding issues untriaged as of ${CUTOFF}..."
 
-          # "Untriaged" means the issue carries NO labels at all.
+          # "Untriaged" means the issue does not carry the TRIAGED_LABEL
+          # marker that the `mark` job below stamps on everything this sweep
+          # has already handed to the model.
           #
-          # An earlier revision defined it as "no kind/* and no priority/*
-          # label", copying the taxonomy the original prompt assumed. This
-          # repository has no such labels — its scheme is flat (`bug`,
-          # `enhancement`, `python`, ...) — so that definition matched every
-          # open issue, and the sweep would have re-triaged all of them every
-          # hour forever, never converging.
+          # Two earlier definitions both failed, in opposite directions:
           #
-          # Trade-off, accepted deliberately: an issue carrying only an
-          # incidental label (`good first issue`, `duplicate`) counts as
-          # triaged and is skipped. A definition that never terminates is far
-          # worse than one that occasionally skips.
+          #  - "no kind/* and no priority/* label" copied the taxonomy the
+          #    original prompt assumed. This repo's scheme is flat (`bug`,
+          #    `enhancement`, `python`, ...), so it matched every open issue
+          #    and re-triaged all of them every hour, never converging.
+          #
+          #  - "no labels at all" was the correction, and it converged by
+          #    matching NOTHING. `blank_issues_enabled: false`
+          #    (ISSUE_TEMPLATE/config.yml) plus `labels: bug` in
+          #    bug_report.md and `labels: contribute` in
+          #    propose-a-new-recipe.md mean every issue this repo can accept
+          #    is born with a label. The sweep ran 1366 times in the 90 days
+          #    to 2026-09-16 and could not, by construction, have selected a
+          #    single issue.
+          #
+          # An explicit marker fixes both: it is independent of whatever
+          # labels the templates or the model apply, and it is stamped
+          # whether or not the model classified the issue — so an issue the
+          # model legitimately declines is not re-fed to it every tick
+          # forever, which is what drove the `none_applied_min_batch`
+          # failures.
           ALL_ISSUES="$(gh issue list --state open --limit 200 \
             --json number,title,body,labels,createdAt)"
 
           CANDIDATES="$(echo "${ALL_ISSUES}" | jq -c \
             --arg cutoff "${CUTOFF}" \
+            --arg triaged "${TRIAGED_LABEL}" \
             --argjson maxbody "${MAX_BODY_CHARS}" '
               [ .[]
                 | select(.createdAt < $cutoff)
-                | select(.labels | length == 0)
+                | select([.labels[].name] | index($triaged) | not)
                 | {number, title, body: ((.body // "")[0:$maxbody])}
               ]')"
 
@@ -104,8 +130,13 @@ jobs:
 
           echo "issues_to_triage=${ISSUES}" >> "${GITHUB_OUTPUT}"
 
+          # Space-separated numbers for the `mark` job. Derived from the same
+          # trimmed batch, so the set marked is exactly the set triaged.
+          echo "issue_numbers=$(echo "${ISSUES}" | jq -r '[.[].number] | join(" ")')" \
+            >> "${GITHUB_OUTPUT}"
+
           if [[ "${TOTAL}" -gt "${COUNT}" ]]; then
-            echo "::notice::${TOTAL} issues need triage; taking ${COUNT} this run, the rest follow next hour."
+            echo "::notice::${TOTAL} issues need triage; taking ${COUNT} this run, the rest follow next sweep."
           fi
           echo "✅ Triaging ${COUNT} of ${TOTAL} issues. 🎯"
 
@@ -138,3 +169,54 @@ jobs:
       app_id: '${{ vars.APP_ID }}'
     secrets:
       APP_PRIVATE_KEY: '${{ secrets.APP_PRIVATE_KEY }}'
+
+  # Stamps TRIAGED_LABEL on everything the batch contained, which is what
+  # makes the sweep converge.
+  #
+  # `always()` is the whole point: the marker records "the model has seen
+  # this issue", not "the model classified it". An issue the model declines
+  # is the case that previously looped forever — it kept no label, so the
+  # next tick re-selected it, re-paid for the model call, and (at 3+ such
+  # issues) tripped none_applied_min_batch and turned the sweep red every
+  # hour. Marking only on success would reproduce that exactly.
+  #
+  # The cost of `always()` is that a genuine infrastructure failure also
+  # marks the batch, so those issues fall to the on-open workflow or a
+  # manual dispatch rather than being retried here. That is the right trade:
+  # a sweep that occasionally under-triages is recoverable, one that cannot
+  # terminate is not.
+  mark:
+    needs: ['find', 'triage']
+    if: |-
+      ${{ always() && needs.find.outputs.numbers != '' }}
+    timeout-minutes: 5
+    runs-on: 'ubuntu-latest'
+    permissions:
+      issues: 'write'
+    steps:
+      - name: 'Mark batch as AI-triaged'
+        env:
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          GH_REPO: '${{ github.repository }}'
+          ISSUE_NUMBERS: '${{ needs.find.outputs.numbers }}'
+        run: |-
+          set -euo pipefail
+
+          # Idempotent: succeeds whether or not the label already exists, so
+          # the first run after this workflow lands does not need anyone to
+          # have created it by hand.
+          gh label create "${TRIAGED_LABEL}" \
+            --description 'Handled by AI scheduled triage; excluded from future sweeps' \
+            --color 'ededed' 2>/dev/null || true
+
+          for number in ${ISSUE_NUMBERS}; do
+            # Best-effort per issue. One failure (issue closed or deleted
+            # mid-sweep, transient 5xx) must not abort the rest of the batch
+            # and leave part of it unmarked — an unmarked issue is re-triaged
+            # next sweep, which is the loop this job exists to close.
+            if gh issue edit "${number}" --add-label "${TRIAGED_LABEL}"; then
+              echo "  marked #${number}"
+            else
+              echo "::warning::could not mark #${number}; it will be re-triaged next sweep"
+            fi
+          done
