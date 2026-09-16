@@ -60,6 +60,7 @@ from ci_message import (  # noqa: E402
 
 CHECKER = "check_recipe_docker.py"
 RECIPE_ROOTS = ("core", "contrib", "skills")
+DEFAULT_DOCKER_TIMEOUT = 30
 
 DEFAULT_PROBE_PATHS = (
     "/list-apps",
@@ -330,7 +331,9 @@ def validate_recipe_docker(
         result.solution = solution
 
         # Cleanup image if partially tagged
-        run_cmd(["docker", "rmi", "-f", image_tag], timeout=30)
+        run_cmd(
+            ["docker", "rmi", "-f", image_tag], timeout=DEFAULT_DOCKER_TIMEOUT
+        )
         return result
 
     result.build_passed = True
@@ -353,7 +356,10 @@ def validate_recipe_docker(
             env_args.extend(["-e", f"{k}={v}"])
 
         # Ensure no leftover container with this name
-        run_cmd(["docker", "rm", "-f", container_name], timeout=30)
+        run_cmd(
+            ["docker", "rm", "-f", container_name],
+            timeout=DEFAULT_DOCKER_TIMEOUT,
+        )
 
         print(
             f"[RUN] Starting test container {container_name} on port {port}..."
@@ -384,7 +390,8 @@ def validate_recipe_docker(
 
         # Get the ephemeral host port assigned by Docker
         port_proc = run_cmd(
-            ["docker", "port", container_name, str(port)], timeout=30
+            ["docker", "port", container_name, str(port)],
+            timeout=DEFAULT_DOCKER_TIMEOUT,
         )
         host_port = parse_host_port(port_proc.stdout)
         if host_port is None:
@@ -463,14 +470,21 @@ def validate_recipe_docker(
 
     finally:
         # Cleanup container and image
-        run_cmd(["docker", "rm", "-f", container_name], timeout=30)
-        run_cmd(["docker", "rmi", "-f", image_tag], timeout=30)
+        run_cmd(
+            ["docker", "rm", "-f", container_name],
+            timeout=DEFAULT_DOCKER_TIMEOUT,
+        )
+        run_cmd(
+            ["docker", "rmi", "-f", image_tag],
+            timeout=DEFAULT_DOCKER_TIMEOUT,
+        )
 
 
 def _get_container_logs(name: str, max_lines: int = 40) -> str:
     """Fetch stdout and stderr logs from a container."""
     proc = run_cmd(
-        ["docker", "logs", "--tail", str(max_lines), name], timeout=30
+        ["docker", "logs", "--tail", str(max_lines), name],
+        timeout=DEFAULT_DOCKER_TIMEOUT,
     )
     out = (proc.stdout or "") + (proc.stderr or "")
     return out.strip() or "No logs recorded from container."

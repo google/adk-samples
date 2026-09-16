@@ -71,6 +71,15 @@ jobs:
         run: |
           set -euo pipefail
 
+          find_all_docker_recipes() {
+            find core contrib skills -name "Dockerfile" 2>/dev/null | while IFS= read -r df; do
+              dir=$(dirname "$df")
+              if [ -f "$dir/manifest.yaml" ]; then
+                echo "$dir"
+              fi
+            done | sort -u || true
+          }
+
           if [ -n "${ONLY_RECIPE:-}" ]; then
             echo "Manual workflow_dispatch with recipe input: $ONLY_RECIPE"
             if [ -f "$ONLY_RECIPE/Dockerfile" ]; then
@@ -84,12 +93,7 @@ jobs:
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_NAME" = "push" ]; then
             echo "Full scan — discovering all recipes with root Dockerfiles."
-            ALL_DOCKER_RECIPES=$(find core contrib skills -name "Dockerfile" 2>/dev/null | while IFS= read -r df; do
-              dir=$(dirname "$df")
-              if [ -f "$dir/manifest.yaml" ]; then
-                echo "$dir"
-              fi
-            done | sort -u || true)
+            ALL_DOCKER_RECIPES=$(find_all_docker_recipes)
 
             echo "Recipes with root Dockerfiles:"
             echo "$ALL_DOCKER_RECIPES"
@@ -113,12 +117,7 @@ jobs:
           INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/workflows/recipe-docker-build\.yml|\.github/scripts/check_recipe_docker\.py|tools/affected_recipes\.py|tools/validate_manifest\.py|pyproject\.toml)$" || true)
           if [ -n "$INFRA_CHANGED" ]; then
             echo "Workflow or validation tooling changed — validating all recipes with root Dockerfiles."
-            ALL_DOCKER_RECIPES=$(find core contrib skills -name "Dockerfile" 2>/dev/null | while IFS= read -r df; do
-              dir=$(dirname "$df")
-              if [ -f "$dir/manifest.yaml" ]; then
-                echo "$dir"
-              fi
-            done | sort -u || true)
+            ALL_DOCKER_RECIPES=$(find_all_docker_recipes)
 
             {
               echo "docker_recipes<<RECIPES_EOF"

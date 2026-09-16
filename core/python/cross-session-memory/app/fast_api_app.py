@@ -32,7 +32,7 @@ setup_telemetry()
 try:
     _, project_id = google.auth.default()
 except Exception:
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
 
 if os.environ.get("INTEGRATION_TEST"):
     import logging as _std_logging

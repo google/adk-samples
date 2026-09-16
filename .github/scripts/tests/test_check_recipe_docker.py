@@ -217,7 +217,7 @@ def test_validate_recipe_docker_success(tmp_path: Path, monkeypatch):
     assert result.accessible_endpoint == "/list-apps (HTTP 200)"
 
 
-def test_main_cli(tmp_path: Path, monkeypatch, capsys):
+def test_main_cli(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["check_recipe_docker.py"])
     rc = m.main()
     assert rc == 0
