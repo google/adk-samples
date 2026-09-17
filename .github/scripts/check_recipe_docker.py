@@ -433,17 +433,25 @@ def validate_recipe_docker(
                 result.log_tail = logs
                 return result
 
-            # Probe endpoints
+            # Probe endpoints.
+            #
+            # 404 is NOT accepted. It proves only that something speaks HTTP
+            # on the port, not that the app mounted: a container whose app
+            # failed to start 404s on every path, and calling that
+            # "accessible" is the false PASS this gate exists to prevent.
+            # 401/403 ARE accepted -- refusing a request means the route
+            # exists and was routed to.
             for path in probe_paths:
                 status, _ = probe_http(f"{base_url}{path}", timeout=3)
                 if status is not None and (
-                    200 <= status < 400 or status in (401, 403, 404)
+                    200 <= status < 400 or status in (401, 403)
                 ):
-                    # A 200 or successful HTTP status means server is up and responsive
+                    # A 200 is conclusive — stop here and prefer it.
                     if status == 200:
                         serving_endpoint = f"{path} (HTTP {status})"
                         break
-                    # If endpoint returns 404/401/403, keep probing other paths; if /docs or /list-apps 200s, that wins
+                    # 3xx/401/403: the server is routing. Hold it as a
+                    # candidate but keep probing in case a later path 200s.
                     if serving_endpoint is None:
                         serving_endpoint = f"{path} (HTTP {status})"
 

@@ -3474,3 +3474,61 @@ def test_the_ci_fail_signal_matches_the_checker_that_writes_it():
     )
     assert found, "check_house_rules.py no longer defines CI_FAIL"
     assert found.group(1) == m.CI_FAIL
+
+
+# --------------------------------------------------------------------------
+# Truncated model output, and git-quoted paths. Both were silent losses: the
+# first turned a recoverable response into a red check, the second dropped
+# every finding in any file whose name git quotes.
+# --------------------------------------------------------------------------
+
+TRUNCATED_RESPONSE = (
+    "Here are my findings:\n\n"
+    "```json\n"
+    "[\n"
+    '  {"path": "a.py", "line": 10, "body": "first", "window": "10: x = 1"},\n'
+    '  {"path": "b.py", "line": 20, "body": "second find'
+)
+
+
+def test_truncated_response_salvages_complete_findings():
+    """An output-limit hit must not cost a red check.
+
+    FENCED_BLOCK cannot match without its closing fence, and the bare-"["
+    fallback does not fire because the response opens with the fence. That
+    combination raised ReviewerOutputError -> exit 2 -> a failure comment on
+    the contributor's PR, discarding findings that had parsed cleanly.
+    """
+    findings = m.extract_findings(TRUNCATED_RESPONSE)
+    assert [f["path"] for f in findings] == ["a.py"]
+
+
+def test_response_with_no_array_at_all_still_raises():
+    """The salvage path must not swallow a genuinely empty response."""
+    with pytest.raises(m.ReviewerOutputError):
+        m.extract_findings("I reviewed the PR and found no issues.")
+
+
+def _one_file_diff(header: str) -> str:
+    return f"diff --git x y\n--- a/x\n{header}\n@@ -0,0 +1,1 @@\n+import os\n"
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        ('+++ "b/my recipe/agent.py"', "my recipe/agent.py"),
+        ('+++ "b/caf\\303\\251.py"', "café.py"),
+        ("+++ b/app/agent.py", "app/agent.py"),
+        # A real top-level `b/` directory: only git's own prefix comes off.
+        ("+++ b/b/thing.py", "b/thing.py"),
+    ],
+)
+def test_walk_right_side_reads_quoted_paths(header, expected):
+    """core.quotePath is on by default, so this is the normal shape.
+
+    Unquoting has to happen BEFORE the side prefix is stripped: in
+    `"b/x"` the `b/` sits inside the quotes, so a raw startswith() test
+    never fires and the key keeps both the quotes and the prefix.
+    """
+    anchors, _ = m.walk_right_side(_one_file_diff(header))
+    assert list(anchors.keys()) == [expected]
