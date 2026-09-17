@@ -222,3 +222,91 @@ def test_main_cli(monkeypatch, capsys):
     rc = m.main()
     assert rc == 0
     assert "No recipe directories with Dockerfiles" in capsys.readouterr().out
+
+
+def _docker_mocks(monkeypatch, probe):
+    """Wire up a container that builds and stays running, with `probe` for HTTP."""
+
+    def mock_run_cmd(cmd, **kwargs):
+        if "build" in cmd:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="Successfully built", stderr=""
+            )
+        if "run" in cmd:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="container-123", stderr=""
+            )
+        if "port" in cmd:
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout="8080/tcp -> 127.0.0.1:32768\n",
+                stderr="",
+            )
+        if "inspect" in cmd:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="true\n", stderr=""
+            )
+        if "logs" in cmd:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="", stderr=""
+            )
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=0, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(m, "run_cmd", mock_run_cmd)
+    monkeypatch.setattr(m, "probe_http", probe)
+
+
+def _recipe_with_dockerfile(tmp_path: Path) -> Path:
+    recipe = tmp_path / "recipe"
+    recipe.mkdir()
+    (recipe / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    return recipe
+
+
+def test_all_paths_404_is_not_accessible(tmp_path: Path, monkeypatch):
+    """A server that 404s everywhere is up but serving nothing — that is a FAIL.
+
+    This is the false PASS the gate exists to prevent: an image whose web
+    server boots but whose ADK app never mounts answers 404 on every probe
+    path. Counting that as "accessible" would report a broken container green.
+    """
+    _docker_mocks(monkeypatch, lambda url, timeout=5: (404, "Not Found"))
+
+    result = m.validate_recipe_docker(
+        _recipe_with_dockerfile(tmp_path), probe_timeout=1
+    )
+    assert result.build_passed
+    assert not result.run_passed
+    assert not result.passed
+    assert result.accessible_endpoint is None
+    assert "did not become accessible" in (result.error_message or "")
+
+
+def test_401_is_accessible(tmp_path: Path, monkeypatch):
+    """401 proves the route exists and the request was routed to it."""
+    _docker_mocks(monkeypatch, lambda url, timeout=5: (401, "Unauthorized"))
+
+    result = m.validate_recipe_docker(
+        _recipe_with_dockerfile(tmp_path), probe_timeout=1
+    )
+    assert result.run_passed
+    assert result.passed
+    assert "HTTP 401" in (result.accessible_endpoint or "")
+
+
+def test_200_wins_over_a_404_on_an_earlier_path(tmp_path: Path, monkeypatch):
+    """A 404 on one path must not stop a later path from proving the app is up."""
+
+    def probe(url, timeout=5):
+        return (200, '["app"]') if "/docs" in url else (404, "Not Found")
+
+    _docker_mocks(monkeypatch, probe)
+
+    result = m.validate_recipe_docker(
+        _recipe_with_dockerfile(tmp_path), probe_timeout=1
+    )
+    assert result.run_passed
+    assert result.accessible_endpoint == "/docs (HTTP 200)"
