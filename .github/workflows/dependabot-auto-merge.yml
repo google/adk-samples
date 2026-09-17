@@ -245,13 +245,27 @@ jobs:
             # Get commit SHA
             HEAD_SHA=$(echo "$PR_DATA" | jq -r '.head.sha')
 
-            # Get check runs for this commit
-            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs)
+            # Get check runs for this commit.
+            #
+            # --paginate is load-bearing, not tidiness. The unpaginated call
+            # returns .total_count for the whole commit but only the first 30
+            # check runs in .check_runs[]. This repo routinely exceeds 30
+            # checks on a single PR, so PENDING and FAILED were counted over a
+            # truncated slice while TOTAL was not: a PR whose 31st check was
+            # queued or failing read as "all checks completed successfully"
+            # and was merged on incomplete or red CI.
+            #
+            # --slurp wraps the pages in an array, hence the [.[].check_runs[]]
+            # flatten below. TOTAL is now the length of what we actually
+            # counted rather than a server-side figure the other two counts
+            # cannot see all of.
+            CHECK_RUNS=$(gh api --paginate --slurp \
+              "repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs?per_page=100")
 
             # Count checks
-            TOTAL=$(echo "$CHECK_RUNS" | jq '.total_count')
-            PENDING=$(echo "$CHECK_RUNS" | jq '[.check_runs[] | select(.status == "queued" or .status == "in_progress")] | length')
-            FAILED=$(echo "$CHECK_RUNS" | jq '[.check_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")] | length')
+            TOTAL=$(echo "$CHECK_RUNS" | jq '[.[].check_runs[]] | length')
+            PENDING=$(echo "$CHECK_RUNS" | jq '[.[].check_runs[] | select(.status == "queued" or .status == "in_progress")] | length')
+            FAILED=$(echo "$CHECK_RUNS" | jq '[.[].check_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")] | length')
 
             echo "Total checks: $TOTAL, Pending: $PENDING, Failed: $FAILED"
 
@@ -282,12 +296,109 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STEPS_PR_OUTPUTS_NUMBER: ${{ steps.pr.outputs.number }}
 
-      - name: Merge PR
+      # ---------------------------------------------------------------------------
+      # Branch protection decides whether the merge can happen at all, and it
+      # is not something green CI implies. `main` sets
+      # require_code_owner_reviews, and the approval this workflow posts comes
+      # from github-actions[bot], which owns no path in CODEOWNERS — so the
+      # review requirement is never satisfied by anything this workflow does.
+      #
+      # Without this gate the previous step's "All checks completed
+      # successfully" was followed one second later by `gh pr merge` failing
+      # with "base branch policy prohibits the merge", a non-zero exit, and a
+      # red run. That accounted for roughly 86% of this workflow's failures
+      # (~457 of 532) over the 90 days to 2026-09-16, while merging nothing
+      # since 2026-06-29.
+      #
+      # Reading reviewDecision and mergeStateStatus turns that into an honest,
+      # green, explanatory no-op. It does NOT restore auto-merge: that needs an
+      # approval identity which is a code owner, which is a repo-admin decision
+      # and not something a workflow can grant itself.
+      # ---------------------------------------------------------------------------
+      - name: Check merge eligibility
         if: |
           steps.check.outputs.is_dependabot == 'true' &&
           steps.check-agent.outputs.has_tests == 'true' &&
           steps.wait-checks.outputs.all_passed == 'true' &&
           steps.check.outputs.mergeable != 'CONFLICTING'
+        id: eligible
+        run: |
+          set -uo pipefail
+
+          # Deliberately not `set -e`. This step exists to stop a predictable
+          # merge refusal from producing a red run, so it must not become a
+          # new way to go red. Anything it cannot determine is treated as
+          # "do not merge", which is the safe direction.
+          # stderr goes to a file, never into PR_VIEW: gh can emit warnings on
+          # an otherwise successful call, and folding those into the captured
+          # stdout would hand malformed JSON to jq below.
+          ERR_FILE="$(mktemp)"
+          PR_VIEW=""
+          for attempt in 1 2 3; do
+            if PR_VIEW=$(gh pr view "${STEPS_PR_OUTPUTS_NUMBER}" \
+              --repo "${{ github.repository }}" \
+              --json reviewDecision,mergeStateStatus 2>"$ERR_FILE"); then
+              break
+            fi
+            echo "attempt ${attempt}: could not read PR state: $(cat "$ERR_FILE")"
+            PR_VIEW=""
+            sleep $((attempt * 5))
+          done
+
+          if [ -z "$PR_VIEW" ]; then
+            echo "::warning::could not determine merge eligibility after 3 attempts; not merging"
+            echo "can_merge=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          REVIEW_DECISION=$(echo "$PR_VIEW" | jq -r '.reviewDecision // ""')
+          MERGE_STATE=$(echo "$PR_VIEW" | jq -r '.mergeStateStatus // ""')
+
+          echo "reviewDecision=$REVIEW_DECISION mergeStateStatus=$MERGE_STATE"
+
+          # UNKNOWN means GitHub has not finished computing mergeability —
+          # it is derived asynchronously after a push. Merging on UNKNOWN is
+          # the race this gate exists to avoid, so decline and let a later
+          # run pick it up once the state has settled.
+          if [ "$MERGE_STATE" = "UNKNOWN" ] || [ -z "$MERGE_STATE" ]; then
+            echo "::notice::merge state not yet computed; not merging this run"
+            echo "can_merge=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # BLOCKED covers the code-owner case and any other unmet protection
+          # rule. REVIEW_REQUIRED is the same story stated from the review side.
+          if [ "$MERGE_STATE" = "BLOCKED" ] || [ "$REVIEW_DECISION" = "REVIEW_REQUIRED" ]; then
+            echo "can_merge=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Auto-merge declined"
+              echo ""
+              echo "PR #${STEPS_PR_OUTPUTS_NUMBER} has green CI but branch protection will not accept the merge."
+              echo ""
+              echo "- \`reviewDecision\`: \`${REVIEW_DECISION:-none}\`"
+              echo "- \`mergeStateStatus\`: \`${MERGE_STATE:-unknown}\`"
+              echo ""
+              echo "\`main\` requires a review from a code owner. The approval this workflow"
+              echo "posts is authored by \`github-actions[bot]\`, which owns no path in"
+              echo "CODEOWNERS, so the requirement cannot be met from here. A human code"
+              echo "owner needs to approve and merge, or a repo admin needs to give the"
+              echo "automation a code-owner identity."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "can_merge=true" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STEPS_PR_OUTPUTS_NUMBER: ${{ steps.pr.outputs.number }}
+
+      - name: Merge PR
+        if: |
+          steps.check.outputs.is_dependabot == 'true' &&
+          steps.check-agent.outputs.has_tests == 'true' &&
+          steps.wait-checks.outputs.all_passed == 'true' &&
+          steps.check.outputs.mergeable != 'CONFLICTING' &&
+          steps.eligible.outputs.can_merge == 'true'
         run: |
           echo "All checks passed, merging PR #${STEPS_PR_OUTPUTS_NUMBER}"
           gh pr merge ${STEPS_PR_OUTPUTS_NUMBER} --repo ${{ github.repository }} --squash

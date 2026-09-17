@@ -16,6 +16,7 @@ import contextlib
 import os
 from collections.abc import AsyncIterator
 
+import google.auth
 from a2a.server.tasks import InMemoryTaskStore
 from fastapi import FastAPI
 from google.adk.cli.fast_api import get_fast_api_app
@@ -23,6 +24,15 @@ from google.adk.runners import Runner
 
 from brand_search_optimization.app_utils import services
 from brand_search_optimization.app_utils.a2a import attach_a2a_routes
+
+# Cloud telemetry needs Application Default Credentials. Resolve them here
+# rather than letting get_fast_api_app raise DefaultCredentialsError at import
+# time: the container has no ADC in CI, so an unguarded otel_to_cloud=True
+# makes the image unstartable and fails recipe-docker-build.
+try:
+    _, project_id = google.auth.default()
+except Exception:
+    project_id = None
 
 allow_origins = (
     [
@@ -70,7 +80,7 @@ app: FastAPI = get_fast_api_app(
     artifact_service_uri=services.ARTIFACT_SERVICE_URI,
     allow_origins=allow_origins,
     session_service_uri=services.SESSION_SERVICE_URI,
-    otel_to_cloud=True,
+    otel_to_cloud=project_id is not None and not os.getenv("INTEGRATION_TEST"),
     lifespan=lifespan,
 )
 app.title = "brand-search-optimization"
