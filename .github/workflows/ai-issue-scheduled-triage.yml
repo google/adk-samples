@@ -232,9 +232,22 @@ jobs:
           # Idempotent: succeeds whether or not the label already exists, so
           # the first run after this workflow lands does not need anyone to
           # have created it by hand.
-          gh label create "${TRIAGED_LABEL}" \
+          #
+          # The failure is NOT swallowed, because everything below depends on
+          # this label existing. If it cannot be created and does not already
+          # exist, every `gh issue edit --add-label` fails, nothing is marked,
+          # and the sweep silently reverts to re-triaging the same issues
+          # forever — the exact bug this job was added to fix, back again but
+          # now invisible. Better to go red once and be told.
+          if ! gh label create "${TRIAGED_LABEL}" \
             --description 'Handled by AI scheduled triage; excluded from future sweeps' \
-            --color 'ededed' 2>/dev/null || true
+            --color 'ededed' 2>/dev/null; then
+            if ! gh label list --search "${TRIAGED_LABEL}" --limit 100 \
+              --json name --jq '.[].name' | grep -qxF "${TRIAGED_LABEL}"; then
+              echo "::error::label '${TRIAGED_LABEL}' does not exist and could not be created; the sweep cannot converge without it"
+              exit 1
+            fi
+          fi
 
           for number in ${ISSUE_NUMBERS}; do
             # Best-effort per issue. One failure (issue closed or deleted
