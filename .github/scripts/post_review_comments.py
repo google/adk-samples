@@ -79,6 +79,16 @@ from ci_message import (
     report_infra_fault,
 )
 
+# Imported rather than re-implemented. prepare_review_diff grew these to fix
+# this exact defect on its side of the pipeline, with tests; duplicating them
+# here is how the two drifted apart in the first place, leaving this module
+# unable to read a path its sibling handles correctly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from prepare_review_diff import (
+    _strip_side_prefix,
+    _unquote_git_path,
+)
+
 CHECKER = "post_review_comments.py"
 
 # Findings carrying this `source` came from house_rules_lane.py rather than
@@ -196,6 +206,23 @@ HUNK_HEADER = re.compile(
 # "]" in the block swallowed anything the model appended after the array.
 # json's own parser draws that boundary in extract_findings instead.
 FENCED_BLOCK = re.compile(r"```(?:json)?\s*(\[.*?)```", re.DOTALL)
+
+# The same opening fence with NO closing fence — the shape of a response the
+# model ran out of output budget partway through.
+#
+# Without this, truncation was a hard CI fault: FENCED_BLOCK cannot match
+# without its terminator, the bare-"[" fallback below does not fire either
+# (the response starts with the fence, not the bracket), and extract_findings
+# raised "response contained no JSON findings array" -> exit 2 -> a red check
+# and a failure comment on the contributor's PR.
+#
+# That threw away recoverable work. The repair and salvage paths downstream
+# already handle a block that stops mid-object, and they are reached only if
+# something hands them a block. Verified: the identical content salvages its
+# one complete finding when a closing fence is present and hard-failed
+# without it. Truncation now degrades to "post what parsed" like every other
+# malformed-output case.
+UNTERMINATED_FENCED_BLOCK = re.compile(r"```(?:json)?\s*(\[.*)", re.DOTALL)
 
 # A window row: "  42: os.system(cmd)". Both ":" and "|" are seen as the
 # separator, and the leading whitespace is the model aligning its numbers.
@@ -347,6 +374,25 @@ def _strip_diff_prefix(path: str) -> str:
     return path
 
 
+def _header_path(target: str) -> str:
+    """A `+++ ` header's path, as GitHub will report it.
+
+    With `core.quotePath` on -- the default -- git wraps any path containing a
+    space, a quote or a non-ASCII byte in double quotes and C-escapes it, so
+    the header reads `+++ "b/my recipe/agent.py"`. Two things then go wrong at
+    once: the quotes stay in the key, and the `b/` prefix is INSIDE them, so
+    stripping the prefix off the raw string does not fire either. The diff ends
+    up keyed under `"b/my recipe/agent.py"` while the API reports
+    `my recipe/agent.py`, and every finding in that file is silently dropped as
+    unanchorable -- blaming the model for a path this parser could not read.
+
+    Unquote first, strip the side prefix second; the order matters for exactly
+    the reason above. Both helpers come from prepare_review_diff, which already
+    fixed this on its side.
+    """
+    return _strip_side_prefix(_unquote_git_path(target))
+
+
 def _resolve_path(reported: str, anchors: dict[str, set[int]]) -> str:
     """Match the model's path against the paths the diff actually names.
 
@@ -407,11 +453,7 @@ def walk_right_side(
             # Between hunks: the only place a row can be a file header.
             if row.startswith("+++ "):
                 target = row[4:].strip()
-                path = (
-                    None
-                    if target == "/dev/null"
-                    else _strip_diff_prefix(target)
-                )
+                path = None if target == "/dev/null" else _header_path(target)
                 continue
             header = HUNK_HEADER.match(row)
             if header:
@@ -493,11 +535,24 @@ def extract_findings(response: str) -> list:
     one malformed finding still costs only that finding.
     """
     matches = list(FENCED_BLOCK.finditer(response))
-    # Both branches guarantee a block starting at "[", so the scan below
+    # All three branches guarantee a block starting at "[", so the scan below
     # always decodes at least once.
     block = matches[-1].group(1) if matches else None
     if block is None and response.strip().startswith("["):
         block = response.strip()
+    if block is None:
+        # No closing fence anywhere: the response was almost certainly cut off
+        # mid-array. Hand the unterminated remainder to the same repair and
+        # salvage path a malformed block takes, rather than discarding
+        # findings that are complete simply because the ones after them are
+        # missing.
+        truncated = UNTERMINATED_FENCED_BLOCK.search(response)
+        if truncated is not None:
+            block = truncated.group(1)
+            print(
+                "  findings block has no closing fence (output was likely "
+                "truncated); attempting to recover complete findings from it"
+            )
     if block is None:
         raise ReviewerOutputError("response contained no JSON findings array")
 
