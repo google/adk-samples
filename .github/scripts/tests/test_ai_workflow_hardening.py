@@ -446,6 +446,7 @@ def test_no_job_asks_for_more_than_every_caller_grants():
     [
         (PR_REVIEW, "review"),
         (ISSUE_RESPONSE, "respond"),
+        (ISSUE_TRIAGE, "triage"),
     ],
     ids=lambda item: getattr(item, "name", str(item)),
 )
@@ -478,6 +479,7 @@ def test_the_response_is_scanned_against_real_credential_material(path, job):
     [
         (PR_REVIEW, "review"),
         (ISSUE_RESPONSE, "respond"),
+        (ISSUE_TRIAGE, "triage"),
     ],
     ids=lambda item: getattr(item, "name", str(item)),
 )
