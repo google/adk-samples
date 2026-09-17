@@ -509,32 +509,53 @@ def make_pr_lookup() -> Callable[[str], list[PullRequest]]:
     """
     cache: dict[str, list[PullRequest]] = {}
 
+    def _query(selector: str, branch_name: str) -> list[PullRequest]:
+        prs = _parse_prs(
+            gh(
+                "pr",
+                "list",
+                "--repo",
+                REPO,
+                selector,
+                branch_name,
+                "--state",
+                "all",
+                "--limit",
+                str(BRANCH_PR_LIMIT),
+                "--json",
+                PR_FIELDS,
+            )
+        )
+        if len(prs) >= BRANCH_PR_LIMIT:
+            raise GhError(
+                f"branch {branch_name} returned {len(prs)} pull requests "
+                f"for {selector}, hitting the {BRANCH_PR_LIMIT} limit. The "
+                "history is truncated and the classification cannot be "
+                "trusted. Raise BRANCH_PR_LIMIT."
+            )
+        return prs
+
     def lookup(branch_name: str) -> list[PullRequest]:
         if branch_name not in cache:
-            prs = _parse_prs(
-                gh(
-                    "pr",
-                    "list",
-                    "--repo",
-                    REPO,
-                    "--head",
-                    branch_name,
-                    "--state",
-                    "all",
-                    "--limit",
-                    str(BRANCH_PR_LIMIT),
-                    "--json",
-                    PR_FIELDS,
-                )
-            )
-            if len(prs) >= BRANCH_PR_LIMIT:
-                raise GhError(
-                    f"branch {branch_name} returned {len(prs)} pull "
-                    f"requests, hitting the {BRANCH_PR_LIMIT} limit. The "
-                    "history is truncated and the classification cannot be "
-                    "trusted. Raise BRANCH_PR_LIMIT."
-                )
-            cache[branch_name] = prs
+            # BOTH directions, and the --base half is load-bearing.
+            #
+            # `classify` puts a branch on the closed-PR clock when a recent
+            # pull request referenced it — as that PR's head OR as its base,
+            # the stacked-PR case. With only `--head` here, the list handed
+            # to `classify` can never contain a PR whose base is this branch,
+            # so the base arm of that rule was unreachable in production and
+            # a stack's base fell through to the orphan clock and could be
+            # deleted. Unit tests did not catch it: they build the PR list by
+            # hand and can express an input this lookup could not produce.
+            #
+            # Deduplicated by number because a PR can appear in both halves
+            # (a branch merging into itself is not possible, but a self-
+            # referential query result should not be counted twice either).
+            by_number: dict[int, PullRequest] = {}
+            for selector in ("--head", "--base"):
+                for pr in _query(selector, branch_name):
+                    by_number[pr.number] = pr
+            cache[branch_name] = list(by_number.values())
         return cache[branch_name]
 
     return lookup

@@ -600,3 +600,75 @@ def test_plain_orphan_is_unaffected():
     )
     assert verdict.category == "orphan"
     assert verdict.delete
+
+
+# ---------------------------------------------------------------------------
+# make_pr_lookup
+#
+# classify()'s base-ref rule is only reachable if the list it receives can
+# actually contain a PR whose BASE is the branch. That is a property of the
+# lookup, not of classify, and testing classify alone cannot show it: those
+# tests build the list by hand and can express an input the real lookup could
+# never produce.
+# ---------------------------------------------------------------------------
+
+
+def test_lookup_queries_both_head_and_base(monkeypatch):
+    """Without the --base query the stacked-base rule is dead code.
+
+    This is the test that was missing. classify() gained a rule keyed on
+    base_ref while the lookup still asked only for --head, so in production
+    the rule never fired and a stack's base could still be deleted, with a
+    green unit-test suite saying otherwise.
+    """
+    calls: list[tuple[str, str]] = []
+
+    def fake_gh(*args: str) -> str:
+        argv = list(args)
+        selector = next(a for a in argv if a in ("--head", "--base"))
+        branch = argv[argv.index(selector) + 1]
+        calls.append((selector, branch))
+        if selector == "--head":
+            return "[]"
+        return (
+            '[{"number": 77, "headRefName": "feature/child",'
+            ' "baseRefName": "feature/stack-base", "state": "CLOSED",'
+            ' "mergedAt": null, "closedAt": "2026-08-13T00:00:00Z",'
+            ' "isCrossRepository": false}]'
+        )
+
+    monkeypatch.setattr(s, "gh", fake_gh)
+    prs = s.make_pr_lookup()("feature/stack-base")
+
+    assert ("--head", "feature/stack-base") in calls
+    assert ("--base", "feature/stack-base") in calls, (
+        "lookup must ask for PRs targeting this branch, or classify's "
+        "base-ref rule can never fire"
+    )
+    assert [p.number for p in prs] == [77]
+
+
+def test_lookup_deduplicates_across_the_two_queries(monkeypatch):
+    """The same PR returned by both halves must be counted once."""
+    payload = (
+        '[{"number": 5, "headRefName": "a", "baseRefName": "a",'
+        ' "state": "CLOSED", "mergedAt": null,'
+        ' "closedAt": "2026-08-13T00:00:00Z", "isCrossRepository": false}]'
+    )
+    monkeypatch.setattr(s, "gh", lambda *a: payload)
+    assert [p.number for p in s.make_pr_lookup()("a")] == [5]
+
+
+def test_lookup_is_cached_per_branch(monkeypatch):
+    """Two selectors per branch, not two per call."""
+    n = {"count": 0}
+
+    def fake_gh(*args: str) -> str:
+        n["count"] += 1
+        return "[]"
+
+    monkeypatch.setattr(s, "gh", fake_gh)
+    lookup = s.make_pr_lookup()
+    lookup("b")
+    lookup("b")
+    assert n["count"] == 2, "expected one --head and one --base, then cache"

@@ -127,9 +127,21 @@ jobs:
 
     # No write anywhere. This job reads a PR and talks to Google Cloud; every
     # mutation the reviewer performs happens in `post`.
+    #
+    # `issues: read` is needed even though this job never touches an issue.
+    # Top-level PR comments live on the ISSUES endpoint, and
+    # post_review_comments.py reads them here — in the payload-building step,
+    # not in `post` — so that a finding already raised in an earlier round is
+    # suppressed rather than repeated. Without this scope that read 403s.
+    # It is caught and logged rather than raised, so the run stays green while
+    # four lanes silently re-post the same top-level comment on every push,
+    # which is the exact non-convergence the dedup exists to prevent. This
+    # only became load-bearing when the token stopped being the caller's
+    # write-capable secret and started being scoped by this block.
     permissions:
       contents: 'read'
       id-token: 'write'
+      issues: 'read'
       pull-requests: 'read'
 
     outputs:
