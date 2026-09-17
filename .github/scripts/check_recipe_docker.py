@@ -62,6 +62,40 @@ CHECKER = "check_recipe_docker.py"
 RECIPE_ROOTS = ("core", "contrib", "skills")
 DEFAULT_DOCKER_TIMEOUT = 30
 
+# NOTE ON CONFIGURATION DRIFT.
+#
+# `.github/policy.yml` declares `deployability.verification` as the source of
+# truth for how a deployable recipe is verified. This module does not read it —
+# it re-declares the same settings below — and the two had drifted. The probe
+# timeout is realigned (was 90, policy says `ready_timeout_seconds: 120`).
+#
+# The remaining differences are deliberate supersets and are safe: policy lists
+# two probe paths, this lists six (a superset, so anything policy would accept
+# is still accepted), and policy lists three container env vars where this sets
+# six (the extras pin a model and a location so a recipe cannot pick up a
+# developer's).
+#
+# ONE DIFFERENCE IS NOT SAFE AND IS NOT RESOLVED HERE:
+# `deployability.verification.run_allowlist` names the only recipes whose
+# containers policy says may be RUN rather than merely built, on the grounds
+# that some create real GCP resources at import — it names
+# core/python/cross-session-memory calling `agent_engines.create()` at module
+# scope. CI honours no such list: it runs every recipe with a root Dockerfile,
+# and the six it currently runs have ZERO overlap with the three the allowlist
+# names.
+#
+# It is not causing harm today only because the job has no real credentials —
+# the container gets a placeholder project and no ADC, which is precisely why
+# the unguarded-telemetry bug surfaced as a crash rather than as a provisioned
+# resource. That is safety by accident, not by design: wire real credentials
+# into this job and the policy's worst case becomes live.
+#
+# Resolving it means choosing between two real options — honour the allowlist
+# and lose run-verification for all six recipes (the coverage that just caught
+# the telemetry bug), or scope the allowlist to credentialed contexts only and
+# say so in policy. That is a judgement call for a maintainer, not something to
+# settle inside a bug-fix, so it is documented here and left alone.
+
 DEFAULT_PROBE_PATHS = (
     "/list-apps",
     "/docs",
@@ -281,7 +315,7 @@ def validate_recipe_docker(
     recipe_dir: Path,
     *,
     build_timeout: int = 900,
-    probe_timeout: int = 90,
+    probe_timeout: int = 120,
     port: int = 8080,
     probe_paths: tuple[str, ...] = DEFAULT_PROBE_PATHS,
 ) -> ValidationResult:
@@ -433,17 +467,34 @@ def validate_recipe_docker(
                 result.log_tail = logs
                 return result
 
-            # Probe endpoints
+            # Probe endpoints.
+            #
+            # 404 is deliberately NOT accepted as proof of accessibility, and
+            # that is the whole point of this check. A 404 says only "some
+            # process is speaking HTTP on this port" — it does not say the ADK
+            # app mounted. A container whose app failed to start but whose
+            # server is up 404s on every path, and counting that as
+            # "accessible" is exactly the false PASS this gate exists to
+            # prevent.
+            #
+            # 401/403 ARE accepted: to refuse you, the route has to exist and
+            # the request has to have been routed to it, which is the signal
+            # we are after. 2xx/3xx likewise.
+            #
+            # Verified safe against the current recipe set: all six recipes
+            # with a root Dockerfile answer `/list-apps` with HTTP 200, so
+            # none of them was relying on the 404 leniency.
             for path in probe_paths:
                 status, _ = probe_http(f"{base_url}{path}", timeout=3)
                 if status is not None and (
-                    200 <= status < 400 or status in (401, 403, 404)
+                    200 <= status < 400 or status in (401, 403)
                 ):
-                    # A 200 or successful HTTP status means server is up and responsive
+                    # A 200 is conclusive — stop here and prefer it.
                     if status == 200:
                         serving_endpoint = f"{path} (HTTP {status})"
                         break
-                    # If endpoint returns 404/401/403, keep probing other paths; if /docs or /list-apps 200s, that wins
+                    # 3xx/401/403: the server is routing. Hold it as a
+                    # candidate but keep probing in case a later path 200s.
                     if serving_endpoint is None:
                         serving_endpoint = f"{path} (HTTP {status})"
 
@@ -575,8 +626,8 @@ def _run() -> int:
     parser.add_argument(
         "--probe-timeout",
         type=int,
-        default=90,
-        help="Maximum container probe wait time in seconds (default: 90).",
+        default=120,
+        help="Maximum container probe wait time in seconds (default: 120).",
     )
     parser.add_argument(
         "--port",
