@@ -63,13 +63,11 @@ packages = ["tools"]
 
 [tool.ruff]
 line-length = 80
-# NOTE: disagrees with requires-python = ">=3.11" above and with the 3.11
-# floor in AGENTS.md, and should eventually become "py311". The bump is not
-# free: it enables UP017/UP041/I001 on code that is clean today, adding 5 new
-# failures inside the CI-scanned roots (genmedia-for-commerce x4,
-# virtual-tryon x1) and 18 repo-wide. All autofixable, but they land in
-# recipes unrelated to whatever PR bumps this, so it needs its own change.
-target-version = "py310"
+# Matches requires-python = ">=3.11" above and the 3.11 floor in AGENTS.md.
+# Was "py310", which told ruff to keep code compatible with a version this
+# repo does not support: it withheld the 3.11-only rewrites (UP017's
+# datetime.UTC, UP041's TimeoutError alias) that the codebase is free to use.
+target-version = "py311"
 # Resolve first-party imports per recipe, so a package not named `app` is
 # still first-party to its own recipe.
 #

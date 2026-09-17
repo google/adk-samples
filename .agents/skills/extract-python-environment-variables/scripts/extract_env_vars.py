@@ -75,7 +75,14 @@ import tempfile
 from pathlib import Path
 from typing import NamedTuple
 
-if sys.version_info < (3, 11):
+# Suppressed rather than deleted, which is what ruff's unsafe fix would do.
+# UP036 is right that this block is unreachable under the project's declared
+# floor, but that floor is a promise about the repo, not about the interpreter
+# this file is invoked with: it is a standalone script a skill runs directly,
+# sometimes via a bare `python3`. Keeping the guard turns "wrong interpreter"
+# into this sentence instead of an obscure ImportError on the `tomllib` line
+# immediately below it.
+if sys.version_info < (3, 11):  # noqa: UP036
     sys.exit(
         "extract_env_vars.py requires Python 3.11+ (it uses the stdlib "
         "`tomllib`, added in 3.11). Re-run it with a newer interpreter, "
