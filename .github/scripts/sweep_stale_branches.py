@@ -202,6 +202,18 @@ def prs_for_branch(branch: str, prs: list[PullRequest]) -> list[PullRequest]:
     ]
 
 
+def prs_targeting_branch(
+    branch: str, prs: list[PullRequest]
+) -> list[PullRequest]:
+    """Pull requests whose BASE is this branch — the stacked-PR case.
+
+    Cross-repository PRs are included here, unlike `prs_for_branch`. A base
+    ref always names a branch in THIS repository even when the head lives in
+    a fork, which is the same asymmetry `open_pr_protected_refs` relies on.
+    """
+    return [pr for pr in prs if pr.base_ref == branch]
+
+
 def classify(
     branch: Branch,
     prs: list[PullRequest],
@@ -249,20 +261,31 @@ def classify(
             "already an ancestor of the default branch",
         )
 
+    # A recently-closed PR keeps the branch on the closed-PR clock — whether
+    # this branch was that PR's HEAD or its BASE.
+    #
+    # Base refs matter because `open_pr_protected_refs` only protects them
+    # while the PR is OPEN, and stale-sweep.yml closes stale PRs an hour
+    # before this sweep runs. In that window a branch that was only ever a
+    # stack's base has no open PR and no head-PR credit, so it fell to the
+    # orphan clock — measured from a last commit that is old by definition,
+    # so it could be deleted immediately. That contradicts the close notice's
+    # "reopen the pull request — your commits are unaffected".
     closed = [
         pr
-        for pr in mine
+        for pr in mine + prs_targeting_branch(branch.name, prs)
         if pr.state == "CLOSED" and not pr.merged_at and pr.closed_at
     ]
     if closed:
         newest = max(closed, key=lambda pr: pr.closed_at)
+        role = "based on" if newest.base_ref == branch.name else "from"
         return _verdict(
             branch,
             "closed-pr",
             newest.closed_at,
             cfg["closed_pr_after_days"],
             now,
-            f"PR #{newest.number} closed without merging",
+            f"PR #{newest.number} ({role} this branch) closed without merging",
         )
 
     return _verdict(

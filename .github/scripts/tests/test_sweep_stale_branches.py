@@ -510,3 +510,93 @@ def test_real_policy_file_declares_the_branch_thresholds():
     # `assets` is a live content branch; losing this entry deletes it.
     assert "assets" in cfg["protected"]
     assert "main" in cfg["protected"]
+
+
+# ---------------------------------------------------------------------------
+# The stacked-PR base ref, and the hour-long window the Monday ordering opens.
+#
+# stale-sweep.yml closes stale PRs at 05:00; this sweep runs at 06:00. In
+# between, a branch that was only ever a stack's BASE loses the protection
+# `open_pr_protected_refs` gave it, and nothing else was crediting it.
+# ---------------------------------------------------------------------------
+
+
+def test_base_of_just_closed_pr_is_not_orphaned():
+    """The 05:00 close must not make the 06:00 sweep delete the stack's base.
+
+    `prs_for_branch` filters on head_ref, so a base-only branch used to get no
+    credit at all once its PR closed and fell to the orphan clock, measured
+    from a last commit that is necessarily old — that is why the PR went stale.
+    It could be deleted within the hour of losing protection, falsifying the
+    close notice's promise that reopening the PR restores the work.
+    """
+    base = branch("feature/stack-base", days_since_commit=200)
+    just_closed = pr(
+        number=77,
+        head="feature/stack-child",
+        base="feature/stack-base",
+        state="CLOSED",
+        closed_days_ago=0,
+    )
+
+    verdict = s.classify(base, [just_closed], CFG, NOW, NEVER_ANCESTOR)
+
+    assert verdict.category == "closed-pr"
+    assert not verdict.delete, "base of a PR closed today must survive"
+    assert "#77" in verdict.reason
+
+
+def test_base_of_long_closed_pr_is_eventually_deleted():
+    """The grace period is bounded — this defers deletion, it does not block it."""
+    base = branch("feature/stack-base", days_since_commit=200)
+    long_closed = pr(
+        number=78,
+        head="feature/stack-child",
+        base="feature/stack-base",
+        state="CLOSED",
+        closed_days_ago=CFG["closed_pr_after_days"] + 1,
+    )
+
+    verdict = s.classify(base, [long_closed], CFG, NOW, NEVER_ANCESTOR)
+
+    assert verdict.category == "closed-pr"
+    assert verdict.delete
+
+
+def test_fork_pr_still_protects_the_base_it_targets():
+    """A base ref names a branch HERE even when the head lives in a fork."""
+    base = branch("feature/stack-base", days_since_commit=200)
+    fork_pr = pr(
+        number=79,
+        head="patch-1",
+        base="feature/stack-base",
+        state="CLOSED",
+        closed_days_ago=1,
+        fork=True,
+    )
+
+    verdict = s.classify(base, [fork_pr], CFG, NOW, NEVER_ANCESTOR)
+
+    assert verdict.category == "closed-pr"
+    assert not verdict.delete
+
+
+def test_plain_orphan_is_unaffected():
+    """A branch no PR ever referenced still takes the orphan clock."""
+    verdict = s.classify(
+        branch("feature/nobody", days_since_commit=200),
+        [
+            pr(
+                number=80,
+                head="other",
+                base="main",
+                state="CLOSED",
+                closed_days_ago=1,
+            )
+        ],
+        CFG,
+        NOW,
+        NEVER_ANCESTOR,
+    )
+    assert verdict.category == "orphan"
+    assert verdict.delete
