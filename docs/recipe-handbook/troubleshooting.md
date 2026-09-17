@@ -229,15 +229,24 @@ out is never blocked.
 
 **Cause** — files in the `.github/` directory (CI workflows, issue templates, automation scripts, and repository policy configuration) control repository-wide infrastructure and security. Only repository administrators are permitted to create, modify, or delete files under `.github/`.
 
-**Fix** — revert all additions, modifications, or deletions under `.github/` in your pull request:
+**Fix** — restore `.github/` to exactly what is on `main`. The `git rm` line is
+needed as well as the checkout: `git checkout` restores files that exist on
+`main` but leaves behind any file your branch *added* under `.github/`, which
+would keep the check failing.
 
+    git rm -r --quiet --ignore-unmatch .github/
     git checkout origin/main -- .github/
     git commit -m "Revert changes under .github/"
 
 If CI workflow or repository configuration changes are needed, please open an issue describing the requested changes or reach out to a repository administrator.
 
-**Confirm**, from the repo root —
-`git diff --name-only origin/main...HEAD | uv run python tools/check_github_dir_changes.py --author <your-username>`
+**Confirm**, from the repo root — this lists exactly the files CI would flag.
+It deliberately passes `--is-admin false`, because the permission lookup needs
+a token the check has in CI and you generally do not have locally:
+
+    git -c core.quotePath=false diff --no-renames --name-only origin/main...HEAD \
+      | uv run --no-project python tools/check_github_dir_changes.py \
+          --author "$(git config user.name)" --is-admin false
 
 ## README.md is missing or empty
 

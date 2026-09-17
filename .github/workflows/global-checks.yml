@@ -1,8 +1,20 @@
 name: Global Checks
 
 # Generic and global pull request checks.
-# Enforces repository-wide constraints that apply across all contributions,
-# beginning with permission validation on the .github/ directory.
+# Repository-wide constraints that apply across all contributions, beginning
+# with permission validation on the .github/ directory.
+#
+# This job is a GUARD RAIL, NOT ENFORCEMENT. It is triggered by
+# `pull_request`, so GitHub runs the PR's own copy of this file: a pull
+# request that edits .github/ can edit or delete this check in the same
+# commit. It catches the accident and hands the contributor an actionable
+# message; it does not stop anyone determined. What actually enforces the
+# rule is repository settings, not files in the tree:
+#   * a CODEOWNERS entry for /.github/ with required review;
+#   * a repository or organization ruleset restricting those paths;
+#   * this job marked as a REQUIRED status check, so deleting it blocks the
+#     merge (a required check that never reports is not a pass) rather than
+#     silently skipping the gate.
 
 on:
   pull_request:
@@ -51,9 +63,21 @@ jobs:
           fi
 
           git fetch origin "$BASE_REF"
-          CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
 
-          echo "$CHANGED_FILES" | uv run python tools/check_github_dir_changes.py \
+          # --no-renames: with rename detection on, moving a file OUT of
+          #   .github/ reports only the destination path, so the deletion
+          #   from .github/ never reaches the checker.
+          # core.quotePath=false: git C-quotes any path with non-ASCII bytes
+          #   (".github/w\303\266rk.yml"), and the leading quote stops it
+          #   matching the .github/ prefix.
+          CHANGED_FILES=$(git -c core.quotePath=false diff \
+            --no-renames --name-only "origin/$BASE_REF"...HEAD)
+
+          # --no-project: this checker is stdlib-only, so there is nothing to
+          # sync. Resolving the root project here would let an unrelated
+          # pyproject.toml/uv.lock change in the PR fail a security check.
+          echo "$CHANGED_FILES" | uv run --no-project python \
+            tools/check_github_dir_changes.py \
             --author "$PR_AUTHOR" \
             --author-association "$AUTHOR_ASSOCIATION" \
             --repo "$REPO"
