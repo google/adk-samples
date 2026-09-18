@@ -13,6 +13,29 @@
 >
 > Pull requests that add or modify files under `python/agents/` fail CI.
 
+## Moved recipes
+
+Recipes used to live at `python/agents/<recipe>`. Links to the old
+paths return a 404 — GitHub does not redirect a moved directory —
+so update any link you own:
+
+| Old path | Current location |
+| :--- | :--- |
+| `python/agents/ambient-expense-agent` | [`core/python/ambient-expense-agent`](../core/python/ambient-expense-agent) |
+| `python/agents/brand-search-optimization` | [`contrib/python/brand-search-optimization`](../contrib/python/brand-search-optimization) |
+| `python/agents/deep-search` | [`core/python/deep-search`](../core/python/deep-search) |
+| `python/agents/financial-advisor` | [`contrib/python/financial-advisor`](../contrib/python/financial-advisor) |
+| `python/agents/genmedia-for-commerce` | [`core/python/genmedia-for-commerce`](../core/python/genmedia-for-commerce) |
+| `python/agents/llm-auditor` | [`contrib/python/llm-auditor`](../contrib/python/llm-auditor) |
+| `python/agents/multiformat-hybrid-rag` | [`contrib/python/multiformat-hybrid-rag`](../contrib/python/multiformat-hybrid-rag) |
+| `python/agents/on-brand-genmedia` | [`contrib/python/on-brand-genmedia`](../contrib/python/on-brand-genmedia) |
+| `python/agents/safety-plugins` | [`core/python/safety-plugins`](../core/python/safety-plugins) |
+| `python/agents/software-bug-assistant` | [`contrib/python/software-bug-assistant`](../contrib/python/software-bug-assistant) |
+
+Any other recipe that lived here has been removed. Browse
+[`core/`](../core/) and [`contrib/`](../contrib/) for the current
+collection.
+
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 <img src="https://github.com/google/adk-docs/blob/main/docs/assets/agent-development-kit.png" alt="Agent Development Kit Logo" width="150">
