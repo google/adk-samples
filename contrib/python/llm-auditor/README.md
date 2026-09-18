@@ -18,7 +18,7 @@ analyzing LLM answers against real-world information to enhance reliability.
 *   Optionally rewrites original responses to correct inaccuracies based on
     verified findings.
 
-This sample agent enables a user to query an LLM and the agent audits the
+This recipe enables a user to query an LLM and the agent audits the
 corresponding answer by extracting claims, utilizing search tools for
 verification, generating an audit report, and optionally re-writing the
 response.
@@ -43,7 +43,7 @@ to implement this workflow.
 
 ## Quick start (Google Agents CLI — primary)
 
-This sample ships with **[Google Agents CLI](https://github.com/google/agents-cli)** and is easiest to run with **[uv](https://docs.astral.sh/uv/)**. The `[tool.agents-cli]` section sets an `example_question` for templating.
+This recipe ships with **[Google Agents CLI](https://github.com/google/agents-cli)** and is easiest to run with **[uv](https://docs.astral.sh/uv/)**. The `[tool.agents-cli]` section sets an `example_question` for templating.
 
 ### Prerequisites
 
@@ -55,8 +55,8 @@ This sample ships with **[Google Agents CLI](https://github.com/google/agents-cl
 ### Install
 
 ```bash
-git clone https://github.com/google/adk-samples.git
-cd adk-samples/contrib/python/llm-auditor
+git clone https://github.com/google/adk-recipes.git
+cd adk-recipes/contrib/python/llm-auditor
 uv sync
 ```
 
@@ -326,8 +326,8 @@ The LLM Auditor can be customized to better suit your requirements. For example:
 
 ## Disclaimer
 
-This agent sample is provided for illustrative purposes only and is not intended for production use. It serves as a basic example of an agent and a foundational starting point for individuals or teams to develop their own agents.
+This agent recipe is provided for illustrative purposes only and is not intended for production use. It serves as a basic example of an agent and a foundational starting point for individuals or teams to develop their own agents.
 
-This sample has not been rigorously tested, may contain bugs or limitations, and does not include features or optimizations typically required for a production environment (e.g., robust error handling, security measures, scalability, performance considerations, comprehensive logging, or advanced configuration options).
+This recipe has not been rigorously tested, may contain bugs or limitations, and does not include features or optimizations typically required for a production environment (e.g., robust error handling, security measures, scalability, performance considerations, comprehensive logging, or advanced configuration options).
 
-Users are solely responsible for any further development, testing, security hardening, and deployment of agents based on this sample. We recommend thorough review, testing, and the implementation of appropriate safeguards before using any derived agent in a live or critical system.
+Users are solely responsible for any further development, testing, security hardening, and deployment of agents based on this recipe. We recommend thorough review, testing, and the implementation of appropriate safeguards before using any derived agent in a live or critical system.
