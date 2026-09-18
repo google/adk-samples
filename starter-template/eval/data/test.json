@@ -1,0 +1,14 @@
+[
+  {
+    "query": "Hi there",
+    "expected_tool_use": [
+      {
+        "tool_name": "tool1_name",
+        "tool_input": {
+          "name": "world"
+        }
+      }
+    ],
+    "reference": "Hello world!"
+  }
+]
