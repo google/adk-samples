@@ -77,7 +77,7 @@ jobs:
           # Recipe proposals (the `[RECIPE PROPOSAL]` issue template) follow
           # their own human review process: no AI reply, no auto-assignment.
           SKIP='false'
-          if [[ "$(echo "${TITLE}" | tr '[:lower:]' '[:upper:]')" == *"[RECIPE PROPOSAL]"* ]]; then
+          if [[ "${TITLE^^}" == *"[RECIPE PROPOSAL]"* ]]; then
             SKIP='true'
             echo "Issue #${NUMBER} is a recipe proposal — skipping the automated response."
           fi
