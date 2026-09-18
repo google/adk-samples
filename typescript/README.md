@@ -28,7 +28,7 @@ Follow these steps to set up and run the sample agents:
 
 1.  **Prerequisites:**
     *   **Install TypeScript ADK:** Ensure you have TypeScript Agent
-        Development Kit installed and configured. Follow the Go instructions in the
+        Development Kit installed and configured. Follow the TypeScript instructions in the
         [ADK Installation Guide](https://google.github.io/adk-docs/get-started/installation/#typescript).
     *   **Set Up Environment Variables:** Each agent example relies on a `.env`
         file for configuration (like API keys, Google Cloud project IDs, and
@@ -38,7 +38,7 @@ Follow these steps to set up and run the sample agents:
         *   Setting up these variables, especially obtaining Google Cloud
             credentials, requires careful steps. Refer to the **Environment
             Setup** section in the [ADK Installation
-            Guide](https://google.github.io/adk-docs/get-started/installation/#go)
+            Guide](https://google.github.io/adk-docs/get-started/installation/#typescript)
             for detailed instructions.
     *   **Google Cloud Project (Recommended):** While some agents might run
         locally with just an API key, most leverage Google Cloud services like
@@ -50,7 +50,7 @@ Follow these steps to set up and run the sample agents:
 
 2.  **Clone this repository:**
 
-    To start working with the ADK Go samples, first clone the public `adk-samples` repository:
+    To start working with the ADK TypeScript samples, first clone the public `adk-samples` repository:
     ```bash
     git clone https://github.com/google/adk-samples.git
     cd adk-samples/typescript
@@ -67,7 +67,7 @@ Follow these steps to set up and run the sample agents:
     *   Choose an agent from the `agents/` directory.
     *   Navigate into that agent's specific directory (e.g., `cd agents/customer_service`).
     *   Follow the instructions in *that agent's* `README.md` file for specific
-        setup and running the agent.
+        setup (like installing dependencies via `npm install`) and running the agent.
     *   Browse the folders in this repository. Each agent and tool have its own
         `README.md` file with detailed instructions.
 
