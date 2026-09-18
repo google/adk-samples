@@ -26,7 +26,7 @@ from high_volume_document_analyzer.agent import root_agent
 
 load_dotenv(override=True)
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
-LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
 STAGING_BUCKET = os.getenv("STAGING_BUCKET")
 
 if not STAGING_BUCKET:
@@ -64,8 +64,9 @@ common_args = {
         "high_volume_document_analyzer/tools/process_toolset.py",
     ],
     "requirements": [
-        "google-adk>=1.28.0",
+        "google-adk>=1.31.0",
         "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",
+        "google-cloud-secret-manager>=2.16.0",
         "opentelemetry-instrumentation-google-genai==0.4b0",
         "python-dotenv>=1.0.1",
         "reportlab==4.2.0",
@@ -86,10 +87,8 @@ common_args = {
         "CLIENT_SECRET": os.getenv("CLIENT_SECRET", ""),
         "URL_TOKEN_API_URL": os.getenv("URL_TOKEN_API_URL", ""),
         "DOCUMENT_API_BASE_URL": os.getenv("DOCUMENT_API_BASE_URL", ""),
-        "MODEL_NAME_DOC_PROCESSING": os.getenv(
-            "MODEL_NAME_DOC_PROCESSING", "gemini-2.5-flash"
-        ),
-        "MODEL_NAME_AGENT": os.getenv("MODEL_NAME_AGENT", "gemini-2.5-flash"),
+        "MODEL_NAME_DOC_PROCESSING": os.getenv("MODEL_NAME_DOC_PROCESSING"),
+        "MODEL_NAME_AGENT": os.getenv("MODEL_NAME_AGENT"),
         "BATCH_SIZE": os.getenv("BATCH_SIZE", "10"),
         "MAX_CONCURRENT_DOWNLOADS": os.getenv("MAX_CONCURRENT_DOWNLOADS", "20"),
     },

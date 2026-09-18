@@ -30,8 +30,8 @@ logging.basicConfig(
 )
 
 CHUNK_SIZE = int(os.getenv("BATCH_SIZE", "10"))
-MODEL_NAME = os.getenv("MODEL_NAME_DOC_PROCESSING", "gemini-2.5-flash")
-LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+MODEL_NAME = os.getenv("MODEL_NAME_DOC_PROCESSING")
+LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION")
 
 _MODEL_INSTANCE: GenerativeModel | None = None
 
