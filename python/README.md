@@ -13,6 +13,61 @@
 >
 > Pull requests that add or modify files under `python/agents/` fail CI.
 
+## Arrived here from a broken link?
+
+Recipes used to live at `python/agents/<recipe>`. Most have since
+moved or been removed, so a bookmark, blog post, or external
+short-link pointing at the old path now returns a **404**. GitHub
+cannot redirect a moved directory, so this table is the mapping.
+
+**If you maintain a link to a recipe, point it at the new path
+below** — the old one will not start working again.
+
+### Moved
+
+| Old path | Current location |
+| :--- | :--- |
+| `python/agents/ambient-expense-agent` | [`core/python/ambient-expense-agent`](../core/python/ambient-expense-agent) |
+| `python/agents/brand-search-optimization` | [`contrib/python/brand-search-optimization`](../contrib/python/brand-search-optimization) |
+| `python/agents/deep-search` | [`core/python/deep-search`](../core/python/deep-search) |
+| `python/agents/financial-advisor` | [`contrib/python/financial-advisor`](../contrib/python/financial-advisor) |
+| `python/agents/genmedia-for-commerce` | [`core/python/genmedia-for-commerce`](../core/python/genmedia-for-commerce) |
+| `python/agents/llm-auditor` | [`contrib/python/llm-auditor`](../contrib/python/llm-auditor) |
+| `python/agents/multiformat-hybrid-rag` | [`contrib/python/multiformat-hybrid-rag`](../contrib/python/multiformat-hybrid-rag) |
+| `python/agents/on-brand-genmedia` | [`contrib/python/on-brand-genmedia`](../contrib/python/on-brand-genmedia) |
+| `python/agents/safety-plugins` | [`core/python/safety-plugins`](../core/python/safety-plugins) |
+| `python/agents/software-bug-assistant` | [`contrib/python/software-bug-assistant`](../contrib/python/software-bug-assistant) |
+
+### Removed
+
+These were retired rather than migrated. There is no current
+equivalent; the code remains in the repository history.
+
+`academic-research`, `antom-payment`, `auto-insurance-agent`,
+`currency-agent`, `customer-service`, `data-engineering`,
+`gemma-food-tour-guide`, `google-trends-agent`,
+`hierarchical-workflow-automation`, `image-scoring`,
+`incident-management`, `live-api-evals-and-audio-session-auditing`,
+`marketing-agency`, `medical-pre-authorization`, `order-processing`,
+`Plumber-Data-Engineering-Assistant`, `RAG`, `short-movie-agents`,
+`supply-chain`, `workflow-dynamic`
+
+For a RAG starting point, see
+[`core/python/rag-agent-search`](../core/python/rag-agent-search) or
+[`core/python/rag-vector-search`](../core/python/rag-vector-search).
+Neither is a port of the old `RAG` recipe.
+
+### Still under `python/agents/`
+
+The remaining folders still load, but they are frozen: they predate
+the current contribution requirements, accept no changes, and will
+be migrated or removed. Nothing there should be treated as a
+maintained recipe.
+
+Anything not listed above never lived here — browse
+[`core/`](../core/) and [`contrib/`](../contrib/) for the current
+collection.
+
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 <img src="https://github.com/google/adk-docs/blob/main/docs/assets/agent-development-kit.png" alt="Agent Development Kit Logo" width="150">
