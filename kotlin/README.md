@@ -1,4 +1,4 @@
-# Agent Development Kit (ADK) Kotlin Samples
+# Agent Development Kit (ADK) Kotlin Recipes
 
 > [!IMPORTANT]
 > **This folder is retired.** `kotlin/agents/` is now empty. Recipes live in
@@ -19,7 +19,7 @@
 <img src="https://github.com/google/adk-docs/blob/main/docs/assets/agent-development-kit.png" alt="Agent Development Kit Logo" width="150">
 
 [`core/kotlin/`](../core/kotlin/) and [`contrib/kotlin/`](../contrib/kotlin/)
-provide ready-to-use sample agents built on top of
+provide ready-to-use recipes built on top of
 [ADK Kotlin](https://github.com/google/adk-kotlin). These agents cover a range
 of common use cases and complexities, from simple conversational bots to
 complex multi-agent workflows.
@@ -43,6 +43,6 @@ agent's* `README.md`.
 
 These agents have been built and tested using
 [Google models](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models).
-You can test these samples with other models as well. Please refer to
+You can test these recipes with other models as well. Please refer to
 [ADK Tutorials](https://adk.dev/tutorials/) to use other
-models for these samples.
+models for these recipes.
