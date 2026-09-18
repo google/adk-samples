@@ -55,7 +55,8 @@ uvx google-agents-cli setup
 **Create the project from this sample** (replace `my-deep-search-agent` with your project name):
 
 ```bash
-agents-cli create my-deep-search-agent -a adk@deep-search
+agents-cli create my-deep-search-agent \
+  -a https://github.com/google/adk-samples/tree/main/core/python/deep-search
 ```
 
 The Google Agents CLI will prompt you to select deployment options and set up your Google Cloud project.
@@ -82,7 +83,7 @@ Clone the repository and `cd` into the project directory.
 
 ```bash
 git clone https://github.com/google/adk-samples.git
-cd adk-samples/python/agents/deep-search
+cd adk-samples/core/python/deep-search
 ```
 
 #### Step 2: Set Environment Variables
@@ -121,7 +122,7 @@ Then run `make install && make dev` to start the agent.
 
 ## Cloud Deployment
 
-> **Note:** Cloud deployment applies only to projects created with **google-agents-cli**.
+> **Note:** Cloud deployment applies to projects created with **google-agents-cli**.
 
 **Prerequisites:**
 ```bash
@@ -129,23 +130,70 @@ gcloud components update
 gcloud config set project YOUR_PROJECT_ID
 ```
 
-#### Option 1: Deploy with ADK Web UI (Default)
+#### Option 1: Deploy with ADK Web UI (Default Backend)
 
-For a quick deployment using the built-in [adk-web](https://github.com/google/adk-web) interface:
+By default, the scaffolded project creates a container for the FastAPI backend (`app/`) exposing port 8080. It uses the built-in [adk-web](https://github.com/google/adk-web) interface.
+
+Deploy to Cloud Run with Identity-Aware Proxy (IAP):
 
 ```bash
-make deploy IAP=true
+agents-cli deploy --iap
+```
+
+Or deploy without IAP:
+
+```bash
+agents-cli deploy
 ```
 
 #### Option 2: Deploy with Custom UI (React Frontend)
 
-This agent includes a custom React frontend. To deploy it:
+This agent includes a custom React frontend in `frontend/`. In local development, the Vite dev server (`make dev-frontend`) proxies API calls to the backend on `http://127.0.0.1:8000`.
 
-1. **Configure the Dockerfile** - See the [Deploy UI Guide](https://github.com/google/agents-cli) for the required Dockerfile changes.
+In production, the default container is **backend-only** and does not package the frontend. To bundle and serve both the React frontend and the ADK agent from a single container:
 
-2. **Deploy with the frontend port:**
+1. **Update the `Dockerfile` to a multi-stage build** that builds the frontend and bundles the static distribution into the image:
+
+```dockerfile
+# Stage 1: Build the React frontend
+FROM node:20-slim AS frontend-builder
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Backend + bundled frontend
+FROM python:3.11-slim
+WORKDIR /app
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+COPY app/ ./app/
+COPY --from=frontend-builder /frontend/dist ./frontend/dist
+
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8080
+CMD ["uv", "run", "uvicorn", "app.fast_api_app:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+2. **Mount the static files in `app/fast_api_app.py`** so that the FastAPI app serves the frontend at the root while keeping `/api/*` routed to ADK:
+
+```python
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+frontend_dist = Path("frontend/dist")
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+```
+
+3. **Deploy with Google Agents CLI:**
+
 ```bash
-make deploy IAP=true PORT=5173
+agents-cli deploy --iap
 ```
 
 #### After Deployment
