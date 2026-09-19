@@ -74,8 +74,8 @@ jobs:
           echo "issue_number=${NUMBER}" >> "${GITHUB_OUTPUT}"
           echo "issue_author=${AUTHOR}" >> "${GITHUB_OUTPUT}"
 
-          # Recipe proposals (the `[RECIPE PROPOSAL]` issue template) follow
-          # their own human review process: no AI reply, no auto-assignment.
+          # Recipe proposals follow their own review process: no AI reply,
+          # no auto-assignment.
           SKIP='false'
           if [[ "${TITLE^^}" == *"[RECIPE PROPOSAL]"* ]]; then
             SKIP='true'

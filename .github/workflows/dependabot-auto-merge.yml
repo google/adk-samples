@@ -13,9 +13,9 @@ name: 📦⚡ Dependabot Auto-Merge
 # as a reusable workflow, which is a redesign of every gate listed below.
 #
 # What makes it tolerable here is that the job it guards never touches
-# PR-controlled code. It does not check the PR out at all: every input is
-# `gh` API output read at the PR's head SHA, and every privileged action is
-# a `gh pr` call. There is no build, no test run, no script from the PR.
+# PR-controlled code. It does not check the PR out at all: every decision is
+# made from `gh` API output, and every privileged action is a `gh pr` call.
+# There is no build, no test run, no script from the PR.
 #
 # Reassess if a step is ever added that checks the PR out or runs anything
 # from it.
@@ -146,30 +146,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STEPS_PR_OUTPUTS_NUMBER: ${{ steps.pr.outputs.number }}
 
-      # There is deliberately NO checkout here.
-      #
-      # This job runs on `workflow_run` with `contents: write`, so a checkout
-      # of `refs/pull/<n>/head` puts PR-controlled files inside a privileged
-      # runner — the pairing CodeQL reports as
-      # `actions/untrusted-checkout/high`, and a single future step that ran
-      # anything out of that tree would turn the finding into a real repo
-      # compromise. Nothing needed the working tree: the changed-file list
-      # and the one file that gets grepped both come from the API below.
-      #
-      # Keep it that way. A step that genuinely needs the PR's tree does not
-      # belong in this job.
+      # Deliberately no checkout: this job is privileged, so a checkout of
+      # refs/pull/<n>/head is CodeQL's `actions/untrusted-checkout/high`.
+      # Both reads below come from the API instead. Keep it that way.
       - name: Check if changes are in agents using starter pack for testing
         if: steps.check.outputs.is_dependabot == 'true'
         id: check-agent
         run: |
-          # The PR's head SHA pins every read below to one revision, so a
-          # push landing mid-run cannot have half the decision made against
-          # the old tree and half against the new.
+          # Pins the reads below to one revision, so a push landing mid-run
+          # cannot have the decision made against two different trees.
           HEAD_SHA=$(gh api "repos/${{ github.repository }}/pulls/${STEPS_PR_OUTPUTS_NUMBER}" --jq '.head.sha')
 
-          # Get all changed files. --paginate because the API returns 30 per
-          # page by default and a lockfile-wide bump can exceed that; a
-          # truncated list would silently drop recipes from the check.
+          # Get all changed files. --paginate: the default 30 per page would
+          # silently drop recipes from a wide bump.
           CHANGED_FILES=$(gh api --paginate \
             "repos/${{ github.repository }}/pulls/${STEPS_PR_OUTPUTS_NUMBER}/files?per_page=100" \
             --jq '.[].filename')
@@ -198,8 +187,7 @@ jobs:
               # Python recipes: require [tool.agent-starter-pack] as the signal
               # that the recipe has automated tests wired up.
               if [[ "$dir" == *"/python/"* ]]; then
-                # Read the file rather than check it out: a 404 here is the
-                # "no pyproject.toml" case, and the body is only ever grepped.
+                # A 404 here is the "no pyproject.toml" case.
                 if ! PYPROJECT=$(gh api \
                   "repos/${{ github.repository }}/contents/${dir}/pyproject.toml?ref=${HEAD_SHA}" \
                   -H 'Accept: application/vnd.github.raw' 2>/dev/null); then

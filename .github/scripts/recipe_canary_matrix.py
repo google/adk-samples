@@ -74,11 +74,9 @@ MAX_TESTABLE_MINOR = 13
 
 # Recipes the canary deliberately does not run.
 #
-# Empty today. The legacy flat-path duplicates this held (core/rag-agent-search
-# and core/rag-vector-search) were deleted in #2653, so their skips went with
-# them. Add an entry only with a reason and a removal condition: the
-# accompanying test asserts every entry still names a real recipe, because a
-# stale skip that silently matched one would hide it from the canary forever.
+# Empty since #2653 deleted the legacy flat-path duplicates it held. A stale
+# skip that silently matched a live recipe would hide it from the canary
+# forever, so the accompanying test asserts every entry still exists.
 SKIP_RECIPES: set[str] = set()
 
 # GitHub fails a workflow outright above 256 matrix jobs.

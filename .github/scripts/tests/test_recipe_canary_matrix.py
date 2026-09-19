@@ -151,8 +151,8 @@ def test_every_skip_entry_still_names_a_real_recipe():
     """A skip that matches nothing is dead config; a skip that quietly starts
     matching a live recipe removes it from every canary run with no signal.
 
-    Vacuous while SKIP_RECIPES is empty, and the guard that fires the moment
-    an entry's recipe is deleted out from under it.
+    Fails once the legacy duplicates are deleted — which is the intended
+    prompt to delete the SKIP_RECIPES entries in the same change.
     """
     for rel in sorted(m.SKIP_RECIPES):
         assert (REPO_ROOT / rel / "manifest.yaml").is_file(), (
