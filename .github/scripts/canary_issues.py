@@ -72,9 +72,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 REPO = os.environ.get("GITHUB_REPOSITORY", "google/adk-recipes")
 
-# Who hears about it when a recipe has no usable owner, and who is tagged for
+# The day-to-day maintainer. Assigned to every canary issue alongside the
+# recipe's owner, notified when a recipe has no usable owner, and tagged for
 # a decision once the owner has not responded.
-MAINTAINER = "happyhuman"
+MAINTAINER = "tommywagz"
 
 TITLE_PREFIX = "Recipe canary:"
 
@@ -520,8 +521,9 @@ def open_issue(recipe: str, jobs: list[dict], run_url: str, dry: bool) -> None:
     if dry:
         print(f"  [dry-run] would open: {issue_title(recipe)}")
         return
-    if owner and is_assignable(owner):
-        args += ["--assignee", owner]
+    for user in dict.fromkeys(u for u in (owner, MAINTAINER) if u):
+        if is_assignable(user):
+            args += ["--assignee", user]
     print(f"  opened: {gh(*args)}")
 
 
