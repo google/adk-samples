@@ -15,7 +15,7 @@
 # Default human for repository maintenance: the login automation assigns
 # or @-mentions when it needs one. Aliased below as `*repo_admin`. Must be
 # a GitHub login with write access.
-repo_admin: &repo_admin happyhuman
+repo_admin: &repo_admin tommywagz
 
 # --------------------------------------------------------------------------
 # Recipe size limits — enforced by

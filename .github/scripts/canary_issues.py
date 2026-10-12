@@ -74,7 +74,7 @@ REPO = os.environ.get("GITHUB_REPOSITORY", "google/adk-recipes")
 
 # Who hears about it when a recipe has no usable owner, and who is tagged for
 # a decision once the owner has not responded.
-MAINTAINER = "happyhuman"
+MAINTAINER = "tommywagz"
 
 TITLE_PREFIX = "Recipe canary:"
 
