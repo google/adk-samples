@@ -1,0 +1,130 @@
+{
+  "eval_set_id": "campaign-agent-tests",
+  "name": "Campaign Agent Tool Tests",
+  "description": "Tests for campaign CRUD and location features",
+  "eval_cases": [
+    {
+      "eval_id": "list-all-campaigns",
+      "conversation": [
+        {
+          "invocation_id": "test-c01",
+          "user_content": {
+            "parts": [{"text": "What campaigns do we have?"}],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [{"text": "We have 4 active campaigns: 1. Blue Floral Maxi Dress - Westfield Century City (ID 1); 2. Elegant Black Cocktail Dress - Bloomingdale's 59th Street (ID 2); 3. Black High Waist Trousers - Water Tower Place (ID 3); 4. Sage Satin Camisole - The Grove (ID 4). Campaign IDs 1-4 are all present and Active."}],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "transfer_to_agent", "args": {"agent_name": "campaign_agent"}},
+              {"name": "list_campaigns", "args": {}}
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": null
+    },
+    {
+      "eval_id": "get-campaign-details",
+      "conversation": [
+        {
+          "invocation_id": "test-c02",
+          "user_content": {
+            "parts": [{"text": "Show me the details of campaign 2"}],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [{"text": "Campaign 2 is Elegant Black Cocktail Dress - Bloomingdale's 59th Street (New York, NY), status Active. Product: elegant-black-cocktail-dress (ID 12). Performance over the last 30 days: 45,627 impressions, 217,016 circulation, $2,103.43 revenue, $46.10 RPM (RPI $0.0461), 8.2s dwell time; 1 activated video."}],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "transfer_to_agent", "args": {"agent_name": "campaign_agent"}},
+              {"name": "get_campaign", "args": {"campaign_id": 2}}
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": null
+    },
+    {
+      "eval_id": "get-campaign-locations",
+      "conversation": [
+        {
+          "invocation_id": "test-c03",
+          "user_content": {
+            "parts": [{"text": "Show me all store locations"}],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [{"text": "Here are all 4 store locations with their city/state and the campaign/product running at each: Westfield Century City, Los Angeles CA (Blue Floral Maxi Dress); Bloomingdale's 59th Street, New York NY (Elegant Black Cocktail Dress); Water Tower Place, Chicago IL (Black High Waist Trousers); The Grove, Los Angeles CA (Sage Satin Camisole)."}],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "transfer_to_agent", "args": {"agent_name": "campaign_agent"}},
+              {"name": "get_campaign_locations", "args": {}}
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": null
+    },
+    {
+      "eval_id": "create-campaign-beverage",
+      "conversation": [
+        {
+          "invocation_id": "test-c04",
+          "user_content": {
+            "parts": [{"text": "Create a campaign for the Aurora cold brew at Target Downtown in Austin, Texas"}],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [{"text": "A new campaign for Aurora Cold Brew at Target Downtown in Austin, Texas has been created. It reuses the existing Aurora Cold Brew product (ID 23) already in the catalog rather than onboarding a duplicate."}],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "transfer_to_agent", "args": {"agent_name": "campaign_agent"}},
+              {"name": "list_products", "args": {"category": "beverage"}},
+              {"name": "create_campaign", "args": {"product_id": 23, "store_name": "Target Downtown", "city": "Austin", "state": "Texas"}}
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": null
+    },
+    {
+      "eval_id": "create-campaign-cold-start-outerwear",
+      "conversation": [
+        {
+          "invocation_id": "test-c05",
+          "user_content": {
+            "parts": [{"text": "Create a campaign for the Camel Wool Overcoat at Macy's Herald Square in Manhattan, New York"}],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [{"text": "A new campaign for the Camel Wool Overcoat at Macy's Herald Square in New York has been created. It reuses the existing Camel Wool Overcoat product (ID 8) already in the catalog rather than onboarding a duplicate."}],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "transfer_to_agent", "args": {"agent_name": "campaign_agent"}},
+              {"name": "list_products", "args": {}},
+              {"name": "create_campaign", "args": {"product_id": 8, "store_name": "Macy's Herald Square", "city": "New York", "state": "New York"}}
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": null
+    }
+  ],
+  "creation_timestamp": 1735000000.0
+}

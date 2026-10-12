@@ -1,0 +1,1730 @@
+[
+  {
+    "timestamp": "2026-07-25T23:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.713000178337097,
+    "outgoing_inner_count": 8.89900016784668,
+    "incoming_outer_count": 17.974000334739685,
+    "outgoing_outer_count": 14.960000276565552,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T10:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.0420001745224,
+    "outgoing_inner_count": 10.813000202178955,
+    "incoming_outer_count": 14.46500027179718,
+    "outgoing_outer_count": 14.960000276565552,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T11:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 5.104000091552734,
+    "outgoing_inner_count": 6.523000121116638,
+    "incoming_outer_count": 9.889000177383423,
+    "outgoing_outer_count": 11.627000212669373,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T15:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.337000131607056,
+    "outgoing_inner_count": 6.842000126838684,
+    "incoming_outer_count": 10.527000188827515,
+    "outgoing_outer_count": 12.72700023651123,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T17:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 4.466000080108643,
+    "outgoing_inner_count": 6.380000114440918,
+    "incoming_outer_count": 8.61300015449524,
+    "outgoing_outer_count": 11.946000218391418,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T05:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.723000168800354,
+    "outgoing_inner_count": 5.5660001039505005,
+    "incoming_outer_count": 13.508000254631042,
+    "outgoing_outer_count": 11.946000218391418,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T12:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 5.104000091552734,
+    "outgoing_inner_count": 5.104000091552734,
+    "incoming_outer_count": 12.265000224113464,
+    "outgoing_outer_count": 11.165000200271606,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T03:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.118000149726868,
+    "outgoing_inner_count": 9.537000179290771,
+    "incoming_outer_count": 13.860000252723694,
+    "outgoing_outer_count": 14.32200026512146,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T12:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.699000120162964,
+    "outgoing_inner_count": 7.656000137329102,
+    "incoming_outer_count": 11.803000211715698,
+    "outgoing_outer_count": 11.484000205993652,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T13:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.9750001430511475,
+    "outgoing_inner_count": 6.061000108718872,
+    "incoming_outer_count": 13.541000247001648,
+    "outgoing_outer_count": 10.84600019454956,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T05:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.118000149726868,
+    "outgoing_inner_count": 5.885000109672546,
+    "incoming_outer_count": 15.136000275611877,
+    "outgoing_outer_count": 10.351000189781189,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T21:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 18.183000326156616,
+    "outgoing_inner_count": 16.731000304222107,
+    "incoming_outer_count": 29.029000520706177,
+    "outgoing_outer_count": 33.14300060272217,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T04:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 5.104000091552734,
+    "outgoing_inner_count": 6.204000115394592,
+    "incoming_outer_count": 13.365000247955322,
+    "outgoing_outer_count": 13.046000242233276,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T06:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.480000138282776,
+    "outgoing_inner_count": 4.7850000858306885,
+    "incoming_outer_count": 12.265000224113464,
+    "outgoing_outer_count": 10.351000189781189,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T22:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 10.351000189781189,
+    "outgoing_inner_count": 14.146000266075134,
+    "incoming_outer_count": 18.821000337600708,
+    "outgoing_outer_count": 25.630000472068787,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T03:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.842000126838684,
+    "outgoing_inner_count": 6.842000126838684,
+    "incoming_outer_count": 11.132000207901001,
+    "outgoing_outer_count": 14.46500027179718,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T04:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.118000149726868,
+    "outgoing_inner_count": 7.337000131607056,
+    "incoming_outer_count": 13.860000252723694,
+    "outgoing_outer_count": 13.222000241279602,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T18:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.932000160217285,
+    "outgoing_inner_count": 7.656000137329102,
+    "incoming_outer_count": 15.312000274658203,
+    "outgoing_outer_count": 14.674000263214111,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T12:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.294000148773193,
+    "outgoing_inner_count": 7.01800012588501,
+    "incoming_outer_count": 16.06000030040741,
+    "outgoing_outer_count": 14.641000270843506,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T03:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.118000149726868,
+    "outgoing_inner_count": 8.932000160217285,
+    "incoming_outer_count": 16.06000030040741,
+    "outgoing_outer_count": 16.236000299453735,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T13:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.480000138282776,
+    "outgoing_inner_count": 8.294000148773193,
+    "incoming_outer_count": 12.265000224113464,
+    "outgoing_outer_count": 14.498000264167786,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T01:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 13.541000247001648,
+    "outgoing_inner_count": 10.98900020122528,
+    "incoming_outer_count": 23.111000418663025,
+    "outgoing_outer_count": 20.702000379562378,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T19:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 10.84600019454956,
+    "outgoing_inner_count": 12.265000224113464,
+    "incoming_outer_count": 15.950000286102295,
+    "outgoing_outer_count": 21.97800040245056,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T00:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 10.208000183105469,
+    "outgoing_inner_count": 7.656000137329102,
+    "incoming_outer_count": 21.19700038433075,
+    "outgoing_outer_count": 14.17900025844574,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T00:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 10.032000184059143,
+    "outgoing_inner_count": 12.58400022983551,
+    "incoming_outer_count": 18.15000033378601,
+    "outgoing_outer_count": 18.326000332832336,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T01:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.656000137329102,
+    "outgoing_inner_count": 8.294000148773193,
+    "incoming_outer_count": 14.32200026512146,
+    "outgoing_outer_count": 15.598000288009644,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T10:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 4.609000086784363,
+    "outgoing_inner_count": 7.942000150680542,
+    "incoming_outer_count": 16.379000306129456,
+    "outgoing_outer_count": 16.379000306129456,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T21:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 10.208000183105469,
+    "outgoing_inner_count": 13.541000247001648,
+    "incoming_outer_count": 20.416000366210938,
+    "outgoing_outer_count": 22.473000407218933,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T17:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.9750001430511475,
+    "outgoing_inner_count": 10.670000195503235,
+    "incoming_outer_count": 15.91700029373169,
+    "outgoing_outer_count": 15.91700029373169,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T16:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.523000121116638,
+    "outgoing_inner_count": 6.380000114440918,
+    "incoming_outer_count": 15.565000295639038,
+    "outgoing_outer_count": 11.803000211715698,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T19:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.656000137329102,
+    "outgoing_inner_count": 9.889000177383423,
+    "incoming_outer_count": 15.631000280380249,
+    "outgoing_outer_count": 15.631000280380249,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T11:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.337000131607056,
+    "outgoing_inner_count": 4.147000074386597,
+    "incoming_outer_count": 12.903000235557556,
+    "outgoing_outer_count": 8.294000148773193,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T08:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.061000108718872,
+    "outgoing_inner_count": 6.842000126838684,
+    "incoming_outer_count": 11.803000211715698,
+    "outgoing_outer_count": 12.089000225067139,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T03:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.932000160217285,
+    "outgoing_inner_count": 8.75600016117096,
+    "incoming_outer_count": 17.831000328063965,
+    "outgoing_outer_count": 15.91700029373169,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T02:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.9750001430511475,
+    "outgoing_inner_count": 7.480000138282776,
+    "incoming_outer_count": 16.093000292778015,
+    "outgoing_outer_count": 12.265000224113464,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T20:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.570000171661377,
+    "outgoing_inner_count": 8.294000148773193,
+    "incoming_outer_count": 18.502000331878662,
+    "outgoing_outer_count": 21.05400037765503,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T06:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.842000126838684,
+    "outgoing_inner_count": 4.7850000858306885,
+    "incoming_outer_count": 13.189000248908997,
+    "outgoing_outer_count": 10.351000189781189,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T01:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 24.53000044822693,
+    "outgoing_inner_count": 13.398000240325928,
+    "incoming_outer_count": 42.21800076961517,
+    "outgoing_outer_count": 27.25800049304962,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T23:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 13.541000247001648,
+    "outgoing_inner_count": 14.17900025844574,
+    "incoming_outer_count": 20.064000368118286,
+    "outgoing_outer_count": 26.76300048828125,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T02:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.118000149726868,
+    "outgoing_inner_count": 7.656000137329102,
+    "incoming_outer_count": 14.32200026512146,
+    "outgoing_outer_count": 12.44100022315979,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T21:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 15.279000282287598,
+    "outgoing_inner_count": 14.817000269889832,
+    "incoming_outer_count": 27.082000494003296,
+    "outgoing_outer_count": 27.082000494003296,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T01:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.889000177383423,
+    "outgoing_inner_count": 9.251000165939331,
+    "incoming_outer_count": 19.283000349998474,
+    "outgoing_outer_count": 16.731000304222107,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T15:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 4.147000074386597,
+    "outgoing_inner_count": 7.9750001430511475,
+    "incoming_outer_count": 13.222000241279602,
+    "outgoing_outer_count": 14.674000263214111,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T19:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.932000160217285,
+    "outgoing_inner_count": 8.61300015449524,
+    "incoming_outer_count": 16.907000303268433,
+    "outgoing_outer_count": 16.588000297546387,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T13:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.16100013256073,
+    "outgoing_inner_count": 9.570000171661377,
+    "incoming_outer_count": 16.093000292778015,
+    "outgoing_outer_count": 14.674000263214111,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T04:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.261000156402588,
+    "outgoing_inner_count": 8.89900016784668,
+    "incoming_outer_count": 12.408000230789185,
+    "outgoing_outer_count": 14.32200026512146,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T11:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 5.742000102996826,
+    "outgoing_inner_count": 7.9750001430511475,
+    "incoming_outer_count": 11.484000205993652,
+    "outgoing_outer_count": 15.136000275611877,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T09:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.799000144004822,
+    "outgoing_inner_count": 4.466000080108643,
+    "incoming_outer_count": 11.165000200271606,
+    "outgoing_outer_count": 9.251000165939331,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T22:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 14.993000268936157,
+    "outgoing_inner_count": 14.355000257492065,
+    "incoming_outer_count": 30.129000544548035,
+    "outgoing_outer_count": 23.28700041770935,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T20:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.656000137329102,
+    "outgoing_inner_count": 7.9750001430511475,
+    "incoming_outer_count": 20.09700036048889,
+    "outgoing_outer_count": 17.050000309944153,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T11:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.204000115394592,
+    "outgoing_inner_count": 6.523000121116638,
+    "incoming_outer_count": 9.713000178337097,
+    "outgoing_outer_count": 9.856000185012817,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T16:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.061000108718872,
+    "outgoing_inner_count": 11.627000212669373,
+    "incoming_outer_count": 10.208000183105469,
+    "outgoing_outer_count": 18.00700032711029,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T10:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.666000127792358,
+    "outgoing_inner_count": 5.247000098228455,
+    "incoming_outer_count": 11.594000220298767,
+    "outgoing_outer_count": 10.98900020122528,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T18:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.251000165939331,
+    "outgoing_inner_count": 7.656000137329102,
+    "incoming_outer_count": 16.874000310897827,
+    "outgoing_outer_count": 16.41200029850006,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T20:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.394000172615051,
+    "outgoing_inner_count": 8.932000160217285,
+    "incoming_outer_count": 21.516000390052795,
+    "outgoing_outer_count": 19.140000343322754,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T22:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 16.55500030517578,
+    "outgoing_inner_count": 17.86400032043457,
+    "incoming_outer_count": 32.153000593185425,
+    "outgoing_outer_count": 30.44800055027008,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T09:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 5.247000098228455,
+    "outgoing_inner_count": 8.261000156402588,
+    "incoming_outer_count": 9.537000179290771,
+    "outgoing_outer_count": 14.146000266075134,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T21:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 14.17900025844574,
+    "outgoing_inner_count": 10.208000183105469,
+    "incoming_outer_count": 29.315000534057617,
+    "outgoing_outer_count": 20.416000366210938,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T07:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.204000115394592,
+    "outgoing_inner_count": 6.523000121116638,
+    "incoming_outer_count": 13.222000241279602,
+    "outgoing_outer_count": 12.265000224113464,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T23:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.437000155448914,
+    "outgoing_inner_count": 9.251000165939331,
+    "incoming_outer_count": 14.17900025844574,
+    "outgoing_outer_count": 15.950000286102295,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T13:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.570000171661377,
+    "outgoing_inner_count": 8.437000155448914,
+    "incoming_outer_count": 15.950000286102295,
+    "outgoing_outer_count": 14.817000269889832,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T00:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 11.165000200271606,
+    "outgoing_inner_count": 7.656000137329102,
+    "incoming_outer_count": 14.993000268936157,
+    "outgoing_outer_count": 14.498000264167786,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T12:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.9750001430511475,
+    "outgoing_inner_count": 8.294000148773193,
+    "incoming_outer_count": 11.803000211715698,
+    "outgoing_outer_count": 14.32200026512146,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T14:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 5.742000102996826,
+    "outgoing_inner_count": 7.01800012588501,
+    "incoming_outer_count": 12.903000235557556,
+    "outgoing_outer_count": 13.079000234603882,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T05:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 3.190000057220459,
+    "outgoing_inner_count": 8.89900016784668,
+    "incoming_outer_count": 9.570000171661377,
+    "outgoing_outer_count": 14.960000276565552,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T00:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.480000138282776,
+    "outgoing_inner_count": 10.670000195503235,
+    "incoming_outer_count": 14.960000276565552,
+    "outgoing_outer_count": 21.34000039100647,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T18:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.699000120162964,
+    "outgoing_inner_count": 7.656000137329102,
+    "incoming_outer_count": 14.674000263214111,
+    "outgoing_outer_count": 14.641000270843506,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T18:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.713000178337097,
+    "outgoing_inner_count": 8.294000148773193,
+    "incoming_outer_count": 20.702000379562378,
+    "outgoing_outer_count": 16.26900029182434,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T15:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 11.308000206947327,
+    "outgoing_inner_count": 5.42300009727478,
+    "incoming_outer_count": 21.19700038433075,
+    "outgoing_outer_count": 13.541000247001648,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T04:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.623000144958496,
+    "outgoing_inner_count": 5.742000102996826,
+    "incoming_outer_count": 13.046000242233276,
+    "outgoing_outer_count": 13.222000241279602,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T02:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.889000177383423,
+    "outgoing_inner_count": 10.208000183105469,
+    "incoming_outer_count": 14.674000263214111,
+    "outgoing_outer_count": 18.645000338554382,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T08:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.699000120162964,
+    "outgoing_inner_count": 6.380000114440918,
+    "incoming_outer_count": 13.508000254631042,
+    "outgoing_outer_count": 13.860000252723694,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T14:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.437000155448914,
+    "outgoing_inner_count": 5.742000102996826,
+    "incoming_outer_count": 17.51200032234192,
+    "outgoing_outer_count": 13.365000247955322,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T20:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 12.44100022315979,
+    "outgoing_inner_count": 9.394000172615051,
+    "incoming_outer_count": 22.473000407218933,
+    "outgoing_outer_count": 20.878000378608704,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T19:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.01800012588501,
+    "outgoing_inner_count": 6.699000120162964,
+    "incoming_outer_count": 14.817000269889832,
+    "outgoing_outer_count": 13.717000246047974,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T17:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.842000126838684,
+    "outgoing_inner_count": 7.942000150680542,
+    "incoming_outer_count": 13.189000248908997,
+    "outgoing_outer_count": 16.027000308036804,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T06:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 4.7850000858306885,
+    "outgoing_inner_count": 6.061000108718872,
+    "incoming_outer_count": 12.903000235557556,
+    "outgoing_outer_count": 9.889000177383423,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T14:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.380000114440918,
+    "outgoing_inner_count": 9.075000166893005,
+    "incoming_outer_count": 12.72700023651123,
+    "outgoing_outer_count": 17.51200032234192,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T10:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.204000115394592,
+    "outgoing_inner_count": 4.752000093460083,
+    "incoming_outer_count": 12.903000235557556,
+    "outgoing_outer_count": 15.103000283241272,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T14:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.61300015449524,
+    "outgoing_inner_count": 6.842000126838684,
+    "incoming_outer_count": 17.3690003156662,
+    "outgoing_outer_count": 18.469000339508057,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T09:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.075000166893005,
+    "outgoing_inner_count": 6.061000108718872,
+    "incoming_outer_count": 12.265000224113464,
+    "outgoing_outer_count": 8.61300015449524,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T07:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.537000179290771,
+    "outgoing_inner_count": 6.523000121116638,
+    "incoming_outer_count": 14.146000266075134,
+    "outgoing_outer_count": 12.265000224113464,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T08:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.89900016784668,
+    "outgoing_inner_count": 7.30400013923645,
+    "incoming_outer_count": 13.046000242233276,
+    "outgoing_outer_count": 12.089000225067139,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T17:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.075000166893005,
+    "outgoing_inner_count": 3.828000068664551,
+    "incoming_outer_count": 13.684000253677368,
+    "outgoing_outer_count": 8.89900016784668,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T16:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 9.394000172615051,
+    "outgoing_inner_count": 10.032000184059143,
+    "incoming_outer_count": 18.964000344276428,
+    "outgoing_outer_count": 18.326000332832336,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T06:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.699000120162964,
+    "outgoing_inner_count": 9.218000173568726,
+    "incoming_outer_count": 9.889000177383423,
+    "outgoing_outer_count": 13.827000260353088,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T02:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 16.55500030517578,
+    "outgoing_inner_count": 30.09600055217743,
+    "incoming_outer_count": 25.16800045967102,
+    "outgoing_outer_count": 45.40800082683563,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T09:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.061000108718872,
+    "outgoing_inner_count": 9.075000166893005,
+    "incoming_outer_count": 12.265000224113464,
+    "outgoing_outer_count": 12.58400022983551,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T16:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 12.903000235557556,
+    "outgoing_inner_count": 9.075000166893005,
+    "incoming_outer_count": 20.240000367164612,
+    "outgoing_outer_count": 19.283000349998474,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T05:45:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 3.509000062942505,
+    "outgoing_inner_count": 6.985000133514404,
+    "incoming_outer_count": 8.89900016784668,
+    "outgoing_outer_count": 12.87000024318695,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T07:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 6.380000114440918,
+    "outgoing_inner_count": 7.799000144004822,
+    "incoming_outer_count": 11.803000211715698,
+    "outgoing_outer_count": 15.103000283241272,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T15:00:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 8.89900016784668,
+    "outgoing_inner_count": 8.437000155448914,
+    "incoming_outer_count": 15.91700029373169,
+    "outgoing_outer_count": 14.498000264167786,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T22:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 13.222000241279602,
+    "outgoing_inner_count": 10.670000195503235,
+    "incoming_outer_count": 19.60200035572052,
+    "outgoing_outer_count": 18.645000338554382,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T23:15:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 10.527000188827515,
+    "outgoing_inner_count": 12.760000228881836,
+    "incoming_outer_count": 18.183000326156616,
+    "outgoing_outer_count": 20.878000378608704,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T08:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.766000151634216,
+    "outgoing_inner_count": 7.30400013923645,
+    "incoming_outer_count": 12.408000230789185,
+    "outgoing_outer_count": 13.365000247955322,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T07:30:00.000+00:00",
+    "sensor_id": 77,
+    "incoming_inner_count": 7.30400013923645,
+    "outgoing_inner_count": 6.523000121116638,
+    "incoming_outer_count": 13.365000247955322,
+    "outgoing_outer_count": 11.627000212669373,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T16:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 1.2760000228881836,
+    "outgoing_outer_count": 1.2760000228881836,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T13:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 1.9140000343322754,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 1.2760000228881836,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T12:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T15:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T10:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T15:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 1.2760000228881836,
+    "incoming_outer_count": 1.2760000228881836,
+    "outgoing_outer_count": 1.9140000343322754,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T11:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T01:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T10:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 1.2760000228881836,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 1.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T04:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T21:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 2.552000045776367,
+    "outgoing_outer_count": 1.9140000343322754,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T11:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 1.2760000228881836,
+    "outgoing_inner_count": 1.2760000228881836,
+    "incoming_outer_count": 1.2760000228881836,
+    "outgoing_outer_count": 1.2760000228881836,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T14:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 2.552000045776367,
+    "incoming_outer_count": 1.2760000228881836,
+    "outgoing_outer_count": 2.552000045776367,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T15:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T07:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T18:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T06:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T03:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 1.9140000343322754,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 1.9140000343322754,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T22:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 1.2760000228881836,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 1.2760000228881836,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T07:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T17:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T11:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T18:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 1.0,
+    "outgoing_outer_count": 1.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T21:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T09:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T05:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T07:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T22:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T16:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 1.2760000228881836,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T18:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 1.2760000228881836,
+    "outgoing_inner_count": 1.9140000343322754,
+    "incoming_outer_count": 1.2760000228881836,
+    "outgoing_outer_count": 1.9140000343322754,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T06:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T13:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T00:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T04:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T20:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T02:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T20:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T06:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 1.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T06:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T20:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 1.2760000228881836,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T05:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T23:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T02:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T08:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T07:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T22:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 1.2760000228881836,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 1.2760000228881836,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T16:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T22:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T02:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T00:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T08:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 1.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T20:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T00:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T02:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T09:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T23:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T01:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T13:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T10:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T03:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T19:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T09:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T12:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T17:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T05:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T19:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T00:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T10:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T12:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T15:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 1.2760000228881836,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 1.2760000228881836,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T16:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 1.9140000343322754,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T21:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T09:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 1.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T23:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T03:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 1.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T18:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T14:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T01:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T21:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 1.2760000228881836,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 1.9140000343322754,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T17:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T23:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T03:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 2.552000045776367,
+    "incoming_outer_count": 1.6380000114440918,
+    "outgoing_outer_count": 2.552000045776367,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T13:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T14:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 1.2760000228881836,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 1.9140000343322754,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T05:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 1.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T17:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T01:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T08:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 1.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T04:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T19:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T08:00:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T19:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.6380000114440918,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T11:45:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T04:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.0,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.0,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T12:15:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 0.6380000114440918,
+    "outgoing_inner_count": 0.0,
+    "incoming_outer_count": 0.6380000114440918,
+    "outgoing_outer_count": 0.0,
+    "valid": true
+  },
+  {
+    "timestamp": "2026-07-25T14:30:00.000+00:00",
+    "sensor_id": 80,
+    "incoming_inner_count": 1.9140000343322754,
+    "outgoing_inner_count": 0.6380000114440918,
+    "incoming_outer_count": 3.190000057220459,
+    "outgoing_outer_count": 1.2760000228881836,
+    "valid": true
+  }
+]

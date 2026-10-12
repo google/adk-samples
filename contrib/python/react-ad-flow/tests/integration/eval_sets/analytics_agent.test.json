@@ -1,0 +1,104 @@
+{
+  "eval_set_id": "analytics-agent-tests",
+  "name": "Analytics Agent Tool Tests",
+  "description": "Tests for metrics, insights, and visualization tools",
+  "eval_cases": [
+    {
+      "eval_id": "get-campaign-metrics",
+      "conversation": [
+        {
+          "invocation_id": "test-a01",
+          "user_content": {
+            "parts": [{"text": "Get metrics for campaign 2 over the last 30 days"}],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [{"text": "Campaign 2 (Elegant Black Cocktail Dress - Bloomingdale's 59th Street), last 30 days: RPI $0.0461 (about $46.10 per 1,000 impressions), total revenue $2,103.43, total impressions 45,627."}],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "transfer_to_agent", "args": {"agent_name": "analytics_agent"}},
+              {"name": "get_campaign_metrics", "args": {"campaign_id": 2, "days": 30}}
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": null
+    },
+    {
+      "eval_id": "get-top-performers",
+      "conversation": [
+        {
+          "invocation_id": "test-a02",
+          "user_content": {
+            "parts": [{"text": "Show me the top 5 performing videos by RPI"}],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [{"text": "Here are the top 5 performing videos ranked by RPI. Each row shows the rank, video/product, campaign and location, variation traits, RPI, impressions, total revenue, and dwell time."}],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "transfer_to_agent", "args": {"agent_name": "analytics_agent"}},
+              {"name": "get_top_performing_ads", "args": {"metric": "revenue_per_impression", "limit": 5}}
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": null
+    },
+    {
+      "eval_id": "compare-campaigns",
+      "conversation": [
+        {
+          "invocation_id": "test-a03",
+          "user_content": {
+            "parts": [{"text": "Compare campaigns 1, 2, 3, and 4"}],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [{"text": "Comparison of campaigns 1, 2, 3, and 4 ranked by RPI. Blue Floral Maxi Dress - Westfield Century City (campaign 1) is the best performer by RPI."}],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "transfer_to_agent", "args": {"agent_name": "analytics_agent"}},
+              {"name": "compare_campaigns", "args": {"campaign_ids": [1, 2, 3, 4]}}
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": null
+    },
+    {
+      "eval_id": "get-map-data",
+      "conversation": [
+        {
+          "invocation_id": "test-a04",
+          "user_content": {
+            "parts": [{"text": "Show me all campaign locations with Google Maps links"}],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [{"text": "Here are all 4 campaign locations, each with a clickable Google Maps link: Blue Floral Maxi Dress - Westfield Century City (Los Angeles, CA); Elegant Black Cocktail Dress - Bloomingdale's 59th Street (New York, NY); Black High Waist Trousers - Water Tower Place (Chicago, IL); Sage Satin Camisole - The Grove (Los Angeles, CA)."}],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "transfer_to_agent", "args": {"agent_name": "analytics_agent"}},
+              {"name": "get_campaign_map_data", "args": {}}
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": null
+    }
+  ],
+  "creation_timestamp": 1735000000.0
+}

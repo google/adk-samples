@@ -1,0 +1,22 @@
+{
+  "dimensions": {
+    "tools": {
+      "criteria": {
+        "tool_trajectory_avg_score": {"threshold": 1.0, "match_type": "ANY_ORDER"}
+      }
+    },
+    "trajectory": {
+      "criteria": {
+        "tool_trajectory_avg_score": {"threshold": 1.0, "match_type": "IN_ORDER"}
+      }
+    },
+    "answer": {
+      "criteria": {
+        "final_response_match_v2": {
+          "threshold": 0.75,
+          "judge_model_options": {"judge_model": "gemini-3.6-flash", "num_samples": 3}
+        }
+      }
+    }
+  }
+}
