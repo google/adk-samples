@@ -65,7 +65,7 @@ SCAN_ROOTS = recipe_manifests.SCAN_ROOTS
 SKIP_DIRS = recipe_manifests.SKIP_DIRS | {".ruff_cache", ".agent-tmp"}
 
 DEFAULT_INACTIVE_DAYS = 60
-DEFAULT_REPO_ADMIN = "tommywagz"
+DEFAULT_REPO_ADMIN = "happyhuman"
 DEFAULT_PR_LIMIT = 1000
 BASE_BRANCH = "main"
 

@@ -9,14 +9,15 @@ selected, determines whether to close the issue when a complete solution is
 provided, and prepares the response comment.
 
 Routing rules for Option 4:
-  Catch-all (docs, CI workflows, root configs, unmatched): @tommywagz
-  /core/python/**      -> @eliasecchig
-  /core/go/**          -> @ToniCorinne
-  /core/java/**        -> @eliasecchig
+  Catch-all (docs, root configs, unmatched): @tommywagz
+  /.github/**          -> @happyhuman
+  /core/python/**      -> @tommywagz
+  /core/go/**          -> @tommywagz
+  /core/java/**        -> @tommywagz
   /core/typescript/**  -> @tommywagz
   /core/kotlin/**      -> @tommywagz
   /contrib/python/**   -> @tommywagz
-  /contrib/go/**       -> @ToniCorinne
+  /contrib/go/**       -> @tommywagz
   /contrib/java/**     -> @tommywagz
   /contrib/typescript/** -> @tommywagz
   /contrib/kotlin/**   -> @tommywagz
@@ -67,17 +68,19 @@ class Option(IntEnum):
 
 
 ROUTING_RULES: list[tuple[str, str]] = [
+    # Repository governance stays with the repo admin
+    (".github", "happyhuman"),
     # Core directory assignments
-    ("core/python", "eliasecchig"),
-    ("core/go", "ToniCorinne"),
-    ("core/java", "eliasecchig"),
+    ("core/python", "tommywagz"),
+    ("core/go", "tommywagz"),
+    ("core/java", "tommywagz"),
     ("core/typescript", "tommywagz"),
     ("core/kotlin", "tommywagz"),
     # Recipes owned by their authors
-    ("core/python/ambient-quality-agent", "maxgasztych"),
+    ("core/python/ambient-quality-agent", "tommywagz"),
     # Contrib directory assignments
     ("contrib/python", "tommywagz"),
-    ("contrib/go", "ToniCorinne"),
+    ("contrib/go", "tommywagz"),
     ("contrib/java", "tommywagz"),
     ("contrib/typescript", "tommywagz"),
     ("contrib/kotlin", "tommywagz"),
@@ -88,7 +91,13 @@ ROUTING_RULES: list[tuple[str, str]] = [
 DEFAULT_ASSIGNEE = "tommywagz"
 
 # Known developer usernames (without @ prefix)
-VALID_ASSIGNEES = {"eliasecchig", "ToniCorinne", "tommywagz", "maxgasztych"}
+VALID_ASSIGNEES = {
+    "eliasecchig",
+    "ToniCorinne",
+    "tommywagz",
+    "happyhuman",
+    "maxgasztych",
+}
 
 FENCED_JSON = re.compile(
     r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE
