@@ -26,19 +26,19 @@
 /.github/**            @happyhuman
 
 # --- core/ ---
-/core/python/**        @tommywagz
-/core/go/**            @tommywagz
-/core/java/**          @tommywagz
+/core/python/**        @eliasecchig
+/core/go/**            @ToniCorinne
+/core/java/**          @eliasecchig
 /core/typescript/**    @tommywagz
 /core/kotlin/**        @tommywagz
 
 # Recipes owned by their authors. Listed after the language lines above,
 # because the last matching rule wins.
-/core/python/ambient-quality-agent/** @tommywagz @maxgasztych @google/adlc-devex
+/core/python/ambient-quality-agent/** @maxgasztych @google/adlc-devex
 
 # --- contrib/ ---
 /contrib/python/**     @tommywagz
-/contrib/go/**         @tommywagz
+/contrib/go/**         @ToniCorinne
 /contrib/java/**       @tommywagz
 /contrib/typescript/** @tommywagz
 /contrib/kotlin/**     @tommywagz

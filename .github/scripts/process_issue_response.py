@@ -11,13 +11,13 @@ provided, and prepares the response comment.
 Routing rules for Option 4:
   Catch-all (docs, root configs, unmatched): @tommywagz
   /.github/**          -> @happyhuman
-  /core/python/**      -> @tommywagz
-  /core/go/**          -> @tommywagz
-  /core/java/**        -> @tommywagz
+  /core/python/**      -> @eliasecchig
+  /core/go/**          -> @ToniCorinne
+  /core/java/**        -> @eliasecchig
   /core/typescript/**  -> @tommywagz
   /core/kotlin/**      -> @tommywagz
   /contrib/python/**   -> @tommywagz
-  /contrib/go/**       -> @tommywagz
+  /contrib/go/**       -> @ToniCorinne
   /contrib/java/**     -> @tommywagz
   /contrib/typescript/** -> @tommywagz
   /contrib/kotlin/**   -> @tommywagz
@@ -71,16 +71,16 @@ ROUTING_RULES: list[tuple[str, str]] = [
     # Repository governance stays with the repo admin
     (".github", "happyhuman"),
     # Core directory assignments
-    ("core/python", "tommywagz"),
-    ("core/go", "tommywagz"),
-    ("core/java", "tommywagz"),
+    ("core/python", "eliasecchig"),
+    ("core/go", "ToniCorinne"),
+    ("core/java", "eliasecchig"),
     ("core/typescript", "tommywagz"),
     ("core/kotlin", "tommywagz"),
     # Recipes owned by their authors
-    ("core/python/ambient-quality-agent", "tommywagz"),
+    ("core/python/ambient-quality-agent", "maxgasztych"),
     # Contrib directory assignments
     ("contrib/python", "tommywagz"),
-    ("contrib/go", "tommywagz"),
+    ("contrib/go", "ToniCorinne"),
     ("contrib/java", "tommywagz"),
     ("contrib/typescript", "tommywagz"),
     ("contrib/kotlin", "tommywagz"),

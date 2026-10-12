@@ -67,25 +67,25 @@ def test_normalize_path():
     ("path", "expected_assignee"),
     [
         # Core directory assignments
-        ("/core/python/my-recipe", "tommywagz"),
-        ("core/python/gemini-live", "tommywagz"),
-        ("core/go/agent-sample", "tommywagz"),
-        ("/core/go/tool-calling", "tommywagz"),
-        ("core/java/spring-ai", "tommywagz"),
-        ("/core/java/sample", "tommywagz"),
+        ("/core/python/my-recipe", "eliasecchig"),
+        ("core/python/gemini-live", "eliasecchig"),
+        ("core/go/agent-sample", "ToniCorinne"),
+        ("/core/go/tool-calling", "ToniCorinne"),
+        ("core/java/spring-ai", "eliasecchig"),
+        ("/core/java/sample", "eliasecchig"),
         ("core/typescript/express-agent", "tommywagz"),
         ("/core/typescript/sample", "tommywagz"),
         ("core/kotlin/android-gemini", "tommywagz"),
         ("/core/kotlin/sample", "tommywagz"),
         # A recipe owner beats its language folder
-        ("core/python/ambient-quality-agent", "tommywagz"),
-        ("/core/python/ambient-quality-agent/agent.py", "tommywagz"),
-        ("core/python/ambient-quality-agent-v2", "tommywagz"),
+        ("core/python/ambient-quality-agent", "maxgasztych"),
+        ("/core/python/ambient-quality-agent/agent.py", "maxgasztych"),
+        ("core/python/ambient-quality-agent-v2", "eliasecchig"),
         # Contrib directory assignments
         ("contrib/python/custom-tool", "tommywagz"),
         ("/contrib/python/recipe", "tommywagz"),
-        ("contrib/go/rag-search", "tommywagz"),
-        ("/contrib/go/sample", "tommywagz"),
+        ("contrib/go/rag-search", "ToniCorinne"),
+        ("/contrib/go/sample", "ToniCorinne"),
         ("contrib/java/micronaut", "tommywagz"),
         ("/contrib/java/sample", "tommywagz"),
         ("contrib/typescript/nextjs", "tommywagz"),
@@ -457,7 +457,7 @@ def test_process_response_option_4_with_path():
     }
     opt, _resp, assignee, close_issue = process_response(d4_py)
     assert opt == Option.ACKNOWLEDGE_AND_ASSIGN
-    assert assignee == "tommywagz"
+    assert assignee == "eliasecchig"
     assert close_issue is False
 
     # Option 4: Acknowledge and Assign with core/go path
@@ -468,7 +468,7 @@ def test_process_response_option_4_with_path():
     }
     opt, _resp, assignee, close_issue = process_response(d4_go)
     assert opt == Option.ACKNOWLEDGE_AND_ASSIGN
-    assert assignee == "tommywagz"
+    assert assignee == "ToniCorinne"
     assert close_issue is False
 
     # Option 4: Acknowledge and Assign with plugins path
@@ -559,17 +559,17 @@ def test_cli_execution_option_4(tmp_path):
 
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
     assert res.returncode == 0, res.stderr
-    assert "tommywagz" in res.stdout
+    assert "eliasecchig" in res.stdout
 
     assert comment_out.read_text(encoding="utf-8").strip() == (
         "Thank you! Routing this to the Python maintainer."
     )
-    assert assignee_out.read_text(encoding="utf-8").strip() == "tommywagz"
+    assert assignee_out.read_text(encoding="utf-8").strip() == "eliasecchig"
     assert close_out.read_text(encoding="utf-8").strip() == "false"
 
     output_lines = github_output.read_text(encoding="utf-8").splitlines()
     assert "option=4" in output_lines
-    assert "assignee=tommywagz" in output_lines
+    assert "assignee=eliasecchig" in output_lines
     assert "has_assignee=true" in output_lines
     assert "close_issue=false" in output_lines
 

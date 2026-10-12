@@ -207,16 +207,16 @@ jobs:
             - /.github/** -> happyhuman
 
             Core Directory Assignments:
-            - /core/python/** -> tommywagz
-            - /core/go/** -> tommywagz
-            - /core/java/** -> tommywagz
+            - /core/python/** -> eliasecchig
+            - /core/go/** -> ToniCorinne
+            - /core/java/** -> eliasecchig
             - /core/typescript/** -> tommywagz
             - /core/kotlin/** -> tommywagz
-            - /core/python/ambient-quality-agent/** -> tommywagz
+            - /core/python/ambient-quality-agent/** -> maxgasztych
 
             Contrib Directory Assignments:
             - /contrib/python/** -> tommywagz
-            - /contrib/go/** -> tommywagz
+            - /contrib/go/** -> ToniCorinne
             - /contrib/java/** -> tommywagz
             - /contrib/typescript/** -> tommywagz
             - /contrib/kotlin/** -> tommywagz
