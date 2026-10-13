@@ -19,7 +19,7 @@ These tests pin the metadata rules for Java recipes:
   - <description> matches manifest.description if present
   - Repositories and mirrors point to Maven Central
   - Exit code contract (0 = pass, 1 = violations, 2 = CI fault)
-  - Specimen contrib/java/time-series-forecasting fails as expected (lacks compiler release)
+  - Specimen Java recipes in the repository pass clean (exit 0)
 """
 
 from __future__ import annotations
@@ -695,17 +695,26 @@ def test_unexpected_crash_is_ci_fault(tmp_path, monkeypatch, capsys):
 
 
 # ---------------------------------------------------------------------------
-# Real specimen: contrib/java/time-series-forecasting
+# Real specimens: contrib/java/*
 # ---------------------------------------------------------------------------
 
 
-def test_specimen_time_series_forecasting_fails(monkeypatch, capsys):
+@pytest.mark.parametrize(
+    "recipe_name",
+    [
+        "financial-advisor",
+        "time-series-forecasting",
+    ],
+)
+def test_specimen_java_recipes_pass_clean(recipe_name, monkeypatch, capsys):
     repo_root = Path(__file__).resolve().parents[3]
-    specimen = repo_root / "contrib" / "java" / "time-series-forecasting"
+    specimen = repo_root / "contrib" / "java" / recipe_name
+    if not specimen.is_dir():
+        specimen = repo_root / "core" / "java" / recipe_name
     if not specimen.is_dir():
         pytest.skip(f"specimen {specimen} does not exist in this clone")
     monkeypatch.setattr(sys, "argv", ["check_recipe_pom.py", str(specimen)])
-    # Fails because time-series-forecasting sets source/target instead of maven.compiler.release
-    assert m.main() == EXIT_VIOLATIONS
+    assert m.main() == EXIT_OK
     out = capsys.readouterr().out
-    assert "[pom-java-release]" in out
+    assert "[PASS]" in out
+    assert "::error" not in out
