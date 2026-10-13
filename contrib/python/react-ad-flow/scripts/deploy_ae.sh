@@ -49,7 +49,7 @@ REGION="${REGION:-us-central1}"
 GCS_BUCKET="${GCS_BUCKET:-kaggle-on-gcp-ad-campaign-assets}"
 STAGING_BUCKET="gs://${GCS_BUCKET}"
 DISPLAY_NAME="Ad Campaign Agent"
-DESCRIPTION="Fashion retail ad campaign management with Veo 3.1 video generation"
+DESCRIPTION="Fashion retail ad campaign management with Gemini Omni Flash video generation"
 
 # Colors for output
 RED='\033[0;31m'

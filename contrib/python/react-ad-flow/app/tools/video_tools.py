@@ -21,9 +21,9 @@ Two-Stage Video Generation Pipeline:
           wearables; product-centric hero shot otherwise)
         - Saved as: thumbnail
 
-    Stage 2: Video Animation (video model from config.VIDEO_GEN_MODEL)
+    Stage 2: Video Animation (Gemini Omni Flash via config.VIDEO_GEN_MODEL)
         - Input: Scene image + Animation prompt
-        - Output: 8-second 9:16 video
+        - Output: 4-second 9:16 video
         - Saved as: final video
 
 HITL Workflow:
@@ -33,6 +33,7 @@ HITL Workflow:
 """
 
 import asyncio
+import base64
 import io
 import json
 import os
@@ -42,6 +43,7 @@ from typing import Any
 
 from google import genai
 from google.adk.tools import ToolContext
+from google.genai import interactions as im
 from google.genai import types
 from PIL import Image as PILImage
 
@@ -292,125 +294,158 @@ async def generate_scene_image(
         raise
 
 
-async def _wait_for_veo_operation(
+_OMNI_TERMINAL_STATUSES = {
+    "completed",
+    "failed",
+    "cancelled",
+    "incomplete",
+    "budget_exceeded",
+}
+
+
+async def _wait_for_omni_interaction(
     client,
-    operation,
+    interaction,
     *,
     max_wait_time: int = 600,
-    poll_interval: int = 20,
-    debug_label: str = "veo",
+    poll_interval: int = 10,
+    debug_label: str = "omni",
 ):
-    """Poll a Veo generate_videos operation to completion (consolidates three
-    formerly-duplicated loops — Phase 14b step 1).
-
-    Returns the completed operation. Raises TimeoutError after max_wait_time,
-    ValueError if the operation completes without generated videos. Callers
-    that must not raise (generate_video_ad) map these at the call site.
-    """
+    """Poll an Omni Flash interaction to completion."""
     waited = 0
-    while not operation.done:
+    status = getattr(interaction, "status", None)
+    while status not in _OMNI_TERMINAL_STATUSES:
         if waited >= max_wait_time:
             raise TimeoutError(
-                f"Video generation timed out after {max_wait_time} seconds"
+                f"Video generation timed out after {max_wait_time} seconds (last status={status})"
             )
-        print(f"[DEBUG {debug_label}] Waiting... ({waited}s elapsed)")
+        print(
+            f"[DEBUG {debug_label}] Waiting... ({waited}s elapsed, status={status})"
+        )
         await asyncio.sleep(poll_interval)
         waited += poll_interval
-        operation = client.operations.get(operation)
-    print(f"[DEBUG {debug_label}] Operation completed after {waited}s")
-    if operation.result is None or not operation.result.generated_videos:
-        raise ValueError("Video generation completed but returned no result")
-    return operation
-
-
-def _extract_video_bytes(client, generated_video) -> bytes:
-    """Extract video bytes from a generated video (consolidates the
-    triplicated Vertex-inline vs Developer-API-download branch)."""
-    is_vertex_ai = (
-        os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() == "true"
+        interaction = client.interactions.get(interaction.id)
+        status = getattr(interaction, "status", None)
+    print(
+        f"[DEBUG {debug_label}] Interaction completed after {waited}s with status={status}"
     )
-    if is_vertex_ai:
-        video_bytes = generated_video.video.video_bytes
-        if not video_bytes:
-            raise ValueError("No video_bytes in Vertex AI response")
-        return video_bytes
-    # Gemini Developer API: must download first, then save to temp to get bytes
-    client.files.download(file=generated_video.video)
-    import tempfile
+    if status != "completed":
+        raise ValueError(f"Video generation failed with status: {status}")
+    return interaction
 
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
-        temp_path = tmp.name
-    generated_video.video.save(temp_path)
-    with open(temp_path, "rb") as f:
-        video_bytes = f.read()
-    os.unlink(temp_path)
-    return video_bytes
+
+def _extract_omni_video_bytes(interaction) -> bytes:
+    """Pull the model_output step's video content or output_video and base64-decode it."""
+    for step in getattr(interaction, "steps", None) or []:
+        if getattr(step, "type", None) != "model_output":
+            continue
+        for content in getattr(step, "content", None) or []:
+            if getattr(content, "type", None) == "video":
+                data = getattr(content, "data", None)
+                if data:
+                    if isinstance(data, str):
+                        return base64.b64decode(data, validate=True)
+                    elif isinstance(data, (bytes, bytearray)):
+                        return bytes(data)
+                uri = getattr(content, "uri", None)
+                if uri:
+                    raise ValueError(
+                        f"Video delivered as uri, not inline: {uri}"
+                    )
+    output_video = getattr(interaction, "output_video", None)
+    if output_video:
+        data = getattr(output_video, "data", None)
+        if data:
+            if isinstance(data, str):
+                return base64.b64decode(data, validate=True)
+            elif isinstance(data, (bytes, bytearray)):
+                return bytes(data)
+    raise ValueError(
+        "Omni Flash response completed but contained no video content"
+    )
+
+
+async def animate_scene_with_omni(
+    scene_image_bytes: bytes,
+    product: Product,
+    variation: CreativeVariation,
+    duration_seconds: int = 4,
+) -> tuple[bytes, str]:
+    """Stage 2: Animate a scene image into a video using Gemini Omni Flash.
+
+    Args:
+        scene_image_bytes: Scene image bytes from Stage 1
+        product: Product object with metadata
+        variation: CreativeVariation parameters
+        duration_seconds: Video duration (default 4 seconds)
+
+    Returns:
+        Tuple of (video_bytes, video_prompt)
+    """
+    print(
+        f"[DEBUG animate_scene_with_omni] Starting animation for: {product.name}"
+    )
+    print(f"[DEBUG animate_scene_with_omni] Duration: {duration_seconds}s")
+
+    # Build animation-focused prompt
+    video_prompt = build_video_animation_prompt(product, variation)
+    print(
+        f"[DEBUG animate_scene_with_omni] Animation prompt: {video_prompt[:200]}..."
+    )
+
+    client = genai.Client()
+
+    image_b64 = base64.b64encode(scene_image_bytes).decode("ascii")
+    user_step = im.UserInputStep(
+        content=[
+            im.ImageContent(data=image_b64, mime_type="image/png"),
+            im.TextContent(text=video_prompt),
+        ]
+    )
+    generation_config = im.GenerationConfig(
+        video_config=im.VideoConfig(task="image_to_video")
+    )
+    response_format = im.VideoResponseFormat(
+        type="video",
+        delivery="inline",
+        aspect_ratio="9:16",
+    )
+
+    print(
+        f"[DEBUG animate_scene_with_omni] Calling Omni Flash ({VIDEO_GEN_MODEL})..."
+    )
+    interaction = client.interactions.create(
+        model=VIDEO_GEN_MODEL,
+        input=[user_step],
+        generation_config=generation_config,
+        response_format=response_format,
+        background=True,
+    )
+
+    interaction = await _wait_for_omni_interaction(
+        client, interaction, debug_label="animate_scene_with_omni"
+    )
+    video_bytes = _extract_omni_video_bytes(interaction)
+
+    print(
+        f"[DEBUG animate_scene_with_omni] Video generated: {len(video_bytes)} bytes"
+    )
+    return video_bytes, video_prompt
 
 
 async def animate_scene_with_veo(
     scene_image_bytes: bytes,
     product: Product,
     variation: CreativeVariation,
-    duration_seconds: int = 8,
+    duration_seconds: int = 4,
 ) -> tuple[bytes, str]:
-    """Stage 2: Animate a scene image into a video using Veo 3.1.
-
-    Args:
-        scene_image_bytes: Scene image bytes from Stage 1
-        product: Product object with metadata
-        variation: CreativeVariation parameters
-        duration_seconds: Video duration (4, 6, or 8 seconds)
-
-    Returns:
-        Tuple of (video_bytes, video_prompt)
-    """
-    print(
-        f"[DEBUG animate_scene_with_veo] Starting animation for: {product.name}"
+    """Deprecated alias for animate_scene_with_omni."""
+    return await animate_scene_with_omni(
+        scene_image_bytes=scene_image_bytes,
+        product=product,
+        variation=variation,
+        duration_seconds=duration_seconds,
     )
-    print(f"[DEBUG animate_scene_with_veo] Duration: {duration_seconds}s")
-
-    # Veo 3.1 only accepts duration of 4, 6, or 8 seconds
-    valid_durations = [4, 6, 8]
-    if duration_seconds not in valid_durations:
-        duration_seconds = 8  # Default to 8 for best quality
-
-    # Build animation-focused prompt
-    video_prompt = build_video_animation_prompt(product, variation)
-    print(
-        f"[DEBUG animate_scene_with_veo] Animation prompt: {video_prompt[:200]}..."
-    )
-
-    client = genai.Client()
-
-    # Create image for Veo API
-    image = types.Image(image_bytes=scene_image_bytes, mime_type="image/png")
-
-    # Start video generation
-    print(f"[DEBUG animate_scene_with_veo] Calling Veo ({VIDEO_GEN_MODEL})...")
-    operation = client.models.generate_videos(
-        model=VIDEO_GEN_MODEL,
-        prompt=video_prompt,
-        image=image,
-        config=types.GenerateVideosConfig(
-            number_of_videos=1,
-            duration_seconds=duration_seconds,
-            resolution="1080p",
-            generate_audio=True,
-        ),
-    )
-
-    # Poll for completion + extract bytes (shared helpers, Phase 14b step 1)
-    operation = await _wait_for_veo_operation(
-        client, operation, debug_label="animate_scene_with_veo"
-    )
-    video_bytes = _extract_video_bytes(
-        client, operation.result.generated_videos[0]
-    )
-
-    print(
-        f"[DEBUG animate_scene_with_veo] Video generated: {len(video_bytes)} bytes"
-    )
-    return video_bytes, video_prompt
 
 
 def generate_video_filename(product_name: str, variation_name: str) -> str:
@@ -508,7 +543,7 @@ async def generate_video_from_product(
     product_id: int,
     variation: dict | None = None,
     use_two_stage: bool = True,
-    duration_seconds: int = 8,
+    duration_seconds: int = 4,
     tool_context: ToolContext = None,
 ) -> dict:
     """Generate a video ad using the two-stage pipeline.
@@ -536,7 +571,7 @@ async def generate_video_from_product(
             - energy: calm, moderate, dynamic, high-energy
             If None, uses elegant studio defaults.
         use_two_stage: Use two-stage pipeline (default True)
-        duration_seconds: Video duration (4, 6, or 8 seconds)
+        duration_seconds: Video duration (default 4 seconds)
         tool_context: Optional ADK ToolContext for artifact storage
 
     Returns:
@@ -690,11 +725,11 @@ async def generate_video_from_product(
                 f"[DEBUG generate_video_from_product] Saved thumbnail: {thumbnail_path}"
             )
 
-            # Stage 2: Animate scene with Veo
+            # Stage 2: Animate scene with Omni
             print(
-                "[DEBUG generate_video_from_product] Stage 2: Animating with Veo 3.1..."
+                "[DEBUG generate_video_from_product] Stage 2: Animating with Gemini Omni Flash..."
             )
-            video_bytes, video_prompt = await animate_scene_with_veo(
+            video_bytes, video_prompt = await animate_scene_with_omni(
                 scene_image_bytes=scene_image_bytes,
                 product=product,
                 variation=variation_obj,
@@ -708,36 +743,47 @@ async def generate_video_from_product(
             scene_prompt = ""
             video_prompt = build_creative_prompt(product, variation_obj)
 
-            # Load product image for direct Veo generation
+            # Load product image for direct Omni generation
             if not product_image_bytes:
                 return {
                     "status": "error",
                     "message": "Product image required for single-stage generation",
                 }
 
-            image = types.Image(
-                image_bytes=product_image_bytes, mime_type="image/png"
-            )
-
             client = genai.Client()
-            operation = client.models.generate_videos(
-                model=VIDEO_GEN_MODEL,
-                prompt=video_prompt,
-                image=image,
-                config=types.GenerateVideosConfig(
-                    number_of_videos=1,
-                    duration_seconds=duration_seconds,
-                    resolution="1080p",
-                    generate_audio=True,
-                ),
+            image_b64 = base64.b64encode(product_image_bytes).decode("ascii")
+            user_step = im.UserInputStep(
+                content=[
+                    im.ImageContent(data=image_b64, mime_type="image/png"),
+                    im.TextContent(text=video_prompt),
+                ]
+            )
+            generation_config = im.GenerationConfig(
+                video_config=im.VideoConfig(task="image_to_video")
+            )
+            response_format = im.VideoResponseFormat(
+                type="video",
+                delivery="inline",
+                aspect_ratio="9:16",
             )
 
-            operation = await _wait_for_veo_operation(
-                client, operation, debug_label="generate_video_from_product"
+            print(
+                f"[DEBUG generate_video_from_product] Calling Omni Flash ({VIDEO_GEN_MODEL})..."
             )
-            video_bytes = _extract_video_bytes(
-                client, operation.result.generated_videos[0]
+            interaction = client.interactions.create(
+                model=VIDEO_GEN_MODEL,
+                input=[user_step],
+                generation_config=generation_config,
+                response_format=response_format,
+                background=True,
             )
+
+            interaction = await _wait_for_omni_interaction(
+                client,
+                interaction,
+                debug_label="generate_video_from_product",
+            )
+            video_bytes = _extract_omni_video_bytes(interaction)
 
             thumbnail_path = None
             thumbnail_filename = None
@@ -964,10 +1010,10 @@ async def generate_video_ad(
     campaign_id: int,
     image_id: int | None = None,
     custom_prompt: str | None = None,
-    duration_seconds: int = 6,
+    duration_seconds: int = 4,
     tool_context: ToolContext = None,
 ) -> dict:
-    """Generate a video ad using Veo 3.1.
+    """Generate a video ad using Gemini Omni Flash.
 
     Uses a seed image as reference and generates a cinematic fashion video.
     Polls for completion and saves to the generated/ folder.
@@ -977,7 +1023,7 @@ async def generate_video_ad(
         campaign_id: The campaign to generate the ad for
         image_id: Optional specific image ID to use. If not provided, uses the first image.
         custom_prompt: Optional custom prompt. If not provided, generates from image metadata.
-        duration_seconds: Video duration (4, 6, or 8 seconds for Veo 3.1)
+        duration_seconds: Video duration (default 4 seconds)
         tool_context: Optional ADK ToolContext for artifact storage
 
     Returns:
@@ -991,16 +1037,9 @@ async def generate_video_ad(
         f"[DEBUG generate_video_ad] custom_prompt={custom_prompt[:100] if custom_prompt else 'None'}..."
     )
 
-    # Veo 3.1 only accepts duration of 4, 6, or 8 seconds
     valid_durations = [4, 6, 8]
     if duration_seconds not in valid_durations:
-        # Map to nearest valid duration
-        if duration_seconds <= 4:
-            duration_seconds = 4
-        elif duration_seconds <= 6:
-            duration_seconds = 6
-        else:
-            duration_seconds = 8
+        duration_seconds = 4
         print(
             f"[DEBUG generate_video_ad] Adjusted duration to: {duration_seconds}"
         )
@@ -1116,57 +1155,62 @@ async def generate_video_ad(
         ad_id = cursor.lastrowid
         print(f"[DEBUG generate_video_ad] Created ad record with id={ad_id}")
 
-    # Generate video using Veo 3.1
+    # Generate video using Gemini Omni Flash
     try:
         print("[DEBUG generate_video_ad] Initializing genai client...")
         client = genai.Client()
 
-        # Load image using storage abstraction and convert to bytes for Veo API
-        # This follows the official Veo documentation pattern
+        # Load image using storage abstraction and convert to bytes
         print("[DEBUG generate_video_ad] Loading image...")
         image_bytes = storage.read_image(image_filename)
         print(f"[DEBUG generate_video_ad] Image bytes size: {len(image_bytes)}")
 
         # Use PIL to determine format and re-encode if needed
-        with PILImage.open(io.BytesIO(image_bytes)) as im:
+        with PILImage.open(io.BytesIO(image_bytes)) as pil_img:
             print(
-                f"[DEBUG generate_video_ad] Image format: {im.format}, size: {im.size}"
+                f"[DEBUG generate_video_ad] Image format: {pil_img.format}, size: {pil_img.size}"
             )
-            img_format = im.format or "JPEG"
+            img_format = pil_img.format or "JPEG"
 
-        # Create types.Image for Veo API (NOT types.Part)
         mime_type = f"image/{img_format.lower()}"
-        print(
-            f"[DEBUG generate_video_ad] Creating types.Image with mime_type={mime_type}"
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        user_step = im.UserInputStep(
+            content=[
+                im.ImageContent(data=image_b64, mime_type=mime_type),
+                im.TextContent(text=prompt),
+            ]
         )
-        image = types.Image(image_bytes=image_bytes, mime_type=mime_type)
+        generation_config = im.GenerationConfig(
+            video_config=im.VideoConfig(task="image_to_video")
+        )
+        response_format = im.VideoResponseFormat(
+            type="video",
+            delivery="inline",
+            aspect_ratio="9:16",
+        )
 
         # Start video generation
         print(
             f"[DEBUG generate_video_ad] Starting video generation with {VIDEO_GEN_MODEL}..."
         )
-        operation = client.models.generate_videos(
+        interaction = client.interactions.create(
             model=VIDEO_GEN_MODEL,
-            prompt=prompt,
-            image=image,
-            config=types.GenerateVideosConfig(
-                number_of_videos=1,
-                duration_seconds=duration_seconds,
-                resolution="1080p",
-                generate_audio=True,
-                # Note: enhance_prompt is NOT supported by the Veo 3.1 models
-            ),
+            input=[user_step],
+            generation_config=generation_config,
+            response_format=response_format,
+            background=True,
         )
         print(
-            f"[DEBUG generate_video_ad] Video generation started, operation: {operation}"
+            f"[DEBUG generate_video_ad] Video generation started, interaction: {interaction}"
         )
 
         # Poll for completion; this call site maps helper exceptions to the
         # legacy behavior (mark ad failed in DB + return an error dict).
         try:
-            operation = await _wait_for_veo_operation(
-                client, operation, debug_label="generate_video_ad"
+            interaction = await _wait_for_omni_interaction(
+                client, interaction, debug_label="generate_video_ad"
             )
+            video_data = _extract_omni_video_bytes(interaction)
         except TimeoutError:
             with get_db_cursor() as cursor:
                 cursor.execute(
@@ -1195,10 +1239,8 @@ async def generate_video_ad(
                 "prompt_used": prompt,
             }
 
-        generated_video = operation.result.generated_videos[0]
         timestamp = int(time.time())
         output_filename = f"campaign_{campaign_id}_ad_{ad_id}_{timestamp}.mp4"
-        video_data = _extract_video_bytes(client, generated_video)
         print(f"[DEBUG generate_video_ad] Video bytes size: {len(video_data)}")
 
         # Save video - handle both local and GCS storage modes
@@ -2223,7 +2265,7 @@ async def generate_video_with_variation(
     time_of_day: str = "day",
     visual_style: str = "cinematic",
     energy: str = "moderate",
-    duration_seconds: int = 8,
+    duration_seconds: int = 4,
     use_two_stage: bool = True,
     presentation_mode: str | None = None,
     tool_context: ToolContext = None,

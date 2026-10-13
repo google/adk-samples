@@ -23,7 +23,7 @@ def test_media_model_defaults_are_ga_ids(monkeypatch):
     cfg = importlib.reload(config_module)
     assert cfg.MODEL == "gemini-3.7-flash"
     assert cfg.IMAGE_GENERATION == "gemini-3-pro-image"
-    assert cfg.VIDEO_GEN_MODEL == "veo-3.1-generate-001"
+    assert cfg.VIDEO_GEN_MODEL == "gemini-omni-flash-preview"
 
 
 def test_media_models_are_env_overridable(monkeypatch):

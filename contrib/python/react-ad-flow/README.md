@@ -2,7 +2,7 @@
 
 A privacy-first audience measurement and generative AI agent system for optimizing in-store digital video advertising at point of sale.
 
-Developed to demonstrate how Google's generative media technologies (Veo 3.1 and Gemini Image models) combine with real-time audience analytics (such as BlueZoo sensor data) to establish a continuous, data-driven creative optimization loop.
+Developed to demonstrate how Google's generative media technologies (Gemini Omni Flash and Gemini Image models) combine with real-time audience analytics (such as BlueZoo sensor data) to establish a continuous, data-driven creative optimization loop.
 
 <p align="center">
   <img src="./assets/high-level-system.png" alt="System Overview" width="700">
@@ -15,7 +15,7 @@ Traditional in-store advertising campaigns require substantial creative resource
 This recipe showcases an automated multi-agent system:
 1. **Coordinator Agent (`root_agent`)**: Orchestrates the workflow across specialized sub-agents.
 2. **Campaign Agent**: Manages campaign creation, store locations, and metadata.
-3. **Media Agent**: Handles seed images, prompt composition, and video generation using Google Veo 3.1 and Gemini image models.
+3. **Media Agent**: Handles seed images, prompt composition, and video generation using Gemini Omni Flash and Gemini image models.
 4. **Review Agent**: Activates candidate videos, manages human-in-the-loop review, and supports Omni Flash video edits.
 5. **Analytics Agent**: Computes revenue per impression (RPI), correlates point-of-sale (POS) revenue with sensor dwell times, and generates comparison charts and map visualizations.
 
@@ -27,7 +27,7 @@ This recipe showcases an automated multi-agent system:
 
 - **Python**: `>=3.11,<3.14`
 - **uv**: Python package and project manager — [Install guide](https://docs.astral.sh/uv/getting-started/installation/)
-- **Google Cloud Project**: Vertex AI enabled with Gemini and Veo model access
+- **Google Cloud Project**: Vertex AI enabled with Gemini model access
 
 ## Quick Start
 
@@ -80,7 +80,7 @@ uv run pytest tests/test_runnability.py
 ### Multi-Agent Flow
 1. **Browse Products**: Browse retail catalog items.
 2. **Create Campaign**: Configure store location, target demographic, and campaign parameters.
-3. **Generate Video Ad**: Generate candidate video creatives with Veo 3.1.
+3. **Generate Video Ad**: Generate candidate video creatives with Gemini Omni Flash.
 4. **Activate & Review**: Approve and schedule video for in-store screen playback.
 5. **Analyze Performance**: Compute impressions, dwell time, and Revenue Per Impression (RPI).
 

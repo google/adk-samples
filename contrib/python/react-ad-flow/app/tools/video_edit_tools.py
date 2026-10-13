@@ -9,10 +9,8 @@ module must always honor (see .docs/version2-plan/14c-omni-video-editing.md):
   2. response_format must never set aspect_ratio for an edit-task call --
      the server derives it from the input video and 400s if set explicitly.
 
-Interactions (this module) and Veo's long-running operations (video_tools.py)
-are different API primitives with different polling methods
-(client.interactions.get() vs client.operations.get()) -- deliberately NOT
-sharing a polling helper between them (14b's own finding).
+Both video editing (this module) and video generation (video_tools.py) use
+Gemini Omni Flash via the Interactions API (client.interactions).
 """
 
 import asyncio

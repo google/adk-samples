@@ -19,11 +19,11 @@ Tests the video-related tools:
 - get_variation_presets (no LLM)
 - list_campaign_videos (no LLM)
 - list_campaign_ads (legacy, no LLM)
-- generate_video_from_product (marked slow - uses Veo)
-- generate_video_with_variation (marked slow - uses Veo)
+- generate_video_from_product (marked slow - uses Omni)
+- generate_video_with_variation (marked slow - uses Omni)
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -356,31 +356,28 @@ class TestVariationParamsStorage:
 
 
 @pytest.mark.slow
-@pytest.mark.veo
 class TestVideoGenerationIntegration:
-    """Integration tests for video generation (requires Veo API)."""
+    """Integration tests for video generation (requires Gemini Omni Flash API)."""
 
     @pytest.mark.asyncio
     async def test_generate_video_from_product_mock(
         self, test_db, mock_storage_module
     ):
-        """Test video generation with mocked Veo API."""
-        with patch("app.tools.video_tools.animate_scene_with_veo") as mock_veo:
-            mock_veo.return_value = AsyncMock(
-                return_value={
-                    "video_filename": "test-video.mp4",
-                    "video_url": "https://storage.googleapis.com/test/video.mp4",
-                }
+        """Test video generation with mocked Gemini Omni Flash API."""
+        with patch(
+            "app.tools.video_tools.animate_scene_with_omni"
+        ) as mock_omni:
+            mock_omni.return_value = (
+                b"fake-video-bytes",
+                "test video prompt",
             )
 
             with patch(
                 "app.tools.video_tools.generate_scene_image"
             ) as mock_scene:
-                mock_scene.return_value = AsyncMock(
-                    return_value={
-                        "thumbnail_filename": "test-thumb.jpg",
-                        "thumbnail_url": "https://storage.googleapis.com/test/thumb.jpg",
-                    }
+                mock_scene.return_value = (
+                    b"fake-scene-image-bytes",
+                    "test scene prompt",
                 )
 
                 from app.tools.video_tools import generate_video_from_product

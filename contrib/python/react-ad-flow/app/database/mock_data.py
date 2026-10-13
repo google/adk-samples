@@ -76,7 +76,7 @@ MOCK_CAMPAIGNS = [
 # =============================================================================
 # REAL demo videos (generated/ prefix in whatever GCS bucket is configured)
 # =============================================================================
-# These are actual Veo-generated videos that exist in the bucket.
+# These are actual Omni-generated videos that exist in the bucket.
 # Each campaign gets multiple real videos with thumbnails.
 
 REAL_VIDEOS = {

@@ -1,5 +1,5 @@
 """Typed-adapter regression tests: get_product/list_products return Product
-and the migration does not change Veo prompt text (Phase 8)."""
+and the migration does not change video animation prompt text (Phase 8)."""
 
 from pathlib import Path
 

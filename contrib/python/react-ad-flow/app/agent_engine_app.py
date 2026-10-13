@@ -93,7 +93,7 @@ class GlobalAdkApp(AdkApp):
         )
 
         # Force-set GOOGLE_GENAI_USE_VERTEXAI=TRUE for video generation
-        # This is required for Veo video byte extraction via Vertex AI
+        # This is required for video byte extraction via Vertex AI
         # Agent Engine may not properly propagate env_vars (ADK bug #3208)
         os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "TRUE"
         print(

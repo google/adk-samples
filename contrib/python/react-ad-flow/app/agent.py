@@ -15,12 +15,12 @@
 """Ad Campaign Agent - Multi-Agent Architecture.
 
 A multi-agent ADK system for ad campaign management demo showcasing
-the end-to-end journey from campaign creation to video ad generation using Veo 3.1.
+the end-to-end journey from campaign creation to video ad generation using Gemini Omni Flash.
 
 Architecture:
     Coordinator Agent (root_agent)
     ├── Campaign Agent - Campaign CRUD and location features
-    ├── Media Agent - Image and video generation (Veo 3.1, Gemini 3 Pro Image)
+    ├── Media Agent - Image and video generation (Gemini Omni Flash, Gemini 3 Pro Image)
     └── Analytics Agent - Metrics, insights, and data visualization
 
 Target Users: Campaign Manager, Creative Director, Store Operations Manager,
@@ -246,7 +246,7 @@ All videos now use a two-stage pipeline:
 - Saved as thumbnail for review
 
 **Stage 2: Video Animation** (video model — see VIDEO_GEN_MODEL in app/config.py)
-- Animates the scene image into 8-second 9:16 video
+- Animates the scene image into 4-second 9:16 video
 - Cinematic camera movements and transitions
 - Saved with descriptive filename: [product-name]-[MMDDYY]-[variation-name].mp4
 
@@ -285,7 +285,7 @@ Use list_campaign_videos(status='generated') to see pending videos.
 
 ## Legacy Features (Still Available)
 - add_seed_image - Add product images to campaigns
-- generate_video_ad - Direct Veo generation (old workflow)
+- generate_video_ad - Direct video generation (old workflow)
 - generate_video_with_properties - Property-controlled generation
 - apply_winning_formula - Scale successful characteristics
 
@@ -557,7 +557,7 @@ _OMNI_EDIT_INSTRUCTION_SECTION = """
 visual edit to an existing generated video (e.g. "change the shirt color to
 red", "remove the coffee cup from the counter"). This is an EXPERIMENTAL,
 opt-in capability backed by Gemini Omni Flash, separate from the standard
-Veo generation pipeline:
+generation pipeline:
 - Only single-attribute visual edits are verified to work well; avoid
   combining multiple unrelated changes in one instruction.
 - Do NOT use this for audio, dialogue, music, or language changes -- Omni

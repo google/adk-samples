@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import config
 from app.models.variation import CreativeVariation
 from app.tools.video_tools import (
-    animate_scene_with_veo,
+    animate_scene_with_omni,
     generate_scene_image,
 )
 
@@ -49,7 +49,7 @@ async def main() -> int:
         return 0
 
     print(f"Stage 2 model: {VIDEO_MODEL}")
-    video_bytes, _ = await animate_scene_with_veo(
+    video_bytes, _ = await animate_scene_with_omni(
         scene_bytes, PRODUCT, variation, duration_seconds=4
     )
     print(f"Stage 2 OK: {len(video_bytes)} bytes")

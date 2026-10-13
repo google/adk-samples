@@ -353,7 +353,7 @@ Examples:
             ],  # Bundle local app package for remote access
             env_vars=env_vars,  # Pass env vars including GEMINI_MODEL_LOCATION
             display_name=args.display_name,
-            description="Fashion retail ad campaign management with Veo 3.1 video generation",
+            description="Fashion retail ad campaign management with Gemini Omni Flash video generation",
         )
     except Exception as e:
         print(f"\n{RED}✗ Deployment failed: {e}{NC}")

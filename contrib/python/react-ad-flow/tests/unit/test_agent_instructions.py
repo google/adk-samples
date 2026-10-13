@@ -129,7 +129,7 @@ def test_routing_instructions_mention_edit_handoff_when_enabled(monkeypatch):
     media_agent must both be told to route existing-video edit requests to
     review_agent instead of generating a new video -- this is what closes
     the gap where free-form "edit the video" phrasing fell through to Media
-    Agent's Veo regeneration tools instead of edit_video_with_omni."""
+    Agent's video regeneration tools instead of edit_video_with_omni."""
     monkeypatch.setenv("ENABLE_OMNI_EDIT", "true")
     import importlib
 

@@ -65,7 +65,7 @@ class ColorTemperature(StrEnum):
 
 
 class AudioType(StrEnum):
-    """Type of audio in the video (for future Veo audio support)."""
+    """Type of audio in the video (for future audio support)."""
 
     NONE = "none"
     AMBIENT = "ambient"
@@ -170,7 +170,7 @@ class VideoProperties(BaseModel):
         default=False, description="Whether multiple outfits are shown"
     )
 
-    # Audio Properties (for future Veo audio support)
+    # Audio Properties (for future audio support)
     audio_type: AudioType = Field(
         default=AudioType.NONE, description="Type of audio"
     )

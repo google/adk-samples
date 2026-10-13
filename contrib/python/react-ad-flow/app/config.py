@@ -99,16 +99,15 @@ MODEL = os.environ.get(
     "AGENT_MODEL", "gemini-3.7-flash"
 )  # Main agent model (GA; global region supported)
 
-# Media generation models — GA IDs as defaults, env-overridable so preview
-# models (e.g. Nano Banana 2 Lite, Gemini Omni Flash) can be swapped in for
-# pipeline testing without code changes (evaluation itself is Phase 14a/14b).
-# VIDEO_GEN_MODEL is deliberately model-agnostic (Veo today, possibly Omni later).
+# Media generation models — env-overridable so different model IDs can be
+# configured for testing without code changes.
+# VIDEO_GEN_MODEL uses Gemini Omni Flash via the Interactions API.
 IMAGE_GENERATION = os.environ.get(
     "IMAGE_GENERATION_MODEL", "gemini-3-pro-image"
 )  # Stage 1 scene images
 VIDEO_GEN_MODEL = os.environ.get(
-    "VIDEO_GEN_MODEL", "veo-3.1-generate-001"
-)  # Stage 2 video animation
+    "VIDEO_GEN_MODEL", "gemini-omni-flash-preview"
+)  # Stage 2 video animation (Gemini Omni Flash)
 
 # Phase 14c: Gemini Omni Flash post-generation visual-edit tool.
 # Preview/experimental model with a defined sunset (Vertex model card:
@@ -120,7 +119,9 @@ ENABLE_OMNI_EDIT = (
 
 # Video configuration
 VIDEO_ASPECT_RATIO = "9:16"  # Vertical format for retail displays
-VIDEO_DURATION_SECONDS = 8  # Default video duration (4, 6, or 8 for Veo 3.1)
+VIDEO_DURATION_SECONDS = (
+    4  # Default video duration (4 seconds for Gemini Omni Flash)
+)
 # API Keys (loaded from environment)
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 # Support both GOOGLE_MAPS_API_KEY and MAPS_API_KEY (from .env)
