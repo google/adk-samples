@@ -194,7 +194,11 @@ def investigationQueryTool(
         rows = list(client.query(query, job_config=job_config).result())
         return bq_rows_to_json(rows)
 
-    return "Query did not match a known investigation type. Please provide more specific parameters."
+    return json.dumps(
+        {
+            "error": "Query did not match a known investigation type. Please provide more specific parameters."
+        }
+    )
 
 
 # --- Threat Intel Tool ---

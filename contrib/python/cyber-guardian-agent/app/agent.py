@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 
 from google.adk.agents import Agent
@@ -27,10 +26,6 @@ from .sub_agents.investigation.agent import investigation_agent
 from .sub_agents.response.agent import response_agent
 from .sub_agents.threatintel.agent import threatintel_agent
 from .sub_agents.triage.agent import triage_agent
-
-# --- Configure Logging ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 root_agent = Agent(
     model=os.getenv("MODEL_NAME"),

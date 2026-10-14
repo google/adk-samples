@@ -19,7 +19,7 @@ agent_instructions = """
 
 **Input:**
 *   `indicators`: A list of strings, where each string is an IOC value (e.g., IP address, hash, URL) (list[str]).
-    Note: Always send the input to the tool as a list even if there is only 1 IOC value or Empty string if there are no IOC values.
+    Note: Always send the input to the tool as a list even if there is only 1 IOC value, or an empty list (`[]`) if there are no IOC values.
 
 **Output:** A JSON object containing a list of dictionaries, one for each IOC:
 *   `list[{ "ioc": str, "is_malicious": bool, "threat_name": str, "confidence": str, "note": str (optional) }]`

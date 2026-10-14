@@ -3,8 +3,8 @@ name = "cyber-guardian-agent"
 version = "0.1.0"
 description = "AI-driven agent for cybersecurity incident response"
 authors = [
-    { name = "Cyber Guardian Team" },
-    { name = "Google POC", email = "aanas@google.com" }
+    { name = "Abhilash Adavi", email = "aadavi@google.com" },
+    { name = "Anas Aslam", email = "aanas@google.com" },
 ]
 license = "Apache-2.0"
 readme = "README.md"

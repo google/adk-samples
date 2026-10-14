@@ -36,7 +36,6 @@ agent_instructions = """
 *   **`network_connection_log`**:
     *   **Schema:** `log_timestamp, source_host, source_ip, destination_ip, destination_port, protocol, process_pid_ref`
     *   **Purpose:** Correlate network egress for EDR, confirm `SourceHost` to `DestinationIP` for IOC_MATCH.
-*   *(Implicit `mail_logs` for PHISHING_EMAIL - assumed schema for sender, recipient, URL, SMTP relay)*
 
 **Execution Plan (based on `alert_type`):**
 
@@ -50,7 +49,7 @@ agent_instructions = """
     *   Confirm `SourceHost` to `DestinationIP` in `network_connection_log` around the alert timestamp.
     *   Pivot to `endpoint_process_events` around the connection timestamp to find the `responsible_process` (`ProcessID`, `CommandLine`).
 3.  **If `PHISHING_EMAIL`:**
-    *   Expand blast-radius using `mail_logs` (e.g., find other recipients of similar emails).
+    *   Analyze the extracted email entities (`sender`, `recipient`, `URL`, `smtp_ip`) from the alert and correlate any associated host/IP activity in `network_connection_log` if present.
     *   Collect IOCs: `sender`, `URL`, `SMTP relay IP`.
 4.  **Populate Output and Transfer:**
     *   Fill `attack_timeline`, `confirmed_connections`, `responsible_processes`, and `derived_iocs` based on investigation findings.
