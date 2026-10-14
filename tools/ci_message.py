@@ -59,7 +59,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 # ---------------------------------------------------------------------------
 # Documentation anchors
@@ -73,16 +73,18 @@ from enum import Enum
 _TROUBLESHOOTING = "docs/recipe-handbook/troubleshooting.md"
 
 
-class Doc(str, Enum):
+class Doc(StrEnum):
     """Anchors into the troubleshooting handbook."""
 
     MANIFEST = "manifestyaml-missing-or-invalid"
     OWNERSHIP_PLACEHOLDER = "ownershipteam-or-poc-is-a-placeholder"
+    MANIFEST_DEPLOYABLE = "contrib-recipe-is-not-deployable"
     FOLDER_NAME = "directory-name-too-long-or-invalid"
     SIZE_LIMIT = "recipe-exceeds-size-or-file-limit"
     REQUIRED_FILES = "required-file-or-directory-missing"
     PLACEMENT = "recipe-is-in-the-wrong-folder"
     RETIRED_FOLDER = "changes-inside-a-retired-folder"
+    GITHUB_DIR_ADMIN = "only-repository-admins-may-modify-files-under-github"
 
     README_MISSING = "readmemd-is-missing-or-empty"
     README_TODO = "readmemd-contains-todo-placeholders"
@@ -92,6 +94,7 @@ class Doc(str, Enum):
 
     RUFF_CONFIG = "pyprojecttoml-has-a-local-ruff-configuration"
     RUFF_STANDALONE = "standalone-ruff-config-file"
+    LINT_CONFIG = "standalone-lint-or-style-config-file"
     PROJECT_NAME = "project-name-doesnt-match-the-required-name"
     PROJECT_DESCRIPTION = "project-description-doesnt-match-manifest"
     REQUIRES_PYTHON = "requires-python-below-311"
@@ -109,6 +112,12 @@ class Doc(str, Enum):
     RUNNABILITY = "runnability-test-missing"
     RUFF_FAILED = "ruff-format-or-check-failed"
 
+    ADK_MAJOR = "core-recipe-is-behind-the-current-adk-major"
+    RECIPE_INACTIVE = "recipe-is-marked-inactive"
+
+    DOCKER_BUILD = "dockerfile-build-failed"
+    DOCKER_SERVES = "recipe-container-does-not-serve"
+
     CI_FAULT = "ci-infrastructure-failure"
 
     @property
@@ -117,7 +126,7 @@ class Doc(str, Enum):
         return f"{_TROUBLESHOOTING}#{self.value}"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     ERROR = "error"
     WARNING = "warning"
     NOTICE = "notice"
@@ -315,6 +324,49 @@ def report(
     print(f"Every fix above is documented in {_TROUBLESHOOTING}")
     print("")
     return EXIT_VIOLATIONS
+
+
+def report_advisories(advisories: list[Diagnostic], *, header: str) -> None:
+    """Print warn-only findings. Returns nothing, on purpose.
+
+    A rule reported here is one the repo wants VISIBLE but is not willing to
+    fail a PR over — typically because the existing tree does not satisfy it
+    yet, so blocking would wedge every contributor behind a migration they did
+    not cause.
+
+    Returning ``None`` rather than an exit code is the whole design: a caller
+    physically cannot fold this into its verdict by accident. The day a rule
+    graduates to blocking, it moves into :func:`report` and the change is
+    visible in the diff instead of hiding in a status code.
+
+    Raises:
+        ValueError: if an advisory is ERROR severity. That combination — an
+            error the exit code ignores — is the failure mode this channel
+            would otherwise introduce: a red annotation on a green run, which
+            teaches contributors to disregard annotations.
+    """
+    if not advisories:
+        return
+
+    bad = [d.check for d in advisories if d.severity is Severity.ERROR]
+    if bad:
+        raise ValueError(
+            f"advisories must not be ERROR severity: {sorted(bad)}. Use "
+            f"Severity.WARNING or Severity.NOTICE, or report it through "
+            f"report() so the exit code reflects it."
+        )
+
+    count = len(advisories)
+    noun = "notice" if count == 1 else "notices"
+    print(f"\n[NOTICE] {header} — {count} non-blocking {noun}\n")
+    for diag in advisories:
+        print(diag.render_human(indent="    "))
+        print("")
+    for diag in advisories:
+        print(diag.render_annotation())
+    print("")
+    print("These do NOT fail the check. Fix them when convenient.")
+    print("")
 
 
 def report_infra_fault(fault: InfraFault) -> int:

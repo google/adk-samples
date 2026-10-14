@@ -18,7 +18,7 @@ Spawns a child under ``/bin/sh -c`` attached to a pseudo-terminal, runs it
 in its own process group so the whole tree can be killed, and drains the
 master fd in a daemon thread into a rolling byte buffer. The local arm of
 the background-process subsystem; ``ProcessRegistry`` and the
-``process``/``terminal`` tools sit above it. The sandbox arm
+``process``/``bash`` tools sit above it. The sandbox arm
 (``SandboxProcessHandle``) lives next to it in ``horizon/environment`` and
 speaks HTTP to the sandbox shim."""
 
@@ -65,7 +65,7 @@ class LocalProcessHandle:
 
         self._master_fd, slave_fd = pty.openpty()
         try:
-            self._proc = subprocess.Popen(
+            self._proc = subprocess.Popen(  # noqa: S603
                 ["/bin/sh", "-c", command],
                 stdin=slave_fd,
                 stdout=slave_fd,
