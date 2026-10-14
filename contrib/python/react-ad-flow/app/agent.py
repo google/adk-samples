@@ -101,15 +101,11 @@ from .tools.review_tools import (
 from .tools.video_edit_tools import edit_video_with_omni
 from .tools.video_tools import (
     analyze_video,
-    apply_winning_formula,
     generate_video_ad,
     # New two-stage pipeline tools
     generate_video_from_product,
-    generate_video_variation,
-    generate_video_with_properties,
     generate_video_with_variation,
     get_variation_presets,
-    get_video_properties,
     list_campaign_ads,
     list_campaign_videos,
     list_products,
@@ -286,8 +282,6 @@ Use list_campaign_videos(status='generated') to see pending videos.
 ## Legacy Features (Still Available)
 - add_seed_image - Add product images to campaigns
 - generate_video_ad - Direct video generation (old workflow)
-- generate_video_with_properties - Property-controlled generation
-- apply_winning_formula - Scale successful characteristics
 
 ## Response Guidelines
 - Explain the two-stage pipeline when generating videos
@@ -346,11 +340,7 @@ media_agent = LlmAgent(
         list_available_images,
         # Legacy video tools (still available)
         generate_video_ad,
-        generate_video_variation,
-        apply_winning_formula,
         list_campaign_ads,
-        generate_video_with_properties,
-        get_video_properties,
         analyze_video,
     ],
 )

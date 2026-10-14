@@ -41,7 +41,6 @@ from .metrics_tools import (
 from .video_tools import (
     generate_video_ad,
     generate_video_prompt,
-    generate_video_variation,
     list_campaign_ads,
 )
 
@@ -56,7 +55,6 @@ __all__ = [
     # Video generation
     "generate_video_ad",
     "generate_video_prompt",
-    "generate_video_variation",
     "get_campaign",
     "get_campaign_insights",
     # Maps

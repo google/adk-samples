@@ -46,6 +46,3 @@ pythonpath = "."
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-# Integration tests require live credentials and are excluded from CI.
-# Run them locally with: uv run pytest tests/integration
-addopts = "--ignore=tests/integration"

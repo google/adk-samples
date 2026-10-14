@@ -268,30 +268,20 @@ gcloud run services logs read ad-campaign-agent \
 
 Vertex AI Agent Engine provides a fully managed runtime with persistent conversation sessions, integrated memory banks, and direct SDK query interfaces.
 
-#### Option A: Automated Deployment Script
-Use the included Agent Engine deployment script ([scripts/deploy_ae.sh](file:///Users/wagnerthomas/Documents/adk-recipes/contrib/python/react-ad-flow/scripts/deploy_ae.sh)):
-
-```bash
-# Fresh deployment to Agent Engine
-./scripts/deploy_ae.sh
-
-# Deploy with Cloud Trace enabled
-./scripts/deploy_ae.sh --trace
-
-# Preview deployment command without executing
-./scripts/deploy_ae.sh --dry-run
-
-# Update an existing deployment instance
-./scripts/deploy_ae.sh --agent-engine-id=YOUR_AGENT_ENGINE_ID
-```
-
-#### Option B: Programmatic Deployment via Python SDK
+#### Deployment via Python SDK
 Deploy using [scripts/deploy_ae_inline.py](file:///Users/wagnerthomas/Documents/adk-recipes/contrib/python/react-ad-flow/scripts/deploy_ae_inline.py):
 ```bash
+# Fresh deployment to Agent Engine
 uv run python scripts/deploy_ae_inline.py \
   --project "$GOOGLE_CLOUD_PROJECT" \
   --region us-central1 \
   --gcs-bucket "$GCS_BUCKET"
+
+# Preview deployment without executing
+uv run python scripts/deploy_ae_inline.py \
+  --project "$GOOGLE_CLOUD_PROJECT" \
+  --region us-central1 \
+  --dry-run
 ```
 
 #### Querying the Deployed Agent Engine
