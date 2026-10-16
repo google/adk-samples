@@ -1,0 +1,37 @@
+{
+  "eval_set_id": "basic_eval",
+  "name": "AlphaEvolve Optimizer Evaluation",
+  "description": "Checks that the agent explains its loop and runs a verified optimization that reports measured scores.",
+  "eval_cases": [
+    {
+      "eval_id": "explain_capabilities",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "Hello, what can you help me with?"}]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "run_optimization",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "Start optimizing the bin packing heuristic and report the best verified score."}]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_user",
+        "state": {}
+      }
+    }
+  ]
+}

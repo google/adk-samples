@@ -1,0 +1,55 @@
+# ADK Recipe Manifest — manifest.yaml
+# Fields marked REQUIRED must be present. All others are optional.
+# ============================================================
+
+# REQUIRED — Recipe type.
+#   standalone : complete, runnable recipe with its own entry point
+#   module     : importable sub-agent meant to be orchestrated by another workflow
+type: "standalone"
+
+# OPTIONAL — Set to true only if the recipe can be fully deployed with a single command and no manual configuration steps (e.g. has Terraform config or a deploy script).
+deployable: true
+
+# REQUIRED — Maintenance status.
+#   active | inactive
+status: "active"
+
+# REQUIRED — Primary programming language.
+#   python | java | go | kotlin | typescript
+language: "python"
+
+# REQUIRED — Short description of what this recipe does and the value it provides.
+description: "An AlphaEvolve-style evolutionary code optimizer: a Gemini agent proposes program variants, a sandboxed deterministic verifier scores them, and the best candidates are selected as parents for the next round. Ships with a bin-packing heuristic discovery problem."
+
+# OPTIONAL — Agent architecture details. Omit the whole block if unknown.
+architecture:
+  agent: "single"
+  stateful: false
+  datasources:
+    - "hardcoded"
+
+# OPTIONAL — Library and service dependencies.
+dependencies:
+  libraries:
+    - "ADK"
+  services:
+    - "Gemini"
+
+# REQUIRED — Ownership. Both sub-fields are required.
+ownership:
+  team: "Community"
+  poc: "debanshd"
+  # OPTIONAL — Additional contributors other than the poc.
+  # contributors:
+  #   - "github-id"
+
+# OPTIONAL — Classification tags (technology names, patterns, use-case keywords).
+tags:
+  - "alphaevolve"
+  - "evolutionary-search"
+  - "code-optimization"
+  - "verifier"
+
+# OPTIONAL — SPDX license identifier (e.g. "Apache-2.0", "MIT", "BSD-3-Clause").
+# Only set if explicitly declared in a LICENSE file or by the author.
+license: "Apache-2.0"
