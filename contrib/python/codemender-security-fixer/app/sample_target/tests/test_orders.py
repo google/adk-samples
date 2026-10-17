@@ -63,7 +63,9 @@ class CartTest(unittest.TestCase):
         self.assertEqual(cart.load_cart(cart.dump_cart(original)), original)
 
     def test_cookie_is_ascii(self):
-        cart.dump_cart({"SKU-RED-MUG": 2}).encode("ascii")
+        cookie = cart.dump_cart({"SKU-RED-MUG": 2})
+        self.assertTrue(cookie.isascii())
+        self.assertNotIn(";", cookie)
 
 
 class AuthTest(unittest.TestCase):

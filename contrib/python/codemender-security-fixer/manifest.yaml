@@ -38,7 +38,7 @@ dependencies:
 
 # REQUIRED — Ownership. Both sub-fields are required.
 ownership:
-  team: "Community"
+  team: "Cloud AI"
   poc: "debanshd"
   # OPTIONAL — Additional contributors other than the poc.
   # contributors:

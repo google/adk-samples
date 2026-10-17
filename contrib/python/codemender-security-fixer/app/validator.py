@@ -101,8 +101,8 @@ def validate_patch(
     new_content: str,
     before: dict[str, Any],
     timeout_seconds: float,
-    test_command: str | None = None,
-    bandit_skips: str | None = None,
+    test_command: str | None,
+    bandit_skips: str,
 ) -> dict[str, Any]:
     """Validates replacing `rel_path` with `new_content` in a scratch copy.
 

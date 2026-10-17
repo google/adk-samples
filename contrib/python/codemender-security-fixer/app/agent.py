@@ -39,7 +39,7 @@ from google.adk.models import Gemini
 from google.adk.tools import ToolContext
 from google.genai import types
 
-from . import scanner, validator, workspace
+from . import config, scanner, validator, workspace
 
 _SOURCE_KEY = "cm_source_dir"
 _WORK_KEY = "cm_work_dir"
@@ -50,19 +50,19 @@ _ATTEMPTS_KEY = "cm_attempts"
 
 
 def _max_attempts() -> int:
-    return int(os.getenv("MAX_PATCH_ATTEMPTS", "8"))
+    return int(config.require_number("MAX_PATCH_ATTEMPTS", int))
 
 
 def _timeout_seconds() -> float:
-    return float(os.getenv("VALIDATION_TIMEOUT_SECONDS", "120"))
+    return float(config.require_number("VALIDATION_TIMEOUT_SECONDS", float))
 
 
 def _test_command() -> str | None:
-    return os.getenv("TEST_COMMAND") or None
+    return config.optional("TEST_COMMAND")
 
 
-def _bandit_skips() -> str | None:
-    return os.getenv("BANDIT_SKIPS") or None
+def _bandit_skips() -> str:
+    return config.require("BANDIT_SKIPS")
 
 
 def _scan(work_dir: Path) -> dict[str, Any]:
@@ -76,7 +76,7 @@ def _workspace(tool_context: ToolContext) -> tuple[Path, Path]:
     state = tool_context.state
     if not state.get(_SOURCE_KEY):
         state[_SOURCE_KEY] = str(
-            workspace.resolve_target(os.getenv("TARGET_DIR"))
+            workspace.resolve_target(config.optional("TARGET_DIR"))
         )
     source = Path(state[_SOURCE_KEY])
     work = state.get(_WORK_KEY)

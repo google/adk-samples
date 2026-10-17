@@ -26,10 +26,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import scanner, validator, workspace
+from app import config, scanner, validator, workspace
 from app.agent import get_patch_report, list_findings, propose_patch, read_file
 
 TIMEOUT = 60
+SKIPS = os.environ["BANDIT_SKIPS"]  # loaded from .env.example by conftest
 
 DB_FIX = '''
 import sqlite3
@@ -177,7 +178,7 @@ def _tree_hash(root: Path) -> str:
 
 @pytest.fixture(scope="module")
 def baseline() -> dict:
-    return scanner.scan(str(workspace.BUNDLED_TARGET), TIMEOUT)
+    return scanner.scan(str(workspace.BUNDLED_TARGET), TIMEOUT, None, SKIPS)
 
 
 @pytest.fixture
@@ -189,7 +190,6 @@ def work(tmp_path: Path) -> Path:
 def ctx(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.delenv("TARGET_DIR", raising=False)
     monkeypatch.delenv("TEST_COMMAND", raising=False)
-    monkeypatch.delenv("BANDIT_SKIPS", raising=False)
     monkeypatch.setenv("VALIDATION_TIMEOUT_SECONDS", str(TIMEOUT))
     return SimpleNamespace(state={})
 
@@ -248,7 +248,7 @@ def test_generic_test_command_parsing() -> None:
 
 def test_validator_accepts_a_correct_fix(work: Path, baseline: dict) -> None:
     verdict = validator.validate_patch(
-        work, "orders/db.py", DB_FIX, baseline, TIMEOUT
+        work, "orders/db.py", DB_FIX, baseline, TIMEOUT, None, SKIPS
     )
     assert verdict["accepted"], verdict["reasons"]
     assert verdict["resolved_findings"] == ["orders/db.py:B608"]
@@ -262,7 +262,7 @@ def test_validator_rejects_a_fix_that_breaks_behaviour(
     work: Path, baseline: dict
 ) -> None:
     verdict = validator.validate_patch(
-        work, "orders/db.py", DB_BROKEN, baseline, TIMEOUT
+        work, "orders/db.py", DB_BROKEN, baseline, TIMEOUT, None, SKIPS
     )
     assert not verdict["accepted"]
     assert verdict["regressions"] == [
@@ -274,7 +274,13 @@ def test_validator_rejects_an_incomplete_fix(
     work: Path, baseline: dict
 ) -> None:
     verdict = validator.validate_patch(
-        work, "orders/invoices.py", INVOICES_INCOMPLETE, baseline, TIMEOUT
+        work,
+        "orders/invoices.py",
+        INVOICES_INCOMPLETE,
+        baseline,
+        TIMEOUT,
+        None,
+        SKIPS,
     )
     assert not verdict["accepted"]
     assert verdict["fixed_tests"] == []
@@ -299,7 +305,7 @@ def test_validator_prechecks(
     work: Path, baseline: dict, rel_path: str, content: str, reason: str
 ) -> None:
     verdict = validator.validate_patch(
-        work, rel_path, content, baseline, TIMEOUT
+        work, rel_path, content, baseline, TIMEOUT, None, SKIPS
     )
     assert not verdict["accepted"]
     assert verdict["after"] is None  # rejected before running anything
@@ -407,3 +413,11 @@ def test_target_dir_points_at_your_own_repo(
 
 def test_report_requires_a_baseline(ctx: SimpleNamespace) -> None:
     assert "error" in get_patch_report(ctx)
+
+
+def test_missing_config_fails_with_a_clear_error(
+    ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MAX_PATCH_ATTEMPTS")
+    with pytest.raises(config.ConfigError, match="MAX_PATCH_ATTEMPTS"):
+        propose_patch("orders/db.py", DB_FIX, "parameterize", ctx)

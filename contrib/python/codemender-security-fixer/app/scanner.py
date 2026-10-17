@@ -26,10 +26,6 @@ from typing import Any
 
 from .sandbox import python_argv, run_limited
 
-# Bandit checks that flag *usage* rather than a vulnerability. Skipping them
-# keeps a correct fix (e.g. `subprocess.run([...])` without a shell) from
-# being reported as a new finding. Override with BANDIT_SKIPS.
-DEFAULT_BANDIT_SKIPS = "B101,B404,B603,B607"
 _BANDIT_EXCLUDES = (
     "*/tests/*,*/test/*,*/test_*.py,*/*_test.py,*/conftest.py,"
     "*/.venv/*,*/venv/*,*/node_modules/*,*/site-packages/*"
@@ -78,14 +74,13 @@ real_stdout.write("\n@@RESULT@@" + json.dumps({"tests": tests}) + "\n")
 _PYTEST_LINE = re.compile(r"^(PASSED|FAILED|ERROR)\s+(\S+)(?:\s+-\s+(.*))?$")
 
 
-def _bandit_skips(skips: str | None) -> str:
-    return DEFAULT_BANDIT_SKIPS if skips is None else skips
-
-
 def run_bandit(
-    work_dir: str, timeout_seconds: float, skips: str | None = None
+    work_dir: str, timeout_seconds: float, skips: str
 ) -> dict[str, Any]:
     """Runs Bandit on `work_dir` (tests excluded, `# nosec` ignored).
+
+    `skips` is a comma-separated list of Bandit check ids to skip (BANDIT_SKIPS),
+    typically checks that flag API usage rather than a vulnerability.
 
     Returns:
         `{"findings": [...], "error": str | None}`. Each finding has `key`
@@ -104,9 +99,8 @@ def run_bandit(
         "-x",
         _BANDIT_EXCLUDES,
     )
-    skip = _bandit_skips(skips)
-    if skip:
-        argv += ["-s", skip]
+    if skips:
+        argv += ["-s", skips]
     run = run_limited(argv, work_dir, timeout_seconds)
     if run["timed_out"]:
         return {"findings": [], "error": "bandit timed out"}
@@ -114,7 +108,10 @@ def run_bandit(
         report = json.loads(run["stdout"])
     except json.JSONDecodeError:
         tail = run["stderr"].strip().splitlines()[-1:] or ["no output"]
-        return {"findings": [], "error": f"bandit failed: {tail[0][:300]}"}
+        return {
+            "findings": [],
+            "error": f"bandit failed: {tail[0][:_MAX_DETAIL_CHARS]}",
+        }
     findings = []
     for r in report.get("results", []):
         path = r["filename"].removeprefix("./")
@@ -143,7 +140,10 @@ def _parse_unittest(run: dict[str, Any]) -> dict[str, Any]:
     marker = run["stdout"].rfind("@@RESULT@@")
     if marker < 0:
         tail = run["stderr"].strip().splitlines()[-1:] or ["no output"]
-        return {"tests": [], "error": f"test run crashed: {tail[0][:300]}"}
+        return {
+            "tests": [],
+            "error": f"test run crashed: {tail[0][:_MAX_DETAIL_CHARS]}",
+        }
     payload = json.loads(run["stdout"][marker + len("@@RESULT@@") :])
     return {"tests": payload["tests"], "error": None}
 
@@ -211,8 +211,8 @@ def run_tests(
 def scan(
     work_dir: str,
     timeout_seconds: float,
-    test_command: str | None = None,
-    bandit_skips: str | None = None,
+    test_command: str | None,
+    bandit_skips: str,
 ) -> dict[str, Any]:
     """Collects all evidence for one working copy."""
     bandit = run_bandit(work_dir, timeout_seconds, bandit_skips)
