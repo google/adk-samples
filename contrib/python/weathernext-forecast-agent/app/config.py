@@ -104,16 +104,16 @@ DEFAULT_TASKS: dict[str, TaskLimits] = {
 REFERENCE_HEIGHT_M = 100.0
 
 
-def require_env(name: str) -> str:
-    """Returns a required environment variable.
+def require_env(name: str, value: str | None) -> str:
+    """Returns `value` (read by the caller with `os.getenv(name)`) or fails.
 
     Defaults live in `.env.example`, which `app/__init__.py` loads (via
-    `.env`) and the container image ships.
+    `.env`) and the container image ships. Callers read the variable
+    themselves so every environment read stays a plain `os.getenv("NAME")`.
 
     Raises:
-        RuntimeError: If the variable is unset or empty.
+        RuntimeError: If the value is unset or empty.
     """
-    value = os.getenv(name)
     if not value:
         raise RuntimeError(
             f"Environment variable {name} is not set; copy .env.example to .env"
@@ -123,12 +123,12 @@ def require_env(name: str) -> str:
 
 def gust_factor() -> float:
     """Returns the gust factor (GUST_FACTOR)."""
-    return float(require_env("GUST_FACTOR"))
+    return float(require_env("GUST_FACTOR", os.getenv("GUST_FACTOR")))
 
 
 def shear_exponent() -> float:
     """Returns the hub-height shear exponent (SHEAR_EXPONENT)."""
-    return float(require_env("SHEAR_EXPONENT"))
+    return float(require_env("SHEAR_EXPONENT", os.getenv("SHEAR_EXPONENT")))
 
 
 def _load_overrides(raw: str) -> dict:

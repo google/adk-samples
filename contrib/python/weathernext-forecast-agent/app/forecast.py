@@ -323,17 +323,30 @@ class BigQuerySource:
 @lru_cache(maxsize=1)
 def get_source() -> ForecastSource:
     """Returns the configured forecast source (WEATHERNEXT_SOURCE)."""
-    kind = require_env("WEATHERNEXT_SOURCE").strip().lower()
+    kind = (
+        require_env("WEATHERNEXT_SOURCE", os.getenv("WEATHERNEXT_SOURCE"))
+        .strip()
+        .lower()
+    )
     if kind == "sample":
         return SampleSource()
     if kind == "bigquery":
         return BigQuerySource(
-            table=require_env("WEATHERNEXT_BQ_TABLE"),
+            table=require_env(
+                "WEATHERNEXT_BQ_TABLE", os.getenv("WEATHERNEXT_BQ_TABLE")
+            ),
             project=os.getenv("WEATHERNEXT_BQ_PROJECT") or None,
             init_time=os.getenv("WEATHERNEXT_INIT_TIME") or None,
-            max_hours=int(require_env("WEATHERNEXT_MAX_HOURS")),
+            max_hours=int(
+                require_env(
+                    "WEATHERNEXT_MAX_HOURS", os.getenv("WEATHERNEXT_MAX_HOURS")
+                )
+            ),
             timeout_seconds=float(
-                require_env("WEATHERNEXT_BQ_TIMEOUT_SECONDS")
+                require_env(
+                    "WEATHERNEXT_BQ_TIMEOUT_SECONDS",
+                    os.getenv("WEATHERNEXT_BQ_TIMEOUT_SECONDS"),
+                )
             ),
         )
     raise ValueError(
