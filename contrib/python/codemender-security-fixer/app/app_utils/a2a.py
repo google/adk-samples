@@ -22,6 +22,7 @@ registration.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -144,8 +145,12 @@ async def attach_a2a_routes(
     ``APP_URL``). Call once per app — typically in a FastAPI ``lifespan``, since
     the card is built asynchronously; repeated calls register duplicate routes.
     """
-    resolved_app_url = app_url or config.require("APP_URL")
-    resolved_agent_version = agent_version or config.require("AGENT_VERSION")
+    resolved_app_url = app_url or config.require(
+        "APP_URL", os.getenv("APP_URL")
+    )
+    resolved_agent_version = agent_version or config.require(
+        "AGENT_VERSION", os.getenv("AGENT_VERSION")
+    )
     resolved_capabilities = capabilities or _default_capabilities()
 
     agent_card = await AgentCardBuilder(

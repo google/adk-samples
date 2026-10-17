@@ -50,19 +50,29 @@ _ATTEMPTS_KEY = "cm_attempts"
 
 
 def _max_attempts() -> int:
-    return int(config.require_number("MAX_PATCH_ATTEMPTS", int))
+    return int(
+        config.require_number(
+            "MAX_PATCH_ATTEMPTS", os.getenv("MAX_PATCH_ATTEMPTS"), int
+        )
+    )
 
 
 def _timeout_seconds() -> float:
-    return float(config.require_number("VALIDATION_TIMEOUT_SECONDS", float))
+    return float(
+        config.require_number(
+            "VALIDATION_TIMEOUT_SECONDS",
+            os.getenv("VALIDATION_TIMEOUT_SECONDS"),
+            float,
+        )
+    )
 
 
 def _test_command() -> str | None:
-    return config.optional("TEST_COMMAND")
+    return os.getenv("TEST_COMMAND") or None
 
 
 def _bandit_skips() -> str:
-    return config.require("BANDIT_SKIPS")
+    return config.require("BANDIT_SKIPS", os.getenv("BANDIT_SKIPS"))
 
 
 def _scan(work_dir: Path) -> dict[str, Any]:
@@ -76,7 +86,7 @@ def _workspace(tool_context: ToolContext) -> tuple[Path, Path]:
     state = tool_context.state
     if not state.get(_SOURCE_KEY):
         state[_SOURCE_KEY] = str(
-            workspace.resolve_target(config.optional("TARGET_DIR"))
+            workspace.resolve_target(os.getenv("TARGET_DIR") or None)
         )
     source = Path(state[_SOURCE_KEY])
     work = state.get(_WORK_KEY)

@@ -11,18 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Reads configuration from the environment. Defaults live in .env.example."""
+"""Validates configuration read from the environment.
 
-import os
+Call sites read variables with a direct `os.getenv("NAME")` (so the repo's
+env-var checker sees them) and pass the value here. Defaults live in
+.env.example, never in code.
+"""
 
 
 class ConfigError(RuntimeError):
     """Raised when a required environment variable is missing or invalid."""
 
 
-def require(name: str) -> str:
-    """Returns the value of `name`, which may be empty but must be set."""
-    value = os.getenv(name)
+def require(name: str, value: str | None) -> str:
+    """Returns `value` (may be empty), or raises if `name` was not set."""
     if value is None:
         raise ConfigError(
             f"{name} is not set. Copy .env.example to .env (or set it in the"
@@ -31,15 +33,12 @@ def require(name: str) -> str:
     return value
 
 
-def require_number(name: str, kind: type[int] | type[float]) -> int | float:
-    """Returns `name` parsed as `kind` (int or float)."""
-    raw = require(name)
+def require_number(
+    name: str, value: str | None, kind: type[int] | type[float]
+) -> int | float:
+    """Returns `value` parsed as `kind` (int or float)."""
+    raw = require(name, value)
     try:
         return kind(raw)
     except ValueError as exc:
         raise ConfigError(f"{name} must be a number, got {raw!r}") from exc
-
-
-def optional(name: str) -> str | None:
-    """Returns the value of `name`, or None when it is unset or empty."""
-    return os.getenv(name) or None
