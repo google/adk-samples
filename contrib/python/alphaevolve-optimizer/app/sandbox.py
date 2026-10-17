@@ -46,7 +46,7 @@ spec = importlib.util.spec_from_file_location("candidate", "candidate.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 fn = getattr(module, payload["entry_point"])
-outputs = [fn(list(inst["items"]), inst["capacity"]) for inst in payload["instances"]]
+outputs = [fn(**inst["args"]) for inst in payload["instances"]]
 real_stdout.write(json.dumps({"outputs": outputs}))
 """
 

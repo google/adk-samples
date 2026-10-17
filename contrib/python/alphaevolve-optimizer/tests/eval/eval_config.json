@@ -13,7 +13,7 @@
         },
         {
           "rubricId": "grounded_scores",
-          "rubricContent": { "textProperty": "If the response reports scores, they come from verifier tool results and include both the baseline and the best score." }
+          "rubricContent": { "textProperty": "If the response reports costs or savings, they come from verifier tool results and include both the baseline and the best monthly cost." }
         }
       ]
     }

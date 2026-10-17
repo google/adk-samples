@@ -39,7 +39,7 @@ def test_agent_stream() -> None:
         role="user",
         parts=[
             types.Part.from_text(
-                text="What can you optimize, and how do you verify improvements?"
+                text="What can you optimize for my Kubernetes clusters, and how do you verify savings?"
             )
         ],
     )

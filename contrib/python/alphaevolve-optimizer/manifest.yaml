@@ -19,14 +19,14 @@ status: "active"
 language: "python"
 
 # REQUIRED — Short description of what this recipe does and the value it provides.
-description: "An AlphaEvolve-style evolutionary code optimizer: a Gemini agent proposes program variants, a sandboxed deterministic verifier scores them, and the best candidates are selected as parents for the next round. Ships with a bin-packing heuristic discovery problem."
+description: "Cuts Kubernetes node cost with an AlphaEvolve-style loop: a Gemini agent evolves a workload placement program, a sandboxed verifier checks every pod's CPU and memory requests and prices the plan, and the cheapest verified programs seed the next round. Produces a savings report and node mix per cluster."
 
 # OPTIONAL — Agent architecture details. Omit the whole block if unknown.
 architecture:
   agent: "single"
   stateful: false
   datasources:
-    - "hardcoded"
+    - "local"
 
 # OPTIONAL — Library and service dependencies.
 dependencies:
@@ -49,6 +49,9 @@ tags:
   - "evolutionary-search"
   - "code-optimization"
   - "verifier"
+  - "kubernetes"
+  - "finops"
+  - "cost-optimization"
 
 # OPTIONAL — SPDX license identifier (e.g. "Apache-2.0", "MIT", "BSD-3-Clause").
 # Only set if explicitly declared in a LICENSE file or by the author.

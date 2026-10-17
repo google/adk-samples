@@ -13,7 +13,9 @@
 # limitations under the License.
 """An AlphaEvolve-style evolutionary code optimizer built with ADK.
 
-The loop is: propose -> verify -> select.
+Applied to a real platform-engineering decision: evolving a Kubernetes
+workload placement program that cuts node cost while respecting every pod's
+CPU and memory requests. The loop is: propose -> verify -> select.
 
 - Propose: the Gemini agent writes a new candidate program, using the best
   programs found so far (and their scores) as parents.
@@ -102,7 +104,7 @@ def get_problem(tool_context: ToolContext) -> dict[str, Any]:
         _register(
             tool_context,
             problem.BASELINE_PROGRAM,
-            "baseline: first-fit",
+            "baseline: single std-8 node pool, first-fit",
             baseline,
         )
         tool_context.state[_EVALUATIONS_KEY] = 0
@@ -111,7 +113,10 @@ def get_problem(tool_context: ToolContext) -> dict[str, Any]:
         "problem": problem.PROBLEM_STATEMENT,
         "baseline_program": problem.BASELINE_PROGRAM,
         "baseline_score": baseline["score"],
+        "baseline_monthly_cost": baseline.get("monthly_cost"),
         "baseline_per_instance": baseline.get("per_instance"),
+        "clusters": problem.describe_workloads(),
+        "node_types": problem.NODE_TYPES,
         "best_score": best["score"] if best else None,
         "lower_bound": problem.lower_bound(),
         "evaluation_budget": _max_evaluations(),
@@ -149,7 +154,7 @@ def evaluate_candidate(
     """Verifies and scores a candidate program, and updates the population.
 
     Args:
-        code: Complete Python source defining `pack(items, capacity)`.
+        code: Complete Python source defining `place(pods, node_types)`.
         idea: One sentence describing what changed versus the parent.
 
     Returns:
@@ -177,6 +182,7 @@ def evaluate_candidate(
         "candidate_id": candidate["id"],
         "valid": result["valid"],
         "score": result["score"],
+        "monthly_cost": result.get("monthly_cost"),
         "per_instance": result.get("per_instance"),
         "error": result.get("error"),
         "is_new_best": bool(
@@ -194,29 +200,66 @@ def evaluate_candidate(
     }
 
 
-INSTRUCTION = """\
-You are an evolutionary code optimizer in the style of AlphaEvolve. You improve
-a program by repeatedly proposing a candidate, verifying it with a tool, and
-building on the best verified results.
+def get_best_plan(tool_context: ToolContext) -> dict[str, Any]:
+    """Returns the best verified placement plan and its savings vs the baseline.
 
-When the user asks you to start (or to optimize / evolve / run):
-1. Call `get_problem` once. Read the problem, the baseline and its score.
+    Call this once at the end to build the final report.
+
+    Returns:
+        Baseline and best hourly/monthly cost, savings, the node mix per
+        cluster for the best program, and the best program's code.
+    """
+    best = pop.best(tool_context.state.get(_POPULATION_KEY, []))
+    if best is None:
+        return {"error": "No verified candidates yet. Call get_problem first."}
+    baseline = verify_program(problem.BASELINE_PROGRAM)
+    plan = verify_program(best["code"])
+    if not plan["valid"]:
+        return {"error": f"Best program no longer verifies: {plan['error']}"}
+    saved = baseline["monthly_cost"] - plan["monthly_cost"]
+    return {
+        "baseline_monthly_cost": baseline["monthly_cost"],
+        "best_monthly_cost": plan["monthly_cost"],
+        "monthly_savings": round(saved, 2),
+        "savings_percent": round(100 * saved / baseline["monthly_cost"], 1),
+        "lower_bound_monthly_cost": round(
+            problem.lower_bound() * problem.HOURS_PER_MONTH, 2
+        ),
+        "baseline_per_cluster": baseline["per_instance"],
+        "best_per_cluster": plan["per_instance"],
+        "best_idea": best["idea"],
+        "best_code": best["code"],
+    }
+
+
+INSTRUCTION = """\
+You are a Kubernetes cost-optimization agent that works like AlphaEvolve. You
+evolve a workload placement program: which nodes to run and which pods go on
+each, so every pod's CPU and memory requests fit and total node cost is as low
+as possible. Every score comes from a deterministic verifier, never from you.
+
+When the user asks you to start (or to optimize / evolve / cut cost / run):
+1. Call `get_problem` once. Study each cluster's resource shape (memory per
+   CPU core), the node menu and prices, the baseline cost and the lower bound.
 2. Repeat until a tool result has `done: true` or `budget_exhausted: true`:
    a. Call `get_parents` and pick one or two strong parents.
-   b. Propose ONE new complete program. Make a focused change with a clear
-      hypothesis (e.g. sort order, best-fit vs first-fit, local search to
-      empty the fullest-but-one bin, pairing complementary sizes). Keep it
-      deterministic and standard-library only.
+   b. Propose ONE new complete program with a clear hypothesis, for example:
+      choose node types whose memory/CPU ratio matches each cluster; sort
+      pods by dominant resource share; best-fit on the tighter dimension;
+      mix node types and right-size the last, partly empty nodes; local
+      search that empties a node and re-places its pods. Keep it
+      deterministic, standard-library only, and about a second per call.
    c. Call `evaluate_candidate` with the full code and a one-sentence `idea`.
-   d. Use the score, per-instance results and any error to decide the next
-      change. If a candidate is invalid, fix the cause rather than retrying
-      blindly. Do not resubmit identical code.
-3. Finish with a short report: baseline score, best score, lower bound, a
-   table of the ideas you tried with their scores, and the best program in a
-   Python code block.
+   d. Use the cost, per-cluster node mix and any error to decide the next
+      change. If a candidate is invalid, fix the cause; never resubmit
+      identical code.
+3. Call `get_best_plan` and finish with a report for a platform team:
+   baseline vs best monthly cost and savings, the lower bound, the
+   recommended node mix per cluster, a table of ideas tried with their
+   verified costs, and the best program in a Python code block.
 
-Never claim a score that did not come from `evaluate_candidate`. Lower scores
-are better. Do not ask the user for confirmation between iterations.
+Costs are in USD. Lower is better. Do not ask for confirmation between
+iterations.
 """
 
 
@@ -228,9 +271,12 @@ def create_agent() -> Agent:
             model=os.getenv("MODEL_NAME"),
             retry_options=types.HttpRetryOptions(attempts=3),
         ),
-        description="Evolves programs with a propose -> verify -> select loop.",
+        description=(
+            "Evolves a Kubernetes workload placement program that minimizes"
+            " node cost, with a propose -> verify -> select loop."
+        ),
         instruction=INSTRUCTION,
-        tools=[get_problem, get_parents, evaluate_candidate],
+        tools=[get_problem, get_parents, evaluate_candidate, get_best_plan],
     )
 
 
