@@ -306,7 +306,7 @@ class BigQuerySource:
 @lru_cache(maxsize=1)
 def get_source() -> ForecastSource:
     """Returns the configured forecast source (WEATHERNEXT_SOURCE)."""
-    kind = os.getenv("WEATHERNEXT_SOURCE", "sample").strip().lower()
+    kind = (os.getenv("WEATHERNEXT_SOURCE") or "sample").strip().lower()
     if kind == "sample":
         return SampleSource()
     if kind == "bigquery":
@@ -314,7 +314,7 @@ def get_source() -> ForecastSource:
             table=os.getenv("WEATHERNEXT_BQ_TABLE", ""),
             project=os.getenv("WEATHERNEXT_BQ_PROJECT") or None,
             init_time=os.getenv("WEATHERNEXT_INIT_TIME") or None,
-            max_hours=int(os.getenv("WEATHERNEXT_MAX_HOURS", "120")),
+            max_hours=int(os.getenv("WEATHERNEXT_MAX_HOURS") or 120),
         )
     raise ValueError(
         f"WEATHERNEXT_SOURCE must be 'sample' or 'bigquery', got {kind!r}"

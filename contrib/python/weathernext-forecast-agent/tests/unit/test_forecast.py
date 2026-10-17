@@ -219,3 +219,25 @@ def test_task_overrides_reject_bad_input():
     with pytest.raises(ValueError, match="Incomplete"):
         config.load_tasks('{"new_task": {"max_wind_ms": 9}}')
     assert config.load_tasks("") == config.DEFAULT_TASKS
+
+
+def test_empty_env_values_mean_defaults(monkeypatch):
+    for var in (
+        "WEATHERNEXT_SOURCE",
+        "WEATHERNEXT_MAX_HOURS",
+        "SITES_JSON",
+        "SAMPLE_FORECAST_JSON",
+        "TASK_LIMITS_JSON",
+        "GUST_FACTOR",
+        "SHEAR_EXPONENT",
+    ):
+        monkeypatch.setenv(var, "")
+    forecast.get_source.cache_clear()
+    try:
+        assert isinstance(forecast.get_source(), forecast.SampleSource)
+        assert len(forecast.load_sites()) == 4
+        assert config.load_tasks() == config.DEFAULT_TASKS
+        assert config.gust_factor() == config.DEFAULT_GUST_FACTOR
+        assert config.shear_exponent() == config.DEFAULT_SHEAR_EXPONENT
+    finally:
+        forecast.get_source.cache_clear()

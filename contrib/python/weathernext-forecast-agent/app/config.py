@@ -107,12 +107,12 @@ REFERENCE_HEIGHT_M = 100.0
 
 def gust_factor() -> float:
     """Returns the gust factor, overridable with GUST_FACTOR."""
-    return float(os.getenv("GUST_FACTOR", str(DEFAULT_GUST_FACTOR)))
+    return float(os.getenv("GUST_FACTOR") or DEFAULT_GUST_FACTOR)
 
 
 def shear_exponent() -> float:
     """Returns the shear exponent, overridable with SHEAR_EXPONENT."""
-    return float(os.getenv("SHEAR_EXPONENT", str(DEFAULT_SHEAR_EXPONENT)))
+    return float(os.getenv("SHEAR_EXPONENT") or DEFAULT_SHEAR_EXPONENT)
 
 
 def _load_overrides(raw: str) -> dict:
@@ -136,7 +136,7 @@ def load_tasks(overrides: str | None = None) -> dict[str, TaskLimits]:
             task without every required field.
     """
     if overrides is None:
-        overrides = os.getenv("TASK_LIMITS_JSON", "")
+        overrides = os.getenv("TASK_LIMITS_JSON") or ""
     tasks = dict(DEFAULT_TASKS)
     fields = {f.name for f in dataclasses.fields(TaskLimits)}
     for name, values in _load_overrides(overrides).items():
