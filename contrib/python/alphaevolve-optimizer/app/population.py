@@ -20,6 +20,11 @@ state and be unit tested without a model.
 from typing import Any
 
 
+def rank_key(candidate: dict[str, Any]) -> tuple[float, int]:
+    """Orders candidates best first: lower score, then earlier id."""
+    return (candidate["score"], candidate["id"])
+
+
 def add_candidate(
     population: list[dict[str, Any]],
     candidate: dict[str, Any],
@@ -34,18 +39,18 @@ def add_candidate(
     if not candidate.get("valid"):
         return list(population)
     merged = [*population, candidate]
-    merged.sort(key=lambda c: (c["score"], c["id"]))
+    merged.sort(key=rank_key)
     return merged[:max_size]
 
 
 def best(population: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Returns the best candidate, or None if the population is empty."""
-    return min(population, key=lambda c: (c["score"], c["id"]), default=None)
+    return min(population, key=rank_key, default=None)
 
 
 def summarize(population: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Returns a compact view of the population (without code) for the model."""
     return [
         {"id": c["id"], "score": c["score"], "idea": c.get("idea", "")}
-        for c in sorted(population, key=lambda c: (c["score"], c["id"]))
+        for c in sorted(population, key=rank_key)
     ]

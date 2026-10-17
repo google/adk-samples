@@ -44,16 +44,24 @@ _EVALUATIONS_KEY = "evolve_evaluations"
 _NEXT_ID_KEY = "evolve_next_id"
 
 
+def _required_env(name: str) -> str:
+    """Reads a setting declared in .env.example, failing clearly if unset."""
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"{name} is not set; copy .env.example to .env.")
+    return value
+
+
 def _max_evaluations() -> int:
-    return int(os.getenv("MAX_EVALUATIONS", "10"))
+    return int(_required_env("MAX_EVALUATIONS"))
 
 
 def _population_size() -> int:
-    return int(os.getenv("POPULATION_SIZE", "4"))
+    return int(_required_env("POPULATION_SIZE"))
 
 
 def _timeout_seconds() -> float:
-    return float(os.getenv("CANDIDATE_TIMEOUT_SECONDS", "10"))
+    return float(_required_env("CANDIDATE_TIMEOUT_SECONDS"))
 
 
 def verify_program(code: str) -> dict[str, Any]:
@@ -132,7 +140,7 @@ def get_parents(tool_context: ToolContext) -> dict[str, Any]:
     """
     population = sorted(
         tool_context.state.get(_POPULATION_KEY, []),
-        key=lambda c: (c["score"], c["id"]),
+        key=pop.rank_key,
     )
     return {
         "parents": [

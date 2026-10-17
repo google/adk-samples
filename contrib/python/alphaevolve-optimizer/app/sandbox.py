@@ -32,6 +32,7 @@ import tempfile
 from typing import Any
 
 MAX_CODE_CHARS = 20_000
+_MAX_ERROR_CHARS = 500
 _MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
 
 _HARNESS = r"""
@@ -116,7 +117,7 @@ def run_candidate(
     if proc.returncode != 0:
         stderr = proc.stderr.strip().splitlines()
         reason = stderr[-1] if stderr else f"exit code {proc.returncode}"
-        return {"ok": False, "error": reason[:500]}
+        return {"ok": False, "error": reason[:_MAX_ERROR_CHARS]}
     try:
         return {"ok": True, "outputs": json.loads(proc.stdout)["outputs"]}
     except (json.JSONDecodeError, KeyError, TypeError):
