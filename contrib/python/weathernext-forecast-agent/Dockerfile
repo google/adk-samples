@@ -21,8 +21,17 @@ WORKDIR /code
 COPY ./pyproject.toml ./README.md ./uv.lock* ./
 
 COPY ./app ./app
+# Ship the documented defaults: .dockerignore excludes .env, so .env.example
+# becomes the image's .env unless one is provided.
+COPY .env.example* .env* ./
+RUN if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi
 
 RUN uv sync --frozen
+
+RUN useradd --create-home --uid 1000 appuser && \
+    chown -R appuser:appuser /code /home/appuser
+
+USER appuser
 
 ARG AGENT_VERSION=0.0.0
 ENV AGENT_VERSION=${AGENT_VERSION}

@@ -139,6 +139,7 @@ Before you begin, ensure you have:
    | `WEATHERNEXT_BQ_PROJECT` | client default | Project billed for queries |
    | `WEATHERNEXT_INIT_TIME` | latest 6-hourly init | Pin a forecast run |
    | `WEATHERNEXT_MAX_HOURS` | `120` | Lead hours to load (≤ 360) |
+   | `WEATHERNEXT_BQ_TIMEOUT_SECONDS` | `60` | BigQuery query timeout (client and server) |
    | `SITES_JSON` | bundled `app/data/sites.json` | Your wind farms |
    | `SAMPLE_FORECAST_JSON` | bundled sample | Your own member-level ensemble |
    | `TASK_LIMITS_JSON` | — | Override or add task limits |
@@ -200,7 +201,7 @@ and a repeated `forecast` record with `time`, `hours` and
 last two days (or `WEATHERNEXT_INIT_TIME`), filters on the partition column and
 the cell containing each site, reads `wind_speed_100m_{p10,p25,p50,p75,p90}`
 and `total_precipitation_1hr_{p10,…,p90}`, and converts precipitation from
-metres to millimetres. It caches one query per site per process.
+metres to millimetres. Each query is bounded by `WEATHERNEXT_BQ_TIMEOUT_SECONDS` (client wait and BigQuery job timeout), and results are cached per site per process.
 
 > [!IMPORTANT]
 > The BigQuery listing publishes **precomputed ensemble statistics** (mean

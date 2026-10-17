@@ -22,8 +22,6 @@ from app import agent, forecast
 def sample_source(monkeypatch):
     monkeypatch.setenv("WEATHERNEXT_SOURCE", "sample")
     monkeypatch.delenv("TASK_LIMITS_JSON", raising=False)
-    monkeypatch.delenv("GUST_FACTOR", raising=False)
-    monkeypatch.delenv("SHEAR_EXPONENT", raising=False)
     forecast.get_source.cache_clear()
     yield
     forecast.get_source.cache_clear()

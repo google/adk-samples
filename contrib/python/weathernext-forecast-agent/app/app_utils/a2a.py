@@ -97,7 +97,10 @@ async def _add_v0_3_compat_interface(card: AgentCard) -> AgentCard:
     """Advertise a v0.3 JSON-RPC interface so the served card stays consumable by
     v0.3 A2A clients — notably Gemini Enterprise registration, whose validator
     still requires the 0.3 card shape (top-level ``url``/``protocolVersion``)."""
-    if card.supported_interfaces:
+    # The card modifier runs on every card request: only add the interface once.
+    if card.supported_interfaces and not any(
+        i.protocol_version == "0.3" for i in card.supported_interfaces
+    ):
         card.supported_interfaces.append(
             AgentInterface(
                 protocol_binding="JSONRPC",
@@ -143,10 +146,8 @@ async def attach_a2a_routes(
     ``APP_URL``). Call once per app — typically in a FastAPI ``lifespan``, since
     the card is built asynchronously; repeated calls register duplicate routes.
     """
-    resolved_app_url = app_url or os.getenv("APP_URL", "http://0.0.0.0:8000")
-    resolved_agent_version = agent_version or os.getenv(
-        "AGENT_VERSION", "0.1.0"
-    )
+    resolved_app_url = app_url or os.getenv("APP_URL")
+    resolved_agent_version = agent_version or os.getenv("AGENT_VERSION")
     resolved_capabilities = capabilities or _default_capabilities()
 
     agent_card = await AgentCardBuilder(

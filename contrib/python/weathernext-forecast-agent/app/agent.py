@@ -32,6 +32,12 @@ from google.genai import types
 from . import analysis, config
 from .forecast import Forecast, get_source, load_sites, parse_time
 
+# Candidate windows per site considered by the crew planner. More than one
+# lets it fall back to a later window when a crew is busy.
+PLAN_WINDOWS_PER_SITE = 10
+# Retries for transient model API errors.
+MODEL_RETRY_ATTEMPTS = 3
+
 
 def _range(
     forecast: Forecast, start: str, horizon_hours: int
@@ -185,7 +191,7 @@ def plan_crew_schedule(
         begin, end = _range(forecast, "", horizon_hours)
         evaluator = analysis.Evaluator(forecast, sites[sid], task)
         windows_by_site[sid] = analysis.find_windows(
-            evaluator, begin, end, top_k=10
+            evaluator, begin, end, top_k=PLAN_WINDOWS_PER_SITE
         )
     plan = analysis.plan_crews(windows_by_site, crews, travel_hours, threshold)
     return {
@@ -236,7 +242,7 @@ def create_agent() -> Agent:
         name="root_agent",
         model=Gemini(
             model=os.getenv("MODEL_NAME"),
-            retry_options=types.HttpRetryOptions(attempts=3),
+            retry_options=types.HttpRetryOptions(attempts=MODEL_RETRY_ATTEMPTS),
         ),
         description=(
             "Finds safe wind-turbine maintenance windows and schedules crews from"

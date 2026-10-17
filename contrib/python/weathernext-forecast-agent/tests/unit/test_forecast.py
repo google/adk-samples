@@ -135,8 +135,10 @@ def test_rows_to_forecast_sorts_dedups_and_converts_units():
 class FakeJob:
     def __init__(self, rows):
         self._rows = rows
+        self.timeout = None
 
-    def result(self):
+    def result(self, timeout=None):
+        self.timeout = timeout
         return self._rows
 
 
@@ -144,25 +146,35 @@ class FakeClient:
     def __init__(self, init):
         self.init = init
         self.queries = []
+        self.jobs = []
 
     def query(self, sql, job_config=None):
         self.queries.append((sql, job_config))
         if "MAX(init_time)" in sql:
-            return FakeJob([{"init_time": self.init}])
-        return FakeJob(_rows(self.init, range(1, 7)))
+            job = FakeJob([{"init_time": self.init}])
+        else:
+            job = FakeJob(_rows(self.init, range(1, 7)))
+        self.jobs.append(job)
+        return job
 
 
 def test_bigquery_source_with_fake_client():
     init = datetime(2026, 10, 12, 6, tzinfo=UTC)
     client = FakeClient(init)
     source = forecast.BigQuerySource(
-        "p.d.weathernext_3_0_0_0p1deg", client=client
+        "p.d.weathernext_3_0_0_0p1deg",
+        max_hours=120,
+        timeout_seconds=30,
+        client=client,
     )
     site = forecast.load_sites()["elbe-marsh"]
     f = source.get(site)
     assert f.init_time == init
     assert len(f.times) == 6
-    params = {p.name: p.value for p in client.queries[1][1].query_parameters}
+    job_config = client.queries[1][1]
+    assert int(job_config.job_timeout_ms) == 30000
+    assert client.jobs[1].timeout == 30
+    params = {p.name: p.value for p in job_config.query_parameters}
     assert params == {
         "init_time": init,
         "lon": 9.2,
@@ -176,7 +188,11 @@ def test_bigquery_source_with_fake_client():
 def test_bigquery_source_pinned_init_skips_lookup():
     client = FakeClient(datetime(2026, 10, 12, tzinfo=UTC))
     source = forecast.BigQuerySource(
-        "p.d.t", init_time="2026-10-12T00:00:00Z", client=client
+        "p.d.t",
+        max_hours=120,
+        timeout_seconds=30,
+        init_time="2026-10-12T00:00:00Z",
+        client=client,
     )
     source.get(forecast.load_sites()["elbe-marsh"])
     assert len(client.queries) == 1
@@ -221,23 +237,44 @@ def test_task_overrides_reject_bad_input():
     assert config.load_tasks("") == config.DEFAULT_TASKS
 
 
-def test_empty_env_values_mean_defaults(monkeypatch):
-    for var in (
-        "WEATHERNEXT_SOURCE",
-        "WEATHERNEXT_MAX_HOURS",
-        "SITES_JSON",
-        "SAMPLE_FORECAST_JSON",
-        "TASK_LIMITS_JSON",
-        "GUST_FACTOR",
-        "SHEAR_EXPONENT",
-    ):
+def test_empty_optional_paths_use_bundled_samples(monkeypatch):
+    for var in ("SITES_JSON", "SAMPLE_FORECAST_JSON", "TASK_LIMITS_JSON"):
         monkeypatch.setenv(var, "")
+    assert len(forecast.load_sites()) == 4
+    assert forecast.SampleSource().description.startswith("Synthetic")
+    assert config.load_tasks() == config.DEFAULT_TASKS
+
+
+@pytest.mark.parametrize(
+    ("var", "read"),
+    [
+        ("WEATHERNEXT_SOURCE", forecast.get_source),
+        ("GUST_FACTOR", config.gust_factor),
+        ("SHEAR_EXPONENT", config.shear_exponent),
+    ],
+)
+def test_required_settings_fail_clearly_when_missing(monkeypatch, var, read):
+    monkeypatch.setenv(var, "")
     forecast.get_source.cache_clear()
     try:
-        assert isinstance(forecast.get_source(), forecast.SampleSource)
-        assert len(forecast.load_sites()) == 4
-        assert config.load_tasks() == config.DEFAULT_TASKS
-        assert config.gust_factor() == config.DEFAULT_GUST_FACTOR
-        assert config.shear_exponent() == config.DEFAULT_SHEAR_EXPONENT
+        with pytest.raises(RuntimeError, match=var):
+            read()
+    finally:
+        forecast.get_source.cache_clear()
+
+
+def test_settings_come_from_env_example():
+    # tests/conftest.py loads .env.example, the single source of defaults.
+    assert config.gust_factor() == 1.35
+    assert config.shear_exponent() == 0.14
+
+
+def test_bigquery_source_requires_table(monkeypatch):
+    monkeypatch.setenv("WEATHERNEXT_SOURCE", "bigquery")
+    monkeypatch.setenv("WEATHERNEXT_BQ_TABLE", "")
+    forecast.get_source.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="WEATHERNEXT_BQ_TABLE"):
+            forecast.get_source()
     finally:
         forecast.get_source.cache_clear()

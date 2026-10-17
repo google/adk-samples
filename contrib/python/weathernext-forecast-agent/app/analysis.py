@@ -39,6 +39,9 @@ from typing import Any
 from . import config
 from .forecast import PRECIP, WIND, Forecast, Site
 
+# Percentiles reported by `summarize`.
+SUMMARY_PERCENTILES = (10, 50, 90)
+
 
 def percentile(values: list[float], q: float) -> float:
     """Linear-interpolated percentile (same as numpy's default), q in [0, 100]."""
@@ -343,25 +346,29 @@ def summarize(
             ]
             ptot = [sum(m[k] for k in span) for m in forecast.members[PRECIP]]
             stats = {
-                "hub_wind_max": {q: percentile(wmax, q) for q in (10, 50, 90)},
-                "precip_total": {q: percentile(ptot, q) for q in (10, 50, 90)},
+                "hub_wind_max": {
+                    q: percentile(wmax, q) for q in SUMMARY_PERCENTILES
+                },
+                "precip_total": {
+                    q: percentile(ptot, q) for q in SUMMARY_PERCENTILES
+                },
             }
         else:
             qs = forecast.quantiles
             stats = {
                 "hub_wind_max": {
                     q: max(qs[WIND][q / 100][k] for k in span) * scale
-                    for q in (10, 50, 90)
+                    for q in SUMMARY_PERCENTILES
                 },
                 "precip_total": {
                     q: sum(qs[PRECIP][q / 100][k] for k in span)
-                    for q in (10, 50, 90)
+                    for q in SUMMARY_PERCENTILES
                 },
             }
-        for q in (10, 50, 90):
+        for q in SUMMARY_PERCENTILES:
             row[f"hub_wind_max_p{q}_ms"] = round(stats["hub_wind_max"][q], 1)
         row["gust_max_p90_ms"] = round(stats["hub_wind_max"][90] * gf, 1)
-        for q in (10, 50, 90):
+        for q in SUMMARY_PERCENTILES:
             row[f"precip_total_p{q}_mm"] = round(stats["precip_total"][q], 2)
         blocks.append(row)
     return blocks

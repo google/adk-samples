@@ -96,23 +96,39 @@ DEFAULT_TASKS: dict[str, TaskLimits] = {
 # WeatherNext 3 does not publish a gust variable, so gusts are estimated from
 # the hub-height mean wind with a gust factor (ratio of 3-second gust to
 # hourly mean). Typical values are 1.2-1.5; use one derived from your SCADA
-# or met-mast data.
-DEFAULT_GUST_FACTOR = 1.35
-
-# Power-law shear exponent used to move WeatherNext's 100 m wind speed to
-# each site's hub height: v_hub = v_100 * (hub_height / 100) ** alpha.
-DEFAULT_SHEAR_EXPONENT = 0.14
+# or met-mast data. Set with GUST_FACTOR (default in .env.example).
+#
+# A power-law shear exponent moves WeatherNext's 100 m wind speed to each
+# site's hub height: v_hub = v_100 * (hub_height / 100) ** alpha. Set with
+# SHEAR_EXPONENT (default in .env.example).
 REFERENCE_HEIGHT_M = 100.0
 
 
+def require_env(name: str) -> str:
+    """Returns a required environment variable.
+
+    Defaults live in `.env.example`, which `app/__init__.py` loads (via
+    `.env`) and the container image ships.
+
+    Raises:
+        RuntimeError: If the variable is unset or empty.
+    """
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(
+            f"Environment variable {name} is not set; copy .env.example to .env"
+        )
+    return value
+
+
 def gust_factor() -> float:
-    """Returns the gust factor, overridable with GUST_FACTOR."""
-    return float(os.getenv("GUST_FACTOR") or DEFAULT_GUST_FACTOR)
+    """Returns the gust factor (GUST_FACTOR)."""
+    return float(require_env("GUST_FACTOR"))
 
 
 def shear_exponent() -> float:
-    """Returns the shear exponent, overridable with SHEAR_EXPONENT."""
-    return float(os.getenv("SHEAR_EXPONENT") or DEFAULT_SHEAR_EXPONENT)
+    """Returns the hub-height shear exponent (SHEAR_EXPONENT)."""
+    return float(require_env("SHEAR_EXPONENT"))
 
 
 def _load_overrides(raw: str) -> dict:

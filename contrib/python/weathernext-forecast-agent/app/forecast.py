@@ -37,6 +37,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol
 
+from .config import require_env
+
 DATA_DIR = Path(__file__).parent / "data"
 SAMPLE_FORECAST = DATA_DIR / "sample_forecast.json"
 SAMPLE_SITES = DATA_DIR / "sites.json"
@@ -44,6 +46,10 @@ SAMPLE_SITES = DATA_DIR / "sites.json"
 WIND = "wind_speed_100m"
 PRECIP = "total_precipitation_1hr"
 VARIABLES = (WIND, PRECIP)
+# Only inits from the last N days are considered when no init is pinned.
+LATEST_INIT_LOOKBACK_DAYS = 2
+# 6-hourly inits carry the 15-day horizon; interim hourly inits only 48 h.
+SIX_HOURLY_INIT_HOURS = (0, 6, 12, 18)
 # Precomputed statistics published by WeatherNext, as quantile levels.
 QUANTILE_COLUMNS = {
     "p10": 0.10,
@@ -181,12 +187,13 @@ def _stat_columns() -> str:
 
 
 def build_latest_init_query(table: str) -> str:
-    """SQL for the latest 6-hourly init (15-day horizon) in the last 2 days."""
+    """SQL for the latest 6-hourly init in the last LATEST_INIT_LOOKBACK_DAYS."""
+    hours = ", ".join(str(h) for h in SIX_HOURLY_INIT_HOURS)
     return f"""
 SELECT MAX(init_time) AS init_time
 FROM `{validate_table(table)}`
-WHERE init_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 DAY)
-  AND EXTRACT(HOUR FROM init_time AT TIME ZONE 'UTC') IN (0, 6, 12, 18)
+WHERE init_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {LATEST_INIT_LOOKBACK_DAYS} DAY)
+  AND EXTRACT(HOUR FROM init_time AT TIME ZONE 'UTC') IN ({hours})
 """.strip()  # noqa: S608 -- table id checked by validate_table(); values are bound parameters
 
 
@@ -249,12 +256,15 @@ class BigQuerySource:
         self,
         table: str,
         project: str | None = None,
+        *,
+        max_hours: int,
+        timeout_seconds: float,
         init_time: str | None = None,
-        max_hours: int = 120,
         client: Any = None,
     ):
         self.table = validate_table(table)
         self.max_hours = max_hours
+        self.timeout_seconds = timeout_seconds
         self._init_time = parse_time(init_time) if init_time else None
         if client is None:
             from google.cloud import bigquery
@@ -269,16 +279,23 @@ class BigQuerySource:
     def _query(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
         from google.cloud import bigquery
 
-        config = bigquery.QueryJobConfig(query_parameters=params)
-        return [
-            dict(r) for r in self._client.query(sql, job_config=config).result()
-        ]
+        # Bound the query both server-side (BigQuery stops the job) and
+        # client-side (result() raises instead of waiting forever).
+        config = bigquery.QueryJobConfig(
+            query_parameters=params,
+            job_timeout_ms=int(self.timeout_seconds * 1000),
+        )
+        job = self._client.query(sql, job_config=config)
+        return [dict(r) for r in job.result(timeout=self.timeout_seconds)]
 
     def latest_init_time(self) -> datetime:
         if self._init_time is None:
             rows = self._query(build_latest_init_query(self.table), [])
             if not rows or rows[0]["init_time"] is None:
-                raise ValueError("No WeatherNext init found in the last 2 days")
+                raise ValueError(
+                    "No WeatherNext init found in the last"
+                    f" {LATEST_INIT_LOOKBACK_DAYS} days"
+                )
             self._init_time = rows[0]["init_time"]
         return self._init_time
 
@@ -306,15 +323,18 @@ class BigQuerySource:
 @lru_cache(maxsize=1)
 def get_source() -> ForecastSource:
     """Returns the configured forecast source (WEATHERNEXT_SOURCE)."""
-    kind = (os.getenv("WEATHERNEXT_SOURCE") or "sample").strip().lower()
+    kind = require_env("WEATHERNEXT_SOURCE").strip().lower()
     if kind == "sample":
         return SampleSource()
     if kind == "bigquery":
         return BigQuerySource(
-            table=os.getenv("WEATHERNEXT_BQ_TABLE", ""),
+            table=require_env("WEATHERNEXT_BQ_TABLE"),
             project=os.getenv("WEATHERNEXT_BQ_PROJECT") or None,
             init_time=os.getenv("WEATHERNEXT_INIT_TIME") or None,
-            max_hours=int(os.getenv("WEATHERNEXT_MAX_HOURS") or 120),
+            max_hours=int(require_env("WEATHERNEXT_MAX_HOURS")),
+            timeout_seconds=float(
+                require_env("WEATHERNEXT_BQ_TIMEOUT_SECONDS")
+            ),
         )
     raise ValueError(
         f"WEATHERNEXT_SOURCE must be 'sample' or 'bigquery', got {kind!r}"
