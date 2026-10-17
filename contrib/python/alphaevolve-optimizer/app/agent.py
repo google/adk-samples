@@ -44,24 +44,27 @@ _EVALUATIONS_KEY = "evolve_evaluations"
 _NEXT_ID_KEY = "evolve_next_id"
 
 
-def _required_env(name: str) -> str:
-    """Reads a setting declared in .env.example, failing clearly if unset."""
-    value = os.getenv(name)
+def _required_env(name: str, value: str | None) -> str:
+    """Validates a setting declared in .env.example, failing clearly if unset."""
     if not value:
         raise RuntimeError(f"{name} is not set; copy .env.example to .env.")
     return value
 
 
 def _max_evaluations() -> int:
-    return int(_required_env("MAX_EVALUATIONS"))
+    return int(_required_env("MAX_EVALUATIONS", os.getenv("MAX_EVALUATIONS")))
 
 
 def _population_size() -> int:
-    return int(_required_env("POPULATION_SIZE"))
+    return int(_required_env("POPULATION_SIZE", os.getenv("POPULATION_SIZE")))
 
 
 def _timeout_seconds() -> float:
-    return float(_required_env("CANDIDATE_TIMEOUT_SECONDS"))
+    return float(
+        _required_env(
+            "CANDIDATE_TIMEOUT_SECONDS", os.getenv("CANDIDATE_TIMEOUT_SECONDS")
+        )
+    )
 
 
 def verify_program(code: str) -> dict[str, Any]:
