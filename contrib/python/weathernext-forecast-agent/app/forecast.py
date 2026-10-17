@@ -208,7 +208,8 @@ SELECT
   f.time AS time,
   f.hours AS hours,
   {_stat_columns()}
-FROM `{validate_table(table)}` AS t, t.forecast AS f
+FROM `{validate_table(table)}` AS t
+CROSS JOIN UNNEST(t.forecast) AS f
 WHERE t.init_time = @init_time
   AND ST_INTERSECTS(t.geography_polygon, ST_GEOGPOINT(@lon, @lat))
   AND f.hours <= @max_hours

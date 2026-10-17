@@ -92,10 +92,8 @@ def test_forecast_query_uses_documented_schema():
     sql = forecast.build_forecast_query(
         "my-proj.weathernext.weathernext_3_0_0_0p1deg"
     )
-    assert (
-        "`my-proj.weathernext.weathernext_3_0_0_0p1deg` AS t, t.forecast AS f"
-        in sql
-    )
+    assert "`my-proj.weathernext.weathernext_3_0_0_0p1deg` AS t" in sql
+    assert "CROSS JOIN UNNEST(t.forecast) AS f" in sql
     assert "t.init_time = @init_time" in sql
     assert "ST_INTERSECTS(t.geography_polygon, ST_GEOGPOINT(@lon, @lat))" in sql
     for col in (
