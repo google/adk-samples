@@ -11,159 +11,35 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Unit tests for the scanner, validator, workspace and tools. No model calls.
+"""Unit tests for the scanner, validator, workspace and workflow. No model calls.
 
-The *_FIX constants are reference fixes for the bundled sample target. They
-double as proof that every vulnerability in the sample is fixable within the
-validator's rules.
+The workflow tests run the real ADK 2.0 graph with the Gemini patch agent
+swapped for a deterministic function node that returns reference fixes.
 """
 
+import asyncio
 import hashlib
 import os
 import shutil
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
+from google.adk import Workflow
+from google.adk.apps import App
+from google.adk.runners import InMemoryRunner
+from google.genai import types
+from reference_fixes import (
+    ALL_FIXES,
+    DB_BROKEN,
+    DB_FIX,
+    INVOICES_FIX,
+    INVOICES_INCOMPLETE,
+)
 
-from app import config, scanner, validator, workspace
-from app.agent import get_patch_report, list_findings, propose_patch, read_file
+from app import agent, config, scanner, validator, workspace
 
 TIMEOUT = 60
 SKIPS = os.environ["BANDIT_SKIPS"]  # loaded from .env.example by conftest
-
-DB_FIX = '''
-import sqlite3
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS orders (
-    id TEXT PRIMARY KEY,
-    customer TEXT NOT NULL,
-    status TEXT NOT NULL,
-    total_cents INTEGER NOT NULL
-);
-"""
-
-SEED_ORDERS = [
-    ("ORD-1001", "acme", "shipped", 129900),
-    ("ORD-1002", "acme", "pending", 4500),
-    ("ORD-1003", "globex", "shipped", 78000),
-    ("ORD-1004", "initech", "cancelled", 1999),
-]
-
-
-def connect(path=":memory:"):
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
-    conn.executemany("INSERT OR IGNORE INTO orders VALUES (?, ?, ?, ?)", SEED_ORDERS)
-    conn.commit()
-    return conn
-
-
-def find_orders(conn, customer, status=None):
-    query = "SELECT * FROM orders WHERE customer = ?"
-    params = [customer]
-    if status:
-        query += " AND status = ?"
-        params.append(status)
-    return [dict(row) for row in conn.execute(query, params)]
-'''
-
-# Parameterized, but drops the status filter: fixes the injection and
-# breaks a functional test.
-DB_BROKEN = DB_FIX.replace(
-    """    if status:
-        query += " AND status = ?"
-        params.append(status)
-""",
-    "",
-)
-
-INVOICES_FIX = """
-import os
-import re
-import subprocess
-
-_MONTH = re.compile(r"\\d{4}-\\d{2}")
-
-
-def read_invoice(invoice_dir, name):
-    base = os.path.realpath(invoice_dir)
-    path = os.path.realpath(os.path.join(base, name))
-    if os.path.commonpath([base, path]) != base:
-        raise ValueError("invoice path escapes the invoice directory")
-    with open(path, "rb") as f:
-        return f.read()
-
-
-def archive_invoices(invoice_dir, month, out_dir):
-    if not _MONTH.fullmatch(month):
-        raise ValueError("month must be YYYY-MM")
-    archive = os.path.join(out_dir, f"invoices-{month}.tar.gz")
-    subprocess.run(["tar", "-czf", archive, "-C", invoice_dir, month], check=True)
-    return archive
-"""
-
-# The classic incomplete fix: strip "../" once. "....//" survives it, absolute
-# paths are untouched, and the shell injection is still there.
-INVOICES_INCOMPLETE = """
-import os
-import subprocess
-
-
-def read_invoice(invoice_dir, name):
-    path = os.path.join(invoice_dir, name.replace("../", ""))
-    with open(path, "rb") as f:
-        return f.read()
-
-
-def archive_invoices(invoice_dir, month, out_dir):
-    archive = os.path.join(out_dir, f"invoices-{month}.tar.gz")
-    subprocess.run(
-        f"tar -czf {archive} -C {invoice_dir} {month}", shell=True, check=True
-    )
-    return archive
-"""
-
-CART_FIX = """
-import base64
-import json
-
-
-def dump_cart(cart):
-    return base64.b64encode(json.dumps(cart).encode()).decode("ascii")
-
-
-def load_cart(cookie):
-    cart = json.loads(base64.b64decode(cookie))
-    if not isinstance(cart, dict) or not all(
-        isinstance(k, str) and isinstance(v, int) for k, v in cart.items()
-    ):
-        raise ValueError("cart must map SKUs to quantities")
-    return cart
-"""
-
-AUTH_FIX = """
-import hmac
-import os
-
-
-def is_admin(authorization_header):
-    token = os.environ.get("ORDERS_API_TOKEN")
-    if not token or not authorization_header:
-        return False
-    return hmac.compare_digest(
-        authorization_header.encode(), f"Bearer {token}".encode()
-    )
-"""
-
-ALL_FIXES = {
-    "orders/db.py": DB_FIX,
-    "orders/invoices.py": INVOICES_FIX,
-    "orders/cart.py": CART_FIX,
-    "orders/auth.py": AUTH_FIX,
-}
 
 
 def _tree_hash(root: Path) -> str:
@@ -187,11 +63,12 @@ def work(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def ctx(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+def state(monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.delenv("TARGET_DIR", raising=False)
     monkeypatch.delenv("TEST_COMMAND", raising=False)
     monkeypatch.setenv("VALIDATION_TIMEOUT_SECONDS", str(TIMEOUT))
-    return SimpleNamespace(state={})
+    monkeypatch.setenv("MAX_PATCH_ATTEMPTS", "8")
+    return {}
 
 
 # --- scanner -----------------------------------------------------------------
@@ -340,84 +217,204 @@ def test_working_copy_replays_accepted_patches() -> None:
         shutil.rmtree(copy.parent)
 
 
-# --- tools -------------------------------------------------------------------
+# --- deterministic workflow steps ---------------------------------------------
 
 
-def test_budget_is_enforced(
-    ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+def test_start_run_records_the_baseline(state: dict) -> None:
+    result = agent.start_run(state)
+    assert result["route"] == "has_findings"
+    assert result["summary"]["tests_passed"] == 9
+    assert state["cm_baseline"] is state["cm_current"]
+    assert state["cm_attempts"] == []
+    assert Path(state["cm_work_dir"]) != workspace.BUNDLED_TARGET
+
+
+def test_start_run_routes_clean_targets_to_report(
+    state: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("MAX_PATCH_ATTEMPTS", "1")
-    first = propose_patch("orders/db.py", "def broken(:\n", "typo", ctx)
-    assert first["accepted"] is False
-    assert first["patch_attempts_remaining"] == 0
-    assert first["done"] is True
-    second = propose_patch("orders/db.py", DB_FIX, "parameterize", ctx)
-    assert second["budget_exhausted"] is True
-    assert len(ctx.state["cm_attempts"]) == 1
+    repo = tmp_path / "already-fixed"
+    shutil.copytree(workspace.BUNDLED_TARGET, repo)
+    for rel, content in ALL_FIXES.items():
+        (repo / rel).write_text(content)
+    monkeypatch.setenv("TARGET_DIR", str(repo))
+    assert agent.start_run(state)["route"] == "clean"
+    assert state["cm_source_dir"] == str(repo)
 
 
-def test_full_loop_and_report(ctx: SimpleNamespace) -> None:
-    before_hash = _tree_hash(workspace.BUNDLED_TARGET)
+def test_start_run_reports_an_unusable_target(
+    state: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("TARGET_DIR", str(tmp_path / "missing"))
+    result = agent.start_run(state)
+    assert result["route"] == "clean"
+    assert "not found" in result["error"]
+    assert "not found" in agent.render_report(agent.build_report(state))
 
-    findings = list_findings(ctx)
-    assert findings["tests_passed"] == 9
-    assert "orders/db.py" in findings["patchable_files"]
-    assert "tests/test_security.py" in findings["test_files"]
-    assert 'f"SELECT' in read_file("orders/db.py", ctx)["content"]
 
-    rejected = propose_patch(
-        "orders/invoices.py", INVOICES_INCOMPLETE, "strip ../", ctx
+def test_patch_request_carries_evidence_and_feedback(state: dict) -> None:
+    agent.start_run(state)
+    state["cm_feedback"] = "rejected: regression"
+    request = agent.PatchRequest.model_validate(
+        agent.build_patch_request(state)
+    )
+    assert "orders/db.py" in request.source_files
+    assert "tests/test_security.py" in request.test_files
+    assert not any(workspace.is_test_path(f) for f in request.source_files)
+    assert len(request.failing_tests) == 8
+    assert request.previous_attempt_feedback == "rejected: regression"
+    assert request.attempts_remaining == 8
+
+
+def test_apply_proposal_routes_and_records_feedback(state: dict) -> None:
+    agent.start_run(state)
+    rejected = agent.apply_proposal(
+        state,
+        {
+            "file_path": "orders/invoices.py",
+            "new_content": INVOICES_INCOMPLETE,
+            "rationale": "strip ../",
+        },
     )
     assert not rejected["accepted"]
-    for rel, content in ALL_FIXES.items():
-        result = propose_patch(rel, content, f"fix {rel}", ctx)
-        assert result["accepted"], (rel, result["reasons"])
-    assert result["done"] is True
+    assert rejected["route"] == "continue"
+    assert "no finding resolved" in state["cm_feedback"]
+    accepted = agent.apply_proposal(
+        state,
+        agent.PatchProposal(
+            file_path="orders/invoices.py",
+            new_content=INVOICES_FIX,
+            rationale="contain paths; no shell",
+        ),
+    )
+    assert accepted["accepted"]
+    assert accepted["route"] == "continue"
+    assert state["cm_feedback"] == ""
+    assert state["cm_applied"] == {"orders/invoices.py": INVOICES_FIX}
+    missing = agent.apply_proposal(state, None)
+    assert not missing["accepted"]
+    assert "PatchProposal" in missing["reasons"][0]
+    assert len(state["cm_attempts"]) == 3
 
-    report = get_patch_report(ctx)
-    assert report["static_findings_after"] == 0
-    assert report["static_findings_before"] >= 4
-    assert report["tests_before"] == {"passed": 9, "total": 17}
-    assert report["tests_after"] == {"passed": 17, "total": 17}
-    assert len(report["exploit_tests_fixed"]) == 8
-    assert report["files_changed"] == sorted(ALL_FIXES)
-    assert report["attempts_used"] == 5
-    assert [a["accepted"] for a in report["attempts"]] == [
-        False,
-        True,
-        True,
-        True,
-        True,
+
+def test_budget_ends_the_loop(
+    state: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MAX_PATCH_ATTEMPTS", "1")
+    agent.start_run(state)
+    result = agent.apply_proposal(
+        state,
+        {
+            "file_path": "orders/db.py",
+            "new_content": DB_BROKEN,
+            "rationale": "",
+        },
+    )
+    assert result["attempts_remaining"] == 0
+    assert result["route"] == "done"
+
+
+def test_missing_config_fails_with_a_clear_error(
+    state: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent.start_run(state)
+    monkeypatch.delenv("MAX_PATCH_ATTEMPTS")
+    with pytest.raises(config.ConfigError, match="MAX_PATCH_ATTEMPTS"):
+        agent.apply_proposal(
+            state,
+            {
+                "file_path": "orders/db.py",
+                "new_content": DB_FIX,
+                "rationale": "",
+            },
+        )
+
+
+# --- the ADK 2.0 graph, end to end ----------------------------------------------
+
+
+def _scripted_patcher(proposals: list[tuple[str, str]]):
+    """A function node standing in for the Gemini patch agent."""
+    queue = list(proposals)
+
+    def scripted_patcher(node_input: dict) -> dict:
+        agent.PatchRequest.model_validate(node_input)
+        rel, content = queue.pop(0)
+        return {"file_path": rel, "new_content": content, "rationale": "ref"}
+
+    return scripted_patcher
+
+
+def _run(workflow: Workflow) -> tuple[list[str], dict]:
+    async def go() -> tuple[list[str], dict]:
+        runner = InMemoryRunner(app=App(root_agent=workflow, name="app"))
+        session = await runner.session_service.create_session(
+            app_name="app", user_id="u"
+        )
+        texts = []
+        message = types.Content(role="user", parts=[types.Part(text="fix it")])
+        async for event in runner.run_async(
+            user_id="u", session_id=session.id, new_message=message
+        ):
+            for part in (event.content.parts if event.content else None) or []:
+                if part.text:
+                    texts.append(part.text)
+        final = await runner.session_service.get_session(
+            app_name="app", user_id="u", session_id=session.id
+        )
+        return texts, final.state
+
+    return asyncio.run(go())
+
+
+def test_workflow_fixes_everything_and_reports(state: dict) -> None:
+    before_hash = _tree_hash(workspace.BUNDLED_TARGET)
+    proposals = [
+        ("orders/invoices.py", INVOICES_INCOMPLETE),
+        *ALL_FIXES.items(),
     ]
+    texts, final_state = _run(
+        agent.create_workflow(_scripted_patcher(proposals))
+    )
+
+    assert texts[0].startswith("Baseline: 5 Bandit findings, 8 failing tests")
+    assert "rejected" in texts[1]
+    assert sum("accepted" in t for t in texts[2:6]) == 4
+    report_text = texts[-1]
+    assert "| Bandit findings | 5 | 0 |" in report_text
+    assert "| Tests passing | 9/17 | 17/17 |" in report_text
+    assert "Patch attempts: 5 of 8." in report_text
+    assert "```diff" in report_text
+    assert "Nothing was committed" in report_text
+    report = agent.build_report(final_state)
+    assert report["files_changed"] == sorted(ALL_FIXES)
+    assert len(report["exploit_tests_fixed"]) == 8
     assert (
         '+    query = "SELECT * FROM orders WHERE customer = ?"'
-        in (report["diff"])
+        in report["diff"]
     )
     assert Path(report["patch_file"]).read_text() == report["diff"]
     # The bundled target is never modified in place.
     assert _tree_hash(workspace.BUNDLED_TARGET) == before_hash
 
 
-def test_target_dir_points_at_your_own_repo(
-    ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_workflow_stops_when_the_budget_is_spent(
+    state: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo = tmp_path / "payments-service"
-    shutil.copytree(workspace.BUNDLED_TARGET, repo)
-    monkeypatch.setenv("TARGET_DIR", str(repo))
-    findings = list_findings(ctx)
-    assert findings["target"] == "payments-service"
-    assert Path(ctx.state["cm_work_dir"]) != repo
-    assert not str(ctx.state["cm_work_dir"]).startswith(str(repo))
-    assert os.path.isdir(ctx.state["cm_work_dir"])
+    monkeypatch.setenv("MAX_PATCH_ATTEMPTS", "2")
+    proposals = [("orders/db.py", DB_BROKEN)] * 2
+    texts, final_state = _run(
+        agent.create_workflow(_scripted_patcher(proposals))
+    )
+    assert sum(t.startswith("Attempt") and "rejected" in t for t in texts) == 2
+    assert "Patch attempts: 2 of 2." in texts[-1]
+    assert "# no accepted changes" in texts[-1]
+    assert len(final_state["cm_attempts"]) == 2
 
 
-def test_report_requires_a_baseline(ctx: SimpleNamespace) -> None:
-    assert "error" in get_patch_report(ctx)
-
-
-def test_missing_config_fails_with_a_clear_error(
-    ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("MAX_PATCH_ATTEMPTS")
-    with pytest.raises(config.ConfigError, match="MAX_PATCH_ATTEMPTS"):
-        propose_patch("orders/db.py", DB_FIX, "parameterize", ctx)
+def test_root_agent_is_the_gemini_workflow() -> None:
+    assert isinstance(agent.root_agent, Workflow)
+    assert isinstance(agent.app, App)
+    assert agent.app.root_agent is agent.root_agent
+    patch_agent = agent.create_patch_agent()
+    assert patch_agent.mode == "single_turn"
+    assert patch_agent.output_schema is agent.PatchProposal

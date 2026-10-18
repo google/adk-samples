@@ -22,7 +22,7 @@ etc.). Tool-level correctness belongs in test_tools.py.
 """
 
 from fastapi import FastAPI
-from google.adk.agents import Agent
+from google.adk import Agent, Workflow
 from google.adk.apps import App
 from google.adk.models import Gemini
 
@@ -33,28 +33,25 @@ import app.agent
 def test_adk_run_runnability() -> None:
     """Verifies the entry point required by `adk run app` is correctly wired.
 
-    `adk run app` imports the `app` package and expects `root_agent` to be
-    an Agent instance exposed at the package level via app/__init__.py.
+    `adk run app` imports the `app` package and expects `root_agent` (here an
+    ADK 2.0 `Workflow`) or `app` to be exposed via app/__init__.py.
     """
-    # app/__init__.py must re-export root_agent or app for `adk run app` to work
     assert hasattr(app, "root_agent") or hasattr(app, "app"), (
         "app/__init__.py must export either `root_agent` or `app` "
         "for `adk run app` to work."
     )
 
-    # root_agent must be a valid Agent instance
-    assert app.agent.root_agent is not None
-    assert isinstance(app.agent.root_agent, Agent)
-    assert isinstance(app.agent.root_agent.model, Gemini)
+    # root_agent is an ADK 2.0 graph workflow.
+    assert isinstance(app.agent.root_agent, Workflow)
 
-    # Agent must have at least one tool registered
-    assert len(app.agent.root_agent.tools) > 0, (
-        "root_agent has no tools registered."
-    )
+    # Its LLM node is a Gemini agent whose model comes from MODEL_NAME.
+    patch_agent = app.agent.create_patch_agent()
+    assert isinstance(patch_agent, Agent)
+    assert isinstance(patch_agent.model, Gemini)
 
-    # App wrapper must be present and valid
-    assert app.agent.app is not None
+    # App wraps the workflow.
     assert isinstance(app.agent.app, App)
+    assert app.agent.app.root_agent is app.agent.root_agent
 
 
 def test_web_server_runnability() -> None:

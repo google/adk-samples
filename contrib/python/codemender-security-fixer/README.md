@@ -10,22 +10,29 @@ and fix by hand. This recipe points an ADK agent at that backlog and has it
 sees them, in the spirit of
 [CodeMender](https://deepmind.google/blog/introducing-codemender-an-ai-agent-for-code-security/).
 
-The agent never grades its own work. It runs a **detect → patch → validate**
-loop:
+The agent never grades its own work. It is an **ADK 2.0 graph workflow**
+(`google.adk.Workflow`) in which only one node calls a model:
 
-1. **Detect** – `list_findings` runs [Bandit](https://bandit.readthedocs.io/)
-   and the project's own tests on a throwaway working copy. Failing exploit
-   tests are findings too, so issues a static analyzer cannot see (such as
-   path traversal) are covered.
-2. **Patch** – Gemini reads the vulnerable code and the exploit test that
-   reproduces the attack, and writes a minimal, complete replacement for one
-   file.
-3. **Validate** – `propose_patch` copies the working copy, applies the patch
-   and re-runs Bandit and every test in a resource-limited subprocess. The
-   patch is kept only if it **resolves at least one finding, introduces no
-   new Bandit finding and breaks no passing test**. Edits to tests and
-   `# nosec` suppressions are refused. Rejections come back with the exact
-   reason, within a bounded retry budget.
+1. **`scan`** (function node) copies the target to a throwaway working copy
+   and records the baseline: [Bandit](https://bandit.readthedocs.io/) plus
+   the project's own tests. Failing exploit tests are findings too, so
+   issues a static analyzer cannot see (such as path traversal) are covered.
+   Routes to `prepare_patch` if anything is open, otherwise straight to
+   `report`.
+2. **`prepare_patch`** (function node) packs the open findings, the source
+   files, the failing tests and the reason the last proposal was rejected
+   into a typed `PatchRequest`.
+3. **`patch_agent`** (`Agent`, `mode="single_turn"`) reads the
+   `PatchRequest` and returns one structured `PatchProposal`: file, complete
+   new content and rationale. It has no tools and no file system access.
+4. **`validate`** (function node) applies the proposal to a scratch copy and
+   re-runs Bandit and every test in a resource-limited subprocess. The patch
+   is kept only if it **resolves at least one finding, introduces no new
+   Bandit finding and breaks no passing test**. Edits to tests and
+   `# nosec` suppressions are refused. Routes back to `prepare_patch` (with
+   the rejection reason as feedback) while findings remain and the
+   `MAX_PATCH_ATTEMPTS` budget lasts, otherwise to `report`.
+5. **`report`** (function node) produces the unified diff and the evidence.
 
 The output is a **unified diff plus evidence** for human review: which
 findings were fixed, which exploit tests now pass, test results before and
@@ -33,14 +40,21 @@ after, and every attempt with its verdict. Nothing is committed or pushed.
 
 ```mermaid
 flowchart LR
-    U[AppSec engineer] --> A[Gemini agent]
-    A -- list_findings / read_file --> W[(Working copy<br/>temp dir)]
-    A -- propose_patch(file, content) --> V[Validator<br/>Bandit + tests<br/>in scratch copy]
-    T[(Target repo<br/>read-only)] -- copied once --> W
-    V -- accepted: apply --> W
-    V -- rejected: reasons --> A
-    A -- get_patch_report --> R[Diff + evidence<br/>for human review]
+    S((START)) --> scan[scan<br/>Bandit + tests<br/>baseline]
+    scan -- has_findings --> prep[prepare_patch<br/>PatchRequest]
+    scan -- clean --> report[report<br/>diff + evidence]
+    prep --> agent[patch_agent<br/>Gemini, single_turn<br/>PatchProposal]
+    agent --> val[validate<br/>Bandit + tests<br/>in scratch copy]
+    val -- "continue: findings left,<br/>budget left" --> prep
+    val -- "done: clean or<br/>budget spent" --> report
 ```
+
+Each user message starts a fresh run, so the same agent works from the ADK
+dev UI, `adk run`, A2A clients and Gemini Enterprise. There is no
+`RequestInput` approval step: the workflow never applies anything, so the
+human approval happens where it belongs, in code review of the diff. A
+pause-and-resume step would also leave A2A / Gemini Enterprise chats waiting
+on an input most clients cannot send.
 
 ## Real-world scenario
 
@@ -71,28 +85,28 @@ normal code review.
 
 ### Example run
 
-One live run against the bundled target with `MODEL_NAME=gemini-3.7-flash`
-and the default budget of 8 patch attempts:
+One live run of the workflow against the bundled target with
+`MODEL_NAME=gemini-3.7-flash` and the default budget of 8 patch attempts:
 
 | Metric | Result |
 | --- | --- |
 | Bandit findings | 5 → **0** (B105, B301, B403, B602, B608) |
 | Tests passing | 9/17 → **17/17** (all 8 exploit tests fixed, no regressions) |
-| Files patched | 4 (`auth.py`, `cart.py`, `db.py`, `invoices.py`) |
+| Files patched | 4 (`invoices.py`, `db.py`, `cart.py`, `auth.py`) |
 | Patch attempts | 4 of 8, all accepted by the validator |
-| Tool calls | 14 (1 scan, 8 file reads, 4 patches, 1 report) |
-| Wall-clock time | 133.5 s, including every Bandit and test run |
-| Tokens | 178.9k prompt, 4.3k output |
+| Model calls | 4 (one `patch_agent` call per attempt) |
+| Wall-clock time | 99.0 s, including every Bandit and test run |
+| Tokens | 21.8k prompt, 2.0k output |
 
-The run fixed path traversal and shell injection in one `invoices.py` patch
-(real-path containment check, `YYYY-MM` validation, argv list without a
-shell), parameterized both SQL filters, replaced the pickle cookie with JSON
-and moved the admin token to `ORDERS_API_TOKEN` with a constant-time compare
-that fails closed. The report also flagged the follow-up a human must do:
-provision `ORDERS_API_TOKEN` in every environment. Review still matters: the
-month check used `re.match(r"^\d{4}-\d{2}$", ...)`, which also accepts a
-trailing newline; a reviewer would ask for `re.fullmatch`. Numbers vary
-between runs.
+The first patch fixed path traversal and shell injection together in
+`invoices.py` (real-path containment check, `YYYY-MM` validation, argv list
+without a shell); the others parameterized both SQL filters, replaced the
+pickle cookie with JSON and moved the admin token to `ORDERS_API_TOKEN`,
+failing closed when it is unset. Because only one small, schema-constrained
+model call happens per attempt and Bandit and the tests run in plain Python,
+the graph used about 8x fewer prompt tokens than an earlier tool-calling
+version of this recipe on the same task (178.9k). Numbers vary between runs,
+and passing the validator is not the same as being correct: review the diff.
 
 ### Use your own repository
 
@@ -120,9 +134,14 @@ uv run adk run app
 - Gating every model-written change with a **deterministic validator** that
   compares scanner and test results before and after, so the model cannot
   talk its way past a failing test.
-- Keeping a working copy, the baseline, accepted patches and an **attempt
-  budget in ADK session state** with `ToolContext`, reproducible on any
-  server instance.
+- Building an **ADK 2.0 graph workflow**: function nodes for deterministic
+  steps, a `single_turn` `Agent` with Pydantic `input_schema` /
+  `output_schema` for the one creative step, and conditional routing
+  (`Event(route=...)`) for a bounded retry loop.
+- Keeping the working copy, baseline, accepted patches and attempt budget in
+  ADK session state (`ctx.state`), reproducible on any server instance.
+- Serving the same workflow over **A2A**, so it can be registered in Gemini
+  Enterprise.
 - Running untrusted project code with **process isolation**, timeouts,
   resource limits and an environment stripped of credentials.
 
@@ -173,7 +192,7 @@ Or start the local web server and open the ADK dev UI:
 uv run uvicorn app.fast_api_app:app --reload
 ```
 
-The final report includes the diff, and `get_patch_report` also writes it to
+The final report includes the diff, and the `report` node also writes it to
 a `codemender.patch` file next to the working copy. Apply it to a branch of
 your repository with `git apply codemender.patch` and open a normal code
 review. Working copies live under the system temp directory
@@ -182,24 +201,49 @@ them when you are done.
 
 ## Deploy and use it where your team works
 
-The recipe ships a `Dockerfile` and serves the standard ADK FastAPI app, so
-it runs on Cloud Run. Bandit is installed in the image:
+The recipe ships a `Dockerfile` (non-root user, Bandit installed) that serves
+the standard ADK FastAPI app plus two integration surfaces from
+[`app/fast_api_app.py`](app/fast_api_app.py):
 
-```bash
-gcloud run deploy codemender-security-fixer --source . --region us-central1 \
-  --set-env-vars MODEL_NAME=gemini-3.7-flash,GOOGLE_GENAI_USE_VERTEXAI=True
-```
+- **A2A** (`app/app_utils/a2a.py`): JSON-RPC at `/a2a/app` and the agent
+  card at `/a2a/app/.well-known/agent-card.json`. The card advertises a
+  JSON-RPC interface for A2A 1.0 and the 0.3 shape (top-level `url`,
+  `protocolVersion: "0.3"`) that Gemini Enterprise registration expects.
+- **Agent Engine** (`app/app_utils/reasoning_engine_adapter.py`):
+  `POST /api/reasoning_engine` and `/api/stream_reasoning_engine`, the
+  routes Agent Engine forwards `:query` and `:streamQuery` to.
 
-To use it on your own code in Cloud Run, bake the repository into the image
-(or mount it) and set `TARGET_DIR`. Keep the service private: it executes the
+To make it available in Gemini Enterprise:
+
+1. Deploy it, for example to Cloud Run:
+   ```bash
+   gcloud run deploy codemender-security-fixer --source . --region us-central1 \
+     --no-allow-unauthenticated \
+     --set-env-vars MODEL_NAME=gemini-3.7-flash,GOOGLE_GENAI_USE_VERTEXAI=True,APP_URL=https://YOUR-SERVICE-URL
+   ```
+   Set `APP_URL` to the service URL so the agent card points at it.
+2. Check `https://YOUR-SERVICE-URL/a2a/app/.well-known/agent-card.json`.
+3. Register it as a custom A2A agent in your Gemini Enterprise app with that
+   agent card, following
+   [Register and manage A2A agents](https://cloud.google.com/gemini/enterprise/docs/register-and-manage-an-a2a-agent).
+4. Optionally expose it in Google Chat with
+   [Build a Google Chat app with a Gemini Enterprise AI agent](https://developers.google.com/workspace/chat/quickstart-ge-agent).
+
+Engineers then ask for a validated patch from Gemini Enterprise or a Chat
+space; each message runs the workflow once and returns the report and diff.
+To fix your own code in Cloud Run, bake the repository into the image (or
+mount it) and set `TARGET_DIR`. Keep the service private: it executes the
 target's tests.
 
-To bring it to your team, make the agent available in your Gemini Enterprise
-app (the recipe includes an Agent Engine adapter in `app/app_utils/`) and
-expose it in Google Chat by following
-[Build a Google Chat app with a Gemini Enterprise AI agent](https://developers.google.com/workspace/chat/quickstart-ge-agent).
-Engineers can then ask for a validated patch from a Chat space and take the
-diff into code review.
+What was verified locally (no GCP project or Gemini Enterprise app was
+available): the served agent card has the 0.3 fields above, a JSON-RPC
+`message/send` with `A2A-Version: 0.3` runs the whole workflow and returns
+the report and diff as a completed task, and the Agent Engine adapter
+creates sessions and starts the workflow. Agent Engine's runtime switches the
+model client to Vertex AI, so a full run through the adapter needs Vertex AI
+credentials; with only an API key locally, the run stops at the first model
+call. [`tests/integration/test_a2a.py`](tests/integration/test_a2a.py)
+repeats the card and `message/send` checks.
 
 ## Safety
 
@@ -220,15 +264,19 @@ diff into code review.
 ## Running Tests
 
 The unit tests cover the scanner and test harness, the validator (accepting
-a correct fix, rejecting a broken one and an incomplete one, prechecks), the
-attempt budget, `TARGET_DIR` handling and report generation. They run Bandit
-and the sample's tests for real and do not call a model:
+a correct fix, rejecting a broken one and an incomplete one, prechecks), each
+deterministic workflow step, the attempt budget, `TARGET_DIR` handling and
+report generation. They also run the real ADK 2.0 graph end to end with the
+Gemini node swapped for a scripted function node, so routing (retry after a
+rejection, stop when clean, stop when the budget is spent) is tested. They
+run Bandit and the sample's tests for real and do not call a model:
 
 ```bash
 uv run pytest
 ```
 
-Integration tests call Gemini and need credentials:
+Integration tests call Gemini and need credentials. `test_a2a.py` starts the
+server, checks the agent card and runs the workflow over A2A `message/send`:
 
 ```bash
 uv run pytest tests/integration

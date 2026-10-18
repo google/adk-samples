@@ -1,23 +1,8 @@
 {
   "eval_set_id": "basic_eval",
   "name": "CodeMender security fixer evaluation",
-  "description": "Checks that the agent explains its validated workflow and, when asked to fix the sample orders service, reports only validator-backed results and a diff for human review.",
+  "description": "Runs the detect -> patch -> validate workflow on the bundled orders service and checks the final report is validator-backed and ends with a diff for human review. Every message starts a run, so there is no chit-chat case.",
   "eval_cases": [
-    {
-      "eval_id": "capabilities",
-      "conversation": [
-        {
-          "user_content": {
-            "parts": [{"text": "What can you do for my AppSec backlog, and how do you make sure a fix is safe?"}]
-          }
-        }
-      ],
-      "session_input": {
-        "app_name": "app",
-        "user_id": "eval_user",
-        "state": {}
-      }
-    },
     {
       "eval_id": "fix_sample_service",
       "conversation": [

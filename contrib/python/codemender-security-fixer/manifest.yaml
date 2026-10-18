@@ -19,7 +19,7 @@ status: "active"
 language: "python"
 
 # REQUIRED — Short description of what this recipe does and the value it provides.
-description: "Works down an AppSec finding backlog with a CodeMender-style detect, patch, validate loop: a Gemini agent fixes vulnerabilities in a Python service, and a deterministic validator (Bandit plus the project's own exploit and regression tests, run in a resource-limited subprocess on a throwaway copy) keeps only patches that fix something and break nothing. Produces a unified diff with evidence for human review; never commits."
+description: "Works down an AppSec finding backlog with a CodeMender-style detect, patch, validate ADK 2.0 graph workflow: a single-turn Gemini node fixes vulnerabilities in a Python service, and a deterministic validator (Bandit plus the project's own exploit and regression tests, run in a resource-limited subprocess on a throwaway copy) keeps only patches that fix something and break nothing. Produces a unified diff with evidence for human review; never commits."
 
 # OPTIONAL — Agent architecture details. Omit the whole block if unknown.
 architecture:
@@ -53,6 +53,10 @@ tags:
   - "code-repair"
   - "bandit"
   - "verifier"
+  - "adk-2.0"
+  - "graph-workflow"
+  - "a2a"
+  - "gemini-enterprise"
 
 # OPTIONAL — SPDX license identifier (e.g. "Apache-2.0", "MIT", "BSD-3-Clause").
 # Only set if explicitly declared in a LICENSE file or by the author.

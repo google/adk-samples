@@ -11,33 +11,42 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""A CodeMender-style security fixer built with ADK.
+"""A CodeMender-style security fixer built as an ADK 2.0 graph workflow.
 
-Applied to an AppSec team's finding backlog on a Python web service. The loop
-is: detect -> patch -> validate.
+Applied to an AppSec team's finding backlog on a Python web service::
 
-- Detect: `list_findings` runs Bandit and the target's own tests (including
-  exploit tests) on a throwaway working copy.
-- Patch: the Gemini agent reads the vulnerable code and proposes a minimal,
-  complete replacement for one file.
-- Validate: `propose_patch` re-runs Bandit and the tests on a disposable copy
-  of the patched code. Only patches that fix something and break nothing are
-  kept; rejected ones come back with the exact reason, within a bounded
-  retry budget.
+    START -> scan --has_findings--> prepare_patch -> patch_agent -> validate
+               |                         ^                            |
+               |                         +-------- continue ----------+
+               +--clean--> report <------------------ done -----------+
 
-The result is a unified diff and evidence for human review. The target is
-never modified, committed or pushed.
+- `scan` (function): copies the target to a throwaway working copy and
+  records the baseline: Bandit findings plus the project's own tests,
+  including exploit tests.
+- `prepare_patch` (function): packs the open findings, the source, the
+  failing tests and the last rejection reason into the agent's input.
+- `patch_agent` (single-turn Gemini Agent): returns one structured
+  `PatchProposal` (file, complete new content, rationale). It never sees or
+  changes anything outside its input.
+- `validate` (function): the deterministic gate. Re-runs Bandit and every test
+  on a scratch copy and keeps the patch only if it resolves a finding without
+  regressions or new findings. Loops while findings remain and the
+  MAX_PATCH_ATTEMPTS budget lasts.
+- `report` (function): the unified diff and evidence for human review.
+
+The target is never modified, committed or pushed.
 """
 
 import os
+from collections.abc import Iterator, MutableMapping
 from pathlib import Path
 from typing import Any
 
-from google.adk.agents import Agent
+from google.adk import Agent, Context, Event, Workflow
 from google.adk.apps import App
 from google.adk.models import Gemini
-from google.adk.tools import ToolContext
 from google.genai import types
+from pydantic import BaseModel, Field
 
 from . import config, scanner, validator, workspace
 
@@ -47,6 +56,27 @@ _APPLIED_KEY = "cm_applied"
 _BASELINE_KEY = "cm_baseline"
 _CURRENT_KEY = "cm_current"
 _ATTEMPTS_KEY = "cm_attempts"
+_FEEDBACK_KEY = "cm_feedback"
+_ERROR_KEY = "cm_error"
+_RUN_KEYS = (
+    _SOURCE_KEY,
+    _WORK_KEY,
+    _APPLIED_KEY,
+    _BASELINE_KEY,
+    _CURRENT_KEY,
+    _ATTEMPTS_KEY,
+    _FEEDBACK_KEY,
+    _ERROR_KEY,
+)
+# Upper bound on source text packed into one patch request.
+MAX_CONTEXT_CHARS = 120_000
+
+State = MutableMapping[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# Configuration (defaults live in .env.example)
+# ---------------------------------------------------------------------------
 
 
 def _max_attempts() -> int:
@@ -81,130 +111,195 @@ def _scan(work_dir: Path) -> dict[str, Any]:
     )
 
 
-def _workspace(tool_context: ToolContext) -> tuple[Path, Path]:
-    """Returns (source, working copy), creating the copy on first use."""
-    state = tool_context.state
-    if not state.get(_SOURCE_KEY):
-        state[_SOURCE_KEY] = str(
-            workspace.resolve_target(os.getenv("TARGET_DIR") or None)
-        )
-    source = Path(state[_SOURCE_KEY])
+# ---------------------------------------------------------------------------
+# Schemas for the LLM node
+# ---------------------------------------------------------------------------
+
+
+class PatchRequest(BaseModel):
+    """Everything the patch agent needs for one attempt."""
+
+    static_findings: list[dict[str, Any]] = Field(
+        description="Open Bandit findings: file, line, check id, issue, code."
+    )
+    failing_tests: list[dict[str, str]] = Field(
+        description="Failing exploit/regression tests and their messages."
+    )
+    source_files: dict[str, str] = Field(
+        description="Patchable source files (path -> current content)."
+    )
+    test_files: dict[str, str] = Field(
+        description="Test files that define the attacks. Read-only."
+    )
+    previous_attempt_feedback: str = Field(
+        description="Why the last proposal was rejected, or empty."
+    )
+    attempts_remaining: int
+
+
+class PatchProposal(BaseModel):
+    """One file-level fix."""
+
+    file_path: str = Field(
+        description="Source file to replace, relative to the target root."
+    )
+    new_content: str = Field(description="The COMPLETE new file content.")
+    rationale: str = Field(
+        description="One or two sentences: root cause and why this fixes it."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic steps (plain functions over session state, unit-tested)
+# ---------------------------------------------------------------------------
+
+
+def _attempts(state: State) -> list[dict[str, Any]]:
+    return list(state.get(_ATTEMPTS_KEY) or [])
+
+
+def _work_dir(state: State) -> Path:
+    """The working copy, rebuilt from state if this instance lacks it."""
     work = state.get(_WORK_KEY)
     if not work or not Path(work).is_dir():
         work = workspace.create_working_copy(
-            source, state.get(_APPLIED_KEY) or {}
+            Path(state[_SOURCE_KEY]), state.get(_APPLIED_KEY) or {}
         )
         state[_WORK_KEY] = str(work)
-    return source, Path(work)
+    return Path(work)
 
 
-def _attempts(tool_context: ToolContext) -> list[dict[str, Any]]:
-    return list(tool_context.state.get(_ATTEMPTS_KEY) or [])
+def _is_clean(scan_result: dict[str, Any]) -> bool:
+    return not scan_result["findings"] and not scanner.failed_tests(scan_result)
 
 
-def _remaining(tool_context: ToolContext) -> int:
-    return max(0, _max_attempts() - len(_attempts(tool_context)))
-
-
-def _current(tool_context: ToolContext, work: Path) -> dict[str, Any]:
-    """The latest scan of the working copy; scans (and baselines) if needed."""
-    current = tool_context.state.get(_CURRENT_KEY)
-    if current is None:
-        current = _scan(work)
-        tool_context.state[_CURRENT_KEY] = current
-        if tool_context.state.get(_BASELINE_KEY) is None:
-            tool_context.state[_BASELINE_KEY] = current
-    return current
-
-
-def list_findings(tool_context: ToolContext) -> dict[str, Any]:
-    """Scans the working copy with Bandit and runs the target's tests.
-
-    Call this first, and again whenever you want fresh evidence. Failing tests
-    are findings too: they are exploit or regression tests.
+def start_run(state: State) -> dict[str, Any]:
+    """Starts a fresh run: new working copy, baseline scan, empty budget.
 
     Returns:
-        Static findings (file, line, check id, severity, issue, code),
-        failing tests with their failure message, the source files you may
-        patch, and the remaining patch budget.
+        `{"route": "has_findings" | "clean", "summary": {...}}`, or a route of
+        "clean" with an `error` if the target cannot be used.
     """
+    for key in _RUN_KEYS:
+        state[key] = None
     try:
-        source, work = _workspace(tool_context)
+        source = workspace.resolve_target(os.getenv("TARGET_DIR") or None)
+        state[_SOURCE_KEY] = str(source)
+        work = workspace.create_working_copy(source, {})
     except workspace.WorkspaceError as exc:
-        return {"error": str(exc)}
-    tool_context.state[_CURRENT_KEY] = None
-    current = _current(tool_context, work)
-    files = workspace.list_files(work)
+        state[_ERROR_KEY] = str(exc)
+        return {"route": "clean", "error": str(exc)}
+    state[_WORK_KEY] = str(work)
+    state[_APPLIED_KEY] = {}
+    state[_ATTEMPTS_KEY] = []
+    state[_FEEDBACK_KEY] = ""
+    baseline = _scan(work)
+    state[_BASELINE_KEY] = baseline
+    state[_CURRENT_KEY] = baseline
     return {
-        "target": source.name,
-        **scanner.summarize(current),
-        "patchable_files": [f for f in files if not workspace.is_test_path(f)],
-        "test_files": [f for f in files if workspace.is_test_path(f)],
-        "patch_attempts_remaining": _remaining(tool_context),
+        "route": "clean" if _is_clean(baseline) else "has_findings",
+        "summary": scanner.summarize(baseline),
     }
 
 
-def read_file(file_path: str, tool_context: ToolContext) -> dict[str, Any]:
-    """Reads a file from the working copy (accepted patches included).
-
-    Args:
-        file_path: Path relative to the target root, e.g. "orders/db.py".
-
-    Returns:
-        The file's full content, or an error.
-    """
-    try:
-        _source, work = _workspace(tool_context)
-        content = workspace.read_file(work, file_path)
-    except workspace.WorkspaceError as exc:
-        return {"error": str(exc)}
-    return {"file_path": file_path, "content": content}
+def _test_module(test_id: str) -> str:
+    """Maps a unittest id (pkg.mod.Class.test) or pytest id to its file."""
+    if "::" in test_id:
+        return test_id.split("::", 1)[0]
+    return test_id.rsplit(".", 2)[0].replace(".", "/") + ".py"
 
 
-def propose_patch(
-    file_path: str, new_content: str, rationale: str, tool_context: ToolContext
-) -> dict[str, Any]:
-    """Validates a fix and keeps it only if the validator accepts it.
-
-    Args:
-        file_path: Source file to replace, relative to the target root.
-            Test files cannot be modified.
-        new_content: The COMPLETE new content of the file.
-        rationale: One or two sentences: root cause and why this fixes it.
-
-    Returns:
-        `accepted`, the reasons for a rejection, the findings resolved and
-        exploit tests fixed, what remains, and the remaining budget.
-    """
-    remaining = _remaining(tool_context)
-    if remaining <= 0:
-        return {
-            "budget_exhausted": True,
-            "message": "No patch attempts left. Call get_patch_report.",
-        }
-    try:
-        _source, work = _workspace(tool_context)
-    except workspace.WorkspaceError as exc:
-        return {"error": str(exc)}
-    before = _current(tool_context, work)
-    verdict = validator.validate_patch(
-        work,
-        file_path,
-        new_content,
-        before,
-        _timeout_seconds(),
-        _test_command(),
-        _bandit_skips(),
+def build_patch_request(state: State) -> dict[str, Any]:
+    """Packs the current evidence into a `PatchRequest` dict."""
+    work = _work_dir(state)
+    current = state[_CURRENT_KEY]
+    summary = scanner.summarize(current)
+    files = workspace.list_files(work)
+    flagged = {f["file"] for f in current["findings"]}
+    # Files with static findings first, then the rest, within the budget.
+    ordered = sorted(
+        (f for f in files if not workspace.is_test_path(f)),
+        key=lambda f: (f not in flagged, f),
     )
+    sources: dict[str, str] = {}
+    used = 0
+    for rel in ordered:
+        try:
+            text = workspace.read_file(work, rel)
+        except workspace.WorkspaceError:
+            continue
+        if used + len(text) > MAX_CONTEXT_CHARS and rel not in flagged:
+            continue
+        sources[rel] = text
+        used += len(text)
+    failing_modules = {
+        _test_module(t["test"]) for t in summary["failing_tests"]
+    }
+    tests = {}
+    for rel in files:
+        if rel in failing_modules and used < MAX_CONTEXT_CHARS:
+            tests[rel] = workspace.read_file(work, rel)
+            used += len(tests[rel])
+    return PatchRequest(
+        static_findings=summary["static_findings"],
+        failing_tests=summary["failing_tests"],
+        source_files=sources,
+        test_files=tests,
+        previous_attempt_feedback=state.get(_FEEDBACK_KEY) or "",
+        attempts_remaining=_max_attempts() - len(_attempts(state)),
+    ).model_dump()
+
+
+def apply_proposal(
+    state: State, proposal: PatchProposal | dict[str, Any] | None
+) -> dict[str, Any]:
+    """Validates one proposal, keeps it if accepted, and picks the next route.
+
+    Returns:
+        The validator verdict plus `route` ("continue" or "done"), the
+        remaining findings and the remaining budget.
+    """
+    if isinstance(proposal, dict):
+        proposal = PatchProposal.model_validate(proposal)
+    work = _work_dir(state)
+    before = state[_CURRENT_KEY]
+    if proposal is None:
+        verdict = {
+            "accepted": False,
+            "reasons": ["the model did not return a valid PatchProposal"],
+            "resolved_findings": [],
+            "fixed_tests": [],
+            "regressions": [],
+            "new_findings": [],
+            "after": None,
+        }
+        file_path, rationale = "", ""
+    else:
+        file_path, rationale = proposal.file_path, proposal.rationale
+        verdict = validator.validate_patch(
+            work,
+            file_path,
+            proposal.new_content,
+            before,
+            _timeout_seconds(),
+            _test_command(),
+            _bandit_skips(),
+        )
     after = verdict.pop("after")
     if verdict["accepted"]:
-        workspace.write_file(work, file_path, new_content)
-        applied = dict(tool_context.state.get(_APPLIED_KEY) or {})
-        applied[file_path] = new_content
-        tool_context.state[_APPLIED_KEY] = applied
-        tool_context.state[_CURRENT_KEY] = after
+        workspace.write_file(work, file_path, proposal.new_content)
+        applied = dict(state.get(_APPLIED_KEY) or {})
+        applied[file_path] = proposal.new_content
+        state[_APPLIED_KEY] = applied
+        state[_CURRENT_KEY] = after
+        state[_FEEDBACK_KEY] = ""
         before = after
-    attempts = _attempts(tool_context)
+    else:
+        state[_FEEDBACK_KEY] = (
+            f"Your proposal for {file_path or '(none)'} was rejected: "
+            + "; ".join(verdict["reasons"])
+        )
+    attempts = _attempts(state)
     attempts.append(
         {
             "attempt": len(attempts) + 1,
@@ -213,50 +308,36 @@ def propose_patch(
             **verdict,
         }
     )
-    tool_context.state[_ATTEMPTS_KEY] = attempts
-    summary = scanner.summarize(before)
-    left = remaining - 1
-    clean = not summary["static_findings"] and not summary["failing_tests"]
+    state[_ATTEMPTS_KEY] = attempts
+    remaining = _max_attempts() - len(attempts)
+    clean = _is_clean(before)
     return {
         **verdict,
-        "remaining_static_findings": [
-            f"{f['file']}:{f['line']} {f['test_id']}"
-            for f in summary["static_findings"]
-        ],
-        "remaining_failing_tests": [
-            t["test"] for t in summary["failing_tests"]
-        ],
-        "patch_attempts_remaining": left,
-        "done": left <= 0 or clean,
+        "file": file_path,
+        "attempt": len(attempts),
+        "attempts_remaining": remaining,
+        "clean": clean,
+        "route": "done" if clean or remaining <= 0 else "continue",
     }
 
 
-def get_patch_report(tool_context: ToolContext) -> dict[str, Any]:
-    """Builds the final review package. Call once at the end.
-
-    Returns:
-        The unified diff of all accepted patches (also written to a .patch
-        file), findings fixed and remaining versus the baseline, test results
-        before and after, and every attempt with its verdict.
-    """
-    baseline = tool_context.state.get(_BASELINE_KEY)
-    if baseline is None:
-        return {"error": "No baseline yet. Call list_findings first."}
-    try:
-        source, work = _workspace(tool_context)
-    except workspace.WorkspaceError as exc:
-        return {"error": str(exc)}
-    current = _current(tool_context, work)
-    applied = tool_context.state.get(_APPLIED_KEY) or {}
+def build_report(state: State) -> dict[str, Any]:
+    """The review package: diff, findings fixed/remaining, tests, attempts."""
+    if state.get(_ERROR_KEY) or state.get(_BASELINE_KEY) is None:
+        return {"error": state.get(_ERROR_KEY) or "no baseline scan"}
+    source = Path(state[_SOURCE_KEY])
+    work = _work_dir(state)
+    baseline = state[_BASELINE_KEY]
+    current = state[_CURRENT_KEY]
+    applied = state.get(_APPLIED_KEY) or {}
     diff = workspace.unified_diff(source, applied)
     patch_file = work.parent / "codemender.patch"
     patch_file.write_text(diff, encoding="utf-8")
-
     base_counts = scanner.finding_counts(baseline)
     now_counts = scanner.finding_counts(current)
     base_failed = scanner.failed_tests(baseline)
     now_passed = scanner.passed_tests(current)
-    attempts = _attempts(tool_context)
+    attempts = _attempts(state)
     return {
         "target": source.name,
         "files_changed": sorted(applied),
@@ -295,58 +376,191 @@ def get_patch_report(tool_context: ToolContext) -> dict[str, Any]:
     }
 
 
-INSTRUCTION = """\
-You are an application-security engineer working like CodeMender. You fix
-vulnerabilities in a Python service with a detect -> patch -> validate loop.
-A deterministic validator (Bandit + the project's own tests, including
-exploit tests) decides whether a patch is kept. Your opinion never does.
+def render_report(report: dict[str, Any]) -> str:
+    """Formats the report as Markdown for chat surfaces."""
+    if "error" in report:
+        return f"Could not scan the target: {report['error']}"
+    lines = [f"## Security fix report: `{report['target']}`", ""]
+    lines += [
+        "| Evidence | Before | After |",
+        "| --- | --- | --- |",
+        f"| Bandit findings | {report['static_findings_before']} |"
+        f" {report['static_findings_after']} |",
+        f"| Tests passing | {report['tests_before']['passed']}/"
+        f"{report['tests_before']['total']} |"
+        f" {report['tests_after']['passed']}/{report['tests_after']['total']} |",
+        "",
+        f"Patch attempts: {report['attempts_used']} of"
+        f" {report['attempt_budget']}.",
+        "",
+    ]
+    if report["static_findings_fixed"]:
+        lines.append(
+            "**Fixed (Bandit):** "
+            + ", ".join(f"`{k}`" for k in report["static_findings_fixed"])
+        )
+        lines.append("")
+    if report["exploit_tests_fixed"]:
+        lines.append(
+            "**Exploit tests now passing:** "
+            + ", ".join(
+                f"`{t.rsplit('.', 1)[-1]}`"
+                for t in report["exploit_tests_fixed"]
+            )
+        )
+        lines.append("")
+    remaining = (
+        report["static_findings_remaining"] + report["tests_still_failing"]
+    )
+    lines.append(
+        "**Still open (needs a human):** "
+        + (", ".join(f"`{r}`" for r in remaining) if remaining else "none")
+    )
+    lines += [
+        "",
+        "| # | File | Verdict | Rationale / reason |",
+        "| --- | --- | --- | --- |",
+    ]
+    for a in report["attempts"]:
+        detail = a["rationale"] if a["accepted"] else "; ".join(a["reasons"])
+        verdict = "accepted" if a["accepted"] else "rejected"
+        lines.append(
+            f"| {a['attempt']} | `{a['file']}` | {verdict} |"
+            f" {detail.replace('|', '/')} |"
+        )
+    lines += [
+        "",
+        "```diff",
+        report["diff"].rstrip() or "# no accepted changes",
+        "```",
+        "",
+        "Nothing was committed or pushed. Review this patch like any other"
+        " change before applying it (`git apply codemender.patch`).",
+    ]
+    return "\n".join(lines)
 
-When the user asks you to fix, scan or review the code:
-1. Call `list_findings`. Group the static findings and failing tests by root
-   cause (one vulnerability often shows up as both).
-2. For each root cause, highest severity first:
-   a. `read_file` the vulnerable file (and the failing test, to see the
-      exact attack it reproduces).
-   b. Write the smallest complete fix that removes the vulnerability class,
-      not just the one payload: parameterized SQL; resolve paths and check
-      they stay inside the base directory; no shell, pass an argv list and
-      validate input; JSON instead of pickle; read secrets from the
-      environment and fail closed. Keep public function signatures and
-      behaviour for legitimate input. Standard library only.
-   c. Call `propose_patch` with the COMPLETE new file content and a short
-      rationale. Never edit tests, never add `# nosec`.
-   d. If rejected, read the reasons (regression, new finding, nothing
-      fixed), adjust and retry. Never resubmit identical content.
-3. Stop when nothing is left, or when a result has `done: true` or
-   `budget_exhausted: true`. Then call `get_patch_report`.
 
-Finish with a report for the AppSec reviewer: a table of findings (check id
-or test, file, severity, status fixed/remaining), tests passed before and
-after, attempts used of the budget, anything that still needs a human, and
-the full diff in a ```diff code block. Say clearly that nothing was
-committed and the patch needs human review. Do not ask for confirmation
-between steps.
+# ---------------------------------------------------------------------------
+# Workflow nodes
+# ---------------------------------------------------------------------------
+
+
+def _say(text: str) -> Event:
+    """A user-visible progress message (shown in chat and over A2A)."""
+    return Event(
+        content=types.Content(role="model", parts=[types.Part(text=text)])
+    )
+
+
+def scan(ctx: Context) -> Iterator[Event]:
+    """Baseline: Bandit + the project's tests on a fresh working copy."""
+    result = start_run(ctx.state)
+    if "error" in result:
+        yield _say(f"Cannot use the target: {result['error']}")
+    else:
+        s = result["summary"]
+        yield _say(
+            f"Baseline: {len(s['static_findings'])} Bandit findings,"
+            f" {len(s['failing_tests'])} failing tests"
+            f" ({s['tests_passed']}/{s['tests_total']} passing)."
+        )
+    yield Event(output=result, route=result["route"])
+
+
+def prepare_patch(ctx: Context) -> Event:
+    """Builds the patch agent's input from the current evidence."""
+    return Event(output=build_patch_request(ctx.state))
+
+
+def validate(ctx: Context, node_input: Any) -> Iterator[Event]:
+    """Deterministic gate for the proposal coming from `patch_agent`."""
+    result = apply_proposal(ctx.state, node_input)
+    if result["accepted"]:
+        fixed = len(result["resolved_findings"]) + len(result["fixed_tests"])
+        yield _say(
+            f"Attempt {result['attempt']}: `{result['file']}` accepted"
+            f" ({fixed} findings resolved, no regressions)."
+        )
+    else:
+        yield _say(
+            f"Attempt {result['attempt']}: `{result['file'] or '(none)'}`"
+            f" rejected: {'; '.join(result['reasons'])}"
+        )
+    yield Event(output=result, route=result["route"])
+
+
+def report(ctx: Context) -> Iterator[Event]:
+    """Final review package: Markdown for people, a dict for programs."""
+    result = build_report(ctx.state)
+    yield _say(render_report(result))
+    yield Event(output={k: v for k, v in result.items() if k != "diff"})
+
+
+PATCH_INSTRUCTION = """\
+You are an application-security engineer working like CodeMender. Your input
+is a JSON PatchRequest with the open Bandit findings, the failing exploit and
+regression tests, the current source files, the read-only test files, and the
+reason your previous proposal was rejected (if any).
+
+Pick ONE root cause (highest severity first; a vulnerability often shows up
+as both a Bandit finding and a failing test) and return a PatchProposal for
+the single source file that fixes it:
+- Fix the vulnerability class, not just one payload: parameterized SQL;
+  resolve paths and check they stay inside the base directory; no shell,
+  pass an argv list and validate input with re.fullmatch; JSON instead of
+  pickle; read secrets from the environment and fail closed.
+- Keep public function signatures and behaviour for legitimate input.
+  Standard library only.
+- `new_content` is the COMPLETE file. Never edit tests, never add `# nosec`.
+- If previous_attempt_feedback is set, address it; do not resubmit the same
+  content.
+A deterministic validator decides whether your patch is kept.
 """
 
 
-def create_agent() -> Agent:
-    """Creates a fresh, isolated instance of the Agent."""
+def create_patch_agent() -> Agent:
+    """The only LLM step: one structured patch proposal per call."""
     return Agent(
-        name="root_agent",
+        name="patch_agent",
         model=Gemini(
             model=os.getenv("MODEL_NAME"),
             retry_options=types.HttpRetryOptions(attempts=3),
         ),
-        description=(
-            "Fixes security findings in a Python codebase with a"
-            " detect -> patch -> validate loop and returns a reviewable diff."
-        ),
-        instruction=INSTRUCTION,
-        tools=[list_findings, read_file, propose_patch, get_patch_report],
+        mode="single_turn",
+        include_contents="none",
+        description="Proposes one file-level security fix.",
+        instruction=PATCH_INSTRUCTION,
+        input_schema=PatchRequest,
+        output_schema=PatchProposal,
     )
 
 
-root_agent = create_agent()
+def create_workflow(patcher: Any | None = None) -> Workflow:
+    """Builds the detect -> patch -> validate graph.
+
+    Args:
+        patcher: Node that turns a PatchRequest into a PatchProposal.
+            Defaults to the Gemini patch agent; tests pass a deterministic
+            function node instead.
+    """
+    patch_node = patcher if patcher is not None else create_patch_agent()
+    return Workflow(
+        name="codemender_security_fixer",
+        description=(
+            "Fixes security findings in a Python codebase with a"
+            " detect -> patch -> validate loop: Bandit and the project's own"
+            " exploit tests gate every model-written patch. Returns a unified"
+            " diff and evidence for human review; never commits."
+        ),
+        edges=[
+            ("START", scan, {"has_findings": prepare_patch, "clean": report}),
+            (prepare_patch, patch_node, validate),
+            (validate, {"continue": prepare_patch, "done": report}),
+        ],
+    )
+
+
+root_agent = create_workflow()
 
 app = App(
     root_agent=root_agent,
