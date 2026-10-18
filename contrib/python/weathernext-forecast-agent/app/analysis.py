@@ -173,14 +173,14 @@ class Evaluator:
         if forecast.kind == "members":
             self._wind_ok = [
                 [w <= self.wind_limit_100m for w in row]
-                for row in forecast.members[WIND]
+                for row in forecast.member_data[WIND]
             ]
             self._rain_ok = [
                 [p <= task.max_precip_mm for p in row]
-                for row in forecast.members[PRECIP]
+                for row in forecast.member_data[PRECIP]
             ]
         else:
-            q = forecast.quantiles
+            q = forecast.quantile_data
             n = len(forecast.times)
             self._p_wind = [
                 quantile_cdf(
@@ -230,9 +230,9 @@ class Evaluator:
             prob = safe / n
             wmax = [
                 max(row[k] for k in span) * self.scale
-                for row in f.members[WIND]
+                for row in f.member_data[WIND]
             ]
-            pmax = [max(row[k] for k in span) for row in f.members[PRECIP]]
+            pmax = [max(row[k] for k in span) for row in f.member_data[PRECIP]]
             details = {
                 "members_safe": safe,
                 "members_total": n,
@@ -252,7 +252,7 @@ class Evaluator:
             ]
             prob = min(marg)
             lower = max(0.0, 1.0 - sum(1.0 - p for p in marg))
-            q = f.quantiles
+            q = f.quantile_data
             details = {
                 "probability_safe_lower_bound": round(lower, 3),
                 "min_hourly_p_wind_ok": round(
@@ -358,10 +358,13 @@ def summarize(
         }
         if forecast.kind == "members":
             wmax = [
-                max(m[k] for k in span) * scale for m in forecast.members[WIND]
+                max(m[k] for k in span) * scale
+                for m in forecast.member_data[WIND]
             ]
-            ptot = [sum(m[k] for k in span) for m in forecast.members[PRECIP]]
-            stats = {
+            ptot = [
+                sum(m[k] for k in span) for m in forecast.member_data[PRECIP]
+            ]
+            stats: dict[str, dict[int, float]] = {
                 "hub_wind_max": {
                     q: percentile(wmax, q) for q in SUMMARY_PERCENTILES
                 },
@@ -370,7 +373,7 @@ def summarize(
                 },
             }
         else:
-            qs = forecast.quantiles
+            qs = forecast.quantile_data
             stats = {
                 "hub_wind_max": {
                     q: max(qs[WIND][q / 100][k] for k in span) * scale

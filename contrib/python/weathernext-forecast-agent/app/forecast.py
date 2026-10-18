@@ -100,6 +100,20 @@ class Forecast:
     def kind(self) -> str:
         return "members" if self.members is not None else "quantiles"
 
+    @property
+    def member_data(self) -> dict[str, list[list[float]]]:
+        """Ensemble members; only valid when `kind == "members"`."""
+        if self.members is None:
+            raise ValueError(f"forecast for {self.site_id} has no members")
+        return self.members
+
+    @property
+    def quantile_data(self) -> dict[str, dict[float, list[float]]]:
+        """Quantile series; only valid when `kind == "quantiles"`."""
+        if self.quantiles is None:
+            raise ValueError(f"forecast for {self.site_id} has no quantiles")
+        return self.quantiles
+
     def index_range(
         self, start: datetime | None, end: datetime | None
     ) -> tuple[int, int]:
