@@ -15,6 +15,7 @@
 import json
 import logging
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -30,9 +31,22 @@ from requests.exceptions import RequestException
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BASE_URL = "http://127.0.0.1:8000"
+
+def _free_port() -> int:
+    # Other local servers often hold 8000/8080; let the OS pick a free port.
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+PORT = _free_port()
+BASE_URL = f"http://127.0.0.1:{PORT}"
 STREAM_URL = BASE_URL + "/run_sse"
-FEEDBACK_URL = BASE_URL + "/feedback"
+A2A_URL = BASE_URL + "/a2a/app"
+AGENT_CARD_URL = A2A_URL + "/.well-known/agent-card.json"
+REASONING_ENGINE_URL = BASE_URL + "/api/reasoning_engine"
+# A run with MAX_EVALUATIONS=2 makes three or four model calls.
+RUN_TIMEOUT_SECONDS = 900
 
 HEADERS = {"Content-Type": "application/json"}
 
@@ -51,12 +65,15 @@ def start_server() -> subprocess.Popen[str]:
         "uvicorn",
         "app.fast_api_app:app",
         "--host",
-        "0.0.0.0",
+        "127.0.0.1",
         "--port",
-        "8000",
+        str(PORT),
     ]
     env = os.environ.copy()
     env["INTEGRATION_TEST"] = "TRUE"
+    env["APP_URL"] = BASE_URL
+    # Every message runs the full optimization loop; keep it short here.
+    env["MAX_EVALUATIONS"] = "2"
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -139,12 +156,16 @@ def test_chat_stream(server_fixture: subprocess.Popen[str]) -> None:
         "session_id": session_id,
         "new_message": {
             "role": "user",
-            "parts": [{"text": "Hi!"}],
+            "parts": [{"text": "Cut node cost for my clusters."}],
         },
         "streaming": True,
     }
     response = requests.post(
-        STREAM_URL, headers=HEADERS, json=data, stream=True, timeout=60
+        STREAM_URL,
+        headers=HEADERS,
+        json=data,
+        stream=True,
+        timeout=RUN_TIMEOUT_SECONDS,
     )
     assert response.status_code == 200
 
@@ -195,20 +216,75 @@ def test_chat_stream_error_handling(
     logger.info("Error handling test completed successfully")
 
 
-def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
-    """
-    Test the feedback collection endpoint (/feedback) to ensure it properly
-    logs the received feedback.
-    """
-    # Create sample feedback data
-    feedback_data = {
-        "score": 4,
-        "user_id": "test-user-456",
-        "session_id": "test-session-456",
-        "text": "Great response!",
-    }
+def test_a2a_agent_card(server_fixture: subprocess.Popen[str]) -> None:
+    """The agent card has the 0.3 JSON-RPC shape Gemini Enterprise registers."""
+    response = requests.get(AGENT_CARD_URL, timeout=30)
+    assert response.status_code == 200
+    card = response.json()
+    assert card["name"]
+    assert "Kubernetes" in card["description"]
+    assert card["skills"]
+    interfaces = card["supportedInterfaces"]
+    v03 = [i for i in interfaces if i["protocolVersion"] == "0.3"]
+    assert v03, interfaces
+    assert v03[0]["protocolBinding"] == "JSONRPC"
+    assert v03[0]["url"] == A2A_URL
 
+
+def _texts(value: Any) -> list[str]:
+    """Collects every A2A text part in a JSON-RPC result."""
+    if isinstance(value, dict):
+        found = [value["text"]] if isinstance(value.get("text"), str) else []
+        return found + [t for v in value.values() for t in _texts(v)]
+    if isinstance(value, list):
+        return [t for v in value for t in _texts(v)]
+    return []
+
+
+def test_a2a_message_send(server_fixture: subprocess.Popen[str]) -> None:
+    """A v0.3 A2A message/send runs the workflow and returns the report."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "message/send",
+        "params": {
+            "message": {
+                "role": "user",
+                "kind": "message",
+                "messageId": "e2e-1",
+                "parts": [
+                    {
+                        "kind": "text",
+                        "text": "Find the cheapest node plan for my clusters.",
+                    }
+                ],
+            }
+        },
+    }
     response = requests.post(
-        FEEDBACK_URL, json=feedback_data, headers=HEADERS, timeout=10
+        A2A_URL, json=payload, headers=HEADERS, timeout=RUN_TIMEOUT_SECONDS
     )
     assert response.status_code == 200
+    body = response.json()
+    assert "error" not in body, body
+    assert body["result"]["status"]["state"] == "completed"
+    texts = _texts(body["result"])
+    assert any("Kubernetes node cost plan" in t for t in texts)
+    assert any("### Summary" in t for t in texts)
+
+
+def test_reasoning_engine_adapter(
+    server_fixture: subprocess.Popen[str],
+) -> None:
+    """The Agent Engine :query route reaches the AdkApp runtime."""
+    response = requests.post(
+        REASONING_ENGINE_URL,
+        json={
+            "class_method": "async_create_session",
+            "input": {"user_id": "e2e-user"},
+        },
+        headers=HEADERS,
+        timeout=60,
+    )
+    assert response.status_code == 200
+    assert response.json()["output"]["id"]

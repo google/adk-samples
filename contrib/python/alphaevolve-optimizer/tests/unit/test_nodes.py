@@ -11,23 +11,36 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Unit tests for the verifier, selector and agent tools. No model calls."""
+"""Unit tests for the verifier, selector and workflow nodes. No model calls."""
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from google.adk import Workflow
+from google.adk.apps import App
+from google.adk.runners import InMemoryRunner
+from google.adk.workflow import FunctionNode
+from google.genai import types
 
 from app import population as pop
 from app import problem
 from app.agent import (
-    evaluate_candidate,
-    get_best_plan,
-    get_parents,
-    get_problem,
+    CONTINUE,
+    DONE,
+    Candidate,
+    build_report,
+    create_workflow,
+    deliver,
+    init,
+    render_report,
+    report,
+    select,
+    verify,
     verify_program,
 )
-from app.sandbox import run_candidate
+from app.sandbox import MAX_CODE_CHARS, run_candidate
 
 # Picks, per cluster, the single node type whose first-fit-decreasing packing
 # is cheapest. A realistic "right-size the node pool" improvement.
@@ -63,8 +76,12 @@ ONE_NODE_PER_POD = (
 )
 
 
+INVALID = "def place(pods, node_types):\n    return []\n"
+
+
 @pytest.fixture
-def tool_context() -> SimpleNamespace:
+def ctx() -> SimpleNamespace:
+    """Stands in for google.adk.Context: function nodes only use ctx.state."""
     return SimpleNamespace(state={})
 
 
@@ -202,49 +219,165 @@ def test_population_ignores_invalid_candidates() -> None:
     assert pop.best(population) is None
 
 
-# --- agent tools ------------------------------------------------------------
+# --- function nodes ---------------------------------------------------------
 
 
-def test_get_problem_seeds_baseline(tool_context: SimpleNamespace) -> None:
-    info = get_problem(tool_context)
-    assert (
-        info["best_score"] == verify_program(problem.BASELINE_PROGRAM)["score"]
-    )
-    assert info["lower_bound"] == problem.lower_bound()
-    assert len(info["clusters"]) == len(problem.INSTANCES)
-    assert len(get_parents(tool_context)["parents"]) == 1
+def _verify_and_select(ctx: SimpleNamespace, idea: str, code: str):
+    checked = verify(ctx, Candidate(idea=idea, code=code))
+    return checked, select(ctx, checked.output)
 
 
-def test_evaluate_candidate_updates_population_and_budget(
-    tool_context: SimpleNamespace,
+def test_init_seeds_baseline_and_budget(ctx: SimpleNamespace) -> None:
+    event = init(ctx, "prefer fewer node types")
+    brief = event.output
+    baseline = verify_program(problem.BASELINE_PROGRAM)
+    assert brief["baseline_monthly_cost"] == baseline["monthly_cost"]
+    assert brief["best_monthly_cost"] == baseline["monthly_cost"]
+    assert brief["evaluations_remaining"] == 2
+    assert brief["operator_request"] == "prefer fewer node types"
+    assert len(brief["clusters"]) == len(problem.INSTANCES)
+    assert [p["id"] for p in brief["parents"]] == [0]
+    assert brief["last_feedback"] is None
+    assert brief["max_code_chars"] == MAX_CODE_CHARS
+    assert brief["parents"][0]["code_chars"] == len(problem.BASELINE_PROGRAM)
+    assert "Baseline" in event.content.parts[0].text
+
+
+def test_init_resets_a_previous_run(ctx: SimpleNamespace) -> None:
+    init(ctx)
+    _verify_and_select(ctx, "right-size pool", RIGHT_SIZED_POOL)
+    init(ctx)
+    assert ctx.state["evolve_evaluations"] == 0
+    assert len(ctx.state["evolve_population"]) == 1
+    assert len(ctx.state["evolve_history"]) == 1
+
+
+def test_better_candidate_becomes_best_and_loop_continues(
+    ctx: SimpleNamespace,
 ) -> None:
-    get_problem(tool_context)
-    first = evaluate_candidate(
-        RIGHT_SIZED_POOL, "right-size pool", tool_context
-    )
-    assert first["valid"]
-    assert first["is_new_best"]
-    assert first["evaluations_remaining"] == 1
+    init(ctx)
+    checked, routed = _verify_and_select(ctx, "right-size", RIGHT_SIZED_POOL)
+    assert checked.output["valid"]
+    assert routed.actions.route == CONTINUE
+    brief = routed.output
+    assert brief["best_monthly_cost"] == checked.output["monthly_cost"]
+    assert brief["best_monthly_cost"] < brief["baseline_monthly_cost"]
+    assert brief["parents"][0]["code"] == RIGHT_SIZED_POOL
+    assert brief["last_feedback"]["id"] == 1
+    assert brief["evaluations_remaining"] == 1
+
+
+def test_invalid_candidate_feeds_back_error(ctx: SimpleNamespace) -> None:
+    init(ctx)
+    checked, routed = _verify_and_select(ctx, "bad", INVALID)
+    assert not checked.output["valid"]
+    assert "not placed" in routed.output["last_feedback"]["error"]
+    assert len(ctx.state["evolve_population"]) == 1
+
+
+def test_duplicate_code_is_rejected_without_running(
+    ctx: SimpleNamespace,
+) -> None:
+    init(ctx)
+    checked = verify(ctx, Candidate(idea="same", code=problem.BASELINE_PROGRAM))
+    assert not checked.output["valid"]
+    assert "identical to candidate 0" in checked.output["error"]
+
+
+def test_budget_exhaustion_routes_to_report(ctx: SimpleNamespace) -> None:
+    init(ctx)
+    _, first = _verify_and_select(ctx, "bad", INVALID)
+    _, second = _verify_and_select(ctx, "right-size", RIGHT_SIZED_POOL)
+    assert first.actions.route == CONTINUE
+    assert second.actions.route == DONE
+    assert second.output["best_id"] == 2
+
+
+def test_reaching_lower_bound_stops_early(
+    ctx: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    init(ctx)
+    monkeypatch.setattr(problem, "lower_bound", lambda: 1e9)
+    _, routed = _verify_and_select(ctx, "right-size", RIGHT_SIZED_POOL)
+    assert routed.actions.route == DONE
+    assert routed.output["reached_bound"]
+
+
+def test_report_uses_verified_numbers(ctx: SimpleNamespace) -> None:
+    init(ctx)
+    _verify_and_select(ctx, "right-size pool", RIGHT_SIZED_POOL)
+    numbers = build_report(ctx.state)
+    assert numbers["monthly_savings"] > 0
     assert (
-        get_parents(tool_context)["parents"][0]["score"] == first["best_score"]
+        numbers["best_monthly_cost"]
+        == verify_program(RIGHT_SIZED_POOL)["monthly_cost"]
     )
-
-    invalid = evaluate_candidate(
-        "def place(pods, node_types):\n    return []\n", "bad", tool_context
-    )
-    assert not invalid["valid"]
-    assert invalid["done"]
-
-    exhausted = evaluate_candidate(RIGHT_SIZED_POOL, "again", tool_context)
-    assert exhausted["budget_exhausted"]
-
-
-def test_get_best_plan_reports_savings(tool_context: SimpleNamespace) -> None:
-    get_problem(tool_context)
-    evaluate_candidate(RIGHT_SIZED_POOL, "right-size pool", tool_context)
-    plan = get_best_plan(tool_context)
-    assert plan["monthly_savings"] > 0
-    assert plan["best_monthly_cost"] < plan["baseline_monthly_cost"]
-    assert set(plan["best_per_cluster"]) == {
+    assert {c["cluster"] for c in numbers["clusters"]} == {
         i["name"] for i in problem.INSTANCES
     }
+    text = render_report(numbers)
+    assert f"${numbers['monthly_savings']:,.2f}" in text
+    assert "```python" in text
+    event = report(ctx)
+    assert "best_code" not in event.output
+    assert event.output["monthly_savings"] == (
+        f"${numbers['monthly_savings']:,.2f}"
+    )
+    final = deliver(ctx, "### Summary\nShort.")
+    assert final.output.startswith(text)
+    assert final.output.endswith("### Summary\nShort.")
+
+
+# --- workflow graph ---------------------------------------------------------
+
+
+def _stub_workflow(codes: list[str], seen: list[dict]) -> Workflow:
+    def propose(node_input: dict) -> dict:
+        seen.append(node_input)
+        return {"idea": f"idea {len(seen)}", "code": codes[len(seen) - 1]}
+
+    def narrate(node_input: dict) -> str:
+        return f"saved {node_input['monthly_savings']}"
+
+    return create_workflow(
+        proposer=FunctionNode(func=propose, name="propose"),
+        narrator=FunctionNode(func=narrate, name="narrate"),
+    )
+
+
+async def _run(workflow: Workflow) -> tuple[list, dict]:
+    runner = InMemoryRunner(app=App(root_agent=workflow, name="app"))
+    session = await runner.session_service.create_session(
+        app_name="app", user_id="u"
+    )
+    message = types.Content(role="user", parts=[types.Part(text="cut cost")])
+    events = [
+        e
+        async for e in runner.run_async(
+            user_id="u", session_id=session.id, new_message=message
+        )
+    ]
+    session = await runner.session_service.get_session(
+        app_name="app", user_id="u", session_id=session.id
+    )
+    return events, session.state
+
+
+def test_workflow_loops_until_budget_then_reports() -> None:
+    seen: list[dict] = []
+    events, state = asyncio.run(
+        _run(_stub_workflow([INVALID, RIGHT_SIZED_POOL], seen))
+    )
+    assert len(seen) == 2
+    assert seen[1]["last_feedback"]["valid"] is False
+    routes = [e.actions.route for e in events if e.actions.route]
+    assert routes == [CONTINUE, DONE]
+    assert state["evolve_evaluations"] == 2
+    final = [e for e in events if e.output is not None][-1]
+    assert final.output.startswith("## Kubernetes node cost plan")
+    assert final.output.endswith(f"saved {_savings(state)}")
+    assert final.content.parts[0].text == final.output
+
+
+def _savings(state: dict) -> str:
+    return f"${build_report(state)['monthly_savings']:,.2f}"

@@ -19,11 +19,11 @@ status: "active"
 language: "python"
 
 # REQUIRED — Short description of what this recipe does and the value it provides.
-description: "Cuts Kubernetes node cost with an AlphaEvolve-style loop: a Gemini agent evolves a workload placement program, a sandboxed verifier checks every pod's CPU and memory requests and prices the plan, and the cheapest verified programs seed the next round. Produces a savings report and node mix per cluster."
+description: "Cuts Kubernetes node cost with an AlphaEvolve-style ADK 2.0 graph workflow: a single-turn Gemini agent evolves a workload placement program, a sandboxed verifier checks every pod's CPU and memory requests and prices the plan, and the cheapest verified programs seed the next round. Produces a savings report and node mix per cluster."
 
 # OPTIONAL — Agent architecture details. Omit the whole block if unknown.
 architecture:
-  agent: "single"
+  agent: "multi"
   stateful: false
   datasources:
     - "local"
@@ -52,6 +52,9 @@ tags:
   - "kubernetes"
   - "finops"
   - "cost-optimization"
+  - "graph-workflow"
+  - "a2a"
+  - "gemini-enterprise"
 
 # OPTIONAL — SPDX license identifier (e.g. "Apache-2.0", "MIT", "BSD-3-Clause").
 # Only set if explicitly declared in a LICENSE file or by the author.

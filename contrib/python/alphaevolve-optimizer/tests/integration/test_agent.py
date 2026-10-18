@@ -12,55 +12,55 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from google.adk.agents.run_config import RunConfig, StreamingMode
+import pytest
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from app.agent import create_agent
+from app.agent import create_workflow
 
 
-def test_agent_stream() -> None:
+def test_workflow_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Runs the whole workflow against Gemini with a small budget.
+
+    Checks that the loop ran, every evaluation was recorded, and the final
+    report came from the verifier.
     """
-    Integration test for the agent stream functionality.
-    Tests that the agent returns valid streaming responses.
-    """
-
+    monkeypatch.setenv("MAX_EVALUATIONS", "2")
     session_service = InMemorySessionService()
-
     session = session_service.create_session_sync(
         user_id="test_user", app_name="test"
     )
     runner = Runner(
-        agent=create_agent(), session_service=session_service, app_name="test"
+        node=create_workflow(),
+        session_service=session_service,
+        app_name="test",
     )
-
     message = types.Content(
         role="user",
         parts=[
             types.Part.from_text(
-                text="What can you optimize for my Kubernetes clusters, and how do you verify savings?"
+                text="Find the cheapest node plan for my clusters."
             )
         ],
     )
 
     events = list(
         runner.run(
-            new_message=message,
-            user_id="test_user",
-            session_id=session.id,
-            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
+            new_message=message, user_id="test_user", session_id=session.id
         )
     )
-    assert len(events) > 0, "Expected at least one message"
 
-    has_text_content = False
-    for event in events:
-        if (
-            event.content
-            and event.content.parts
-            and any(part.text for part in event.content.parts)
-        ):
-            has_text_content = True
-            break
-    assert has_text_content, "Expected at least one message with text content"
+    texts = [
+        part.text
+        for event in events
+        if event.content
+        for part in event.content.parts
+        if part.text
+    ]
+    assert any(t.startswith("## Kubernetes node cost plan") for t in texts)
+    state = session_service.get_session_sync(
+        app_name="test", user_id="test_user", session_id=session.id
+    ).state
+    assert state["evolve_evaluations"] == 2
+    assert len(state["evolve_history"]) == 3

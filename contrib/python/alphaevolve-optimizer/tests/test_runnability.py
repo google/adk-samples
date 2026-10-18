@@ -22,7 +22,7 @@ etc.). Tool-level correctness belongs in test_tools.py.
 """
 
 from fastapi import FastAPI
-from google.adk.agents import Agent
+from google.adk import Agent, Workflow
 from google.adk.apps import App
 from google.adk.models import Gemini
 
@@ -33,28 +33,32 @@ import app.agent
 def test_adk_run_runnability() -> None:
     """Verifies the entry point required by `adk run app` is correctly wired.
 
-    `adk run app` imports the `app` package and expects `root_agent` to be
-    an Agent instance exposed at the package level via app/__init__.py.
+    `adk run app` imports the `app` package and expects `app` (an App) or
+    `root_agent` at the package level via app/__init__.py. In this recipe the
+    root is an ADK 2.0 graph Workflow.
     """
-    # app/__init__.py must re-export root_agent or app for `adk run app` to work
     assert hasattr(app, "root_agent") or hasattr(app, "app"), (
         "app/__init__.py must export either `root_agent` or `app` "
         "for `adk run app` to work."
     )
 
-    # root_agent must be a valid Agent instance
-    assert app.agent.root_agent is not None
-    assert isinstance(app.agent.root_agent, Agent)
-    assert isinstance(app.agent.root_agent.model, Gemini)
+    root = app.agent.root_agent
+    assert isinstance(root, Workflow)
+    assert root.graph is not None
 
-    # Agent must have at least one tool registered
-    assert len(app.agent.root_agent.tools) > 0, (
-        "root_agent has no tools registered."
-    )
-
-    # App wrapper must be present and valid
-    assert app.agent.app is not None
+    # The App wrapper must serve the workflow.
     assert isinstance(app.agent.app, App)
+    assert app.agent.app.root_agent is root
+
+    # Every LLM step is a single_turn Agent on the env-configured model.
+    nodes = {node.name: node for node in root.graph.nodes}
+    for name in ("propose", "narrate"):
+        agent = nodes[name]
+        assert isinstance(agent, Agent)
+        assert agent.mode == "single_turn"
+        assert isinstance(agent.model, Gemini)
+    assert nodes["propose"].output_schema is app.agent.Candidate
+    assert {"init", "verify", "select", "report"} <= set(nodes)
 
 
 def test_web_server_runnability() -> None:
