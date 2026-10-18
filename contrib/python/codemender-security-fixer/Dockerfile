@@ -21,8 +21,8 @@ WORKDIR /code
 COPY ./pyproject.toml ./README.md ./uv.lock* ./
 
 COPY ./app ./app
-COPY .env.example* .env* ./
-RUN if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi
+COPY .env.example ./
+RUN cp .env.example .env
 
 RUN uv sync --frozen
 

@@ -86,8 +86,12 @@ app.description = "API for interacting with the Agent codemender-security-fixer"
 attach_reasoning_engine_routes(app)
 
 
+# Matches EXPOSE / --port in the Dockerfile.
+SERVER_PORT = 8080
+
+
 # Main execution
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8080)  # noqa: S104 -- container entrypoint
+    uvicorn.run(app, host="0.0.0.0", port=SERVER_PORT)  # noqa: S104 -- container entrypoint
