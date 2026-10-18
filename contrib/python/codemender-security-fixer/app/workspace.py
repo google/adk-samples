@@ -149,7 +149,7 @@ def _lines(text: str) -> list[str]:
 
 def unified_diff(source: Path, applied: dict[str, str]) -> str:
     """A `git apply`-compatible diff from the original target to `applied`."""
-    chunks = []
+    chunks: list[str] = []
     for rel in sorted(applied):
         before = _lines((source / rel).read_text(encoding="utf-8"))
         after = _lines(applied[rel])

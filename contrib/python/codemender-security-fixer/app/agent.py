@@ -259,11 +259,15 @@ def apply_proposal(
         The validator verdict plus `route` ("continue" or "done"), the
         remaining findings and the remaining budget.
     """
-    if isinstance(proposal, dict):
-        proposal = PatchProposal.model_validate(proposal)
+    parsed: PatchProposal | None = (
+        PatchProposal.model_validate(proposal)
+        if isinstance(proposal, dict)
+        else proposal
+    )
     work = _work_dir(state)
     before = state[_CURRENT_KEY]
-    if proposal is None:
+    verdict: dict[str, Any]
+    if parsed is None:
         verdict = {
             "accepted": False,
             "reasons": ["the model did not return a valid PatchProposal"],
@@ -275,21 +279,21 @@ def apply_proposal(
         }
         file_path, rationale = "", ""
     else:
-        file_path, rationale = proposal.file_path, proposal.rationale
+        file_path, rationale = parsed.file_path, parsed.rationale
         verdict = validator.validate_patch(
             work,
             file_path,
-            proposal.new_content,
+            parsed.new_content,
             before,
             _timeout_seconds(),
             _test_command(),
             _bandit_skips(),
         )
     after = verdict.pop("after")
-    if verdict["accepted"]:
-        workspace.write_file(work, file_path, proposal.new_content)
+    if verdict["accepted"] and parsed is not None:
+        workspace.write_file(work, file_path, parsed.new_content)
         applied = dict(state.get(_APPLIED_KEY) or {})
-        applied[file_path] = proposal.new_content
+        applied[file_path] = parsed.new_content
         state[_APPLIED_KEY] = applied
         state[_CURRENT_KEY] = after
         state[_FEEDBACK_KEY] = ""
