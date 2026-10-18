@@ -317,6 +317,8 @@ def select(ctx: Context, node_input: dict[str, Any]) -> Event:
     )
     ctx.state[_POPULATION_KEY] = population
     best = pop.best(population)
+    if best is None:
+        raise RuntimeError("population is empty; init must seed the baseline")
     remaining = _max_evaluations() - ctx.state.get(_EVALUATIONS_KEY, 0)
     reached_bound = best["score"] <= problem.lower_bound()
     if remaining <= 0 or reached_bound:
