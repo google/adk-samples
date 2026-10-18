@@ -23,8 +23,8 @@ COPY ./pyproject.toml ./README.md ./uv.lock* ./
 COPY ./app ./app
 # Ship the documented defaults: .dockerignore excludes .env, so .env.example
 # becomes the image's .env unless one is provided.
-COPY .env.example* .env* ./
-RUN if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi
+COPY .env.example ./
+RUN cp .env.example .env
 
 RUN uv sync --frozen
 
