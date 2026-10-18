@@ -17,7 +17,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from app.agent import create_agent
+from app.agent import app as adk_app
 
 
 def test_agent_stream() -> None:
@@ -29,11 +29,9 @@ def test_agent_stream() -> None:
     session_service = InMemorySessionService()
 
     session = session_service.create_session_sync(
-        user_id="test_user", app_name="test"
+        user_id="test_user", app_name=adk_app.name
     )
-    runner = Runner(
-        agent=create_agent(), session_service=session_service, app_name="test"
-    )
+    runner = Runner(app=adk_app, session_service=session_service)
 
     message = types.Content(
         role="user",

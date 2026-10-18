@@ -13,32 +13,50 @@ have a one-in-three chance of wind above the lift limit.
 This recipe gives an operations planner an ADK agent that answers questions
 like *"We have 2 crane crews this week. Where should they go, when, and how
 sure are we?"*, grounded in a **probabilistic (ensemble) forecast** from
-[WeatherNext](https://developers.google.com/weathernext). The agent never
-computes weather numbers itself:
+[WeatherNext](https://developers.google.com/weathernext). The model never
+computes weather numbers itself.
 
-1. **Deterministic tools do the math** ([`app/analysis.py`](app/analysis.py)).
-   For every candidate window they check each ensemble member against the
-   task's hub-height wind, gust and precipitation limits for every hour, and
-   report the fraction of members for which the whole window stays workable.
-2. **Limits live in config** ([`app/config.py`](app/config.py)): per task type,
-   overridable with `TASK_LIMITS_JSON` so you can paste in the limits from
-   your own lift plans and OEM manuals.
-3. **Gemini plans and explains**: it picks the tools, compares sites,
-   recommends a primary and backup window, and states the uncertainty
-   (probability, members in support, and whether wind or rain is the risk).
+## Architecture: an ADK 2.0 graph workflow
+
+The root of the app is an ADK 2.0 `Workflow`
+([`app/agent.py`](app/agent.py)). Deterministic steps are **function nodes**;
+only three nodes call Gemini, all as `Agent(mode="single_turn")`:
 
 ```mermaid
-flowchart LR
-    U[Operations planner] --> A[Gemini agent]
-    A -- list_sites --> C[(Sites + task limits)]
-    A -- get_forecast_summary / find_maintenance_windows / plan_crew_schedule --> T[Deterministic tools]
-    S[(Bundled sample ensemble)] --> L[Forecast loader]
-    B[(WeatherNext 3 on BigQuery)] -.optional.-> L
-    L --> T
-    C --> T
-    T -- windows, P(safe), crew plan --> A
-    A --> R[Plan with explicit uncertainty]
+flowchart TD
+    START((START)) --> P["parse_request<br/>LLM, output_schema=PlanRequest"]
+    P --> C{check_request}
+    C -- retry, up to PARSE_RETRY_LIMIT --> P
+    C -- reply --> H[reply_without_plan]
+    C -- plan --> L{load_forecasts}
+    L -- error --> H
+    L -- ok --> F[find_windows]
+    F --> PC{plan_crews}
+    PC -- go --> E1["explain_plan<br/>LLM"]
+    PC -- no_go --> A[suggest_alternatives]
+    A --> E2["explain_no_window<br/>LLM"]
 ```
+
+| Node | Kind | What it does |
+| --- | --- | --- |
+| `parse_request` | LLM (`single_turn`, Pydantic `output_schema`) | Turns the planner's message (and follow-ups) into `PlanRequest`: task type, sites, crews, horizon, hours |
+| `check_request` | function, routes | Validates ids and numbers; sends errors back to the parser once (`retry`, bounded by `PARSE_RETRY_LIMIT`), else `plan` or `reply` |
+| `reply_without_plan` | function | Deterministic help text: sites, task limits, example questions, or the validation/data error |
+| `load_forecasts` | function, routes | Loads the ensemble for every site (sample or BigQuery); `error` if data access fails |
+| `find_windows` | function | Scores every allowed window per site with [`analysis.py`](app/analysis.py): P(all hours within limits) across ensemble members |
+| `plan_crews` | function, routes | Assigns crews (one job per site, travel buffer, go threshold); `go` if any crew is assigned, else `no_go` |
+| `suggest_alternatives` | function | For `no_go`: best window for every other task type, plus a daily p10/p50/p90 outlook per site |
+| `explain_plan` / `explain_no_window` | LLM (`single_turn`, `include_contents="none"`) | Narrate only the numbers in their JSON input, with local times, members in support and the main risk |
+
+Task limits live in config ([`app/config.py`](app/config.py)), overridable with
+`TASK_LIMITS_JSON` so you can paste in the limits from your own lift plans
+and OEM manuals.
+
+There is deliberately **no human-in-the-loop `RequestInput` step**: the
+workflow only recommends, it never books crews or changes anything, and a
+paused task would break the single request/response chat turn that Gemini
+Enterprise uses over A2A. Approval stays with the people on site (see
+[Safety and limitations](#safety-and-limitations)).
 
 ## Real-world scenario
 
@@ -77,9 +95,10 @@ crews available this week for main component lifts (blade exchanges). Which
 sites should they go to and when? Give me the probability that each window
 stays workable and a backup option."*
 
-The agent made 6 tool calls (`list_sites`, `plan_crew_schedule`, then
-`find_maintenance_windows` for each of the 4 sites) and answered in 27.2 s.
-Every number below comes from the tools:
+The workflow ran `parse_request` → `check_request` (`plan`) →
+`load_forecasts` → `find_windows` → `plan_crews` (`go`) → `explain_plan`: two
+model calls, answered in 23.6 s. Every number below comes from the
+function nodes:
 
 | Site | Best 8-hour lift window (local) | P(safe) | Members safe | Main risk |
 | --- | --- | --- | --- | --- |
@@ -91,13 +110,19 @@ Every number below comes from the tools:
 
 The crew plan assigned crew 1 to Prairie Ridge on Tuesday (expected completed
 jobs: 1.0) and left crew 2 unassigned, because no other site reached the 80%
-go threshold. The agent recommended either a second Prairie Ridge lift on the
-Wednesday backup window, or holding the second crew for a newer forecast or a
-less wind-sensitive task (blade repair, nacelle service), and closed with the
-decision-support reminder.
+go threshold. The answer gave the Wednesday window as the backup, listed each
+unassigned site with its best probability, and closed with the
+decision-support reminder. Asking about a single windy site instead (for
+example a blade exchange at Highland Moor) takes the `no_go` route: the
+answer says no window qualifies (best 28.1%) and points to nacelle service on
+Wednesday 14 Oct 07:00–11:00 at 100% (32/32) as an alternative task.
 
 ## What you will learn
 
+- Building an **ADK 2.0 graph `Workflow`**: function nodes for the math,
+  `single_turn` LLM nodes with a Pydantic `output_schema`, conditional routes
+  (`Event(route=...)` with dict edges) and a bounded retry loop back to the
+  parser.
 - Grounding an agent in **probabilistic data**: probabilities come from
   counting ensemble members, so the agent can say "30 of 32 members" instead
   of guessing.
@@ -133,7 +158,8 @@ Before you begin, ensure you have:
 
    | Variable | Default | Purpose |
    | --- | --- | --- |
-   | `MODEL_NAME` | `gemini-3.7-flash` | Model that plans and explains |
+   | `MODEL_NAME` | `gemini-3.7-flash` | Model for the parse and explain nodes |
+   | `PARSE_RETRY_LIMIT` | `1` | Times an invalid parsed request goes back to the parser |
    | `WEATHERNEXT_SOURCE` | `sample` | `sample` or `bigquery` |
    | `WEATHERNEXT_BQ_TABLE` | — | `project.dataset.weathernext_3_0_0_0p1deg` |
    | `WEATHERNEXT_BQ_PROJECT` | client default | Project billed for queries |
@@ -240,12 +266,41 @@ For live data, add `WEATHERNEXT_SOURCE=bigquery` and `WEATHERNEXT_BQ_TABLE`,
 and grant the service account `roles/bigquery.jobUser` on the billing project
 and `roles/bigquery.dataViewer` on the linked dataset.
 
-To bring it to your operations team, make the agent available in your Gemini
-Enterprise app (the recipe includes an Agent Engine adapter in
-`app/app_utils/`) and expose it in Google Chat by following
-[Build a Google Chat app with a Gemini Enterprise AI agent](https://developers.google.com/workspace/chat/quickstart-ge-agent).
+### Use it in Gemini Enterprise
+
+The server exposes the workflow over **A2A** (JSON-RPC at `/a2a/app`, agent
+card at `/a2a/app/.well-known/agent-card.json`). The card advertises both an
+A2A 1.0 and a **v0.3 JSON-RPC interface**, which is what Gemini Enterprise
+supports. Set `APP_URL` to the public URL of your service so the card points
+at it.
+
+1. Deploy to Cloud Run as above (or to Agent Engine: the recipe includes the
+   `/api/reasoning_engine` adapter routes in
+   [`app/app_utils/reasoning_engine_adapter.py`](app/app_utils/reasoning_engine_adapter.py)).
+2. Register the agent in your Gemini Enterprise app as an A2A agent, using its
+   agent card, by following
+   [Register and manage A2A agents](https://cloud.google.com/gemini/enterprise/docs/register-and-manage-an-a2a-agent).
+   That page also covers the Cloud Run invoker role for the Discovery Engine
+   service agent and optional OAuth.
+3. To reach it from Google Chat, follow
+   [Build a Google Chat app with a Gemini Enterprise AI agent](https://developers.google.com/workspace/chat/quickstart-ge-agent).
+
 Planners can then ask for this week's lift windows from the Chat space they
-already use for daily operations.
+already use for daily operations; follow-up questions ("what about blade
+repair instead?") work because `parse_request` reads the conversation.
+
+**What was verified locally** (no GCP project or Gemini Enterprise app was
+available, so an actual registration was not done):
+the agent card is served with a JSON-RPC `0.3` interface whose URL is
+`APP_URL` + `/a2a/app`, plus name, description and skills; an A2A v0.3
+`message/send` returns a `completed` task whose artifact is the workflow's
+final answer (covered by
+[`tests/integration/test_a2a_e2e.py`](tests/integration/test_a2a_e2e.py));
+and the Agent Engine adapter's `async_create_session` call succeeds. Running a
+query through the adapter needs Vertex AI credentials, because the Agent
+Engine runtime forces `GOOGLE_GENAI_USE_VERTEXAI=1`. In the A2A task history,
+the structured `parse_request` output appears as an intermediate agent
+message; the answer itself is the task artifact.
 
 ## Safety and limitations
 
@@ -273,13 +328,15 @@ already use for daily operations.
 
 The unit tests cover the loaders (including the BigQuery path with a fake
 client), percentile and quantile math, window search edge cases, crew
-planning and the tools, and do not call a model:
+planning, every function node, and the workflow routes (`go`, `no_go`, help,
+bounded retry) with the model replaced by a fake. They do not call a model:
 
 ```bash
 uv run pytest
 ```
 
-Integration tests call Gemini and need credentials:
+Integration tests call Gemini and need credentials. `test_a2a_e2e.py` starts
+the server and does the agent-card check and an A2A `message/send` round trip:
 
 ```bash
 uv run pytest tests/integration

@@ -131,6 +131,22 @@ class Window:
             out["end_local"] = local_time(self.end, site).isoformat()
         return out
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Window":
+        """Rebuilds a window from `to_dict` output (local times are dropped)."""
+        data = dict(data)
+        for key in ("start_local", "end_local"):
+            data.pop(key, None)
+        return cls(
+            site_id=data.pop("site_id"),
+            start=datetime.fromisoformat(data.pop("start_utc")),
+            end=datetime.fromisoformat(data.pop("end_utc")),
+            probability_safe=data.pop("probability_safe"),
+            method=data.pop("method"),
+            meets_go_threshold=data.pop("meets_go_threshold"),
+            details=data,
+        )
+
 
 class Evaluator:
     """Evaluates task limits against one site's forecast."""
@@ -421,7 +437,7 @@ def plan_crews(
             )
         elif best.probability_safe < min_probability:
             unassigned[site_id] = (
-                f"best window {best.start.isoformat()} has P(safe)="
+                f"best window has P(safe)="
                 f"{best.probability_safe:.2f} < required {min_probability:.2f}"
             )
         else:
