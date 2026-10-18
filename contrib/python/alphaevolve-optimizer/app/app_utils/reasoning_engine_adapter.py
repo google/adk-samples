@@ -53,6 +53,7 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
                 app=adk_app,
                 session_service_builder=services.get_session_service,
                 artifact_service_builder=services.get_artifact_service,
+                memory_service_builder=services.get_memory_service,
                 instrumentor_builder=_no_op_instrumentor_builder,
             )
             candidate.set_up()
