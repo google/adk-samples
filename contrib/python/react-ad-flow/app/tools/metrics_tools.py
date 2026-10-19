@@ -17,6 +17,7 @@
 import json
 import time
 from io import BytesIO
+from typing import Any
 
 from google import genai
 from google.adk.tools import ToolContext
@@ -416,7 +417,7 @@ def get_top_performing_ads(
         """  # noqa: S608
         cursor.execute(query, params)
 
-        top_ads = []
+        top_ads: list[dict[str, Any]] = []
         for row in cursor.fetchall():
             # Parse variation_params for characteristics
             variation_params = (
@@ -1350,7 +1351,7 @@ async def generate_metrics_visualization(
     elif chart_type == "bar_chart":
         # Get weekly aggregates for bar chart
         print("[DEBUG VIZ]   - Aggregating data into weekly buckets...")
-        weekly_data = []
+        weekly_data: list[dict[str, Any]] = []
         week_size = 7
         for i in range(0, len(data_points), week_size):
             week_slice = data_points[i : i + week_size]
@@ -1377,7 +1378,10 @@ async def generate_metrics_visualization(
             )
         else:
             weekly_data_formatted = "\n".join(
-                [f"   - {w['week']}: {int(w['value']):,}" for w in weekly_data]
+                [
+                    f"   - {w['week']}: {int(float(w['value'])):,}"
+                    for w in weekly_data
+                ]
             )
 
         template_vars.update(

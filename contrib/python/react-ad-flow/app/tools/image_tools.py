@@ -16,6 +16,7 @@
 
 import json
 import os
+from typing import Any
 
 from google import genai
 from google.genai import types
@@ -271,7 +272,7 @@ def list_available_images() -> dict:
     for filename in image_filenames:
         filepath = storage.get_image_path(filename)
         # For local mode, include file size; for GCS mode, skip size (would require extra API call)
-        image_info = {
+        image_info: dict[str, Any] = {
             "filename": filename,
             "full_path": filepath,
         }

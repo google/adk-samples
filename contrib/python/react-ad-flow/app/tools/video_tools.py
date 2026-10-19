@@ -490,7 +490,12 @@ def save_video_metadata(
     """
     metadata_filename = video_filename.replace(".mp4", ".txt")
 
-    metadata_content = f"""Product: {product.name if product is not None else "unknown"}
+    product_name = (
+        product.get("name", "unknown")
+        if isinstance(product, dict)
+        else getattr(product, "name", "unknown")
+    )
+    metadata_content = f"""Product: {product_name}
 Variation: {variation.name}
 Pipeline: {pipeline_type.title()} {"(Scene + Animation)" if pipeline_type == "two-stage" else ""}
 Generated: {datetime.now().isoformat()}
@@ -701,6 +706,7 @@ async def generate_video_from_product(
     # Generate video filename
     video_filename = generate_video_filename(product.name, variation_obj.name)
     thumbnail_filename = video_filename.replace(".mp4", "-thumbnail.png")
+    thumbnail_path: str | None = None
 
     try:
         start_time = time.time()
@@ -786,7 +792,6 @@ async def generate_video_from_product(
             video_bytes = _extract_omni_video_bytes(interaction)
 
             thumbnail_path = None
-            thumbnail_filename = None
 
         generation_time = int(time.time() - start_time)
         print(
@@ -1402,7 +1407,7 @@ def list_campaign_videos(
             JOIN campaigns c ON cv.campaign_id = c.id
             LEFT JOIN products p ON cv.product_id = p.id
         """
-        params = []
+        params: list[Any] = []
         conditions = []
 
         if campaign_id:

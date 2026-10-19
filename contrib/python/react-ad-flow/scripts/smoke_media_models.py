@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import config
+from app.models.product import Product
 from app.models.variation import CreativeVariation
 from app.tools.video_tools import (
     animate_scene_with_omni,
@@ -27,14 +28,14 @@ from app.tools.video_tools import (
 IMAGE_MODEL = config.IMAGE_GENERATION
 VIDEO_MODEL = config.VIDEO_GEN_MODEL
 
-# Minimal product dict; prompt builders use .get() with defaults for every key.
-PRODUCT = {
-    "name": "sage-satin-camisole",
-    "details": "A sage green satin camisole with delicate lace trim",
-    "category": "summer",
-    "color": "sage green",
-    "fabric": "satin",
-}
+# Minimal product instance; prompt builders use fields with defaults.
+PRODUCT = Product(
+    name="sage-satin-camisole",
+    details="A sage green satin camisole with delicate lace trim",
+    category="summer",
+    color="sage green",
+    fabric="satin",
+)
 
 
 async def main() -> int:

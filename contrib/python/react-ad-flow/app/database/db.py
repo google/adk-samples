@@ -505,7 +505,14 @@ def insert_product(product: Product) -> Product:
         conn.commit()
     finally:
         conn.close()
-    return get_product(product_id)
+    if product_id is None:
+        raise RuntimeError("Failed to retrieve product_id after insert")
+    stored = get_product(product_id)
+    if stored is None:
+        raise RuntimeError(
+            f"Failed to retrieve newly inserted product {product_id}"
+        )
+    return stored
 
 
 def populate_retail_test_products() -> None:

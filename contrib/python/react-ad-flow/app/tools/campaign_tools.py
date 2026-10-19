@@ -24,6 +24,8 @@ Product-Centric Model:
     - Same product at different stores = different campaigns
 """
 
+from typing import Any
+
 from ..config import CAMPAIGN_CATEGORIES
 from ..database.db import get_db_cursor, get_product
 from .metrics_shared import compute_rpi
@@ -178,7 +180,7 @@ def list_campaigns(
             LEFT JOIN campaign_videos cv ON c.id = cv.campaign_id
         """
         conditions = []
-        params = []
+        params: list[Any] = []
 
         if status:
             conditions.append("c.status = ?")
@@ -380,7 +382,7 @@ def update_campaign(
 
         # Build update query dynamically
         updates = []
-        params = []
+        params: list[Any] = []
 
         if name:
             updates.append("name = ?")

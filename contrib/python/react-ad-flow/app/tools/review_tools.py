@@ -29,6 +29,7 @@ Video Lifecycle:
 import json
 import logging
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from ..database.db import (
     get_db_cursor,
@@ -686,7 +687,7 @@ def get_video_review_table(
             LEFT JOIN products p ON cv.product_id = p.id
         """
         conditions = []
-        params = []
+        params: list[Any] = []
 
         if campaign_id:
             conditions.append("cv.campaign_id = ?")

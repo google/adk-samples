@@ -30,6 +30,8 @@ class AppMode(StrEnum):
 
 
 _raw_app_mode = (os.environ.get("APP_MODE") or "").strip().lower()
+if _raw_app_mode.startswith("<"):
+    _raw_app_mode = ""
 try:
     APP_MODE = AppMode(_raw_app_mode) if _raw_app_mode else AppMode.DEMO
 except ValueError:
@@ -49,6 +51,8 @@ class DemoDataset(StrEnum):
 
 
 _raw_demo_dataset = (os.environ.get("DEMO_DATASET") or "").strip().lower()
+if _raw_demo_dataset.startswith("<"):
+    _raw_demo_dataset = ""
 try:
     DEMO_DATASET = (
         DemoDataset(_raw_demo_dataset)
@@ -78,6 +82,8 @@ class BlueZooValidPolicy(StrEnum):
 _raw_bluezoo_valid_policy = (
     (os.environ.get("BLUEZOO_VALID_POLICY") or "").strip().lower()
 )
+if _raw_bluezoo_valid_policy.startswith("<"):
+    _raw_bluezoo_valid_policy = ""
 try:
     BLUEZOO_VALID_POLICY = (
         BlueZooValidPolicy(_raw_bluezoo_valid_policy)
@@ -124,10 +130,15 @@ VIDEO_DURATION_SECONDS = (
 )
 # API Keys (loaded from environment)
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+if GOOGLE_API_KEY and GOOGLE_API_KEY.startswith("<"):
+    GOOGLE_API_KEY = None
+
 # Support both GOOGLE_MAPS_API_KEY and MAPS_API_KEY (from .env)
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get(
     "MAPS_API_KEY"
 )
+if GOOGLE_MAPS_API_KEY and GOOGLE_MAPS_API_KEY.startswith("<"):
+    GOOGLE_MAPS_API_KEY = None
 
 # Cloud Run detection
 IS_CLOUD_RUN = os.environ.get("K_SERVICE") is not None

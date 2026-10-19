@@ -23,6 +23,7 @@ Uses NEW schema (product-centric model):
 
 import json
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from ..demo_data.attribution import screens_for_campaign
 from ..demo_data.constants import DEMO_WINDOW_DAYS
@@ -219,7 +220,7 @@ MOCK_VARIATIONS = [
 ]
 
 
-def _get_product_by_name(product_name: str) -> dict:
+def _get_product_by_name(product_name: str) -> dict[str, Any] | None:
     """Find a product by its hyphenated name."""
     for product in PRODUCTS:
         if product["name"] == product_name:
@@ -291,13 +292,14 @@ def populate_mock_data() -> dict:
         # Step 2: Create product-centric campaigns
         for i, camp_data in enumerate(MOCK_CAMPAIGNS):
             # Find the product
-            product = _get_product_by_name(camp_data["product_name"])
-            if not product:
+            matched_product = _get_product_by_name(camp_data["product_name"])
+            if not matched_product:
                 continue
 
             # Get the product ID (1-indexed based on insertion order)
             cursor.execute(
-                "SELECT id FROM products WHERE name = ?", (product["name"],)
+                "SELECT id FROM products WHERE name = ?",
+                (matched_product["name"],),
             )
             product_row = cursor.fetchone()
             if not product_row:
@@ -358,8 +360,8 @@ def populate_mock_data() -> dict:
 
                 # Insert ALL real videos for this campaign
                 for video_data in real_video_list:
-                    variation = video_data["variation"]
-                    variation_name = f"{variation['model_ethnicity']}-{variation['setting']}-{variation['mood']}"
+                    v_item: dict[str, Any] = video_data["variation"]  # type: ignore[assignment]
+                    v_name = f"{v_item['model_ethnicity']}-{v_item['setting']}-{v_item['mood']}"
 
                     cursor.execute(
                         """
@@ -375,11 +377,11 @@ def populate_mock_data() -> dict:
                             product_id,
                             video_data["filename"],
                             video_data["thumbnail"],
-                            f"Scene: {variation['model_ethnicity']} model wearing {product_name} in {variation['setting']}",
-                            f"Cinematic video of model in {product_name}, {variation['mood']} mood",
+                            f"Scene: {v_item['model_ethnicity']} model wearing {product_name} in {v_item['setting']}",
+                            f"Cinematic video of model in {product_name}, {v_item['mood']} mood",
                             "two-stage",
-                            variation_name,
-                            json.dumps(variation),
+                            v_name,
+                            json.dumps(v_item),
                             8,
                             "9:16",
                             "activated",  # Pre-activated for demo

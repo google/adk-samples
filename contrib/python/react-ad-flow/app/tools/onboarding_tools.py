@@ -152,7 +152,8 @@ def import_products_from_folder(folder_path: str, category: str = "") -> dict:
             skipped.append(f"{entry}: product '{slug}' already exists")
             continue
         path = storage.save_product_image(filename, data)
-        _record_image_location(stored.id, path)
+        if stored.id is not None:
+            _record_image_location(stored.id, path)
         created.append(
             {"id": stored.id, "name": stored.name, "image_filename": filename}
         )
@@ -254,7 +255,8 @@ async def generate_product_image(
         }
 
     path = storage.save_product_image(product.image_filename, image_bytes)
-    _record_image_location(product.id, path)
+    if product.id is not None:
+        _record_image_location(product.id, path)
 
     if tool_context:
         artifact = types.Part.from_bytes(
@@ -264,11 +266,11 @@ async def generate_product_image(
             filename=product.image_filename, artifact=artifact
         )
 
-    refreshed = get_product(product.id)
+    refreshed = get_product(product.id) if product.id is not None else None
     return {
         "status": "success",
         "message": f"Reference image generated and stored for '{product.name}'.",
-        "product": _product_payload(refreshed),
+        "product": _product_payload(refreshed or product),
         "next_steps": f"create_campaign(product_id={product.id}, ...) to run this product, "
         "then generate_video_from_product for ad videos.",
     }

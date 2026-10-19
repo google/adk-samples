@@ -95,7 +95,7 @@ def print_error(text: str):
     print(f"{RED}✗ {text}{NC}")
 
 
-def get_project_number(project_id: str) -> str:
+def get_project_number(project_id: str) -> str | None:
     """Get the project number from project ID."""
     try:
         result = subprocess.run(  # noqa: S603

@@ -15,6 +15,7 @@
 """Google Maps tools for campaign location visualization."""
 
 import time
+from typing import Any
 
 from google import genai
 from google.adk.tools import ToolContext
@@ -74,7 +75,7 @@ def get_campaign_locations() -> dict:
         campaigns = cursor.fetchall()
 
     locations = []
-    geocode_cache = {}
+    geocode_cache: dict[str, dict[str, float] | None] = {}
 
     for campaign in campaigns:
         location_key = f"{campaign['city']}, {campaign['state']}"
@@ -252,7 +253,7 @@ def get_location_demographics(city: str, state: str) -> dict:
     """
     # Simulated demographic data for demo purposes
     # In production, this would use real census/demographic APIs
-    city_data = {
+    city_data: dict[str, dict[str, Any]] = {
         "Los Angeles, CA": {
             "population": 3900000,
             "median_age": 35,
@@ -1002,8 +1003,8 @@ async def generate_map_visualization(
 
     # Process campaign data
     campaign_data = []
-    regional_data = {}
-    category_data = {}
+    regional_data: dict[str, dict[str, Any]] = {}
+    category_data: dict[str, dict[str, Any]] = {}
     total_revenue = 0
     total_impressions = 0
 

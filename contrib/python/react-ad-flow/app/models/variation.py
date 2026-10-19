@@ -144,7 +144,7 @@ class CreativeVariation(BaseModel):
     def get_summary(self) -> str:
         """Get a brief summary of the variation for display."""
         parts = [self.name]
-        if (self.model_ethnicity or "diverse") != "diverse":
+        if self.model_ethnicity and self.model_ethnicity != "diverse":
             parts.append(self.model_ethnicity)
         if self.setting != "studio":
             parts.append(self.setting)
