@@ -60,7 +60,8 @@ def lookup_order_by_email(email: str) -> dict[str, str]:
         email: Customer email address provided in the support request.
 
     Returns:
-        Dictionary containing `order_id`, `customer_id`, and `order_date`.
+        Dictionary containing `email`, `order_id`, `customer_id`, and
+        `order_date`.
     """
     return {
         "email": email,
@@ -144,7 +145,7 @@ def create_return_label(rma_code: str, reason: str) -> dict[str, str]:
         reason: Customer-stated reason for the return.
 
     Returns:
-        Dictionary containing `rma_code`, `label_id`, and `status`.
+        Dictionary containing `rma_code`, `reason`, `label_id`, and `status`.
     """
     return {
         "rma_code": rma_code,
@@ -177,7 +178,7 @@ def escalate_to_human(summary: str) -> dict[str, str]:
         summary: Concise summary of the customer's issue and steps taken.
 
     Returns:
-        Dictionary containing `ticket_id` and `queue`.
+        Dictionary containing `ticket_id`, `queue`, and `summary`.
     """
     return {
         "ticket_id": "ESC-7001",

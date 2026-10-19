@@ -71,7 +71,7 @@ app: FastAPI = get_fast_api_app(
     allow_origins=allow_origins,
     session_service_uri=services.SESSION_SERVICE_URI,
     otel_to_cloud=project_id is not None
-    and (os.getenv("INTEGRATION_TEST") or "").lower() not in _TRUTHY_ENV_VALUES,
+    and config.INTEGRATION_TEST.lower() not in _TRUTHY_ENV_VALUES,
     lifespan=lifespan,
 )
 app.title = "smart-tool-router"

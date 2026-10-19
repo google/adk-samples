@@ -40,6 +40,9 @@ from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
 
 from app.config import config
 
+_A2A_VERSION_0_3 = "0.3"
+_A2A_VERSION_1_0 = "1.0"
+
 
 class _A2AServerCallContextBuilder(DefaultServerCallContextBuilder):
     """Context builder that ensures A2A-Version defaults correctly when missing."""
@@ -63,9 +66,9 @@ class _A2AServerCallContextBuilder(DefaultServerCallContextBuilder):
         )
 
         if method and "/" in str(method):
-            headers["A2A-Version"] = "0.3"
+            headers["A2A-Version"] = _A2A_VERSION_0_3
         else:
-            headers["A2A-Version"] = "1.0"
+            headers["A2A-Version"] = _A2A_VERSION_1_0
 
         return context
 
@@ -83,13 +86,13 @@ _ADK_AGENT_EXECUTOR_EXTENSION_URI = (
 async def _add_v0_3_compat_interface(card: AgentCard) -> AgentCard:
     """Advertise a v0.3 JSON-RPC interface for v0.3 A2A clients."""
     if card.supported_interfaces and not any(
-        interface.protocol_version == "0.3"
+        interface.protocol_version == _A2A_VERSION_0_3
         for interface in card.supported_interfaces
     ):
         card.supported_interfaces.append(
             AgentInterface(
                 protocol_binding="JSONRPC",
-                protocol_version="0.3",
+                protocol_version=_A2A_VERSION_0_3,
                 url=card.supported_interfaces[0].url,
             )
         )

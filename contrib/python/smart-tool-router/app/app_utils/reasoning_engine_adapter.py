@@ -82,6 +82,16 @@ async def _parse_request(
     return getattr(adk_app, method_name), kwargs
 
 
+def _serialize_chunk(item: Any) -> str:
+    return (
+        json.dumps(
+            encoders.jsonable_encoder(item),
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
+
+
 def attach_reasoning_engine_routes(app: FastAPI) -> None:
     """Register ``/api/reasoning_engine`` and ``/api/stream_reasoning_engine``."""
 
@@ -107,22 +117,10 @@ def attach_reasoning_engine_routes(app: FastAPI) -> None:
             stream = method(**kwargs)
             if inspect.isasyncgen(stream):
                 async for item in stream:
-                    yield (
-                        json.dumps(
-                            encoders.jsonable_encoder(item),
-                            separators=(",", ":"),
-                        )
-                        + "\n"
-                    )
+                    yield _serialize_chunk(item)
             else:
                 for item in stream:
-                    yield (
-                        json.dumps(
-                            encoders.jsonable_encoder(item),
-                            separators=(",", ":"),
-                        )
-                        + "\n"
-                    )
+                    yield _serialize_chunk(item)
 
         return responses.StreamingResponse(
             _chunks(), media_type="application/json"

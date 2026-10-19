@@ -107,7 +107,7 @@ app = App(
     name="support_app",
     root_agent=LlmAgent(
         name="support",
-        model="gemini-flash-latest",
+        model="gemini-3.7-flash",
         instruction="Resolve customer requests using your tools.",
         tools=ALL_TOOLS,
     ),

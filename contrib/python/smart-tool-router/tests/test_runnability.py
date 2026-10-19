@@ -16,10 +16,18 @@
 
 import numpy as np
 
+from app.agent import (
+    _ORDER_STATUS_TTL_SECONDS,
+    _RETURN_POLICY_TTL_SECONDS,
+    ALL_TOOLS,
+    check_return_eligibility,
+    get_order_status,
+    get_return_policy,
+    lookup_order_by_email,
+)
+
 _EXPECTED_DOCTOR_CHECK_COUNT = 3
 _MIN_PREREQUISITE_SCORE = 0.90
-_ORDER_STATUS_TTL_SECONDS = 300
-_RETURN_POLICY_TTL_SECONDS = 3600
 
 
 def test_agent_runnability() -> None:
@@ -53,14 +61,6 @@ def test_day_zero_prerequisite_graph_and_tool_cache() -> None:
         ToolResultCache,
         cache_key,
         user_scope,
-    )
-
-    from app.agent import (
-        ALL_TOOLS,
-        check_return_eligibility,
-        get_order_status,
-        get_return_policy,
-        lookup_order_by_email,
     )
 
     # 1. Verify Day-0 prerequisite matrix links downstream tools to producers

@@ -25,6 +25,8 @@ from google.adk.cli.utils.service_factory import (
     create_session_service_from_options,
 )
 
+from app.config import config
+
 SESSION_SERVICE_URI = "shared://session"
 ARTIFACT_SERVICE_URI = "shared://artifact"
 
@@ -36,19 +38,20 @@ _AGENT_DIR = os.path.dirname(
 @functools.cache
 def get_session_service():
     """Process-wide session service shared across every serving surface."""
-    if uri := os.environ.get("SESSION_SERVICE_URI"):
+    if uri := config.SESSION_SERVICE_URI:
         return create_session_service_from_options(
             base_dir=_AGENT_DIR, session_service_uri=uri
         )
-    if agent_engine_id := os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
+    if agent_engine_id := config.GOOGLE_CLOUD_AGENT_ENGINE_ID:
         from google.adk.sessions.vertex_ai_session_service import (
             VertexAiSessionService,
         )
 
         return VertexAiSessionService(
-            project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-            location=os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_LOCATION")
-            or os.environ.get("GOOGLE_CLOUD_LOCATION"),
+            project=config.GOOGLE_CLOUD_PROJECT or None,
+            location=config.GOOGLE_CLOUD_AGENT_ENGINE_LOCATION
+            or config.GOOGLE_CLOUD_LOCATION
+            or None,
             agent_engine_id=agent_engine_id,
         )
     from google.adk.sessions.in_memory_session_service import (
@@ -61,7 +64,7 @@ def get_session_service():
 @functools.cache
 def get_artifact_service():
     """Process-wide artifact service shared across every serving surface."""
-    bucket = os.environ.get("LOGS_BUCKET_NAME")
+    bucket = config.LOGS_BUCKET_NAME
     return (
         GcsArtifactService(bucket_name=bucket)
         if bucket

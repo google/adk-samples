@@ -29,7 +29,6 @@ from dotenv import dotenv_values
 _DEFAULTS = dotenv_values(
     Path(__file__).resolve().parent.parent / ".env.example"
 )
-_MODEL_ENV_KEYS: tuple[str, str] = ("MODEL_NAME", "GEMINI_MODEL")
 _PLACEHOLDER_PREFIX = "<"
 
 
@@ -66,15 +65,15 @@ class _Config:
         return _read_env("GOOGLE_CLOUD_LOCATION")
 
     @property
+    def GOOGLE_CLOUD_AGENT_ENGINE_ID(self) -> str:
+        return _read_env("GOOGLE_CLOUD_AGENT_ENGINE_ID")
+
+    @property
+    def GOOGLE_CLOUD_AGENT_ENGINE_LOCATION(self) -> str:
+        return _read_env("GOOGLE_CLOUD_AGENT_ENGINE_LOCATION")
+
+    @property
     def GEMINI_MODEL(self) -> str:
-        for key in _MODEL_ENV_KEYS:
-            value = os.getenv(key)
-            if (
-                value is not None
-                and value != ""
-                and not value.startswith(_PLACEHOLDER_PREFIX)
-            ):
-                return value
         return _read_env("MODEL_NAME") or _read_env("GEMINI_MODEL")
 
     @property
@@ -106,6 +105,18 @@ class _Config:
     @property
     def AGENT_VERSION(self) -> str:
         return _read_env("AGENT_VERSION")
+
+    @property
+    def SESSION_SERVICE_URI(self) -> str:
+        return _read_env("SESSION_SERVICE_URI")
+
+    @property
+    def LOGS_BUCKET_NAME(self) -> str:
+        return _read_env("LOGS_BUCKET_NAME")
+
+    @property
+    def INTEGRATION_TEST(self) -> str:
+        return _read_env("INTEGRATION_TEST")
 
     @property
     def PORT(self) -> int:
