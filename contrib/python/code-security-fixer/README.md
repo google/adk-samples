@@ -268,7 +268,8 @@ the standard ADK FastAPI app plus these integration surfaces from
 - **A2A HTTP+JSON** under the same base: `GET /a2a/app/v1/card`,
   `POST /a2a/app/v1/message:send` and `POST /a2a/app/v1/message:stream`
   (plus the 1.0 REST routes). The card advertises `HTTP+JSON` interfaces for
-  1.0 and 0.3.
+  1.0 and 0.3; in the 0.3 shape `preferredTransport` is `HTTP+JSON` and
+  JSON-RPC is listed in `additionalInterfaces`, both at the same URL.
 - **Agent Engine** (`app/app_utils/reasoning_engine_adapter.py`):
   `POST /api/reasoning_engine` and `/api/stream_reasoning_engine`, the
   routes Agent Engine forwards `:query` and `:streamQuery` to.

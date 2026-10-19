@@ -95,7 +95,12 @@ def test_agent_card_has_the_a2a_0_3_shape(server: None) -> None:
     assert card["description"]
     assert card["url"] == RPC_URL
     assert card["protocolVersion"] == "0.3"
-    assert card["preferredTransport"] == "JSONRPC"
+    # 0.3 clients see both bindings at the same URL: HTTP+JSON (used by the
+    # Gemini agent through Agent Registry) and JSON-RPC.
+    transports = {card["preferredTransport"]} | {
+        i["transport"] for i in card.get("additionalInterfaces") or []
+    }
+    assert transports == {"HTTP+JSON", "JSONRPC"}
     assert card["skills"]
     assert any(
         i["protocolBinding"] == "JSONRPC" and i["protocolVersion"] == "0.3"
