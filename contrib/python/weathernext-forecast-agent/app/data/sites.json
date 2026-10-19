@@ -1,45 +1,35 @@
 {
-  "description": "Illustrative wind-farm sites for the bundled sample. Coordinates are representative of each region, not of a specific operating wind farm.",
+  "description": "Three operating onshore wind farms in central Scotland. Coordinates from the English Wikipedia articles (WGS 84), retrieved 2026-10-19. Hub height is published there for Whitelee only; the other two are assumptions to replace with the operator's value.",
   "sites": [
     {
-      "site_id": "prairie-ridge",
-      "name": "Prairie Ridge (onshore, Texas Panhandle)",
-      "latitude": 35.2,
-      "longitude": -101.8,
-      "utc_offset_hours": -5,
-      "hub_height_m": 90,
-      "turbines": 120,
-      "type": "onshore"
-    },
-    {
-      "site_id": "highland-moor",
-      "name": "Highland Moor (onshore, Scottish Highlands)",
-      "latitude": 57.4,
-      "longitude": -4.3,
+      "site_id": "whitelee",
+      "name": "Whitelee Wind Farm (East Renfrewshire, Scotland)",
+      "latitude": 55.6728,
+      "longitude": -4.2856,
       "utc_offset_hours": 1,
-      "hub_height_m": 85,
-      "turbines": 48,
-      "type": "onshore"
+      "hub_height_m": 65,
+      "type": "onshore",
+      "source": "https://en.wikipedia.org/wiki/Whitelee_Wind_Farm (coordinates, hub height 65 m)"
     },
     {
-      "site_id": "elbe-marsh",
-      "name": "Elbe Marsh (onshore, northern Germany)",
-      "latitude": 53.9,
-      "longitude": 9.2,
-      "utc_offset_hours": 2,
-      "hub_height_m": 120,
-      "turbines": 36,
-      "type": "onshore"
-    },
-    {
-      "site_id": "dogger-offshore",
-      "name": "Dogger Offshore (offshore, North Sea)",
-      "latitude": 54.8,
-      "longitude": 2.0,
+      "site_id": "clyde",
+      "name": "Clyde Wind Farm (South Lanarkshire, Scotland)",
+      "latitude": 55.4672,
+      "longitude": -3.6544,
       "utc_offset_hours": 1,
-      "hub_height_m": 110,
-      "turbines": 80,
-      "type": "offshore"
+      "hub_height_m": 80,
+      "type": "onshore",
+      "source": "https://en.wikipedia.org/wiki/Clyde_Wind_Farm (coordinates); hub height 80 m is an assumption"
+    },
+    {
+      "site_id": "black-law",
+      "name": "Black Law Wind Farm (South Lanarkshire, Scotland)",
+      "latitude": 55.7669,
+      "longitude": -3.7389,
+      "utc_offset_hours": 1,
+      "hub_height_m": 80,
+      "type": "onshore",
+      "source": "https://en.wikipedia.org/wiki/Black_Law_Wind_Farm (coordinates); hub height 80 m is an assumption"
     }
   ]
 }

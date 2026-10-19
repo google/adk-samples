@@ -32,7 +32,7 @@ from google.genai import types
 
 from app import agent, forecast
 
-ALL_SITES = ["prairie-ridge", "highland-moor", "elbe-marsh", "dogger-offshore"]
+ALL_SITES = ["whitelee", "clyde", "black-law"]
 
 
 class FakeContext:
@@ -147,13 +147,25 @@ def test_load_forecasts_routes_error(monkeypatch):
 
 
 def test_plan_go_for_main_component_lift():
+    # Bundled snapshot: ECMWF ENS run 2026-10-19 06 UTC, 51 members.
     route, out = run_plan(plan_request())
     assert route == agent.ROUTE_GO
-    assert [a["site_id"] for a in out["assignments"]] == ["prairie-ridge"]
-    assert out["assignments"][0]["probability_safe"] == 1.0
-    assert out["assignments"][0]["members_safe"] == 32
-    assert set(out["unassigned_sites"]) == set(ALL_SITES) - {"prairie-ridge"}
-    assert out["expected_completed_jobs"] == 1.0
+    got = {a["site_id"]: a for a in out["assignments"]}
+    assert set(got) == set(ALL_SITES)
+    assert out["unassigned_sites"] == {}
+    # Thursday 22 Oct is the best lift day at every site, but two crews cannot
+    # cover three farms that day: one site falls back to Wednesday.
+    thursday = [
+        a for a in got.values() if a["start_local"].startswith("2026-10-22")
+    ]
+    assert len(thursday) == 2
+    assert all(
+        a["probability_safe"] == 0.98 and a["members_safe"] == 50
+        for a in thursday
+    )
+    assert got["whitelee"]["start_local"] == "2026-10-21T08:00:00+01:00"
+    assert got["whitelee"]["members_safe"] == 43
+    assert out["expected_completed_jobs"] == 2.8
     for windows in out["best_windows_by_site"].values():
         assert len(windows) <= agent.SHOWN_WINDOWS_PER_SITE
         assert all("start_local" in w for w in windows)
@@ -161,25 +173,33 @@ def test_plan_go_for_main_component_lift():
 
 
 def test_plan_no_go_and_alternatives():
-    route, out = run_plan(plan_request(site_ids=["highland-moor"], crews=1))
+    # A lift at Whitelee tomorrow only (Tue 20 Oct): best window is 64.7%.
+    route, out = run_plan(
+        plan_request(site_ids=["whitelee"], crews=1, horizon_hours=24)
+    )
     assert route == agent.ROUTE_NO_GO
     assert out["assignments"] == []
+    best = out["best_windows_by_site"]["whitelee"][0]
+    assert best["probability_safe"] == 0.647
+    assert (
+        best["fail_fraction_precipitation"] > best["fail_fraction_wind_or_gust"]
+    )
     alt = agent.suggest_alternatives(out).output
     tasks = {a["task_type"]: a for a in alt["alternative_tasks"]}
     assert set(tasks) == {"blade_repair", "nacelle_service"}
     assert tasks["nacelle_service"]["probability_safe"] == 1.0
-    outlook = alt["daily_outlook_by_site"]["highland-moor"]
-    assert len(outlook) == 5
+    outlook = alt["daily_outlook_by_site"]["whitelee"]
+    assert len(outlook) == 1
     assert all(b["hours"] <= agent.OUTLOOK_BLOCK_HOURS for b in outlook)
     json.dumps(alt)
 
 
 def test_window_round_trip_through_dict():
     _, out = run_plan(plan_request(task_type="blade_repair", crews=1))
-    best = out["best_windows_by_site"]["elbe-marsh"][0]
+    best = out["best_windows_by_site"]["clyde"][0]
     window = agent.analysis.Window.from_dict(best)
     sites = forecast.load_sites()
-    again = window.to_dict(sites["elbe-marsh"])
+    again = window.to_dict(sites["clyde"])
     assert again == best
 
 
@@ -251,7 +271,7 @@ def test_workflow_go_route(monkeypatch):
 
 
 def test_workflow_no_go_route(monkeypatch):
-    request = plan_request(site_ids=["dogger-offshore"], crews=1)
+    request = plan_request(site_ids=["whitelee"], crews=1, horizon_hours=24)
     nodes, final, calls = _run_workflow(monkeypatch, [request])
     assert calls == ["parse_request", "explain_no_window"]
     assert "suggest_alternatives" in nodes
@@ -262,7 +282,7 @@ def test_workflow_help_route_needs_no_explain_model(monkeypatch):
     nodes, final, calls = _run_workflow(monkeypatch, [{"intent": "help"}])
     assert calls == ["parse_request"]
     assert "reply_without_plan" in nodes
-    assert "elbe-marsh" in final
+    assert "whitelee" in final
 
 
 def test_workflow_retry_loop_is_bounded(monkeypatch):

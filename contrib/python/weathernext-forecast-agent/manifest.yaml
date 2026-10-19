@@ -19,7 +19,7 @@ status: "active"
 language: "python"
 
 # REQUIRED — Short description of what this recipe does and the value it provides.
-description: "Plans wind-turbine maintenance from WeatherNext ensemble forecasts with an ADK 2.0 graph workflow: deterministic function nodes compute the probability that crane lifts, blade repairs or nacelle service stay within wind, gust and rain limits for the required hours, rank windows across sites and assign crews; single-turn Gemini nodes parse the request and explain the plan with explicit uncertainty. Works over A2A for Gemini Enterprise. Ships a synthetic ensemble sample and an optional WeatherNext 3 BigQuery loader."
+description: "Decides when a wind-turbine blade exchange at Whitelee Wind Farm (Scotland) can go ahead, and where two crane crews should go across three real Scottish wind farms, from ensemble forecasts with an ADK 2.0 graph workflow: deterministic function nodes compute the probability that crane lifts, blade repairs or nacelle service stay within wind, gust and rain limits for the required hours, rank windows across sites and assign crews; single-turn Gemini nodes parse the request and explain the plan with explicit uncertainty. Serves A2A over JSON-RPC and HTTP+JSON for Gemini Enterprise and the Gemini agent. Production data: WeatherNext 3 on BigQuery (full SQL in the README); default: a bundled real ECMWF ensemble snapshot (Open-Meteo, CC BY 4.0)."
 
 # OPTIONAL — Agent architecture details. Omit the whole block if unknown.
 architecture:

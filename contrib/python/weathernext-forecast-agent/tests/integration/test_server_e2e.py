@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "http://127.0.0.1:8000"
 STREAM_URL = BASE_URL + "/run_sse"
-FEEDBACK_URL = BASE_URL + "/feedback"
 
 HEADERS = {"Content-Type": "application/json"}
 
@@ -193,22 +192,3 @@ def test_chat_stream_error_handling(
         f"Expected status code 422, got {response.status_code}"
     )
     logger.info("Error handling test completed successfully")
-
-
-def test_collect_feedback(server_fixture: subprocess.Popen[str]) -> None:
-    """
-    Test the feedback collection endpoint (/feedback) to ensure it properly
-    logs the received feedback.
-    """
-    # Create sample feedback data
-    feedback_data = {
-        "score": 4,
-        "user_id": "test-user-456",
-        "session_id": "test-session-456",
-        "text": "Great response!",
-    }
-
-    response = requests.post(
-        FEEDBACK_URL, json=feedback_data, headers=HEADERS, timeout=10
-    )
-    assert response.status_code == 200

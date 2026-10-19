@@ -15,6 +15,7 @@
 
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -25,17 +26,18 @@ from app.forecast import PRECIP, WIND
 def test_sample_forecast_shape():
     sites = forecast.load_sites()
     assert set(sites) == {
-        "prairie-ridge",
-        "highland-moor",
-        "elbe-marsh",
-        "dogger-offshore",
+        "whitelee",
+        "clyde",
+        "black-law",
     }
-    f = forecast.SampleSource().get(sites["prairie-ridge"])
+    f = forecast.SampleSource().get(sites["whitelee"])
     assert f.kind == "members"
-    assert f.init_time == datetime(2026, 10, 12, tzinfo=UTC)
+    assert f.init_time == datetime(2026, 10, 19, 6, tzinfo=UTC)
     assert len(f.times) == 120
+    assert f.times[0] == datetime(2026, 10, 20, tzinfo=UTC)
     assert f.times[1] - f.times[0] == timedelta(hours=1)
-    assert len(f.members[WIND]) == 32
+    # ECMWF IFS ensemble: control + 50 perturbed members.
+    assert len(f.members[WIND]) == 51
     assert all(len(m) == 120 for m in f.members[WIND] + f.members[PRECIP])
     assert all(v >= 0 for m in f.members[PRECIP] for v in m)
 
@@ -68,7 +70,7 @@ def test_custom_sites_file(tmp_path):
 
 
 def test_index_range():
-    f = forecast.SampleSource().get(forecast.load_sites()["elbe-marsh"])
+    f = forecast.SampleSource().get(forecast.load_sites()["clyde"])
     lo, hi = f.index_range(f.times[10], f.times[20])
     assert (lo, hi) == (10, 20)
     assert f.index_range(None, None) == (0, 120)
@@ -165,7 +167,7 @@ def test_bigquery_source_with_fake_client():
         timeout_seconds=30,
         client=client,
     )
-    site = forecast.load_sites()["elbe-marsh"]
+    site = forecast.load_sites()["clyde"]
     f = source.get(site)
     assert f.init_time == init
     assert len(f.times) == 6
@@ -175,8 +177,8 @@ def test_bigquery_source_with_fake_client():
     params = {p.name: p.value for p in job_config.query_parameters}
     assert params == {
         "init_time": init,
-        "lon": 9.2,
-        "lat": 53.9,
+        "lon": -3.6544,
+        "lat": 55.4672,
         "max_hours": 120,
     }
     source.get(site)  # cached: no new queries
@@ -192,7 +194,7 @@ def test_bigquery_source_pinned_init_skips_lookup():
         init_time="2026-10-12T00:00:00Z",
         client=client,
     )
-    source.get(forecast.load_sites()["elbe-marsh"])
+    source.get(forecast.load_sites()["clyde"])
     assert len(client.queries) == 1
 
 
@@ -238,8 +240,8 @@ def test_task_overrides_reject_bad_input():
 def test_empty_optional_paths_use_bundled_samples(monkeypatch):
     for var in ("SITES_JSON", "SAMPLE_FORECAST_JSON", "TASK_LIMITS_JSON"):
         monkeypatch.setenv(var, "")
-    assert len(forecast.load_sites()) == 4
-    assert forecast.SampleSource().description.startswith("Synthetic")
+    assert len(forecast.load_sites()) == 3
+    assert "Open-Meteo" in forecast.SampleSource().description
     assert config.load_tasks() == config.DEFAULT_TASKS
 
 
@@ -276,3 +278,10 @@ def test_bigquery_source_requires_table(monkeypatch):
             forecast.get_source()
     finally:
         forecast.get_source.cache_clear()
+
+
+def test_readme_shows_the_exact_bigquery_sql():
+    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text()
+    table = "YOUR_PROJECT.YOUR_DATASET.weathernext_3_0_0_0p1deg"
+    assert forecast.build_latest_init_query(table) in readme
+    assert forecast.build_forecast_query(table) in readme

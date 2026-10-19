@@ -184,7 +184,7 @@ def reply_without_plan(node_input: dict[str, Any]) -> Event:
         + ".",
         "",
         "Try: 'We have 2 crane crews this week for main component lifts. Where"
-        " and when?' or 'When can we do blade repairs at elbe-marsh?'",
+        " and when?' or 'Can we do a blade exchange at whitelee this week?'",
     ]
     text = "\n".join(lines)
     # Authored as a model turn so chat surfaces (A2A, Gemini Enterprise) show it.
@@ -224,7 +224,8 @@ def load_forecasts(node_input: dict[str, Any], ctx: Context) -> Event:
 
 
 def _range(forecast: Forecast, horizon_hours: int) -> tuple[datetime, datetime]:
-    begin = forecast.init_time
+    # Plan from the first forecast hour (a snapshot may start after its init).
+    begin = forecast.times[0]
     return begin, begin + timedelta(hours=horizon_hours)
 
 
@@ -380,7 +381,7 @@ Known task types:
 
 Map the user's words to the known ids (for example "blade exchange" or "crane
 lift" -> main_component_lift; "leading-edge repair" -> blade_repair; "service
-visit" or "climb" -> nacelle_service; "the German site" -> elbe-marsh). Use
+visit" or "climb" -> nacelle_service; "Whitelee" -> whitelee). Use
 earlier turns of the conversation for follow-up questions ("what about blade
 repair instead?"). Leave site_ids empty when the user means all sites. "This
 week" means 120 hours; "next 3 days" means 72. Use intent "help" for

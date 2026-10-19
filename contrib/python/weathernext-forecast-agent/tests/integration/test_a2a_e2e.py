@@ -11,17 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""A2A round trip, the path Gemini Enterprise uses to reach the agent.
+"""A2A round trips over both bindings the Gemini agent / Gemini Enterprise use.
 
-Starts the server, checks the agent card has the v0.3 JSON-RPC shape Gemini
-Enterprise registration needs, then sends a v0.3 `message/send` and checks the
-workflow's answer comes back as a completed task. Calls Gemini, so it needs
-credentials in .env; excluded from CI like the other integration tests:
+Starts the server and checks:
+- JSON-RPC: the agent card has the v0.3 JSON-RPC shape, and a v0.3
+  `message/send` returns the workflow's answer as a completed task.
+- HTTP+JSON (the binding Agent Registry uses to invoke A2A agents from the
+  Gemini agent): `GET /v1/card` and `POST /v1/message:send` with
+  `role: ROLE_USER`, `content[].text` and a unique `messageId`.
+- The Agent Engine adapter can create a session.
+
+Answers are checked against the bundled ECMWF ensemble snapshot (run
+2026-10-19 06 UTC). Calls Gemini, so it needs credentials in .env; excluded
+from CI like the other integration tests:
 
     uv run pytest tests/integration/test_a2a_e2e.py
 """
 
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -109,7 +117,7 @@ def test_message_send_returns_completed_plan(server: None) -> None:
                 "parts": [
                     {
                         "kind": "text",
-                        "text": "When can we do blade repairs at Elbe Marsh this week?",
+                        "text": "Can we do a blade exchange at Whitelee this week?",
                     }
                 ],
             }
@@ -125,8 +133,49 @@ def test_message_send_returns_completed_plan(server: None) -> None:
         for artifact in result.get("artifacts", [])
         for part in artifact["parts"]
     )
-    # The bundled sample's best blade-repair window at Elbe Marsh is 96.9%.
-    assert "96.9" in answer
+    # Snapshot: best 8-hour lift window at Whitelee is Thu 22 Oct, 98% (50/51).
+    assert re.search(r"98(\.0)?\s?%", answer), answer
+    assert "50/51" in answer.replace(" ", "") or "50 of 51" in answer
+    assert "decision support" in answer.lower()
+
+
+def test_http_json_card_and_message_send(server: None) -> None:
+    card = requests.get(f"{RPC_URL}/v1/card", timeout=30)
+    assert card.status_code == 200
+    card_json = card.json()
+    assert card_json["name"] and card_json["description"]
+    assert card_json["url"] == RPC_URL
+
+    wk = requests.get(CARD_URL, timeout=30).json()
+    bindings = {
+        (i["protocolBinding"], i["protocolVersion"])
+        for i in wk["supportedInterfaces"]
+    }
+    assert ("HTTP+JSON", "0.3") in bindings
+    assert ("HTTP+JSON", "1.0") in bindings
+
+    body = {
+        "message": {
+            "role": "ROLE_USER",
+            "content": [
+                {"text": "When can we do blade repairs at Clyde this week?"}
+            ],
+            "messageId": str(uuid.uuid4()),
+        }
+    }
+    response = requests.post(
+        f"{RPC_URL}/v1/message:send", json=body, timeout=300
+    )
+    assert response.status_code == 200
+    task = response.json()["task"]
+    assert task["status"]["state"] == "TASK_STATE_COMPLETED"
+    answer = " ".join(
+        part.get("text", "")
+        for artifact in task.get("artifacts", [])
+        for part in artifact["parts"]
+    )
+    # Snapshot: best 6-hour blade-repair window at Clyde is Thu 22 Oct, 92.2%.
+    assert "92.2" in answer, answer
     assert "decision support" in answer.lower()
 
 

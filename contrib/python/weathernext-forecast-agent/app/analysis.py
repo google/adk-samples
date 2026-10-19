@@ -18,7 +18,7 @@ and explains their results.
 
 Probability of a safe window
 ----------------------------
-* Member-level ensembles (the bundled sample, or WeatherNext's raw 64-member
+* Member-level ensembles (the bundled snapshot, or WeatherNext's raw 64-member
   Zarr output): a window is safe for a member when every hour in it is within
   the task limits. P(safe) is the fraction of members that are safe for the
   whole window, so the hour-to-hour and wind-to-rain correlations of each

@@ -15,8 +15,10 @@
 
 Two sources produce the same `Forecast` object:
 
-- `SampleSource` (default): the bundled synthetic ensemble in
-  `app/data/sample_forecast.json`, with individual ensemble members.
+- `SampleSource` (default): the bundled snapshot in
+  `app/data/forecast_snapshot.json`, a real ECMWF IFS ensemble forecast
+  (control + 50 members, via Open-Meteo, CC BY 4.0) used as a credential-free
+  stand-in for WeatherNext, with individual ensemble members.
 - `BigQuerySource`: the WeatherNext 3 BigQuery Analytics Hub listing, which
   publishes precomputed ensemble statistics (mean, p10, p25, p50, p75, p90)
   per variable rather than individual members.
@@ -40,7 +42,7 @@ from typing import Any, Protocol
 from .config import require_env
 
 DATA_DIR = Path(__file__).parent / "data"
-SAMPLE_FORECAST = DATA_DIR / "sample_forecast.json"
+SAMPLE_FORECAST = DATA_DIR / "forecast_snapshot.json"
 SAMPLE_SITES = DATA_DIR / "sites.json"
 
 WIND = "wind_speed_100m"
@@ -72,6 +74,8 @@ class Site:
     hub_height_m: float
     turbines: int = 0
     type: str = "onshore"
+    # Where the coordinates and hub height come from.
+    source: str = ""
 
 
 @dataclasses.dataclass
