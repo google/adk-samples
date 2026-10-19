@@ -16,7 +16,7 @@
         {
           "rubricId": "grounded_scores",
           "rubricContent": {
-            "textProperty": "The response is a cost report with the baseline and best verified monthly cost, the savings, the lower bound and the node mix per cluster, and its summary quotes only those numbers."
+            "textProperty": "The response is a SQL cost report with the baseline and best verified bytes scanned, the reduction, and the rewritten query, and its summary quotes only those numbers."
           }
         }
       ]

@@ -19,7 +19,7 @@ status: "active"
 language: "python"
 
 # REQUIRED — Short description of what this recipe does and the value it provides.
-description: "Cuts Kubernetes node cost with an AlphaEvolve-style ADK 2.0 graph workflow: a single-turn Gemini agent evolves a workload placement program, a sandboxed verifier checks every pod's CPU and memory requests and prices the plan, and the cheapest verified programs seed the next round. Produces a savings report and node mix per cluster."
+description: "Cuts the cost of analytics SQL with an evolutionary ADK 2.0 graph workflow: a single-turn Gemini agent proposes rewrites of an expensive BigQuery-style query, a sandboxed verifier proves each returns the same result and meters the bytes it scans, and the cheapest verified rewrites seed the next round. Runs on a bundled sample of the public London cycle hire data with DuckDB, or on BigQuery."
 
 # OPTIONAL — Agent architecture details. Omit the whole block if unknown.
 architecture:
@@ -27,6 +27,7 @@ architecture:
   stateful: false
   datasources:
     - "local"
+    - "external"
 
 # OPTIONAL — Library and service dependencies.
 dependencies:
@@ -34,6 +35,7 @@ dependencies:
     - "ADK"
   services:
     - "Gemini"
+    - "BigQuery"
 
 # REQUIRED — Ownership. Both sub-fields are required.
 ownership:
@@ -45,11 +47,12 @@ ownership:
 
 # OPTIONAL — Classification tags (technology names, patterns, use-case keywords).
 tags:
-  - "alphaevolve"
   - "evolutionary-search"
-  - "code-optimization"
+  - "llm-propose-verify"
   - "verifier"
-  - "kubernetes"
+  - "sql-optimization"
+  - "bigquery"
+  - "duckdb"
   - "finops"
   - "cost-optimization"
   - "graph-workflow"

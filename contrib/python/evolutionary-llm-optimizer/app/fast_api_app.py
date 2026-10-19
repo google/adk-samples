@@ -78,8 +78,10 @@ app: FastAPI = get_fast_api_app(
     otel_to_cloud=project_id is not None and not os.getenv("INTEGRATION_TEST"),
     lifespan=lifespan,
 )
-app.title = "alphaevolve-optimizer"
-app.description = "API for interacting with the Agent alphaevolve-optimizer"
+app.title = "evolutionary-llm-optimizer"
+app.description = (
+    "API for interacting with the Agent evolutionary-llm-optimizer"
+)
 
 # Agent Engine forwards :query and :streamQuery to these routes; without them
 # a container deployed through container_spec starts but 404s every call.

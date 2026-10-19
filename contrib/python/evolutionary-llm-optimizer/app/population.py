@@ -20,9 +20,9 @@ state and be unit tested without a model.
 from typing import Any
 
 
-def rank_key(candidate: dict[str, Any]) -> tuple[float, int]:
-    """Orders candidates best first: lower score, then earlier id."""
-    return (candidate["score"], candidate["id"])
+def rank_key(candidate: dict[str, Any]) -> tuple[float, float, int]:
+    """Orders candidates best first: lower score, then tiebreak, then id."""
+    return (candidate["score"], candidate.get("tiebreak", 0.0), candidate["id"])
 
 
 def add_candidate(
@@ -32,9 +32,10 @@ def add_candidate(
 ) -> list[dict[str, Any]]:
     """Returns a new population with `candidate` added if it earns a place.
 
-    Only valid candidates are kept. Ties on score keep the earlier candidate,
-    so the population does not churn on equivalent programs. Lower scores are
-    better.
+    Only valid candidates are kept. Lower scores are better; ties on score
+    are broken by `tiebreak` (lower is better, e.g. whole-millisecond runtime),
+    then by the earlier candidate, so the population does not churn on
+    equivalent programs.
     """
     if not candidate.get("valid"):
         return list(population)

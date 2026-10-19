@@ -20,6 +20,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from collections.abc import Iterator
 from typing import Any
 
@@ -222,13 +223,17 @@ def test_a2a_agent_card(server_fixture: subprocess.Popen[str]) -> None:
     assert response.status_code == 200
     card = response.json()
     assert card["name"]
-    assert "Kubernetes" in card["description"]
+    assert "SQL" in card["description"]
     assert card["skills"]
-    interfaces = card["supportedInterfaces"]
-    v03 = [i for i in interfaces if i["protocolVersion"] == "0.3"]
-    assert v03, interfaces
-    assert v03[0]["protocolBinding"] == "JSONRPC"
-    assert v03[0]["url"] == A2A_URL
+    interfaces = {
+        (i["protocolBinding"], i["protocolVersion"]): i["url"]
+        for i in card["supportedInterfaces"]
+    }
+    # JSON-RPC 0.3 for Gemini Enterprise registration; HTTP+JSON for the
+    # Gemini agent (Agent Registry); 1.0 for current A2A clients.
+    for binding in ("JSONRPC", "HTTP+JSON"):
+        for version in ("0.3", "1.0"):
+            assert interfaces.get((binding, version)) == A2A_URL, interfaces
 
 
 def _texts(value: Any) -> list[str]:
@@ -255,7 +260,8 @@ def test_a2a_message_send(server_fixture: subprocess.Popen[str]) -> None:
                 "parts": [
                     {
                         "kind": "text",
-                        "text": "Find the cheapest node plan for my clusters.",
+                        "text": "Cut the bytes scanned by the station"
+                        " demand query.",
                     }
                 ],
             }
@@ -269,7 +275,38 @@ def test_a2a_message_send(server_fixture: subprocess.Popen[str]) -> None:
     assert "error" not in body, body
     assert body["result"]["status"]["state"] == "completed"
     texts = _texts(body["result"])
-    assert any("Kubernetes node cost plan" in t for t in texts)
+    assert any("## SQL cost report: " in t for t in texts)
+    assert any("### Summary" in t for t in texts)
+
+
+def test_a2a_rest_card(server_fixture: subprocess.Popen[str]) -> None:
+    """GET /v1/card on the HTTP+JSON binding, as Agent Registry calls it."""
+    response = requests.get(f"{A2A_URL}/v1/card", timeout=30)
+    assert response.status_code == 200, response.text
+    card = response.json()
+    assert card["name"] == "evolutionary_llm_optimizer"
+    assert card["skills"]
+
+
+def test_a2a_rest_message_send(server_fixture: subprocess.Popen[str]) -> None:
+    """POST /v1/message:send in the shape the Gemini agent sends."""
+    body = {
+        "message": {
+            "messageId": str(uuid.uuid4()),
+            "role": "ROLE_USER",
+            "content": [{"text": "Optimize the monthly trend query."}],
+        }
+    }
+    response = requests.post(
+        f"{A2A_URL}/v1/message:send", json=body, timeout=RUN_TIMEOUT_SECONDS
+    )
+    assert response.status_code == 200, response.text
+    task = response.json()["task"]
+    assert task["status"]["state"] == "TASK_STATE_COMPLETED"
+    texts = _texts(task)
+    assert any(
+        "## SQL cost report: Monthly hires per station" in t for t in texts
+    )
     assert any("### Summary" in t for t in texts)
 
 

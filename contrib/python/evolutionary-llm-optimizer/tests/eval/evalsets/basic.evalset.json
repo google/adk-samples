@@ -1,16 +1,16 @@
 {
   "eval_set_id": "basic_eval",
-  "name": "AlphaEvolve Optimizer Evaluation",
-  "description": "Checks that each request runs the propose -> verify -> select workflow and returns a verified savings report.",
+  "name": "Evolutionary LLM Optimizer Evaluation",
+  "description": "Checks that each request runs the propose -> verify -> select workflow on a SQL query and returns a verified cost report.",
   "eval_cases": [
     {
-      "eval_id": "optimize_with_operator_request",
+      "eval_id": "optimize_bundled_query",
       "conversation": [
         {
           "user_content": {
             "parts": [
               {
-                "text": "Cut node cost for my clusters; I would prefer fewer distinct node types."
+                "text": "Cut the bytes scanned by the station demand query."
               }
             ]
           }
@@ -23,13 +23,13 @@
       }
     },
     {
-      "eval_id": "run_optimization",
+      "eval_id": "optimize_default_query",
       "conversation": [
         {
           "user_content": {
             "parts": [
               {
-                "text": "Find the cheapest node plan for my clusters and report the monthly savings."
+                "text": "Make my most expensive dashboard query cheaper and report the savings."
               }
             ]
           }

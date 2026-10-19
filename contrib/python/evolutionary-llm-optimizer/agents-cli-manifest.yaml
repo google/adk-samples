@@ -9,7 +9,7 @@
 #
 # `agents-cli deploy` uses this file as the project-root marker and reads
 # `deployment_target` to choose how to deploy.
-name: "alphaevolve-optimizer"
+name: "evolutionary-llm-optimizer"
 agent_directory: "app"
 language: "python"
 region: "us-east1"

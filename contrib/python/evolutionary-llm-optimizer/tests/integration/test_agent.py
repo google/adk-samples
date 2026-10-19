@@ -40,7 +40,7 @@ def test_workflow_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
         role="user",
         parts=[
             types.Part.from_text(
-                text="Find the cheapest node plan for my clusters."
+                text="Cut the bytes scanned by the station demand query."
             )
         ],
     )
@@ -58,7 +58,7 @@ def test_workflow_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
         for part in event.content.parts
         if part.text
     ]
-    assert any(t.startswith("## Kubernetes node cost plan") for t in texts)
+    assert any(t.startswith("## SQL cost report: ") for t in texts)
     state = session_service.get_session_sync(
         app_name="test", user_id="test_user", session_id=session.id
     ).state
