@@ -22,14 +22,17 @@ registration.
 
 from __future__ import annotations
 
+import json
 import os
-from typing import TYPE_CHECKING
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import (
     add_a2a_routes_to_fastapi,
     create_agent_card_routes,
     create_jsonrpc_routes,
+    create_rest_routes,
 )
 from a2a.server.routes.common import DefaultServerCallContextBuilder
 from a2a.server.tasks import TaskStore
@@ -39,9 +42,16 @@ from a2a.types import (
     AgentExtension,
     AgentInterface,
 )
-from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+from a2a.utils.constants import (
+    AGENT_CARD_WELL_KNOWN_PATH,
+    PROTOCOL_VERSION_0_3,
+    PROTOCOL_VERSION_1_0,
+    TransportProtocol,
+)
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
+from starlette.requests import Request
+from starlette.routing import BaseRoute, Mount, Route
 
 
 class _A2AServerCallContextBuilder(DefaultServerCallContextBuilder):
@@ -72,7 +82,9 @@ class _A2AServerCallContextBuilder(DefaultServerCallContextBuilder):
             json_body.get("method") if isinstance(json_body, dict) else None
         )
 
-        if method and "/" in str(method):
+        # The v0.3 HTTP+JSON routes live under /v1/ (e.g. /v1/message:send).
+        path = str(getattr(getattr(request, "url", None), "path", ""))
+        if (method and "/" in str(method)) or "/v1/" in path:
             headers["A2A-Version"] = "0.3"
         else:
             headers["A2A-Version"] = "1.0"
@@ -93,13 +105,61 @@ _ADK_AGENT_EXECUTOR_EXTENSION_URI = (
 )
 
 
+def _blocking_by_default(
+    endpoint: Callable[[Request], Awaitable[Any]],
+) -> Callable[[Request], Awaitable[Any]]:
+    """Makes a v0.3 HTTP+JSON message:send wait for the answer by default.
+
+    In the v0.3 REST schema ``configuration.blocking`` is a proto bool that
+    defaults to false, so a request without a configuration (the form shown
+    in the Gemini agent / Agent Registry docs) would get back a just-submitted
+    task with no answer. JSON-RPC 0.3 and the 1.0 bindings already block by
+    default; this aligns the v0.3 REST route with them. An explicit
+    ``"blocking": false`` from the client is respected.
+    """
+
+    async def wrapper(request: Request) -> Any:
+        body = await request.body()
+        try:
+            data = json.loads(body or b"{}")
+        except ValueError:
+            return await endpoint(request)  # let the handler report the error
+        if isinstance(data, dict):
+            config = data.setdefault("configuration", {})
+            if isinstance(config, dict):
+                config.setdefault("blocking", True)
+            # Starlette caches the body on the request; the handler reads it
+            # again with request.body().
+            request._body = json.dumps(data).encode()
+        return await endpoint(request)
+
+    return wrapper
+
+
+def _with_blocking_v0_3_send(routes: list[BaseRoute]) -> list[BaseRoute]:
+    out: list[BaseRoute] = []
+    for route in routes:
+        if isinstance(route, Route) and route.path.endswith("/v1/message:send"):
+            out.append(
+                Route(
+                    route.path,
+                    endpoint=_blocking_by_default(route.endpoint),
+                    methods=list(route.methods or []),
+                )
+            )
+        else:
+            out.append(route)
+    return out
+
+
 async def _add_v0_3_compat_interface(card: AgentCard) -> AgentCard:
     """Advertise a v0.3 JSON-RPC interface so the served card stays consumable by
     v0.3 A2A clients — notably Gemini Enterprise registration, whose validator
     still requires the 0.3 card shape (top-level ``url``/``protocolVersion``)."""
     # The card modifier runs on every card request: only add the interface once.
     if card.supported_interfaces and not any(
-        i.protocol_version == "0.3" for i in card.supported_interfaces
+        i.protocol_binding == "JSONRPC" and i.protocol_version == "0.3"
+        for i in card.supported_interfaces
     ):
         card.supported_interfaces.append(
             AgentInterface(
@@ -115,6 +175,9 @@ def _default_capabilities() -> AgentCapabilities:
     """Returns the default A2A capabilities used by scaffolded projects."""
     return AgentCapabilities(
         streaming=True,
+        # Required for GET /v1/card on the HTTP+JSON binding, which serves
+        # the (here: public) extended card.
+        extended_agent_card=True,
         extensions=[
             AgentExtension(
                 uri=_ADK_AGENT_EXECUTOR_EXTENSION_URI,
@@ -137,7 +200,7 @@ async def attach_a2a_routes(
     agent_version: str | None = None,
     app_url: str | None = None,
 ) -> None:
-    """Register A2A routes (JSON-RPC + agent-card endpoints) under ``rpc_path``.
+    """Register A2A routes (JSON-RPC, HTTP+JSON and agent card) under ``rpc_path``.
 
     Builds a dynamic agent card from ``agent`` and mounts the routes on ``app``.
     The ``runner`` should share the session/artifact/memory services with the
@@ -157,10 +220,42 @@ async def attach_a2a_routes(
         agent_version=resolved_agent_version,
     ).build()
 
+    # Also serve the HTTP+JSON (REST) binding under the same base URL. The
+    # Gemini agent reaches A2A agents through Agent Registry over HTTP+JSON
+    # (GET /v1/card, POST /v1/message:send, POST /v1/message:stream), which is
+    # the v0.3 REST surface; the 1.0 REST routes (/message:send, ...) come
+    # with it.
+    rest_url = f"{resolved_app_url}{rpc_path}"
+    for version in (PROTOCOL_VERSION_1_0, PROTOCOL_VERSION_0_3):
+        agent_card.supported_interfaces.append(
+            AgentInterface(
+                protocol_binding=TransportProtocol.HTTP_JSON.value,
+                protocol_version=version,
+                url=rest_url,
+            )
+        )
+
     request_handler = DefaultRequestHandler(
         agent_executor=A2aAgentExecutor(runner=runner),
         task_store=task_store,
         agent_card=agent_card,
+        # GET /v1/card serves the "extended" card; the agent has no
+        # authenticated-only details, so it is the public card.
+        extended_agent_card=agent_card,
+    )
+    rest_routes = _with_blocking_v0_3_send(
+        [
+            route
+            for route in create_rest_routes(
+                request_handler,
+                context_builder=_A2AServerCallContextBuilder(),
+                enable_v0_3_compat=True,
+                path_prefix=rpc_path,
+            )
+            # Drop the multi-tenant `/{tenant}/...` mount: it would match any
+            # two-segment path on this app.
+            if not isinstance(route, Mount)
+        ]
     )
 
     add_a2a_routes_to_fastapi(
@@ -176,4 +271,5 @@ async def attach_a2a_routes(
             context_builder=_A2AServerCallContextBuilder(),
             enable_v0_3_compat=True,
         ),
+        rest_routes=rest_routes,
     )
