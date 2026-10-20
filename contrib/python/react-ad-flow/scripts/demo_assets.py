@@ -116,7 +116,7 @@ def verify_and_extract(zip_path: str, dest_dir: str) -> dict:
 def _download_from_drive(drive_id: str, out_path: str) -> str:
     import gdown  # lazy: only the download path needs it
 
-    return gdown.download(id=drive_id, output=out_path, quiet=False)
+    return str(gdown.download(id=drive_id, output=out_path, quiet=False))
 
 
 def install(from_file: str | None = None, dest_dir: str | None = None) -> dict:

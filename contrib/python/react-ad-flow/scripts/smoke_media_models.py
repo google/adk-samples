@@ -31,10 +31,13 @@ VIDEO_MODEL = config.VIDEO_GEN_MODEL
 # Minimal product instance; prompt builders use fields with defaults.
 PRODUCT = Product(
     name="sage-satin-camisole",
-    details="A sage green satin camisole with delicate lace trim",
+    description="A sage green satin camisole with delicate lace trim",
     category="summer",
-    color="sage green",
-    fabric="satin",
+    image_filename="sage-satin-camisole.png",
+    attributes={
+        "color": "sage green",
+        "fabric": "satin",
+    },
 )
 
 
