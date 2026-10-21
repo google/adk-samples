@@ -63,7 +63,7 @@ def _render_reference(
 
 
 critic_agent = Agent(
-    model=os.getenv("MODEL_NAME"),
+    model=os.getenv("MODEL_NAME", "gemini-3.7-flash"),
     name="critic_agent",
     instruction=prompt.CRITIC_PROMPT,
     tools=[google_search],

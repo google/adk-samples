@@ -14,9 +14,9 @@ requires-python = ">=3.11"
 
 dependencies = [
     "agent-starter-pack>=0.32.0",
-    "google-adk>=1.31.0",
+    "google-adk>=2.12.0,<3.0.0",
     "google-auth>=2.30.0",
-    "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",
+    "google-cloud-aiplatform[agent-engines]>=1.156.0,<2.0.0",
     "google-genai>=1.9.0",
     "pydantic>=2.10.6",
     "python-dotenv>=1.0.0",
@@ -24,7 +24,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "google-adk[eval]>=1.31.0",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
 ]
