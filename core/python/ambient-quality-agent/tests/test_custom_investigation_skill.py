@@ -316,7 +316,8 @@ def _parse_adk_plugin_schema() -> _PluginSchema:
     hitl_map = _module_assignment(tree, "_HITL_EVENT_MAP")
     assert isinstance(view_defs, ast.Dict)
     assert isinstance(hitl_map, ast.Call)
-    hitl_events = ast.literal_eval(hitl_map.args[0]).values()
+    assert isinstance(hitl_map.args[0], ast.Dict)
+    hitl_events = [ast.literal_eval(val) for val in hitl_map.args[0].values]
     return _PluginSchema(
         columns=[_schema_field(item) for item in returned.value.elts],
         event_types=frozenset(

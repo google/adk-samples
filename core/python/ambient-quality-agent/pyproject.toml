@@ -24,8 +24,8 @@ dependencies = [
     # `[http-server]` adds sse-starlette; without it `import a2a.server.routes`
     # fails, and so does `adk deploy agent_engine`'s unconditional `--a2a` CMD.
     "a2a-sdk[http-server]>=1.0,<2",
-    "google-adk>=2.6.3",
-    "google-cloud-aiplatform[evaluation]>=1.163.0",
+    "google-adk[gcp]>=2.12.0,<3.0.0",
+    "google-cloud-aiplatform[evaluation]>=1.163.0,<2.0.0",
     "google-cloud-bigquery>=3.43.0",
     "google-cloud-logging>=3.16.2",
     "google-cloud-storage>=3.13.1",
