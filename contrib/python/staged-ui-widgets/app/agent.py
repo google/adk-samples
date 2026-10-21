@@ -77,7 +77,7 @@ logger = logging.getLogger(__name__)
 
 # Model default matches .env.example, so `adk run app` works from a fresh
 # clone with only a credential set.
-_DEFAULT_MODEL = "gemini-3.5-flash"
+_DEFAULT_MODEL = "gemini-3.7-flash"
 
 
 def seed_profile(callback_context: CallbackContext) -> None:

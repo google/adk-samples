@@ -28,7 +28,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-os.environ.setdefault("MODEL_NAME", "gemini-3.5-flash")
+os.environ.setdefault("MODEL_NAME", "gemini-3.7-flash")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
 os.environ.setdefault("GEMINI_API_KEY", "test-key-never-used")
 
