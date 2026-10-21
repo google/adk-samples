@@ -39,6 +39,7 @@ from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
 STATE_SECURITY_AUDIT_LOG = "security_audit_log"
+TOKENINFO_TIMEOUT_SECONDS = 3.0
 
 PROTECTED_MUTATION_TOOLS = {
     "apply_model_routing_downgrade",
@@ -127,7 +128,9 @@ def verify_token_not_revoked(
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             try:
-                with urllib.request.urlopen(req, timeout=3.0) as response:  # noqa: S310
+                with urllib.request.urlopen(  # noqa: S310
+                    req, timeout=TOKENINFO_TIMEOUT_SECONDS
+                ) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                     if int(payload.get("expires_in", 0)) <= 0:
                         session_revoked = True
