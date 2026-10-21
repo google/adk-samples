@@ -19,7 +19,13 @@ import vertexai
 from dotenv import load_dotenv
 from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
 from google.cloud import logging as google_cloud_logging
-from vertexai.agent_engines.templates.adk import AdkApp
+
+try:
+    from vertexai.agent_engines.templates.adk import AdkApp
+except ImportError:
+    from vertexai.agentplatform.frameworks.adk import (
+        AdkApp,  # type: ignore[no-redef]
+    )
 
 from app.agent import app as adk_app
 from app.app_utils.telemetry import setup_telemetry
