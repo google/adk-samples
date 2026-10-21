@@ -15,8 +15,8 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 
 dependencies = [
-    "google-adk>=1.28.0",
-    "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",
+    "google-adk>=2.12.0,<3.0.0",
+    "google-cloud-aiplatform[agent-engines]>=1.156.0,<2.0.0",
     "opentelemetry-instrumentation-google-genai>=0.4b0",
     "python-dotenv>=1.0.1",
     "reportlab>=4.2.0",
@@ -67,6 +67,7 @@ skip = "./locust_env/*,uv.lock,.venv,./frontend,**/*.ipynb"
 
 [tool.pytest.ini_options]
 pythonpath = "."
+testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.agent-starter-pack]
