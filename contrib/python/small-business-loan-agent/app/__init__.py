@@ -17,10 +17,12 @@
 import logging
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env.example")
 
 logger = logging.getLogger(__name__)
 
