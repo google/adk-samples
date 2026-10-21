@@ -5,7 +5,7 @@ requires-python = ">=3.11"
 
 dependencies = [
     "absl-py>=2.3.1",
-    "google-adk>=1.7.0",
+    "google-adk>=2.12.0,<3.0.0",
     "google-auth>=2.30.0",
     "google-cloud-modelarmor>=0.2.8",
     "google-genai>=1.5.0",
@@ -15,7 +15,7 @@ dependencies = [
     "pydantic-settings>=2.10.0",
     "python-dotenv>=1.0.1",
     "typing-extensions>=4.14.0",
-    "google-cloud-aiplatform[adk,agent-engines]>=1.93.0",
+    "google-cloud-aiplatform[agent-engines]>=1.156.0,<2.0.0",
 ]
 
 [dependency-groups]
@@ -28,6 +28,7 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = "."
+testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.agent-starter-pack]
