@@ -4,7 +4,7 @@ GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 SCORE_THRESHOLD = int(os.getenv("SCORE_THRESHOLD", "45"))
 MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "2"))
 IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "gemini-3-pro-imagee")
-GENAI_MODEL = os.getenv("GENAI_MODEL", "gemini-3.5-flash")
+GENAI_MODEL = os.getenv("GENAI_MODEL", "gemini-3.7-flash")
 
 BADGE_EXTRACTION_INSTRUCTION = """ 
 You are a brand content creator and will create reference-able digital assets. Extract the badge from the provided image. The newly generated badge will go into the digital assets. The output image should contain only the badge and nothing else.
