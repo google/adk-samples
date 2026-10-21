@@ -31,7 +31,7 @@ load_dotenv()
 
 LLM_LOCATION = "global"
 LOCATION = "us-east1"
-LLM = os.getenv("MODEL_NAME")
+LLM = os.getenv("MODEL_NAME", "gemini-3.7-flash")
 
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", LLM_LOCATION)
 # This recipe is Vertex AI only; set explicitly so a stale env value cannot
