@@ -20,7 +20,11 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, encoders, responses, status
-from vertexai.agent_engines.templates.adk import AdkApp
+
+try:
+    from agentplatform.frameworks.adk import AdkApp
+except ImportError:
+    from vertexai.agent_engines.templates.adk import AdkApp
 
 from app.app_utils import services
 
