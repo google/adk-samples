@@ -9,7 +9,8 @@ license = { text = "Apache License 2.0" }
 requires-python = ">=3.11,<3.13"
 
 dependencies = [
-    "google-adk>=2.0.0,<3.0.0",
+    "google-adk>=2.12.0,<3.0.0",
+    "google-cloud-aiplatform>=1.156.0,<2.0.0",
     "python-dotenv>=1.0.0",
     "uvicorn>=0.34.0",
 ]
@@ -44,6 +45,7 @@ disable_error_code = ["misc", "no-untyped-call", "no-any-return"]
 exclude = [".venv"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 pythonpath = "."
 asyncio_default_fixture_loop_scope = "function"
 

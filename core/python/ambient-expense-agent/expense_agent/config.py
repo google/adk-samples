@@ -42,7 +42,7 @@ else:
 class ExpenseAgentConfig:
     """Agent configuration with sensible defaults."""
 
-    model: str = os.getenv("MODEL_NAME")
+    model: str = os.getenv("MODEL_NAME", "gemini-3.7-flash")
     review_threshold: float = 100.0
 
 

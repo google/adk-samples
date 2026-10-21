@@ -35,7 +35,7 @@ import os
 
 os.environ.setdefault("GOOGLE_API_KEY", "test-key-not-used")
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
-os.environ.setdefault("MODEL_NAME", "gemini-3.5-flash")
+os.environ.setdefault("MODEL_NAME", "gemini-3.7-flash")
 
 # ADK 2.0 defaults to SQLite local storage (.adk/ directory), which persists
 # sessions across test runs and causes test pollution. Force in-memory
