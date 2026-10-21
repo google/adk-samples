@@ -3,11 +3,11 @@ name = "cross-session-memory"
 version = "0.1.0"
 
 dependencies = [
-    "google-adk>=1.15.0,<2.0.0",
+    "google-adk[otel-gcp]>=2.12.0,<3.0.0",
     "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
     "gcsfs>=2024.11.0",
     "google-cloud-logging>=3.12.0,<4.0.0",
-    "google-cloud-aiplatform[evaluation,agent-engines]>=1.130.0",
+    "google-cloud-aiplatform[evaluation,agent-engines]>=1.156.0,<2.0.0",
     "protobuf>=6.31.1,<7.0.0",
     "python-dotenv>=1.0.0,<2.0.0",
     "fastapi>=0.115.8,<1.0.0",
@@ -18,7 +18,6 @@ requires-python = ">=3.11,<3.14"
 
 [dependency-groups]
 dev = [
-    "google-adk[eval]>=1.15.0,<2.0.0",
     "agent-starter-pack>=0.14.1",
     "pytest>=8.3.2",
     "pytest-asyncio>=0.23.7",
@@ -30,6 +29,9 @@ lint = [
     "ty>=0.0.1a0",
     "codespell>=2.2.0,<3.0.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ty]
 # ty is Astral's Rust-based type checker (same team as ruff/uv)

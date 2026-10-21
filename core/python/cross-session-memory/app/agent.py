@@ -77,7 +77,7 @@ root_agent = Agent(
     model=Gemini(
         # Defaulted to .env.example's value: the image ships no .env, so a
         # container deployed without MODEL_NAME otherwise fails at import.
-        model=os.getenv("MODEL_NAME", "gemini-3.5-flash"),
+        model=os.getenv("MODEL_NAME", "gemini-3.7-flash"),
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=(

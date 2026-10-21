@@ -31,7 +31,7 @@ def install() -> None:
     started once per process.
     """
     # Env vars every code path in the recipe needs at import time.
-    os.environ.setdefault("MODEL_NAME", "gemini-3.5-flash")
+    os.environ.setdefault("MODEL_NAME", "gemini-3.7-flash")
     os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test-project")
     # Signal to the recipe that it's running under an integration test so
