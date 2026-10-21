@@ -20,6 +20,6 @@ surface:
 	@echo "Surfacing token-cost-anomaly-triage skill..."
 
 test:
-	cd skills/token-cost-anomaly-triage && uv run pytest
+	pytest skills/token-cost-anomaly-triage/tests/ -v
 
 .PHONY: surface test

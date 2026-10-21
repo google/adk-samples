@@ -34,7 +34,8 @@ from app.tools.telemetry_bq_tools import (
     query_bigquery_billing_anomalies,
 )
 
-MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-3.7-flash")
+_configured_model = os.environ.get("GEMINI_MODEL")
+MODEL_NAME = _configured_model if _configured_model else "gemini-3.7-flash"
 
 telemetry_investigator = LlmAgent(
     name="telemetry_investigator",

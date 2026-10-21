@@ -22,6 +22,24 @@ from typing import Any
 from google.adk.tools import ToolContext
 
 
+def _record_execution(
+    tool_context: ToolContext, idempotency_key: str, action: dict[str, Any]
+) -> dict[str, Any]:
+    """Helper to record applied remediations and cache idempotency state."""
+    executed = tool_context.state.get("executed_remediations", [])
+    executed.append(action)
+    tool_context.state["executed_remediations"] = executed
+
+    completed_map = tool_context.state.get("completed_idempotent_tools", {})
+    completed_map[idempotency_key] = action
+    if ":" in idempotency_key:
+        parts = idempotency_key.split(":")
+        base_key = f"{parts[0]}:{parts[1]}"
+        completed_map[base_key] = action
+    tool_context.state["completed_idempotent_tools"] = completed_map
+    return action
+
+
 def apply_model_routing_downgrade(
     workload_label: str,
     sub_agent_name: str,
@@ -51,14 +69,10 @@ def apply_model_routing_downgrade(
         "estimated_hourly_savings_usd": 365.40,
         "applied_at_epoch": int(time.time()),
     }
-    executed = tool_context.state.get("executed_remediations", [])
-    executed.append(action)
-    tool_context.state["executed_remediations"] = executed
-
-    completed_map = tool_context.state.get("completed_idempotent_tools", {})
-    completed_map[f"apply_model_routing_downgrade:{workload_label}"] = action
-    tool_context.state["completed_idempotent_tools"] = completed_map
-    return action
+    idempotency_key = (
+        f"apply_model_routing_downgrade:{workload_label}:{sub_agent_name}"
+    )
+    return _record_execution(tool_context, idempotency_key, action)
 
 
 def update_cloud_run_scaling_limits(
@@ -84,11 +98,5 @@ def update_cloud_run_scaling_limits(
         "estimated_hourly_savings_usd": 76.00,
         "applied_at_epoch": int(time.time()),
     }
-    executed = tool_context.state.get("executed_remediations", [])
-    executed.append(action)
-    tool_context.state["executed_remediations"] = executed
-
-    completed_map = tool_context.state.get("completed_idempotent_tools", {})
-    completed_map[f"update_cloud_run_scaling_limits:{workload_label}"] = action
-    tool_context.state["completed_idempotent_tools"] = completed_map
-    return action
+    idempotency_key = f"update_cloud_run_scaling_limits:{workload_label}"
+    return _record_execution(tool_context, idempotency_key, action)

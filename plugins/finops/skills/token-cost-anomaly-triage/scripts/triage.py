@@ -21,13 +21,25 @@ import sys
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Triage runaway GenAI token cost anomalies.")
-    parser.add_argument("--project-id", default="test-project", help="GCP Project ID to inspect")
-    parser.add_argument("--service-name", default="vertex-customer-agent-prod", help="Service name")
-    parser.add_argument("--threshold", type=float, default=100.0, help="Dollar delta threshold")
+    parser = argparse.ArgumentParser(
+        description="Triage runaway GenAI token cost anomalies."
+    )
+    parser.add_argument(
+        "--project-id", default="test-project", help="GCP Project ID to inspect"
+    )
+    parser.add_argument(
+        "--service-name",
+        default="vertex-customer-agent-prod",
+        help="Service name",
+    )
+    parser.add_argument(
+        "--threshold", type=float, default=100.0, help="Dollar delta threshold"
+    )
     args = parser.parse_args()
 
-    print(f"=== FinOps Token Cost Anomaly Triage for project '{args.project_id}' ===")
+    print(
+        f"=== FinOps Token Cost Anomaly Triage for project '{args.project_id}' ==="
+    )
     print(f"Target Service: {args.service_name} (Threshold: ${args.threshold})")
 
     report = {

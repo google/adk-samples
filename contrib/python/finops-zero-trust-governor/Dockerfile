@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +23,10 @@ COPY ./pyproject.toml ./README.md ./uv.lock* ./
 COPY ./app ./app
 
 RUN uv sync --frozen
+
+# Create and switch to non-root user
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /code
+USER appuser
 
 ARG AGENT_VERSION=0.0.0
 ENV AGENT_VERSION=${AGENT_VERSION}

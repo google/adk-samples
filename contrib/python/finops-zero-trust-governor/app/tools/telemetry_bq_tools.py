@@ -17,13 +17,18 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from google.adk.tools import ToolContext
 
+BQ_TABLE_PATTERN = re.compile(
+    r"^[a-zA-Z0-9_\-]+(?::[a-zA-Z0-9_\-]+)?\.[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+$"
+)
+
 
 def query_bigquery_billing_anomalies(
-    lookback_hours: int, tool_context: ToolContext
+    lookback_hours: int = 24, tool_context: ToolContext | None = None
 ) -> dict[str, Any]:
     """Queries BigQuery GCP Billing Export to detect Vertex AI and Cloud Run spend spikes.
 
@@ -31,10 +36,10 @@ def query_bigquery_billing_anomalies(
         lookback_hours: Number of hours to analyze against the 7-day rolling baseline.
         tool_context: ADK ToolContext for storing compact telemetry state.
     """
-    is_test = os.environ.get("INTEGRATION_TEST", "TRUE").upper() == "TRUE"
-    threshold = float(
-        os.environ.get("FINOPS_COST_SPIKE_THRESHOLD_USD", "250.0")
-    )
+    is_test_env = os.environ.get("INTEGRATION_TEST")
+    is_test = is_test_env.upper() == "TRUE" if is_test_env else True
+    threshold_env = os.environ.get("FINOPS_COST_SPIKE_THRESHOLD_USD")
+    threshold = float(threshold_env) if threshold_env else 250.0
 
     if is_test:
         report = {
@@ -61,11 +66,12 @@ def query_bigquery_billing_anomalies(
                 },
             ],
         }
-        tool_context.state["billing_anomalies_summary"] = {
-            "top_workload": "customer-support-triage-agent",
-            "total_hourly_spike_usd": 506.80,
-            "artifact_uri": report["artifact_uri"],
-        }
+        if tool_context and hasattr(tool_context, "state"):
+            tool_context.state["billing_anomalies_summary"] = {
+                "top_workload": "customer-support-triage-agent",
+                "total_hourly_spike_usd": 506.80,
+                "artifact_uri": report["artifact_uri"],
+            }
         return report
 
     try:
@@ -77,10 +83,15 @@ def query_bigquery_billing_anomalies(
         }
 
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    table_id = os.environ.get(
-        "FINOPS_BQ_BILLING_TABLE",
-        f"{project_id}.billing_export.gcp_billing_export_v1",
-    )
+    table_id = os.environ.get("FINOPS_BQ_BILLING_TABLE")
+    if not table_id:
+        table_id = f"{project_id}.billing_export.gcp_billing_export_v1"
+
+    if not BQ_TABLE_PATTERN.match(table_id):
+        return {
+            "status": "error",
+            "message": f"Invalid BigQuery table identifier format: '{table_id}'",
+        }
     client = bigquery.Client(project=project_id)
     query = (
         f"SELECT service.description AS service, sku.description AS sku, "  # noqa: S608
@@ -120,7 +131,8 @@ def inspect_agent_token_telemetry(
         workload_label: The GCP workload or ADK app name to inspect.
         tool_context: ADK ToolContext for storing span diagnostics.
     """
-    is_test = os.environ.get("INTEGRATION_TEST", "TRUE").upper() == "TRUE"
+    is_test_env = os.environ.get("INTEGRATION_TEST")
+    is_test = is_test_env.upper() == "TRUE" if is_test_env else True
     if is_test:
         telemetry = {
             "workload_label": workload_label,

@@ -24,7 +24,7 @@ if str(RECIPE_ROOT) not in sys.path:
     sys.path.insert(0, str(RECIPE_ROOT))
 
 # Set test environment flags
-os.environ.setdefault("INTEGRATION_TEST", "TRUE")
-os.environ.setdefault("MODEL_NAME", "gemini-3.7-flash")
-os.environ.setdefault("FINOPS_MAX_LLM_TURNS_PER_RUN", "10")
-os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test-finops-project")
+os.environ["INTEGRATION_TEST"] = "TRUE"
+os.environ["GEMINI_MODEL"] = "gemini-3.7-flash"
+os.environ["FINOPS_MAX_LLM_TURNS_PER_RUN"] = "10"
+os.environ["GOOGLE_CLOUD_PROJECT"] = "test-finops-project"
