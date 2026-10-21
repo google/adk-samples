@@ -11,7 +11,7 @@ description = "Horizon — a self-improving long-horizon agent on Google ADK + V
 # external harness can install a minimal slice; this repo's own dev/test env
 # pulls them all back via the `long-horizon-harness[full]` self-reference in [dependency-groups].
 dependencies = [
-    "google-adk[mcp,otel-gcp,a2a]>=2.8.0,<3.0.0",
+    "google-adk[mcp,otel-gcp,a2a]>=2.12.0,<3.0.0",
     "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
     "google-cloud-logging>=3.12.0,<4.0.0",
     "fastapi>=0.136.1",
@@ -30,7 +30,7 @@ dependencies = [
     "opentelemetry-exporter-gcp-monitoring>=1.0.0",
     "opentelemetry-exporter-gcp-logging>=1.0.0",
     "google-cloud-storage>=3.10.1",
-    "google-cloud-aiplatform[agent-engines]>=1.153.1",
+    "google-cloud-aiplatform[agent-engines]>=1.156.0,<2.0.0",
     "google-api-python-client>=2.0.0,<3.0.0",
     "google-auth-oauthlib>=1.2.0,<2.0.0",
     "a2a-sdk[http-server,sqlite]>=1.0,<2",
@@ -75,9 +75,6 @@ full = [
 ]
 all = [
     "long-horizon-harness[full]",
-]
-eval = [
-    "google-adk[eval]>=2.8.0,<3.0.0",
 ]
 lint = [
     "ruff>=0.4.6,<1.0.0",
