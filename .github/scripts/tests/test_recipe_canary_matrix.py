@@ -106,18 +106,21 @@ def test_missing_or_broken_pyproject_still_yields_the_floor(tmp_path):
 def test_discovers_python_recipes_across_all_three_roots(tmp_path):
     _recipe(tmp_path, "core/python/a")
     _recipe(tmp_path, "contrib/python/b")
-    _recipe(tmp_path, "skills/retail/c")
+    _recipe(tmp_path, "plugins/retail/c")
     assert m.discover_recipes(tmp_path) == [
         "contrib/python/b",
         "core/python/a",
-        "skills/retail/c",
+        "plugins/retail/c",
     ]
 
 
-def test_non_python_recipes_are_not_in_the_matrix(tmp_path):
+def test_unsupported_language_recipes_are_not_in_the_matrix(tmp_path):
     _recipe(tmp_path, "core/go/g", language="go")
+    _recipe(tmp_path, "core/java/j", language="java")
+    _recipe(tmp_path, "core/typescript/ts", language="typescript")
     _recipe(tmp_path, "core/python/p")
-    assert m.discover_recipes(tmp_path) == ["core/python/p"]
+    _recipe(tmp_path, "core/kotlin/k", language="kotlin")
+    assert m.discover_recipes(tmp_path) == ["core/kotlin/k", "core/python/p"]
 
 
 def test_inactive_recipes_are_still_tested(tmp_path):
@@ -137,10 +140,14 @@ def test_vendored_directories_are_pruned(tmp_path):
     assert m.discover_recipes(tmp_path) == ["core/python/real"]
 
 
-def test_legacy_duplicates_are_skipped(tmp_path):
-    _recipe(tmp_path, "core/rag-agent-search")
-    _recipe(tmp_path, "core/python/rag-agent-search")
-    assert m.discover_recipes(tmp_path) == ["core/python/rag-agent-search"]
+def test_a_skipped_recipe_is_dropped_from_discovery(tmp_path, monkeypatch):
+    """SKIP_RECIPES is empty today, so the mechanism has no live entry to
+    exercise it. Pin the behaviour anyway: the next entry added must still
+    remove exactly its own recipe and nothing else."""
+    monkeypatch.setattr(m, "SKIP_RECIPES", {"core/legacy-dupe"})
+    _recipe(tmp_path, "core/legacy-dupe")
+    _recipe(tmp_path, "core/python/legacy-dupe")
+    assert m.discover_recipes(tmp_path) == ["core/python/legacy-dupe"]
 
 
 def test_every_skip_entry_still_names_a_real_recipe():
@@ -166,14 +173,65 @@ def test_matrix_is_one_entry_per_recipe_and_version(tmp_path):
     _recipe(tmp_path, "core/python/a", ">=3.11,<3.14")
     _recipe(tmp_path, "core/python/b", ">=3.11,<3.12")
     assert m.build_matrix(tmp_path) == [
-        {"recipe": "core/python/a", "python": "3.11"},
-        {"recipe": "core/python/a", "python": "3.13"},
-        {"recipe": "core/python/b", "python": "3.11"},
+        {
+            "recipe": "core/python/a",
+            "language": "python",
+            "version": "3.11",
+            "python": "3.11",
+        },
+        {
+            "recipe": "core/python/a",
+            "language": "python",
+            "version": "3.13",
+            "python": "3.13",
+        },
+        {
+            "recipe": "core/python/b",
+            "language": "python",
+            "version": "3.11",
+            "python": "3.11",
+        },
     ]
 
 
-def _recipes_via_real_yaml(root: Path) -> set[str]:
-    """Which recipes are Python recipes, according to a real YAML parser.
+def test_multilanguage_matrix_includes_python_and_kotlin(tmp_path):
+    _recipe(
+        tmp_path, "core/python/py-recipe", ">=3.11,<3.13", language="python"
+    )
+    _recipe(
+        tmp_path,
+        "core/kotlin/kt-recipe",
+        requires_python=None,
+        language="kotlin",
+    )
+    _recipe(tmp_path, "core/go/go-recipe", requires_python=None, language="go")
+    assert m.build_matrix(tmp_path) == [
+        {
+            "recipe": "core/kotlin/kt-recipe",
+            "language": "kotlin",
+            "version": "17",
+            "python": "17",
+            "jdk": "17",
+        },
+        {
+            "recipe": "core/python/py-recipe",
+            "language": "python",
+            "version": "3.11",
+            "python": "3.11",
+        },
+        {
+            "recipe": "core/python/py-recipe",
+            "language": "python",
+            "version": "3.12",
+            "python": "3.12",
+        },
+    ]
+
+
+def _recipes_via_real_yaml(
+    root: Path, languages: set[str] | tuple[str, ...] | None = None
+) -> set[str]:
+    """Which recipes are supported recipes, according to a real YAML parser.
 
     A SECOND OPINION, and deliberately a different implementation from the
     one under test: `recipe_canary_matrix` matches `language:` with a regex
@@ -181,12 +239,13 @@ def _recipes_via_real_yaml(root: Path) -> set[str]:
     parses the document properly. Agreement between two implementations is
     the signal; a helper that re-used the regex would assert nothing.
 
-    A manifest that will not parse counts as NOT a Python recipe. If the
+    A manifest that will not parse counts as NOT a supported recipe. If the
     regex accepted it, the two disagree and the caller fails — which is the
     right answer for a malformed manifest, because a recipe the canary picks
     up from a file nobody can parse is not a recipe anyone is really
     watching.
     """
+    langs = m.SUPPORTED_LANGUAGES if languages is None else set(languages)
     found: set[str] = set()
     for root_name in m.SCAN_ROOTS:
         root_path = root / root_name
@@ -203,15 +262,13 @@ def _recipes_via_real_yaml(root: Path) -> set[str]:
             if not isinstance(data, dict):
                 continue
             language = data.get("language")
-            if isinstance(language, str) and language.strip().lower() == (
-                "python"
-            ):
+            if isinstance(language, str) and language.strip().lower() in langs:
                 found.add(rel)
     return found
 
 
-def test_the_canary_sees_every_python_recipe_in_the_tree():
-    """The canary must watch every Python recipe that exists on disk.
+def test_the_canary_sees_every_supported_recipe_in_the_tree():
+    """The canary must watch every supported recipe that exists on disk.
 
     This used to be an EXACT frozen list of the eleven recipes present when
     the canary was written, which made adding a recipe a change to this
@@ -226,7 +283,7 @@ def test_the_canary_sees_every_python_recipe_in_the_tree():
     — while the recipe is silently never canaried, which is the exact
     outcome the list was written to prevent. Comparing against the tree
     catches it, in both directions: a recipe the parser sees and the canary
-    misses, and a recipe the canary picks up that is not a Python recipe at
+    misses, and a recipe the canary picks up that is not a supported recipe at
     all.
     """
     # discover_recipes(), not build_matrix(): build_matrix drops a recipe
@@ -243,20 +300,20 @@ def test_the_canary_sees_every_python_recipe_in_the_tree():
     # replaced could not miss that (11 != 0). Set well under the real count
     # so that adding or deleting a recipe never touches it.
     assert len(expected) >= 8, (
-        f"only {len(expected)} Python recipes found under {m.SCAN_ROOTS} in "
+        f"only {len(expected)} supported recipes found under {m.SCAN_ROOTS} in "
         f"{REPO_ROOT}. That is a broken scan, not a shrunken repo."
     )
 
     assert covered == expected, (
         "the canary's recipe set disagrees with the recipe tree. Not "
         f"canaried but present on disk: {sorted(expected - covered)}; "
-        f"canaried but not a Python recipe: {sorted(covered - expected)}.\n"
+        f"canaried but not a supported recipe: {sorted(covered - expected)}.\n"
         "\n"
         "This is NOT fixed by editing this file. A recipe missing from the "
         "canary almost always has a `language:` line in its manifest.yaml "
-        "that a real YAML parser reads as Python but the matcher in "
+        "that a real YAML parser reads as a supported language but the matcher in "
         "recipe_canary_matrix.py does not — most often because the value is "
-        "on the following line. Put `language: python` on one line in the "
+        "on the following line. Put `language: <language>` on one line in the "
         "recipe's own manifest.yaml."
     )
 
@@ -271,12 +328,9 @@ def test_the_canary_sees_every_python_recipe_in_the_tree():
 # Guarding that residual is the entire remaining job of a frozen literal,
 # and it needs two lines rather than one entry per recipe in the repo.
 #
-# Maintainer-owned. A recipe contributor never touches this; it is deleted
-# along with the legacy duplicates it names.
-ALLOWED_SKIPS = {
-    "core/rag-agent-search",
-    "core/rag-vector-search",
-}
+# Maintainer-owned. A recipe contributor never touches this; it held the two
+# legacy flat-path duplicates until #2653 deleted them, and is empty now.
+ALLOWED_SKIPS: set[str] = set()
 
 
 def test_the_skip_list_has_not_grown():
@@ -396,12 +450,61 @@ def test_discovery_agrees_with_python_tests_yml():
         for r in from_bash
         if not any(part in m.SKIP_DIRS for part in Path(r).parts)
     }
-    from_python = set(m.discover_recipes()) | set(m.SKIP_RECIPES)
+    from_python = set(m.discover_recipes(languages={"python"})) | set(
+        m.SKIP_RECIPES
+    )
 
     assert from_python == from_bash, (
-        "recipe_canary_matrix.discover_recipes() and the discovery in "
+        "recipe_canary_matrix.discover_recipes(languages={'python'}) and the discovery in "
         "python-tests.yml disagree. Symmetric difference: "
         f"{from_python ^ from_bash}"
+    )
+
+
+def test_discovery_agrees_with_kotlin_tests_yml():
+    """The canary and kotlin-tests.yml discover Kotlin recipes independently —
+    one in Python here, one in bash there — and must not drift."""
+    import subprocess
+    import textwrap
+
+    workflow = (
+        REPO_ROOT / ".github" / "workflows" / "kotlin-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    blocks = []
+    for name in ("is_kotlin_recipe", "all_kotlin_recipes"):
+        start = workflow.index(f"{name}() {{")
+        depth, i = 0, start
+        while True:
+            if workflow[i] == "{":
+                depth += 1
+            elif workflow[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        blocks.append(textwrap.dedent(workflow[start : i + 1]))
+
+    out = subprocess.run(
+        ["bash", "-c", "\n".join(blocks) + "\nall_kotlin_recipes\n"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    from_bash = {line for line in out.stdout.split() if line}
+    from_bash = {
+        r
+        for r in from_bash
+        if not any(part in m.SKIP_DIRS for part in Path(r).parts)
+    }
+    from_kotlin = set(m.discover_recipes(languages={"kotlin"}))
+
+    assert from_kotlin == from_bash, (
+        "recipe_canary_matrix.discover_recipes(languages={'kotlin'}) and the "
+        "discovery in kotlin-tests.yml disagree. Symmetric difference: "
+        f"{from_kotlin ^ from_bash}"
     )
 
 
@@ -459,15 +562,16 @@ def test_an_unknown_recipe_argument_is_rejected():
     """`--recipe` was taken on trust, so a typo produced a matrix pointing at
     a directory that does not exist and every job failed for a reason that
     was not the recipe's fault."""
-    with pytest.raises(m.MatrixError, match="not a Python recipe"):
+    with pytest.raises(m.MatrixError, match="not a supported recipe"):
         m.build_matrix(only="core/python/does-not-exist")
 
 
-def test_a_skipped_recipe_cannot_be_canaried_by_hand():
+def test_a_skipped_recipe_cannot_be_canaried_by_hand(monkeypatch):
     """`--recipe` also bypassed SKIP_RECIPES entirely, so a maintainer could
-    hand-run the canary against exactly the duplicate the skip list exists to
-    keep quiet."""
-    skipped = sorted(m.SKIP_RECIPES)[0]
+    hand-run the canary against exactly the recipe the skip list exists to
+    keep quiet. Skipping a real recipe here, since SKIP_RECIPES is empty."""
+    skipped = m.discover_recipes()[0]
+    monkeypatch.setattr(m, "SKIP_RECIPES", {skipped})
     with pytest.raises(m.MatrixError):
         m.build_matrix(only=skipped)
 
