@@ -93,7 +93,7 @@ def _parse_sensor_map(raw: str) -> dict[int, int]:
         raise BlueZooConfigError(
             "BLUEZOO_SENSOR_MAP is empty or unset — connected mode needs at "
             "least one screen_id:sensor_id pair (e.g. '101:87,102:433'). "
-            "See SETUP_INSTRUCTIONS.md (connected mode)."
+            "See README.md (connected mode)."
         )
     for entry in entries:
         screen_raw, sep, sensor_raw = entry.partition(":")
@@ -227,7 +227,7 @@ class LiveBlueZooAudienceDataSource(AudienceDataSource):
                 f"BLUEZOO_ACCESS_KEY (missing: {', '.join(missing)}). Set them "
                 "in app/.env locally, or inject both from Secret Manager at "
                 "deploy time — they are a cluster-scoped pair; BLUEZOO_BASE_URL "
-                "deliberately has no default. See SETUP_INSTRUCTIONS.md "
+                "deliberately has no default. See README.md "
                 "(connected mode)."
             )
         self._sensor_by_screen = _parse_sensor_map(

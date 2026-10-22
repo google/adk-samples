@@ -350,10 +350,10 @@ def get_google_maps_url(
         import urllib.parse
 
         query = urllib.parse.quote(f"{label} @{lat},{lng}")
-        return f"https://www.google.com/maps/search/?api=1&query={query}"
+        return f"https://www.google.com/maps/search/?api=1&query={query}&zoom={zoom}"
     else:
         # Direct coordinate format
-        return f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
+        return f"https://www.google.com/maps/search/?api=1&query={lat},{lng}&zoom={zoom}"
 
 
 def get_google_maps_place_url(place_id: str) -> str:

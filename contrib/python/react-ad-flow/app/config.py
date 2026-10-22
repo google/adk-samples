@@ -111,6 +111,10 @@ MODEL = os.environ.get(
 IMAGE_GENERATION = os.environ.get(
     "IMAGE_GENERATION_MODEL", "gemini-3-pro-image"
 )  # Stage 1 scene images
+IMAGE_ANALYSIS_MODEL = os.environ.get(
+    "IMAGE_ANALYSIS_MODEL",
+    os.environ.get("MODEL_NAME_GENERATED_1", "gemini-3.7-flash"),
+)  # Image analysis model (flash)
 VIDEO_GEN_MODEL = os.environ.get(
     "VIDEO_GEN_MODEL", "gemini-omni-flash-preview"
 )  # Stage 2 video animation (Gemini Omni Flash)
@@ -192,7 +196,7 @@ else:
     DB_PATH = os.path.join(PROJECT_DIR, "campaigns.db")
 
 # App metadata
-APP_NAME = "ad_campaign_agent"
+APP_NAME = os.environ.get("APP_NAME", "react_ad_flow")
 APP_DESCRIPTION = "Retail ad campaign management agent with video generation for in-store media networks"
 
 # Campaign categories — mirrors the CHECK constraint on campaigns.category

@@ -31,8 +31,8 @@ Demo Flow:
     Analysis & Insights -> Trendlines -> Show Campaigns on Map
 
 Usage:
-    Run with: adk web ad-campaign-agent
-    Or: adk api_server ad-campaign-agent
+    Run with: adk web react-ad-flow
+    Or: adk api_server react-ad-flow
 """
 
 # Initialize database and populate mock data on import

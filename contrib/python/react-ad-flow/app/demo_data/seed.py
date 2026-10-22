@@ -177,7 +177,7 @@ def _generate_visits(cfg: SeedConfig) -> list[dict]:
     return rows
 
 
-def _generate_dwell(cfg: SeedConfig, visits: list[dict]) -> list[dict]:
+def _generate_dwell(visits: list[dict]) -> list[dict]:
     """One row per (timestamp, screen, campaign) matching visits.
 
     total_visits is inner-only (visits that ended in the slot) — the donor
@@ -299,7 +299,7 @@ def generate_frames(cfg: SeedConfig) -> dict[str, list[dict]]:
     visits = _generate_visits(cfg)
     return {
         "screen_visits": visits,
-        "screen_dwell": _generate_dwell(cfg, visits),
+        "screen_dwell": _generate_dwell(visits),
         "campaign_uv_daily": _generate_uv_daily(cfg),
         "campaign_flow_transition": _generate_flow(cfg),
         "video_attribution": _generate_attribution(cfg),

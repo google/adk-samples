@@ -53,8 +53,8 @@ GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 
 CLOUD_RUN_REGION="${CLOUD_RUN_REGION:-us-central1}"  # Cloud Run deployment region
 VERTEX_AI_LOCATION="${VERTEX_AI_LOCATION:-global}"     # Vertex AI API location (for Gemini 3.x models)
 GCS_BUCKET="${GCS_BUCKET:-${GOOGLE_CLOUD_PROJECT}-ad-campaign-assets}"
-SERVICE_NAME="${SERVICE_NAME:-ad-campaign-agent}"
-APP_NAME="${APP_NAME:-ad_campaign_agent}"
+SERVICE_NAME="${SERVICE_NAME:-react-ad-flow}"
+APP_NAME="${APP_NAME:-react_ad_flow}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -130,7 +130,7 @@ for arg in "$@"; do
             echo "  CLOUD_RUN_REGION       Cloud Run region (default: us-central1)"
             echo "  VERTEX_AI_LOCATION     Vertex AI location (default: global)"
             echo "  GCS_BUCKET             GCS bucket name"
-            echo "  SERVICE_NAME           Cloud Run service name (default: ad-campaign-agent)"
+            echo "  SERVICE_NAME           Cloud Run service name (default: react-ad-flow)"
             exit 0
             ;;
     esac

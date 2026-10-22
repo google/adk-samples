@@ -22,7 +22,7 @@ from google import genai
 from google.genai import types
 
 from .. import storage
-from ..config import GCS_BUCKET, SELECTED_DIR
+from ..config import GCS_BUCKET, IMAGE_ANALYSIS_MODEL, SELECTED_DIR
 from ..database.db import get_db_cursor
 
 
@@ -78,7 +78,7 @@ def analyze_image(image_filename: str) -> dict:
 Respond ONLY with the JSON object, no additional text."""
 
         response = client.models.generate_content(
-            model=os.getenv("MODEL_NAME_GENERATED_1"),
+            model=IMAGE_ANALYSIS_MODEL,
             contents=[image_part, prompt],
         )
 

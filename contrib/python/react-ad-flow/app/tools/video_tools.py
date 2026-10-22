@@ -100,6 +100,16 @@ def generate_video_prompt(
     key_feature = metadata.get("key_feature", "the details")
     mood = metadata.get("mood", "elegant, aspirational")
 
+    if campaign_info:
+        city = campaign_info.get("city")
+        state = campaign_info.get("state")
+        if city:
+            location = f"{city}, {state}".strip(", ")
+            setting_desc = f"{setting_desc} in {location}"
+        category = campaign_info.get("category")
+        if category:
+            mood = f"{mood}, {category} theme"
+
     prompt = f"""A cinematic fashion video featuring {model_desc} wearing {clothing_desc}. {setting_desc}, the {garment_type} {movement}. Camera {camera_style}, capturing {key_feature}. Atmosphere: {mood}. Professional lighting, high-end fashion advertisement style."""
 
     return prompt

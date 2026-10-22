@@ -307,12 +307,16 @@ def _build_wearable_animation_prompt(
     }
     energy_desc = energy_map.get(variation.energy, "elegant movement")
 
-    prompt = f"""{activity_desc}. {camera_desc}, showcasing the garment's movement, drape, and fabric flow.
+    garment_desc = (
+        product.attributes.get("style") or product.category or "garment"
+    )
+
+    prompt = f"""{activity_desc}. {camera_desc}, showcasing the {garment_desc}'s movement, drape, and fabric flow.
 
 The scene has {env_desc}. The movement is {energy_desc}.
 
 CRITICAL - PRODUCT & QUALITY PRESERVATION:
-- Maintain the garment's exact appearance from the first frame throughout the video
+- Maintain the {garment_desc}'s exact appearance from the first frame throughout the video
 - The fabric's natural flow and drape as the model moves
 - Lighting playing across the garment's surface
 - Smooth, professional camera work

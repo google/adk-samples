@@ -1,9 +1,8 @@
 """Shared metric computation — the ONLY place RPI math lives.
 
-docs/METRICS.md is the authoritative definition source; this module is its
-executable counterpart (Phase 4 / 04-centralize-rpi-metrics). Every tool
-that returns an RPI value calls compute_rpi() instead of dividing inline;
-python-level cross-row averaging of already-averaged quantities (dwell
+This module provides the executable functions for RPI (Revenue Per Impression)
+math: every tool that returns an RPI value calls compute_rpi() instead of dividing
+inline; python-level cross-row averaging of already-averaged quantities (dwell
 time) goes through compute_weighted_average().
 
 Both functions are pure arithmetic: no queries, no scoping logic. Callers
@@ -14,9 +13,8 @@ sum revenue/impressions over their own window first.
 def compute_rpi(total_revenue: float, total_impressions: float) -> float:
     """Revenue per impression: ratio of sums, never sum of ratios.
 
-    Returns 0.0 when impressions are zero, negative, or None (convention
-    documented in docs/METRICS.md — every pre-centralization call site
-    already returned 0 for that case). None revenue is treated as 0.
+    Returns 0.0 when impressions are zero, negative, or None.
+    None revenue is treated as 0.
     """
     if not total_impressions or total_impressions <= 0:
         return 0.0

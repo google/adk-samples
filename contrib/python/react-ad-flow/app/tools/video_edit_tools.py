@@ -279,15 +279,13 @@ async def edit_video_with_omni(
 
 async def translate_video_dialogue(video_id: int, target_language: str) -> dict:
     """NOT IMPLEMENTED. Documented placeholder for a researched-and-rejected
-    capability -- see .docs/version2-plan/14c-omni-video-editing.md's "Out of
-    scope" section. Gemini Omni Flash does not support voice editing/dubbing
+    capability. Gemini Omni Flash does not support voice editing/dubbing
     on any surface; a live test produced a partial, code-switched
     translation with unsynced lip movement. Do not wire this into any agent.
     If ever implemented, it must target a different model/product, with its
     own research spike first.
     """
     raise NotImplementedError(
-        "Dialogue translation/dubbing is not supported by Gemini Omni Flash "
-        "(see .docs/version2-plan/14c-omni-video-editing.md). This function "
-        "is a documented placeholder, not a real backend."
+        "Dialogue translation/dubbing is not supported by Gemini Omni Flash. "
+        "This function is a documented placeholder, not a real backend."
     )

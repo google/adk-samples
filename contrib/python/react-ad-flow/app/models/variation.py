@@ -23,7 +23,7 @@ Using Pydantic BaseModel for ADK compatibility with automatic function calling.
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreativeVariation(BaseModel):
@@ -152,10 +152,7 @@ class CreativeVariation(BaseModel):
             parts.append(self.mood)
         return " | ".join(parts)
 
-    class Config:
-        """Pydantic configuration."""
-
-        extra = "ignore"  # Ignore unknown fields
+    model_config = ConfigDict(extra="ignore")
 
 
 # Preset variations for common use cases
