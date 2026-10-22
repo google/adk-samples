@@ -210,9 +210,9 @@ class LiveBlueZooAudienceDataSource(AudienceDataSource):
 
     def __init__(self) -> None:
         self._base_url = (
-            os.environ.get("BLUEZOO_BASE_URL", "").strip().rstrip("/")
+            (os.environ.get("BLUEZOO_BASE_URL") or "").strip().rstrip("/")
         )
-        self._access_key = os.environ.get("BLUEZOO_ACCESS_KEY", "").strip()
+        self._access_key = (os.environ.get("BLUEZOO_ACCESS_KEY") or "").strip()
         missing = [
             name
             for name, value in (
@@ -231,7 +231,7 @@ class LiveBlueZooAudienceDataSource(AudienceDataSource):
                 "(connected mode)."
             )
         self._sensor_by_screen = _parse_sensor_map(
-            os.environ.get("BLUEZOO_SENSOR_MAP", "")
+            os.environ.get("BLUEZOO_SENSOR_MAP") or ""
         )
         self._screen_by_sensor = {
             s: c for c, s in self._sensor_by_screen.items()

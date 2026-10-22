@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -122,15 +122,6 @@ def get_campaign_locations() -> dict:
     if locations:
         # Create a simple map URL centered on US
         map_center = "39.8283,-98.5795"  # Center of US
-        markers = []
-        for loc in locations:
-            if loc["location"]["coordinates"]:
-                lat = loc["location"]["coordinates"]["lat"]
-                lng = loc["location"]["coordinates"]["lng"]
-                markers.append(
-                    f"markers=color:red%7Clabel:{loc['name'][0]}%7C{lat},{lng}"
-                )
-
         map_url = f"https://www.google.com/maps/dir/?api=1&origin={map_center}&destination={map_center}"
     else:
         map_url = None
@@ -929,10 +920,6 @@ async def generate_map_visualization(
     Returns:
         Dictionary with visualization details and artifact info
     """
-    print("[DEBUG MAP VIZ] Starting generate_map_visualization")
-    print(
-        f"[DEBUG MAP VIZ] visualization_type={visualization_type}, metric={metric}, style={style}"
-    )
 
     valid_types = [
         "performance_map",
@@ -969,7 +956,6 @@ async def generate_map_visualization(
 
     # Fetch all campaign data with metrics (in-store retail media metrics)
     # Uses NEW schema: video_metrics + campaign_videos (HITL workflow)
-    print("[DEBUG MAP VIZ] Step 1: Fetching campaign data from database...")
     with get_db_cursor() as cursor:
         cursor.execute("""
             SELECT
@@ -998,8 +984,6 @@ async def generate_map_visualization(
             "status": "error",
             "message": "No campaign data available for visualization",
         }
-
-    print(f"[DEBUG MAP VIZ] Step 2: Found {len(campaigns)} campaigns")
 
     # Process campaign data
     campaign_data = []
@@ -1100,22 +1084,7 @@ async def generate_map_visualization(
             )
         del r_data["dwell_rows"]
 
-    print("[DEBUG MAP VIZ] Step 3: Data aggregation complete")
-    print(f"[DEBUG MAP VIZ]   - Total revenue: ${total_revenue:,.2f}")
-    print(f"[DEBUG MAP VIZ]   - Total impressions: {total_impressions:,}")
-    print(f"[DEBUG MAP VIZ]   - Regions: {list(regional_data.keys())}")
-    print(f"[DEBUG MAP VIZ]   - Categories: {list(category_data.keys())}")
-
-    # Print campaign details
-    for camp in campaign_data:
-        print(
-            f"[DEBUG MAP VIZ]   - {camp['name']} ({camp['location']}): ${camp['revenue']:,.2f} revenue, {camp['impressions']:,} impressions"
-        )
-
     # Build visualization prompt based on type
-    print(
-        f"[DEBUG MAP VIZ] Step 4: Building prompt for visualization_type='{visualization_type}'..."
-    )
 
     if visualization_type == "performance_map":
         # Create location markers string
@@ -1377,21 +1346,12 @@ STYLE:
 Create a visually striking revenue heatmap suitable for executive dashboards."""
 
     print(
-        "[DEBUG MAP VIZ] Step 5: Complete prompt being sent to Gemini 3 Pro Image:"
-    )
-    print(f"[DEBUG MAP VIZ] {'=' * 60}")
-    print(
         visualization_prompt[:500] + "..."
         if len(visualization_prompt) > 500
         else visualization_prompt
     )
-    print(f"[DEBUG MAP VIZ] {'=' * 60}")
-    print(
-        f"[DEBUG MAP VIZ] Prompt length: {len(visualization_prompt)} characters"
-    )
 
     try:
-        print("[DEBUG MAP VIZ] Step 6: Calling Gemini 3 Pro Image API...")
         client = genai.Client()
 
         response = client.models.generate_content(
@@ -1404,26 +1364,15 @@ Create a visually striking revenue heatmap suitable for executive dashboards."""
                 ),
             ),
         )
-        print(
-            f"[DEBUG MAP VIZ]   - Response received, parts count: {len(response.parts) if response.parts else 0}"
-        )
 
         # Extract image from response
         generated_image = None
-        for i, part in enumerate(response.parts):
-            has_inline = (
-                hasattr(part, "inline_data") and part.inline_data is not None
-            )
-            print(f"[DEBUG MAP VIZ]   - Part {i}: has inline_data={has_inline}")
-            if part.inline_data:
+        for part in response.parts:
+            if hasattr(part, "inline_data") and part.inline_data:
                 generated_image = part
-                print(
-                    f"[DEBUG MAP VIZ]   - Image found in part {i}, size: {len(part.inline_data.data)} bytes"
-                )
                 break
 
         if generated_image is None:
-            print("[DEBUG MAP VIZ]   - ERROR: No image found in response")
             return {
                 "status": "error",
                 "message": "Failed to generate map visualization. Try a different visualization type.",
@@ -1433,9 +1382,7 @@ Create a visually striking revenue heatmap suitable for executive dashboards."""
         timestamp = int(time.time())
         filename = f"map_{visualization_type}_{style}_{metric}_{timestamp}.png"
 
-        print("[DEBUG MAP VIZ] Step 7: Saving artifact...")
         if tool_context:
-            print(f"[DEBUG MAP VIZ]   - Filename: {filename}")
             image_bytes = generated_image.inline_data.data
             image_artifact = types.Part.from_bytes(
                 data=image_bytes, mime_type="image/png"
@@ -1443,18 +1390,10 @@ Create a visually striking revenue heatmap suitable for executive dashboards."""
             version = await tool_context.save_artifact(
                 filename=filename, artifact=image_artifact
             )
-            print(
-                f"[DEBUG MAP VIZ]   - Artifact saved successfully, version: {version}"
-            )
             artifact_saved = True
         else:
-            print(
-                "[DEBUG MAP VIZ]   - WARNING: No tool_context, artifact not saved"
-            )
             artifact_saved = False
             version = None
-
-        print("[DEBUG MAP VIZ] Step 8: SUCCESS - Map visualization complete!")
 
         return {
             "status": "success",
@@ -1486,10 +1425,6 @@ Create a visually striking revenue heatmap suitable for executive dashboards."""
         }
 
     except Exception as e:
-        import traceback
-
-        print(f"[DEBUG MAP VIZ] EXCEPTION: {e!s}")
-        print(f"[DEBUG MAP VIZ] Traceback: {traceback.format_exc()}")
         return {
             "status": "error",
             "message": f"Failed to generate map visualization: {e!s}",

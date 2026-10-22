@@ -132,7 +132,7 @@ def install(from_file: str | None = None, dest_dir: str | None = None) -> dict:
     if from_file:
         zip_path = from_file
     else:
-        drive_id = os.environ.get("DEMO_ASSETS_DRIVE_ID", "").strip()
+        drive_id = (os.environ.get("DEMO_ASSETS_DRIVE_ID") or "").strip()
         if not drive_id:
             return {
                 "status": "skipped",

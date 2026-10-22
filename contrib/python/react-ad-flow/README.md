@@ -139,7 +139,7 @@ gcloud services enable \
 ```
 
 #### 3. Automated GCP Setup Script
-This recipe includes an automated setup script ([scripts/setup_gcp.sh](file:///Users/wagnerthomas/Documents/adk-recipes/contrib/python/react-ad-flow/scripts/setup_gcp.sh)) that provisions the Cloud Storage bucket (`gs://${GOOGLE_CLOUD_PROJECT}-ad-campaign-assets`) and uploads catalog seed images:
+This recipe includes an automated setup script ([scripts/setup_gcp.sh](scripts/setup_gcp.sh)) that provisions the Cloud Storage bucket (`gs://${GOOGLE_CLOUD_PROJECT}-ad-campaign-assets`) and uploads catalog seed images:
 
 ```bash
 # Provision infrastructure and upload seed assets
@@ -185,17 +185,17 @@ gcloud projects add-iam-policy-binding "$GOOGLE_CLOUD_PROJECT" \
 Cloud Run provides a containerized serverless hosting environment with built-in ADK Web UI, REST endpoints, and A2A service.
 
 #### Option A: Automated Deployment Script
-Use the included deployment script ([scripts/deploy.sh](file:///Users/wagnerthomas/Documents/adk-recipes/contrib/python/react-ad-flow/scripts/deploy.sh)):
+Use the included deployment script ([scripts/deploy.sh](scripts/deploy.sh)):
 
 ```bash
-# Deploy with default settings (public access, us-central1)
+# Deploy with default settings (private access, us-central1)
 ./scripts/deploy.sh
 
 # Preview deployment commands without executing
 ./scripts/deploy.sh --dry-run
 
-# Deploy with authentication required (private service)
-./scripts/deploy.sh --private
+# Deploy with public unauthenticated access
+./scripts/deploy.sh --public
 
 # Deploy with Cloud Trace enabled for observability
 ./scripts/deploy.sh --trace
@@ -230,7 +230,7 @@ adk deploy cloud_run \
 ```
 
 #### Option C: Direct Container Deployment (`gcloud run deploy`)
-Build and deploy from the included [Dockerfile](file:///Users/wagnerthomas/Documents/adk-recipes/contrib/python/react-ad-flow/Dockerfile):
+Build and deploy from the included [Dockerfile](Dockerfile):
 ```bash
 gcloud run deploy ad-campaign-agent \
   --source . \
@@ -243,7 +243,7 @@ gcloud run deploy ad-campaign-agent \
 ```
 
 #### Option D: Agent Garden CLI (`agents-cli`)
-Deploy via the Google Agents CLI using the project manifest ([agents-cli-manifest.yaml](file:///Users/wagnerthomas/Documents/adk-recipes/contrib/python/react-ad-flow/agents-cli-manifest.yaml)):
+Deploy via the Google Agents CLI using the project manifest ([agents-cli-manifest.yaml](agents-cli-manifest.yaml)):
 ```bash
 agents-cli deploy
 ```
@@ -269,13 +269,13 @@ gcloud run services logs read ad-campaign-agent \
 Vertex AI Agent Engine provides a fully managed runtime with persistent conversation sessions, integrated memory banks, and direct SDK query interfaces.
 
 #### Deployment via Python SDK
-Deploy using [scripts/deploy_ae_inline.py](file:///Users/wagnerthomas/Documents/adk-recipes/contrib/python/react-ad-flow/scripts/deploy_ae_inline.py):
+Deploy using [scripts/deploy_ae_inline.py](scripts/deploy_ae_inline.py):
 ```bash
 # Fresh deployment to Agent Engine
 uv run python scripts/deploy_ae_inline.py \
   --project "$GOOGLE_CLOUD_PROJECT" \
   --region us-central1 \
-  --gcs-bucket "$GCS_BUCKET"
+  --bucket "$GCS_BUCKET"
 
 # Preview deployment without executing
 uv run python scripts/deploy_ae_inline.py \

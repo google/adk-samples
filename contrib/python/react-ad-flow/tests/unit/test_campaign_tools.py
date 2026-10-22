@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -203,7 +203,7 @@ class TestCreateCampaign:
             assert "name" in result["campaign"]
             assert (
                 "Test Store" in result["campaign"]["name"]
-                or result["campaign"]["name"]
+                and result["campaign"]["name"]
             )
 
     def test_create_campaign_invalid_product(self, test_db):

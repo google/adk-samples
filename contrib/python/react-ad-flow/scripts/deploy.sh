@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,22 +25,36 @@
 #   - GCS bucket created with assets (run setup_gcp.sh first)
 #
 # Usage:
-#   ./scripts/deploy.sh                    # Deploy with defaults
-#   ./scripts/deploy.sh --private          # Deploy without public access
+#   ./scripts/deploy.sh                    # Deploy with defaults (private access)
+#   ./scripts/deploy.sh --public           # Deploy with public access
+#   ./scripts/deploy.sh --private          # Deploy without public access (default)
 #   ./scripts/deploy.sh --dry-run          # Show commands without executing
 # =============================================================================
 
 set -e  # Exit on error
 
+# Script directory (for relative paths)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+AGENT_DIR="$PROJECT_DIR/app"
+
+# Load environment variables from .env if present
+if [ -f "$PROJECT_DIR/.env" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
 # =============================================================================
 # Configuration
 # =============================================================================
-GOOGLE_CLOUD_PROJECT="kaggle-on-gcp"
-CLOUD_RUN_REGION="us-central1"  # Cloud Run deployment region
-VERTEX_AI_LOCATION="global"     # Vertex AI API location (for Gemini 3.x models)
-GCS_BUCKET="kaggle-on-gcp-ad-campaign-assets"
-SERVICE_NAME="ad-campaign-agent"
-APP_NAME="ad_campaign_agent"
+GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
+CLOUD_RUN_REGION="${CLOUD_RUN_REGION:-us-central1}"  # Cloud Run deployment region
+VERTEX_AI_LOCATION="${VERTEX_AI_LOCATION:-global}"     # Vertex AI API location (for Gemini 3.x models)
+GCS_BUCKET="${GCS_BUCKET:-${GOOGLE_CLOUD_PROJECT}-ad-campaign-assets}"
+SERVICE_NAME="${SERVICE_NAME:-ad-campaign-agent}"
+APP_NAME="${APP_NAME:-ad_campaign_agent}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -49,11 +63,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
-
-# Script directory (for relative paths)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-AGENT_DIR="$PROJECT_DIR/app"
 
 # =============================================================================
 # Helper Functions
@@ -84,12 +93,16 @@ print_info() {
 # =============================================================================
 # Parse Arguments
 # =============================================================================
-ALLOW_UNAUTHENTICATED=true
+ALLOW_UNAUTHENTICATED=false
 DRY_RUN=false
 ENABLE_TRACE=false
 
 for arg in "$@"; do
     case $arg in
+        --public)
+            ALLOW_UNAUTHENTICATED=true
+            shift
+            ;;
         --private)
             ALLOW_UNAUTHENTICATED=false
             shift
@@ -106,28 +119,27 @@ for arg in "$@"; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --private     Deploy without public access (requires authentication)"
+            echo "  --public      Deploy with public unauthenticated access"
+            echo "  --private     Deploy without public access (requires authentication, default)"
             echo "  --dry-run     Show deployment command without executing"
             echo "  --trace       Enable Cloud Trace for observability"
             echo "  --help, -h    Show this help message"
             echo ""
             echo "Environment Variables (optional overrides):"
-            echo "  GOOGLE_CLOUD_PROJECT   GCP project ID (default: kaggle-on-gcp)"
+            echo "  GOOGLE_CLOUD_PROJECT   GCP project ID"
             echo "  CLOUD_RUN_REGION       Cloud Run region (default: us-central1)"
             echo "  VERTEX_AI_LOCATION     Vertex AI location (default: global)"
-            echo "  GCS_BUCKET             GCS bucket name (default: kaggle-on-gcp-ad-campaign-assets)"
+            echo "  GCS_BUCKET             GCS bucket name"
             echo "  SERVICE_NAME           Cloud Run service name (default: ad-campaign-agent)"
             exit 0
             ;;
     esac
 done
 
-# Allow environment variable overrides
-GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-kaggle-on-gcp}"
-CLOUD_RUN_REGION="${CLOUD_RUN_REGION:-us-central1}"
-VERTEX_AI_LOCATION="${VERTEX_AI_LOCATION:-global}"
-GCS_BUCKET="${GCS_BUCKET:-kaggle-on-gcp-ad-campaign-assets}"
-SERVICE_NAME="${SERVICE_NAME:-ad-campaign-agent}"
+if [ -z "$GOOGLE_CLOUD_PROJECT" ]; then
+    print_error "GOOGLE_CLOUD_PROJECT is not set. Please set it in .env or via environment variable."
+    exit 1
+fi
 
 # =============================================================================
 # Pre-flight Checks
@@ -245,9 +257,18 @@ FULL_CMD="$DEPLOY_CMD -- $GCLOUD_ARGS"
 # =============================================================================
 print_header "Deployment Command"
 
+# Mask sensitive API keys when echoing command
+DISPLAY_CMD="$FULL_CMD"
+if [ -n "$MAPS_API_KEY" ]; then
+    DISPLAY_CMD="${DISPLAY_CMD//MAPS_API_KEY=$MAPS_API_KEY/MAPS_API_KEY=[REDACTED]}"
+fi
+if [ -n "$GOOGLE_MAPS_API_KEY" ]; then
+    DISPLAY_CMD="${DISPLAY_CMD//GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY/GOOGLE_MAPS_API_KEY=[REDACTED]}"
+fi
+
 echo ""
 echo "Command to execute:"
-echo -e "${YELLOW}$FULL_CMD${NC}"
+echo -e "${YELLOW}$DISPLAY_CMD${NC}"
 echo ""
 
 if [ "$DRY_RUN" = true ]; then

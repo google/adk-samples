@@ -16,7 +16,7 @@ def _reload_config_after_test(monkeypatch):
     restore_config_baseline()
 
 
-def test_media_model_defaults_are_ga_ids(monkeypatch):
+def test_media_model_defaults(monkeypatch):
     monkeypatch.delenv("AGENT_MODEL", raising=False)
     monkeypatch.delenv("IMAGE_GENERATION_MODEL", raising=False)
     monkeypatch.delenv("VIDEO_GEN_MODEL", raising=False)

@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import asyncio
 import base64
 import io
 import json
+import logging
 import os
 import time
 from datetime import datetime
@@ -68,6 +69,8 @@ from .prompt_builders import (
     build_scene_image_prompt,
     build_video_animation_prompt,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def generate_video_prompt(
@@ -114,8 +117,6 @@ async def analyze_video(video_path: str) -> VideoProperties:
     Returns:
         VideoProperties: Structured properties extracted from the video
     """
-    print(f"[DEBUG analyze_video] Analyzing video: {video_path}")
-    print(f"[DEBUG analyze_video] Storage mode: {storage.get_storage_mode()}")
 
     # Extract just the filename for storage operations
     # Handle various input formats: gs:// URLs, absolute paths, relative paths, or bare filenames
@@ -132,20 +133,15 @@ async def analyze_video(video_path: str) -> VideoProperties:
         # Already a filename
         filename = video_path
 
-    print(f"[DEBUG analyze_video] Extracted filename: {filename}")
-
     # Check if video exists using storage abstraction
     if not storage.video_exists(filename):
-        print(f"[DEBUG analyze_video] Video file not found: {filename}")
         # Return default properties if file not found
         return VideoProperties()
 
     client = genai.Client()
 
     # Read video file using storage abstraction
-    print("[DEBUG analyze_video] Reading video file...")
     video_bytes = storage.read_video(filename)
-    print(f"[DEBUG analyze_video] Video size: {len(video_bytes)} bytes")
 
     # Create video part for Gemini
     video_part = types.Part.from_bytes(data=video_bytes, mime_type="video/mp4")
@@ -175,9 +171,6 @@ Focus on:
 Respond with a JSON object matching the VideoProperties schema. Be precise and consistent in your analysis."""
 
     try:
-        print(
-            f"[DEBUG analyze_video] Calling Gemini {MODEL} for video analysis..."
-        )
         response = client.models.generate_content(
             model=MODEL,
             contents=[video_part, prompt],
@@ -187,17 +180,11 @@ Respond with a JSON object matching the VideoProperties schema. Be precise and c
             ),
         )
 
-        print("[DEBUG analyze_video] Response received")
         properties_dict = json.loads(response.text)
-        print(
-            f"[DEBUG analyze_video] Parsed properties: mood={properties_dict.get('mood')}, "
-            f"energy={properties_dict.get('energy_level')}"
-        )
 
         return VideoProperties(**properties_dict)
 
-    except Exception as e:
-        print(f"[DEBUG analyze_video] Error analyzing video: {e!s}")
+    except Exception:
         # Return default properties on error
         return VideoProperties()
 
@@ -229,14 +216,9 @@ async def generate_scene_image(
     Returns:
         Tuple of (scene_image_bytes, scene_prompt)
     """
-    print(
-        f"[DEBUG generate_scene_image] Starting scene generation for product: {product.name}"
-    )
-    print(f"[DEBUG generate_scene_image] Variation: {variation.name}")
 
     # Build scene prompt from product and variation
     scene_prompt = build_scene_image_prompt(product, variation)
-    print(f"[DEBUG generate_scene_image] Scene prompt: {scene_prompt[:200]}...")
 
     client = genai.Client()
 
@@ -247,9 +229,6 @@ async def generate_scene_image(
 
         # If we have product image, include it as reference
         if product_image_bytes:
-            print(
-                "[DEBUG generate_scene_image] Including product image as reference"
-            )
             image_part = types.Part.from_bytes(
                 data=product_image_bytes, mime_type="image/png"
             )
@@ -279,9 +258,6 @@ async def generate_scene_image(
         for part in response.candidates[0].content.parts:
             if hasattr(part, "inline_data") and part.inline_data:
                 scene_image_bytes = part.inline_data.data
-                print(
-                    f"[DEBUG generate_scene_image] Scene image generated: {len(scene_image_bytes)} bytes"
-                )
                 break
 
         if not scene_image_bytes:
@@ -289,8 +265,7 @@ async def generate_scene_image(
 
         return scene_image_bytes, scene_prompt
 
-    except Exception as e:
-        print(f"[DEBUG generate_scene_image] Error: {e!s}")
+    except Exception:
         raise
 
 
@@ -319,16 +294,10 @@ async def _wait_for_omni_interaction(
             raise TimeoutError(
                 f"Video generation timed out after {max_wait_time} seconds (last status={status})"
             )
-        print(
-            f"[DEBUG {debug_label}] Waiting... ({waited}s elapsed, status={status})"
-        )
         await asyncio.sleep(poll_interval)
         waited += poll_interval
         interaction = client.interactions.get(interaction.id)
         status = getattr(interaction, "status", None)
-    print(
-        f"[DEBUG {debug_label}] Interaction completed after {waited}s with status={status}"
-    )
     if status != "completed":
         raise ValueError(f"Video generation failed with status: {status}")
     return interaction
@@ -382,16 +351,9 @@ async def animate_scene_with_omni(
     Returns:
         Tuple of (video_bytes, video_prompt)
     """
-    print(
-        f"[DEBUG animate_scene_with_omni] Starting animation for: {product.name}"
-    )
-    print(f"[DEBUG animate_scene_with_omni] Duration: {duration_seconds}s")
 
     # Build animation-focused prompt
     video_prompt = build_video_animation_prompt(product, variation)
-    print(
-        f"[DEBUG animate_scene_with_omni] Animation prompt: {video_prompt[:200]}..."
-    )
 
     client = genai.Client()
 
@@ -411,9 +373,6 @@ async def animate_scene_with_omni(
         aspect_ratio="9:16",
     )
 
-    print(
-        f"[DEBUG animate_scene_with_omni] Calling Omni Flash ({VIDEO_GEN_MODEL})..."
-    )
     interaction = client.interactions.create(
         model=VIDEO_GEN_MODEL,
         input=[user_step],
@@ -427,9 +386,6 @@ async def animate_scene_with_omni(
     )
     video_bytes = _extract_omni_video_bytes(interaction)
 
-    print(
-        f"[DEBUG animate_scene_with_omni] Video generated: {len(video_bytes)} bytes"
-    )
     return video_bytes, video_prompt
 
 
@@ -520,7 +476,6 @@ STAGE 2 - Video Generation Prompt:
         with open(metadata_path, "w") as f:
             f.write(metadata_content)
 
-    print(f"[DEBUG save_video_metadata] Saved metadata to: {metadata_path}")
     return metadata_path
 
 
@@ -582,9 +537,6 @@ async def generate_video_from_product(
     Returns:
         Dictionary with video details and status='generated'
     """
-    print(
-        f"[DEBUG generate_video_from_product] Starting for campaign_id={campaign_id}, product_id={product_id}"
-    )
 
     # Ensure generated directory exists (only in local mode)
     if storage.get_storage_mode() == "local":
@@ -604,9 +556,6 @@ async def generate_video_from_product(
     product = get_product(product_id)
     if not product:
         return {"status": "error", "message": f"Product {product_id} not found"}
-
-    print(f"[DEBUG generate_video_from_product] Product: {product.name}")
-    print(f"[DEBUG generate_video_from_product] Campaign: {campaign['name']}")
 
     # Convert dict to CreativeVariation or use default
     # ADK 1.21+ requires dict instead of Pydantic model in function signature
@@ -634,10 +583,6 @@ async def generate_video_from_product(
             "hint": "Valid fields: "
             + ", ".join(CreativeVariation.model_fields.keys()),
         }
-
-    print(
-        f"[DEBUG generate_video_from_product] Variation: {variation_obj.name}"
-    )
 
     # Resolve the prompt archetype once — drives the reference-image preamble
     # (Stage 1) and product-centric naming below. Raises ValueError for
@@ -673,9 +618,6 @@ async def generate_video_from_product(
             """,
                 (campaign_id, product_id),
             )
-            print(
-                "[DEBUG generate_video_from_product] Linked product to campaign"
-            )
 
     # Get product image bytes using storage abstraction
     product_image_filename = product.image_filename
@@ -686,19 +628,11 @@ async def generate_video_from_product(
                 product_image_bytes = storage.read_product_image(
                     product_image_filename
                 )
-                image_path = storage.get_product_image_path(
-                    product_image_filename
-                )
-                print(
-                    f"[DEBUG generate_video_from_product] Loaded product image from: {image_path}"
-                )
-            else:
-                print(
-                    f"[DEBUG generate_video_from_product] Product image not found: {product_image_filename}"
-                )
-        except Exception as e:
-            print(
-                f"[DEBUG generate_video_from_product] Could not load product image: {e}"
+        except Exception:
+            logger.warning(
+                "Failed to read product image %s",
+                product_image_filename,
+                exc_info=True,
             )
 
     reference_image_used = product_image_bytes is not None
@@ -713,9 +647,6 @@ async def generate_video_from_product(
 
         if use_two_stage:
             # Stage 1: Generate scene image
-            print(
-                "[DEBUG generate_video_from_product] Stage 1: Generating scene image..."
-            )
             scene_image_bytes, scene_prompt = await generate_scene_image(
                 product=product,
                 variation=variation_obj,
@@ -727,14 +658,8 @@ async def generate_video_from_product(
             thumbnail_path = storage.save_video(
                 thumbnail_filename, scene_image_bytes
             )
-            print(
-                f"[DEBUG generate_video_from_product] Saved thumbnail: {thumbnail_path}"
-            )
 
             # Stage 2: Animate scene with Omni
-            print(
-                "[DEBUG generate_video_from_product] Stage 2: Animating with Gemini Omni Flash..."
-            )
             video_bytes, video_prompt = await animate_scene_with_omni(
                 scene_image_bytes=scene_image_bytes,
                 product=product,
@@ -743,9 +668,6 @@ async def generate_video_from_product(
             )
         else:
             # Single-stage: Direct video generation (fallback)
-            print(
-                "[DEBUG generate_video_from_product] Single-stage video generation..."
-            )
             scene_prompt = ""
             video_prompt = build_creative_prompt(product, variation_obj)
 
@@ -773,9 +695,6 @@ async def generate_video_from_product(
                 aspect_ratio="9:16",
             )
 
-            print(
-                f"[DEBUG generate_video_from_product] Calling Omni Flash ({VIDEO_GEN_MODEL})..."
-            )
             interaction = client.interactions.create(
                 model=VIDEO_GEN_MODEL,
                 input=[user_step],
@@ -794,13 +713,9 @@ async def generate_video_from_product(
             thumbnail_path = None
 
         generation_time = int(time.time() - start_time)
-        print(
-            f"[DEBUG generate_video_from_product] Total generation time: {generation_time}s"
-        )
 
         # Save video (storage seam handles local vs GCS)
         video_path = storage.save_video(video_filename, video_bytes)
-        print(f"[DEBUG generate_video_from_product] Saved video: {video_path}")
 
         # Save metadata file
         save_video_metadata(
@@ -817,11 +732,8 @@ async def generate_video_from_product(
             video_artifact = types.Part.from_bytes(
                 data=video_bytes, mime_type="video/mp4"
             )
-            version = await tool_context.save_artifact(
+            await tool_context.save_artifact(
                 filename=video_filename, artifact=video_artifact
-            )
-            print(
-                f"[DEBUG generate_video_from_product] Saved artifact version: {version}"
             )
 
         # Insert into campaign_videos table with status='generated'
@@ -893,12 +805,6 @@ async def generate_video_from_product(
         return result
 
     except Exception as e:
-        import traceback
-
-        print(f"[DEBUG generate_video_from_product] Error: {e!s}")
-        print(
-            f"[DEBUG generate_video_from_product] Traceback: {traceback.format_exc()}"
-        )
         return {
             "status": "error",
             "message": f"Video generation failed: {e!s}",
@@ -930,50 +836,27 @@ async def generate_video_ad(
     Returns:
         Dictionary with video path and generation details
     """
-    print(f"[DEBUG generate_video_ad] Starting for campaign_id={campaign_id}")
-    print(
-        f"[DEBUG generate_video_ad] image_id={image_id}, duration_seconds={duration_seconds}"
-    )
-    print(
-        f"[DEBUG generate_video_ad] custom_prompt={custom_prompt[:100] if custom_prompt else 'None'}..."
-    )
 
     valid_durations = [4, 6, 8]
     if duration_seconds not in valid_durations:
         duration_seconds = 4
-        print(
-            f"[DEBUG generate_video_ad] Adjusted duration to: {duration_seconds}"
-        )
 
     # Ensure generated directory exists (only in local mode)
     if storage.get_storage_mode() == "local":
         os.makedirs(GENERATED_DIR, exist_ok=True)
-        print(f"[DEBUG generate_video_ad] GENERATED_DIR: {GENERATED_DIR}")
-    else:
-        print(
-            "[DEBUG generate_video_ad] Using GCS storage, skipping local directory creation"
-        )
 
     with get_db_cursor() as cursor:
         # Get campaign info
-        print(
-            f"[DEBUG generate_video_ad] Fetching campaign {campaign_id} from database..."
-        )
         cursor.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,))
         campaign = cursor.fetchone()
         if not campaign:
-            print(f"[DEBUG generate_video_ad] Campaign {campaign_id} not found")
             return {
                 "status": "error",
                 "message": f"Campaign with ID {campaign_id} not found",
             }
-        print(f"[DEBUG generate_video_ad] Found campaign: {campaign['name']}")
 
         # Get image
         if image_id:
-            print(
-                f"[DEBUG generate_video_ad] Fetching specific image {image_id}..."
-            )
             cursor.execute(
                 """
                 SELECT * FROM campaign_images
@@ -982,9 +865,6 @@ async def generate_video_ad(
                 (image_id, campaign_id),
             )
         else:
-            print(
-                "[DEBUG generate_video_ad] Fetching first image for campaign..."
-            )
             cursor.execute(
                 """
                 SELECT * FROM campaign_images
@@ -997,37 +877,21 @@ async def generate_video_ad(
 
         image_row = cursor.fetchone()
         if not image_row:
-            print(
-                f"[DEBUG generate_video_ad] No images found for campaign {campaign_id}"
-            )
             return {
                 "status": "error",
                 "message": f"No images found for campaign {campaign_id}. Add a seed image first.",
             }
-        print(
-            f"[DEBUG generate_video_ad] Found image: {image_row['image_path']}"
-        )
 
         image_filename = image_row["image_path"]
-        image_path = storage.get_image_path(image_filename)
-        print(f"[DEBUG generate_video_ad] Image path: {image_path}")
-        print(
-            f"[DEBUG generate_video_ad] Storage mode: {storage.get_storage_mode()}"
-        )
         if not storage.image_exists(image_filename):
-            print(
-                f"[DEBUG generate_video_ad] Image file not found: {image_filename}"
-            )
             return {
                 "status": "error",
                 "message": f"Image file not found: {image_filename}",
             }
-        print("[DEBUG generate_video_ad] Image file exists")
 
         # Get or generate prompt
         if custom_prompt:
             prompt = custom_prompt
-            print("[DEBUG generate_video_ad] Using custom prompt")
         else:
             metadata = (
                 json.loads(image_row["metadata"])
@@ -1041,11 +905,8 @@ async def generate_video_ad(
                 "state": campaign["state"],
             }
             prompt = generate_video_prompt(metadata, campaign_info)
-            print("[DEBUG generate_video_ad] Generated prompt from metadata")
-        print(f"[DEBUG generate_video_ad] Prompt: {prompt[:100]}...")
 
         # Create pending ad record
-        print("[DEBUG generate_video_ad] Creating pending ad record...")
         cursor.execute(
             """
             INSERT INTO campaign_ads (campaign_id, image_id, video_path, prompt_used, duration_seconds, status)
@@ -1054,23 +915,16 @@ async def generate_video_ad(
             (campaign_id, image_row["id"], prompt, duration_seconds),
         )
         ad_id = cursor.lastrowid
-        print(f"[DEBUG generate_video_ad] Created ad record with id={ad_id}")
 
     # Generate video using Gemini Omni Flash
     try:
-        print("[DEBUG generate_video_ad] Initializing genai client...")
         client = genai.Client()
 
         # Load image using storage abstraction and convert to bytes
-        print("[DEBUG generate_video_ad] Loading image...")
         image_bytes = storage.read_image(image_filename)
-        print(f"[DEBUG generate_video_ad] Image bytes size: {len(image_bytes)}")
 
         # Use PIL to determine format and re-encode if needed
         with PILImage.open(io.BytesIO(image_bytes)) as pil_img:
-            print(
-                f"[DEBUG generate_video_ad] Image format: {pil_img.format}, size: {pil_img.size}"
-            )
             img_format = pil_img.format or "JPEG"
 
         mime_type = f"image/{img_format.lower()}"
@@ -1091,18 +945,12 @@ async def generate_video_ad(
         )
 
         # Start video generation
-        print(
-            f"[DEBUG generate_video_ad] Starting video generation with {VIDEO_GEN_MODEL}..."
-        )
         interaction = client.interactions.create(
             model=VIDEO_GEN_MODEL,
             input=[user_step],
             generation_config=generation_config,
             response_format=response_format,
             background=True,
-        )
-        print(
-            f"[DEBUG generate_video_ad] Video generation started, interaction: {interaction}"
         )
 
         # Poll for completion; this call site maps helper exceptions to the
@@ -1142,49 +990,28 @@ async def generate_video_ad(
 
         timestamp = int(time.time())
         output_filename = f"campaign_{campaign_id}_ad_{ad_id}_{timestamp}.mp4"
-        print(f"[DEBUG generate_video_ad] Video bytes size: {len(video_data)}")
 
         # Save video - handle both local and GCS storage modes
         if storage.get_storage_mode() == "gcs":
             output_path = storage.save_video(output_filename, video_data)
-            print(
-                f"[DEBUG generate_video_ad] Video uploaded to GCS: {output_path}"
-            )
         else:
             output_path = os.path.join(GENERATED_DIR, output_filename)
-            print(f"[DEBUG generate_video_ad] Saving video to: {output_path}")
             with open(output_path, "wb") as f:
                 f.write(video_data)
-            print("[DEBUG generate_video_ad] Video saved successfully")
 
         # Save as ADK artifact if tool_context is provided
         if tool_context:
-            print("[DEBUG generate_video_ad] Saving as ADK artifact...")
             # Use video_data we already have in memory (no need to re-read from storage)
             video_artifact = types.Part.from_bytes(
                 data=video_data, mime_type="video/mp4"
             )
             # save_artifact is async, await it properly
-            version = await tool_context.save_artifact(
+            await tool_context.save_artifact(
                 filename=output_filename, artifact=video_artifact
-            )
-            print(
-                f"[DEBUG generate_video_ad] Artifact saved, version: {version}"
-            )
-        else:
-            print(
-                "[DEBUG generate_video_ad] No tool_context, skipping artifact save"
             )
 
         # Analyze the generated video to extract properties
-        print(
-            "[DEBUG generate_video_ad] Analyzing generated video for properties..."
-        )
         video_properties = await analyze_video(output_path)
-        print(
-            f"[DEBUG generate_video_ad] Extracted properties: mood={video_properties.mood}, "
-            f"energy={video_properties.energy_level}, style={video_properties.visual_style}"
-        )
 
         # Update database with video path and properties
         with get_db_cursor() as cursor:
@@ -1199,9 +1026,6 @@ async def generate_video_ad(
 
         # NOTE: Auto-metrics generation REMOVED per HITL workflow
         # Metrics are now only created when a video is activated via review_tools.activate_video()
-        print(
-            "[DEBUG generate_video_ad] Video saved. No auto-metrics (HITL workflow)."
-        )
 
         return {
             "status": "success",
@@ -1223,10 +1047,6 @@ async def generate_video_ad(
         }
 
     except Exception as e:
-        import traceback
-
-        print(f"[DEBUG generate_video_ad] Exception: {e!s}")
-        print(f"[DEBUG generate_video_ad] Traceback: {traceback.format_exc()}")
         # Update ad status to failed
         with get_db_cursor() as cursor:
             cursor.execute(

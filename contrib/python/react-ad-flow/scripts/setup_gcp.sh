@@ -31,12 +31,24 @@
 
 set -e  # Exit on error
 
+# Script directory (for relative paths)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load environment variables from .env if present
+if [ -f "$PROJECT_DIR/.env" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
 # =============================================================================
 # Configuration
 # =============================================================================
-GOOGLE_CLOUD_PROJECT="kaggle-on-gcp"
-GOOGLE_CLOUD_LOCATION="us-central1"
-GCS_BUCKET="${GOOGLE_CLOUD_PROJECT}-ad-campaign-assets"
+GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
+GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-us-central1}"
+GCS_BUCKET="${GCS_BUCKET:-${GOOGLE_CLOUD_PROJECT}-ad-campaign-assets}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -44,10 +56,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
-
-# Script directory (for relative paths)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # =============================================================================
 # Helper Functions
@@ -102,6 +110,11 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+if [ -z "$GOOGLE_CLOUD_PROJECT" ]; then
+    print_error "GOOGLE_CLOUD_PROJECT is not set. Please set it in .env or via environment variable."
+    exit 1
+fi
 
 # =============================================================================
 # Verify Mode

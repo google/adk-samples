@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,8 +28,8 @@ Usage:
     python scripts/deploy_ae_inline.py --region=us-central1  # Override region if needed
 
 Environment Variables:
-    GOOGLE_CLOUD_PROJECT  - GCP project ID (default: kaggle-on-gcp)
-    GCS_BUCKET            - GCS bucket name (default: kaggle-on-gcp-ad-campaign-assets)
+    GOOGLE_CLOUD_PROJECT  - GCP project ID
+    GCS_BUCKET            - GCS bucket name
 
 See: https://google.github.io/adk-docs/deploy/agent-engine/
 """
@@ -210,13 +210,13 @@ Examples:
     )
     parser.add_argument(
         "--project",
-        default=os.getenv("GOOGLE_CLOUD_PROJECT", "kaggle-on-gcp"),
-        help="GCP project ID (default: GOOGLE_CLOUD_PROJECT env or kaggle-on-gcp)",
+        default=os.getenv("GOOGLE_CLOUD_PROJECT"),
+        help="GCP project ID (default: GOOGLE_CLOUD_PROJECT env)",
     )
     parser.add_argument(
         "--bucket",
-        default=os.getenv("GCS_BUCKET", "kaggle-on-gcp-ad-campaign-assets"),
-        help="GCS bucket name (default: GCS_BUCKET env or kaggle-on-gcp-ad-campaign-assets)",
+        default=os.getenv("GCS_BUCKET"),
+        help="GCS bucket name (default: GCS_BUCKET env)",
     )
     parser.add_argument(
         "--region",
@@ -240,6 +240,15 @@ Examples:
     from vertexai import agent_engines
 
     print_header("Agent Engine Deployment (Python SDK)")
+
+    if not args.project:
+        print_error(
+            "Project ID is required. Pass --project or set GOOGLE_CLOUD_PROJECT."
+        )
+        sys.exit(1)
+    if not args.bucket:
+        print_error("GCS bucket is required. Pass --bucket or set GCS_BUCKET.")
+        sys.exit(1)
 
     print()
     print("Configuration:")

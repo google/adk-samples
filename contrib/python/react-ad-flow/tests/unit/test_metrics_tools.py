@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -124,7 +124,7 @@ class TestGetCampaignMetrics:
             kpis = ["impressions", "dwell", "circulation", "revenue", "rpi"]
             found = sum(1 for k in kpis if k in metrics_str)
             # At least some KPIs should be present
-            assert found >= 0  # May be 0 if no activated videos
+            assert found > 0  # May be 0 if no activated videos
 
     def test_no_data_returns_error_status(self, test_db):
         """Normalized contract: no activated metrics -> status error, never

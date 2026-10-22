@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -308,7 +308,7 @@ def populate_mock_data() -> dict:
 
             # Generate campaign name
             campaign_name = _generate_campaign_name(
-                product["name"], camp_data["store_name"]
+                matched_product["name"], camp_data["store_name"]
             )
 
             # Insert campaign with product_id and store_name
@@ -320,7 +320,7 @@ def populate_mock_data() -> dict:
             """,
                 (
                     campaign_name,
-                    f"Campaign for {product['name']} at {camp_data['store_name']}",
+                    f"Campaign for {matched_product['name']} at {camp_data['store_name']}",
                     product_id,
                     camp_data["store_name"],
                     camp_data["city"],
@@ -342,7 +342,7 @@ def populate_mock_data() -> dict:
 
             # Step 3: Create activated videos using REAL GCS video files
             if camp_data["status"] == "active":
-                product_name = product["name"]
+                product_name = matched_product["name"]
                 real_video_list = REAL_VIDEOS.get(product_name, [])
 
                 # If no real videos exist for this product, create one placeholder

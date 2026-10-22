@@ -12,7 +12,7 @@
 name: "react-ad-flow"
 agent_directory: "app"
 language: "python"
-region: "us-east1"
+region: "us-central1"
 create_params:
   deployment_target: "cloud_run"
   session_type: "in_memory"
