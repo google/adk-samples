@@ -139,7 +139,7 @@ gcloud services enable \
 ```
 
 #### 3. Automated GCP Setup Script
-This recipe includes an automated setup script ([scripts/setup_gcp.sh](scripts/setup_gcp.sh)) that provisions the Cloud Storage bucket (`gs://${GOOGLE_CLOUD_PROJECT}-ad-campaign-assets`) and uploads catalog seed images:
+This recipe includes an automated setup script ([scripts/setup_gcp.sh](scripts/setup_gcp.sh)) that provisions the Cloud Storage bucket (`gs://${GOOGLE_CLOUD_PROJECT}-react-ad-flow-assets`) and uploads catalog seed images:
 
 ```bash
 # Provision infrastructure and upload seed assets

@@ -184,7 +184,7 @@ async def generate_product_image(
     product_id: int = 0,
     product_name: str = "",
     style_hint: str = "",
-    tool_context: ToolContext = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Generate a reference product photo for a product with no image yet.
 

@@ -515,7 +515,7 @@ async def generate_video_from_product(
     variation: dict | None = None,
     use_two_stage: bool = True,
     duration_seconds: int = 4,
-    tool_context: ToolContext = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Generate a video ad using the two-stage pipeline.
 
@@ -829,7 +829,7 @@ async def generate_video_ad(
     image_id: int | None = None,
     custom_prompt: str | None = None,
     duration_seconds: int = 4,
-    tool_context: ToolContext = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Generate a video ad using Gemini Omni Flash.
 
@@ -1308,7 +1308,7 @@ async def generate_video_with_variation(
     duration_seconds: int = 4,
     use_two_stage: bool = True,
     presentation_mode: str | None = None,
-    tool_context: ToolContext = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Generate a video with variation parameters as individual arguments.
 

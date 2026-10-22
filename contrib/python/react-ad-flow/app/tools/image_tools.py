@@ -56,8 +56,16 @@ def analyze_image(image_filename: str) -> dict:
         # Read image file using storage abstraction
         image_bytes = storage.read_image(image_filename)
 
+        ext = os.path.splitext(image_filename)[1].lower()
+        mime_type = (
+            "image/png"
+            if ext == ".png"
+            else "image/webp"
+            if ext == ".webp"
+            else "image/jpeg"
+        )
         image_part = types.Part.from_bytes(
-            data=image_bytes, mime_type="image/jpeg"
+            data=image_bytes, mime_type=mime_type
         )
 
         prompt = """Analyze this fashion image and extract the following metadata in JSON format:

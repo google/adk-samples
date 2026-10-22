@@ -2,7 +2,7 @@
 
 These are the phase's core validation: known pairs, the zero case, and the
 equal-vs-unequal daily-values cases that distinguish ratio-of-sums from
-sum-of-ratios (docs/METRICS.md rule).
+sum-of-ratios (ratio-of-sums rule).
 """
 
 from app.tools.metrics_shared import compute_rpi, compute_weighted_average

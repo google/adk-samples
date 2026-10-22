@@ -25,7 +25,7 @@ Determinism rules (all sha256-seeded via seed._seeded_rng):
 
 dwell_time_seconds stays a synthetic scalar and circulation stays an
 outgoing_outer-derived convention (now summed over played slots) — real
-semantics are Phase 11's (docs/METRICS.md).
+semantics are Phase 11's (app/demo_data/BLUEZOO_MAPPING.md).
 """
 
 from datetime import date, timedelta

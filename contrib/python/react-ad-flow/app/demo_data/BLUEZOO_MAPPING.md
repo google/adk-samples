@@ -52,7 +52,7 @@ Ported from `ad-campaign-agent` @ `b6e3302358d61892e388d7ff744b2aff0e04b399`
   sum to the same daily total.
 - `video_metrics.dwell_time_seconds`: synthetic 4–12 s scalar. The dwell
   histogram → scalar aggregation rule is deferred to Phase 11 per
-  `docs/METRICS.md` — deliberately NOT derived from the bins.
+  formula — deliberately NOT derived from the bins.
 - `video_metrics.circulation` = `Σ outgoing_outer_count` over the creative's
   played slots (Phase 10: same ad-play join as impressions, replacing the
   ws05 per-video fraction): "circulation" appears nowhere in BlueZoo's docs

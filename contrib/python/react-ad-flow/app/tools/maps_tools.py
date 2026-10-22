@@ -896,7 +896,7 @@ async def generate_map_visualization(
     visualization_type: str = "performance_map",
     metric: str = "revenue_per_impression",
     style: str = "infographic",
-    tool_context: ToolContext = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Generate a map-based visualization of campaign performance using Gemini 3 Pro Image.
 
@@ -1067,7 +1067,7 @@ async def generate_map_visualization(
 
     # Calculate regional averages and RPI. Dwell is impressions-weighted:
     # an unweighted mean of per-campaign averages over-weights small
-    # campaigns (see docs/METRICS.md / metrics_shared).
+    # campaigns (see metrics_shared).
     for r_data in regional_data.values():
         if r_data["campaigns"] > 0:
             r_data["avg_dwell_time"] = round(

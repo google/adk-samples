@@ -225,7 +225,7 @@ Examples:
     )
     parser.add_argument(
         "--display-name",
-        default="Ad Campaign Agent",
+        default="react-ad-flow",
         help="Display name in Agent Engine console",
     )
     parser.add_argument(

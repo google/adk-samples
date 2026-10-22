@@ -81,8 +81,6 @@ def test_normalize_path():
         ("core/python/ambient-quality-agent", "maxgasztych"),
         ("/core/python/ambient-quality-agent/agent.py", "maxgasztych"),
         ("core/python/ambient-quality-agent-v2", "eliasecchig"),
-        ("core/python/genmedia-for-commerce", "lspataroG"),
-        ("/core/python/genmedia-for-commerce/agent.py", "lspataroG"),
         # Contrib directory assignments
         ("contrib/python/custom-tool", "tommywagz"),
         ("/contrib/python/recipe", "tommywagz"),

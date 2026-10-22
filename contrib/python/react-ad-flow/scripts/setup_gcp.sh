@@ -48,7 +48,7 @@ fi
 # =============================================================================
 GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
 GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-us-central1}"
-GCS_BUCKET="${GCS_BUCKET:-${GOOGLE_CLOUD_PROJECT}-ad-campaign-assets}"
+GCS_BUCKET="${GCS_BUCKET:-${GOOGLE_CLOUD_PROJECT}-react-ad-flow-assets}"
 
 # Colors for output
 RED='\033[0;31m'

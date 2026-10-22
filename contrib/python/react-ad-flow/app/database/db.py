@@ -355,7 +355,7 @@ def run_migrations() -> None:
         conn.commit()
         print("[DB Migration] store_name column added successfully.")
 
-    # Migration 2: Check if campaign_metrics needs retail media migration
+    # Migration 3: Check if campaign_metrics needs retail media migration
     # This checks if old columns exist - if so, run migrate_metrics_schema.py
     cursor.execute("PRAGMA table_info(campaign_metrics)")
     metrics_columns = [column[1] for column in cursor.fetchall()]
@@ -382,7 +382,7 @@ def run_migrations() -> None:
         conn.commit()
         print("[DB Migration] Retail media columns added successfully.")
 
-    # Migration N: Add source_video_id to campaign_videos (Phase 14c lineage)
+    # Migration 4: Add source_video_id to campaign_videos (Phase 14c lineage)
     cursor.execute("PRAGMA table_info(campaign_videos)")
     video_columns = [column[1] for column in cursor.fetchall()]
 

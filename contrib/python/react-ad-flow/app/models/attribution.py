@@ -61,7 +61,7 @@ class BlueZooVisitInterval(BaseModel):
     # values nothing in this app reads (the attribution join consumes only
     # incoming_inner_count and outgoing_outer_count). If a real metric ever
     # needs occupancy, add the sensor_visitors query then — do NOT assume
-    # these are live-populated. See docs/METRICS.md (circulation entry).
+    # these are live-populated. See circulation in app/demo_data/BLUEZOO_MAPPING.md.
     minimum_visitors_inner: float | None = None
     maximum_visitors_inner: float | None = None
     average_visitors_inner: float | None = None

@@ -67,7 +67,7 @@ except ValueError:
 
 
 # BlueZoo `valid` policy (Phase 11b). Rule R — count only rows BlueZoo marked
-# `valid` (a one-way commissioning-acceptance flag; see docs/METRICS.md) — is
+# `valid` (a one-way commissioning-acceptance flag; see app/demo_data/BLUEZOO_MAPPING.md) — is
 # OUR recommendation, NOT yet confirmed by BlueZoo. It therefore ships as the
 # DEFAULT of this explicit, configurable knob, never as a silent constant:
 # flipping it requires zero code, and the live conformer logs the active

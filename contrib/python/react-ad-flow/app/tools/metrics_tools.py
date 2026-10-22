@@ -897,7 +897,7 @@ def compare_creatives_within_campaign(campaign_id: int) -> dict:
 
     Creative-level counterpart to compare_campaigns() (which compares whole
     campaigns): returns, per activated video, all-time totals and RPI via
-    compute_rpi() (ratio of sums — see docs/METRICS.md), plus variation
+    compute_rpi() (ratio of sums — see metrics_shared), plus variation
     metadata so the comparison is legible. All-time window by design: demo
     metrics live in a fixed anchor window that date('now') filters can
     silently drift past.
@@ -1010,7 +1010,7 @@ def compare_creatives_within_campaign(campaign_id: int) -> dict:
 
 
 async def generate_creative_comparison_chart(
-    campaign_id: int, tool_context: ToolContext = None
+    campaign_id: int, tool_context: ToolContext | None = None
 ) -> dict:
     """Render a deterministic RPI-per-creative bar chart for one campaign.
 
@@ -1084,7 +1084,7 @@ def _aggregate_week(week_slice: list, metric: str) -> float:
     impressions-weighted average; additive metrics (impressions,
     circulation) sum. This is the per-metric aggregation rule Phase 4
     centralized — the old code summed daily values for every metric, which
-    is meaningless for ratios (see docs/METRICS.md).
+    is meaningless for ratios (ratio-of-sums rule).
     """
     if metric == "revenue_per_impression":
         return compute_rpi(
@@ -1103,7 +1103,7 @@ async def generate_metrics_visualization(
     chart_type: str = "trendline",
     metric: str = "revenue_per_impression",
     days: int = 30,
-    tool_context: ToolContext = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Generate a visual chart/infographic from campaign metrics using Gemini 3 Pro Image.
 

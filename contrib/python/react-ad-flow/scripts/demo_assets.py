@@ -28,13 +28,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# ADK only loads app/.env when serving the agent; standalone runs (make
+# ADK only loads .env when serving the agent; standalone runs (make
 # demo-assets, the pre-`make dev` install hook) need it loaded here so a
-# DEMO_ASSETS_DRIVE_ID set in app/.env is honored. Shell env still wins —
+# DEMO_ASSETS_DRIVE_ID set in .env is honored. Shell env still wins —
 # load_dotenv never overrides existing variables.
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / "app" / ".env")
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from app.config import LOCAL_ASSETS_DIR  # noqa: E402
 

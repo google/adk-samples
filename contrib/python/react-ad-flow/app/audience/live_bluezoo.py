@@ -224,7 +224,7 @@ class LiveBlueZooAudienceDataSource(AudienceDataSource):
             raise BlueZooConfigError(
                 f"APP_MODE=connected requires BLUEZOO_BASE_URL and "
                 f"BLUEZOO_ACCESS_KEY (missing: {', '.join(missing)}). Set them "
-                "in app/.env locally, or inject both from Secret Manager at "
+                "in .env locally, or inject both from Secret Manager at "
                 "deploy time — they are a cluster-scoped pair; BLUEZOO_BASE_URL "
                 "deliberately has no default. See README.md "
                 "(connected mode)."

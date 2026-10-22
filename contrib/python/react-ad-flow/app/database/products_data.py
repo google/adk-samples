@@ -14,9 +14,8 @@
 
 """Product catalog data - 22 pre-generated product images.
 
-These products are the source of truth for the ad campaign agent.
-Product images were generated using scripts/generate_product_images.py
-and stored in scripts/products/.
+These products are the source of truth for the react-ad-flow agent.
+Product demo assets are managed via scripts/demo_assets.py.
 
 Each product has:
 - name: Hyphenated product name (e.g., 'emerald-satin-slip-dress')

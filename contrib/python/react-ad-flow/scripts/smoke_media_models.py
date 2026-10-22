@@ -3,12 +3,12 @@
 Run from the recipe root with .env populated:
 
     set -a; source .env; set +a
-    .venv/bin/python scripts/smoke_media_models.py            # Stage 1 + Stage 2
-    .venv/bin/python scripts/smoke_media_models.py --skip-video  # Stage 1 only
+    uv run python scripts/smoke_media_models.py            # Stage 1 + Stage 2
+    uv run python scripts/smoke_media_models.py --skip-video  # Stage 1 only
 
 Exits 0 on success. Also usable to try preview models without code changes:
 
-    IMAGE_GENERATION_MODEL=<some-preview-id> .venv/bin/python scripts/smoke_media_models.py --skip-video
+    IMAGE_GENERATION_MODEL=<some-preview-id> uv run python scripts/smoke_media_models.py --skip-video
 """
 
 import asyncio

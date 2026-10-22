@@ -52,7 +52,7 @@ fi
 GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
 CLOUD_RUN_REGION="${CLOUD_RUN_REGION:-us-central1}"  # Cloud Run deployment region
 VERTEX_AI_LOCATION="${VERTEX_AI_LOCATION:-global}"     # Vertex AI API location (for Gemini 3.x models)
-GCS_BUCKET="${GCS_BUCKET:-${GOOGLE_CLOUD_PROJECT}-ad-campaign-assets}"
+GCS_BUCKET="${GCS_BUCKET:-${GOOGLE_CLOUD_PROJECT}-react-ad-flow-assets}"
 SERVICE_NAME="${SERVICE_NAME:-react-ad-flow}"
 APP_NAME="${APP_NAME:-react_ad_flow}"
 
