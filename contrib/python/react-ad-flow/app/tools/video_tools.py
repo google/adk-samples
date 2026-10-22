@@ -381,6 +381,7 @@ async def animate_scene_with_omni(
         type="video",
         delivery="inline",
         aspect_ratio="9:16",
+        duration=f"{duration_seconds}s" if duration_seconds else None,
     )
 
     interaction = client.interactions.create(

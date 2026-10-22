@@ -206,7 +206,7 @@ You can pass environment variable overrides to customize the deployment:
 GOOGLE_CLOUD_PROJECT="your-project-id" \
 CLOUD_RUN_REGION="us-central1" \
 GCS_BUCKET="your-bucket-name" \
-SERVICE_NAME="ad-campaign-agent" \
+SERVICE_NAME="react-ad-flow" \
 ./scripts/deploy.sh
 ```
 
@@ -216,8 +216,8 @@ Invoke `adk deploy cloud_run` directly with recommended production flags:
 adk deploy cloud_run \
   --project="$GOOGLE_CLOUD_PROJECT" \
   --region="us-central1" \
-  --service_name="ad-campaign-agent" \
-  --app_name="ad_campaign_agent" \
+  --service_name="react-ad-flow" \
+  --app_name="react_ad_flow" \
   --with_ui \
   --artifact_service_uri="gs://${GCS_BUCKET}" \
   app \
@@ -232,7 +232,7 @@ adk deploy cloud_run \
 #### Option C: Direct Container Deployment (`gcloud run deploy`)
 Build and deploy from the included [Dockerfile](Dockerfile):
 ```bash
-gcloud run deploy ad-campaign-agent \
+gcloud run deploy react-ad-flow \
   --source . \
   --region us-central1 \
   --memory 2Gi \
@@ -251,12 +251,12 @@ agents-cli deploy
 #### Post-Deployment & Access Points
 ```bash
 # Retrieve service URL
-gcloud run services describe ad-campaign-agent \
+gcloud run services describe react-ad-flow \
   --region=us-central1 \
   --format='value(status.url)'
 
 # Tail logs
-gcloud run services logs read ad-campaign-agent \
+gcloud run services logs read react-ad-flow \
   --region=us-central1 --limit=50
 ```
 - **Interactive ADK Web UI**: `https://<SERVICE_URL>/dev-ui`

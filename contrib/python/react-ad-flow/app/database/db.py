@@ -364,8 +364,9 @@ def run_migrations() -> None:
         print(
             "[DB Migration] WARNING: campaign_metrics has old digital video columns."
         )
-        print("[DB Migration] Run: python -m scripts.migrate_metrics_schema")
-        print("[DB Migration] to migrate to in-store retail media metrics.")
+        print(
+            "[DB Migration] Legacy schema detected; recreation or migration to in-store retail media metrics is required."
+        )
 
     # Check if new columns exist (for fresh databases or after migration)
     if "dwell_time" not in metrics_columns and "views" not in metrics_columns:

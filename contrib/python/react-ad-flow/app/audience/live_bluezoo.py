@@ -3,8 +3,7 @@
 ONE class implementing the seam's ONE method against BlueZoo's REST Data
 Warehouse (`run_query`), plus private helpers. Deliberately NOT a framework:
 one fixed parameterized SELECT against `sensor_visits`, no pagination, no
-query builder, no capability probing (scope guard: the pre-kickoff decisions
-at the foot of .docs/version2-plan/11-live-bluezoo-adapter.md).
+query builder, no capability probing.
 
 Conforming rules (findings: bluezoo-live-verification Part 5 +
 bluezoo-semantics-resolution):

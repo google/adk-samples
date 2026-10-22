@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared pytest fixtures for ad-campaign-agent tests.
+"""Shared pytest fixtures for react-ad-flow tests.
 
 This module provides:
 - Database setup/teardown fixtures (using copies of main DB)

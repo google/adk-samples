@@ -2,7 +2,7 @@
 API (Phase 14c — experimental, opt-in, ENABLE_OMNI_EDIT-gated).
 
 Two live-discovered API contract details, undocumented by Google, that this
-module must always honor (see .docs/version2-plan/14c-omni-video-editing.md):
+module must always honor:
   1. VideoContent.data must be a pathlib.Path (or IO[bytes]) to be
      auto-base64-encoded by the SDK -- a bare str is sent as literal
      (corrupt) "base64 data" and only fails server-side with a 400.

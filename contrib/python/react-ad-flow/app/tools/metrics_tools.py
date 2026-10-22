@@ -1328,8 +1328,6 @@ async def generate_metrics_visualization(
             **template_vars
         )
 
-    print(visualization_prompt)
-
     try:
         client = genai.Client()
 

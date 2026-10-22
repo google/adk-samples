@@ -40,7 +40,7 @@ def get_campaign_locations() -> dict:
     except ImportError:
         return {
             "status": "error",
-            "message": "googlemaps package not installed. Run: pip install googlemaps",
+            "message": "googlemaps package not installed. Run: uv add googlemaps",
         }
 
     api_key = GOOGLE_MAPS_API_KEY
@@ -162,7 +162,7 @@ def search_nearby_stores(
     except ImportError:
         return {
             "status": "error",
-            "message": "googlemaps package not installed. Run: pip install googlemaps",
+            "message": "googlemaps package not installed. Run: uv add googlemaps",
         }
 
     api_key = GOOGLE_MAPS_API_KEY
@@ -1344,12 +1344,6 @@ STYLE:
 - Include color scale legend
 
 Create a visually striking revenue heatmap suitable for executive dashboards."""
-
-    print(
-        visualization_prompt[:500] + "..."
-        if len(visualization_prompt) > 500
-        else visualization_prompt
-    )
 
     try:
         client = genai.Client()

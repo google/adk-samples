@@ -1,8 +1,8 @@
 """Smoke test for the two media-generation models (Stage 1 image, Stage 2 video).
 
-Run from the repo root with app/.env populated:
+Run from the recipe root with .env populated:
 
-    set -a; source app/.env; set +a
+    set -a; source .env; set +a
     .venv/bin/python scripts/smoke_media_models.py            # Stage 1 + Stage 2
     .venv/bin/python scripts/smoke_media_models.py --skip-video  # Stage 1 only
 

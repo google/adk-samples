@@ -174,7 +174,12 @@ PROJECT_DIR = os.path.dirname(BASE_DIR)
 # Defaults to the project root so the pre-existing selected/ and generated/
 # locations are unchanged; product images join them under product-images/.
 # Override with the LOCAL_ASSETS_DIR env var.
-LOCAL_ASSETS_DIR = os.environ.get("LOCAL_ASSETS_DIR") or PROJECT_DIR
+_local_assets_env = os.environ.get("LOCAL_ASSETS_DIR", "").strip()
+LOCAL_ASSETS_DIR = (
+    _local_assets_env
+    if _local_assets_env and not _local_assets_env.startswith("<TODO")
+    else PROJECT_DIR
+)
 SELECTED_DIR = os.path.join(LOCAL_ASSETS_DIR, "selected")
 GENERATED_DIR = os.path.join(LOCAL_ASSETS_DIR, "generated")
 PRODUCT_IMAGES_DIR = os.path.join(LOCAL_ASSETS_DIR, "product-images")
@@ -196,7 +201,7 @@ else:
     DB_PATH = os.path.join(PROJECT_DIR, "campaigns.db")
 
 # App metadata
-APP_NAME = os.environ.get("APP_NAME", "react_ad_flow")
+APP_NAME = "react_ad_flow"
 APP_DESCRIPTION = "Retail ad campaign management agent with video generation for in-store media networks"
 
 # Campaign categories — mirrors the CHECK constraint on campaigns.category

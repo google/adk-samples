@@ -124,7 +124,7 @@ class TestGetCampaignMetrics:
             kpis = ["impressions", "dwell", "circulation", "revenue", "rpi"]
             found = sum(1 for k in kpis if k in metrics_str)
             # At least some KPIs should be present
-            assert found > 0  # May be 0 if no activated videos
+            assert found > 0  # Test fixture seeds activated videos with metrics
 
     def test_no_data_returns_error_status(self, test_db):
         """Normalized contract: no activated metrics -> status error, never

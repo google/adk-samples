@@ -3,7 +3,7 @@
 Ported from the donor repo `ad-campaign-agent` @ b6e3302
 (`services/audience_provider/seed.py`, branch feat/plan3-slice1-bq-mvp) with
 the corrections mandated by the BlueZoo mapping verification
-(.docs/version2-plan/working-docs/replan-data-track/bluezoo-mapping-verification.md):
+(see app/demo_data/BLUEZOO_MAPPING.md):
 HHMM dwell-bin names, `ad_campaign_id` (never bare `campaign_id`),
 `minimum_/maximum_visitors_*`, FLOAT64 cuv_freq_*, screen vocabulary, and
 frames as lists of dicts (no pandas). Every divergence is enumerated in

@@ -21,7 +21,7 @@
 #
 # Prerequisites:
 #   - gcloud CLI installed and authenticated
-#   - adk CLI installed (pip install google-adk)
+#   - adk CLI installed (uv tool install google-adk)
 #   - GCS bucket created with assets (run setup_gcp.sh first)
 #
 # Usage:
@@ -155,7 +155,7 @@ print_success "gcloud CLI found"
 
 # Check adk
 if ! command -v adk &> /dev/null; then
-    print_error "adk CLI not found. Please install: pip install google-adk"
+    print_error "adk CLI not found. Please install: uv tool install google-adk"
     exit 1
 fi
 print_success "adk CLI found"
