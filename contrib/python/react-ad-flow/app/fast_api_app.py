@@ -41,7 +41,8 @@ except Exception:
     project_id = None
 
 allow_origins = (
-    os.getenv("ALLOW_ORIGINS").split(",") if os.getenv("ALLOW_ORIGINS")
+    os.getenv("ALLOW_ORIGINS", "").split(",")
+    if os.getenv("ALLOW_ORIGINS")
     else None
 )
 
