@@ -1,0 +1,414 @@
+name: 🟦 TypeScript Tests
+
+# Runs tests for each TypeScript recipe affected by a PR (or every recipe
+# on `workflow_dispatch --run-all`). Uses a matrix job so one recipe
+# failing doesn't cancel the others.
+
+on:
+  pull_request:
+    paths:
+      # Only file types that can meaningfully affect TypeScript test results.
+      # Doc-only PRs (README changes etc.) intentionally skip this workflow.
+      - "core/**/*.ts"
+      - "core/**/*.tsx"
+      - "core/**/*.js"
+      - "core/**/*.jsx"
+      - "core/**/*.mjs"
+      - "core/**/*.cjs"
+      - "core/**/*.mts"
+      - "core/**/*.cts"
+      - "core/**/package.json"
+      - "core/**/package-lock.json"
+      - "core/**/yarn.lock"
+      - "core/**/pnpm-lock.yaml"
+      - "core/**/bun.lockb"
+      - "core/**/bun.lock"
+      - "core/**/manifest.yaml"
+      - "core/**/tsconfig*.json"
+      - "contrib/**/*.ts"
+      - "contrib/**/*.tsx"
+      - "contrib/**/*.js"
+      - "contrib/**/*.jsx"
+      - "contrib/**/*.mjs"
+      - "contrib/**/*.cjs"
+      - "contrib/**/*.mts"
+      - "contrib/**/*.cts"
+      - "contrib/**/package.json"
+      - "contrib/**/package-lock.json"
+      - "contrib/**/yarn.lock"
+      - "contrib/**/pnpm-lock.yaml"
+      - "contrib/**/bun.lockb"
+      - "contrib/**/bun.lock"
+      - "contrib/**/manifest.yaml"
+      - "contrib/**/tsconfig*.json"
+      - "plugins/**/*.ts"
+      - "plugins/**/*.tsx"
+      - "plugins/**/*.js"
+      - "plugins/**/*.jsx"
+      - "plugins/**/*.mjs"
+      - "plugins/**/*.cjs"
+      - "plugins/**/*.mts"
+      - "plugins/**/*.cts"
+      - "plugins/**/package.json"
+      - "plugins/**/package-lock.json"
+      - "plugins/**/yarn.lock"
+      - "plugins/**/pnpm-lock.yaml"
+      - "plugins/**/bun.lockb"
+      - "plugins/**/bun.lock"
+      - "plugins/**/manifest.yaml"
+      - "plugins/**/tsconfig*.json"
+      - ".github/workflows/typescript-tests.yml"
+  workflow_dispatch:
+    inputs:
+      run_all:
+        description: "Run tests for all TypeScript recipes (ignore diff)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same PR (or on the same ref for
+# workflow_dispatch) so a rapid series of pushes doesn't queue up redundant
+# matrix runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-recipes:
+    name: Detect affected TypeScript recipes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      recipes: ${{ steps.detect.outputs.recipes }}
+      count: ${{ steps.detect.outputs.count }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect TypeScript recipes to test
+        id: detect
+        env:
+          # Pass user-controlled and dynamic values through env vars rather
+          # than interpolating GitHub expressions directly into the script
+          # body (security hardening — see GitHub Actions hardening guide).
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ALL: ${{ github.event.inputs.run_all }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          MANIFEST_FILENAME="manifest.yaml"
+
+          # pipefail matters here: without it, a transient `git fetch` failure
+          # would produce an empty diff → 0 recipes → skipped matrix →
+          # skipped gate → branch protection sees the required check as
+          # passing without ever running a test.
+
+          # Robust "is this a TypeScript recipe" check: tolerates single/double/no
+          # quotes around the value, case-insensitive on the value, and a
+          # trailing YAML comment.
+          is_typescript_recipe() {
+            grep -qiE "^[[:space:]]*language:[[:space:]]*[\"']?typescript[\"']?[[:space:]]*(#.*)?$" "$1"
+          }
+
+          # Helper: collect all TypeScript recipe dirs under core/, contrib/, and plugins/.
+          # A recipe dir is any directory that contains a manifest.yaml
+          # declaring language: typescript.
+          all_typescript_recipes() {
+            for root in core contrib plugins; do
+              [ -d "$root" ] || continue
+              while IFS= read -r manifest; do
+                if is_typescript_recipe "$manifest"; then
+                  dirname "$manifest"
+                fi
+              done < <(find "$root" -name "$MANIFEST_FILENAME")
+            done
+          }
+
+          # Helper: given a changed file path, return the recipe dir that
+          # owns it by walking up until we find a directory containing
+          # manifest.yaml.
+          find_recipe_dir() {
+            local path="$1"
+            local dir
+            dir="$(dirname "$path")"
+            while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+              if [ -f "$dir/$MANIFEST_FILENAME" ]; then
+                echo "$dir"
+                return
+              fi
+              dir="$(dirname "$dir")"
+            done
+          }
+
+          # These env vars can be null (workflow_dispatch has no PR;
+          # pull_request has no inputs). set -u would otherwise error.
+          RUN_ALL="${RUN_ALL:-}"
+          BASE_REF="${BASE_REF:-}"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$RUN_ALL" != "true" ]; then
+              # PR-diff mode requires a base ref, which workflow_dispatch
+              # does not provide. Silently falling back to origin/main
+              # produces an empty diff when the workflow was dispatched
+              # from main and green-lights the run without testing anything.
+              # Refuse the combination explicitly.
+              echo "::error::workflow_dispatch requires run_all=true. PR-diff mode is only available on pull_request events."
+              exit 1
+            fi
+            echo "workflow_dispatch with run_all=true — testing all TypeScript recipes."
+            RECIPES=$(all_typescript_recipes)
+          else
+            # PR mode: diff against the base branch.
+            if [ -z "$BASE_REF" ]; then
+              echo "::error::pull_request event with no base ref — cannot compute diff."
+              exit 1
+            fi
+            git fetch origin "$BASE_REF"
+            CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
+
+            # Map each changed file to its recipe dir (nearest ancestor with
+            # manifest.yaml) and keep only unique TypeScript recipe dirs.
+            RECIPES=""
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              case "$file" in
+                core/*|contrib/*|plugins/*) ;;
+                *) continue ;;
+              esac
+              recipe_dir="$(find_recipe_dir "$file")"
+              [ -z "$recipe_dir" ] && continue
+              if is_typescript_recipe "$recipe_dir/$MANIFEST_FILENAME"; then
+                RECIPES="${RECIPES}${recipe_dir}"$'\n'
+              else
+                echo "[SKIP] $recipe_dir — not a TypeScript recipe."
+              fi
+            done <<< "$CHANGED_FILES"
+
+            # Deduplicate and strip blank lines produced by trailing newlines
+            RECIPES=$(echo "$RECIPES" | sort -u | sed '/^[[:space:]]*$/d')
+          fi
+
+          if [ -z "$RECIPES" ]; then
+            echo "No TypeScript recipes to test."
+            echo "recipes=[]" >> "$GITHUB_OUTPUT"
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "TypeScript recipes to test:"
+          echo "$RECIPES"
+
+          # Emit as a JSON array for the matrix
+          JSON=$(echo "$RECIPES" | jq -R . | jq -sc .)
+          echo "recipes=$JSON" >> "$GITHUB_OUTPUT"
+          echo "count=$(echo "$RECIPES" | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+  run-tests:
+    name: "test — ${{ matrix.recipe }}"
+    needs: detect-recipes
+    if: needs.detect-recipes.outputs.count != '0'
+    runs-on: ubuntu-latest
+    # 20 min covers dependency download + test execution with headroom.
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        recipe: ${{ fromJson(needs.detect-recipes.outputs.recipes) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # ratchet:actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Set up .env for tests
+        working-directory: ${{ matrix.recipe }}
+        run: |
+          set -euo pipefail
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+            echo "Copied .env.example to .env"
+          fi
+
+      - name: Run TypeScript tests
+        working-directory: ${{ matrix.recipe }}
+        env:
+          RECIPE: ${{ matrix.recipe }}
+        run: |
+          set -euo pipefail
+
+          if [ -f "package-lock.json" ]; then
+            npm ci
+            npm test
+          elif [ -f "pnpm-lock.yaml" ]; then
+            corepack enable
+            pnpm install --frozen-lockfile
+            pnpm test
+          elif [ -f "yarn.lock" ]; then
+            yarn install --frozen-lockfile
+            yarn test
+          elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
+            if command -v bun >/dev/null 2>&1; then
+              bun install --frozen-lockfile
+              bun test
+            else
+              echo "::error file=${RECIPE}::bun is required for ${RECIPE} (found bun.lock/bun.lockb) but bun is not available on this runner."
+              exit 1
+            fi
+          elif [ -f "package.json" ]; then
+            echo "::error file=${RECIPE}::No lockfile found in ${RECIPE}. Add a lockfile (package-lock.json, pnpm-lock.yaml, yarn.lock, bun.lockb, or bun.lock) to the recipe by running your package manager's install/lock command."
+            exit 1
+          else
+            echo "::error file=${RECIPE}::No package.json found in ${RECIPE}."
+            exit 1
+          fi
+
+  type-check:
+    name: Type check (tsc --noEmit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # ratchet:actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Run tsc --noEmit
+        run: |
+          set -euo pipefail
+
+          FAILED=0
+          COUNT=0
+
+          while IFS= read -r tsconfig; do
+            [ -z "$tsconfig" ] && continue
+            dir="$(dirname "$tsconfig")"
+            echo "========================================"
+            echo "Type-checking $dir..."
+            echo "========================================"
+            COUNT=$((COUNT + 1))
+            (
+              cd "$dir"
+              if [ ! -f .env ] && [ -f .env.example ]; then
+                cp .env.example .env
+              fi
+              if [ -f "package-lock.json" ]; then
+                npm ci
+              elif [ -f "pnpm-lock.yaml" ]; then
+                corepack enable
+                pnpm install --frozen-lockfile
+              elif [ -f "yarn.lock" ]; then
+                yarn install --frozen-lockfile
+              elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
+                if command -v bun >/dev/null 2>&1; then
+                  bun install --frozen-lockfile
+                else
+                  echo "::error file=$dir::bun is required for $dir (found bun.lock/bun.lockb) but bun is not available on this runner."
+                  exit 1
+                fi
+              elif [ -f "package.json" ]; then
+                echo "::error file=$dir::No lockfile found in $dir. Add a lockfile (package-lock.json, pnpm-lock.yaml, yarn.lock, bun.lockb, or bun.lock) to the recipe by running your package manager's install/lock command."
+                exit 1
+              else
+                echo "::error file=$dir::No package.json found in $dir."
+                exit 1
+              fi
+              npx tsc --noEmit
+            ) || FAILED=1
+          done < <(find core contrib plugins -name "tsconfig.json" -not -path "*/node_modules/*" 2>/dev/null)
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "[INFO] No TypeScript projects with tsconfig.json found."
+            exit 0
+          fi
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo ""
+            echo "========================================"
+            echo "  ACTION REQUIRED: TypeScript type check failed"
+            echo "========================================"
+            echo "One or more TypeScript projects failed type checking. See compiler errors above."
+            exit 1
+          fi
+
+          echo "[PASS] All $COUNT TypeScript project(s) passed type checking."
+
+  # Final gate. `if: always()` so the required check always reports even when
+  # detect-recipes or run-tests were cancelled/skipped/failed — a skipped
+  # required check is often treated as passing by branch protection, which is
+  # the silent-green failure mode we're guarding against.
+  #
+  # Fails if:
+  #   - type-check did not succeed
+  #   - detect-recipes did not succeed (crash, cancellation, ...)
+  #   - run-tests ended in any state other than success or skipped
+  # `skipped` on run-tests is OK because it means detect-recipes legitimately
+  # found zero TypeScript recipes to test.
+  test-results:
+    name: TypeScript test results
+    needs: [detect-recipes, run-tests, type-check]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check results
+        env:
+          DETECT_RESULT: ${{ needs.detect-recipes.result }}
+          RUN_RESULT: ${{ needs.run-tests.result }}
+          TYPE_CHECK_RESULT: ${{ needs.type-check.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$TYPE_CHECK_RESULT" != "success" ]; then
+            echo "::error::TypeScript type checking (tsc --noEmit) failed (type-check: $TYPE_CHECK_RESULT). Open the 'Type check (tsc --noEmit)' job to see compiler errors."
+            exit 1
+          fi
+
+          # This job is a branch-protection gate: it reports the aggregate of
+          # a matrix, so it can never name the specific recipe that failed.
+          # Say that outright and point at the matrix legs, rather than
+          # leaving a bare "did not succeed" that reads like a CI glitch.
+          if [ "$DETECT_RESULT" != "success" ]; then
+            echo "::error::Could not work out which TypeScript recipes this PR affects (detect-recipes: $DETECT_RESULT), so no tests ran. This is a CI tooling failure, not a problem with your changes — re-run the job. Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+            exit 1
+          fi
+
+          case "$RUN_RESULT" in
+            success)
+              echo "All TypeScript recipe tests passed."
+              ;;
+            skipped)
+              echo "No TypeScript recipes to test — gate passes."
+              ;;
+            *)
+              echo "::error::One or more TypeScript recipe test jobs did not pass (run-tests: $RUN_RESULT). This gate reports the aggregate — open the 'test — <recipe>' job for the recipe that failed to see the actual test output. Docs: docs/recipe-handbook/troubleshooting.md"
+              echo ""
+              echo "This job is a gate, not a test run. The failure is in one"
+              echo "of the matrix legs above, each named 'test — <recipe>'."
+              echo "Open the red one for the test output."
+              exit 1
+              ;;
+          esac

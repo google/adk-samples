@@ -238,15 +238,27 @@ function basename(path: string | null | undefined): string {
   return i >= 0 ? path.slice(i + 1) : path;
 }
 
+type EditItem = { oldText?: unknown; newText?: unknown };
+
+function asEditItems(v: unknown): EditItem[] {
+  return Array.isArray(v) ? (v as EditItem[]) : [];
+}
+
 export function patchPreview(args: Record<string, unknown> | null): string {
   if (!args) return "";
   const path = asString(args.path);
   if (!path) return "";
-  const old = asString(args.old_string);
-  const next = asString(args.new_string);
-  const removed = old ? old.split("\n").length : 0;
-  const added = next ? next.split("\n").length : 0;
-  return `${basename(path)} · −${removed} +${added}`;
+  const edits = asEditItems(args.edits);
+  let removed = 0;
+  let added = 0;
+  for (const e of edits) {
+    const old = asString(e.oldText);
+    const next = asString(e.newText);
+    removed += old ? old.split("\n").length : 0;
+    added += next ? next.split("\n").length : 0;
+  }
+  const suffix = edits.length > 1 ? ` (${edits.length} edits)` : "";
+  return `${basename(path)} · −${removed} +${added}${suffix}`;
 }
 
 export function PatchView({
@@ -257,9 +269,7 @@ export function PatchView({
   result: unknown;
 }) {
   const path = asString(args?.path);
-  const oldStr = asString(args?.old_string);
-  const newStr = asString(args?.new_string);
-  const replaceAll = args?.replace_all === true;
+  const edits = asEditItems(args?.edits);
   const err =
     typeof result === "object" && result && "error" in result
       ? asString((result as { error?: unknown }).error)
@@ -267,15 +277,21 @@ export function PatchView({
   return (
     <div className="flex w-full max-w-full flex-col gap-1">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        patch ·{" "}
+        edit ·{" "}
         <span className="font-mono normal-case">{path || "(no path)"}</span>
-        {replaceAll && (
-          <span className="ml-1 rounded bg-amber-500/15 px-1 text-amber-300">
-            replace_all
+        {edits.length > 1 && (
+          <span className="ml-1 rounded bg-sky-500/15 px-1 text-sky-300">
+            {edits.length} edits
           </span>
         )}
       </div>
-      <DiffBlock oldString={oldStr} newString={newStr} />
+      {edits.map((e, i) => (
+        <DiffBlock
+          key={i}
+          oldString={asString(e.oldText)}
+          newString={asString(e.newText)}
+        />
+      ))}
       {err && (
         <div className="rounded border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-300">
           {err}
@@ -337,7 +353,7 @@ export function WriteFileView({
   return (
     <div className="flex w-full max-w-full flex-col gap-1">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        write_file ·{" "}
+        write ·{" "}
         {err ? (
           <span className="font-mono normal-case">{path || "(no path)"}</span>
         ) : (
@@ -379,20 +395,39 @@ export function ReadFileView({
   const lang = detectLanguage(path);
   const r =
     typeof result === "object" && result !== null
-      ? (result as { content?: unknown; error?: unknown })
+      ? (result as {
+          content?: unknown;
+          error?: unknown;
+          filename?: unknown;
+          mime_type?: unknown;
+          size_bytes?: unknown;
+          note?: unknown;
+        })
       : null;
   const content = asString(r?.content);
   const err = asString(r?.error);
+  // A media read (image/PDF/audio/video) has neither content nor error: the
+  // bytes were staged as an artifact, not returned as text. Without this
+  // branch, ReadFileView rendered a silent empty code block for every media
+  // read (final-review Fix 9).
+  const mimeType = asString(r?.mime_type);
+  const isMediaResult = hasResult && !err && !content && !!mimeType;
   return (
     <div className="flex w-full max-w-full flex-col gap-1">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        read_file ·{" "}
+        read ·{" "}
         <span className="font-mono normal-case">{path || "(no path)"}</span>
       </div>
       {hasResult ? (
         err ? (
           <div className="rounded border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-300">
             {err}
+          </div>
+        ) : isMediaResult ? (
+          <div className="text-[11px] text-muted-foreground">
+            Loaded as media ({mimeType}
+            {typeof r?.size_bytes === "number" ? `, ${r.size_bytes}B` : ""})
+            {asString(r?.note) ? ` — ${asString(r?.note)}` : ""}
           </div>
         ) : (
           <CodeBlock code={content} language={lang} />
@@ -440,7 +475,7 @@ export function TerminalView({
   return (
     <div className="flex w-full max-w-full flex-col gap-1">
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-        terminal
+        bash
         {exitCode !== null && (
           <span
             className={cn(
@@ -509,8 +544,8 @@ function truncate(s: string, max = 4000): string {
 }
 
 export const TOOL_ICONS: Record<string, typeof Pencil> = {
-  patch: Pencil,
-  write_file: Pencil,
-  read_file: FileText,
-  terminal: TerminalIcon,
+  edit: Pencil,
+  write: Pencil,
+  read: FileText,
+  bash: TerminalIcon,
 };
