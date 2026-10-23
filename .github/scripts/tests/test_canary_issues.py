@@ -23,13 +23,13 @@ Every test below pins one of those.
 """
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import canary_issues as m
 import pytest
 
-NOW = datetime(2026, 6, 1, tzinfo=timezone.utc)
+NOW = datetime(2026, 6, 1, tzinfo=UTC)
 
 
 def _issue(days_old: int, labels: set[str] | None = None) -> dict:
@@ -370,6 +370,28 @@ def test_body_states_this_is_not_a_dependency_bump_nag(monkeypatch):
     assert "never opens version-bump PRs" in body
 
 
+def test_body_for_kotlin_recipe(monkeypatch):
+    monkeypatch.setattr(m, "read_owner", lambda r, repo_root=None: "sherryfox")
+    body = m.build_body(
+        "contrib/kotlin/llm-auditor",
+        [
+            {
+                "recipe": "contrib/kotlin/llm-auditor",
+                "language": "kotlin",
+                "version": "17",
+                "python": "17",
+                "outcome": "fail",
+                "step": "test",
+                "detail": "build error",
+            }
+        ],
+        "https://run",
+    )
+    assert "JDK 17." in body
+    assert "| 17 | test | build error |" in body
+    assert "The canary runs each Kotlin recipe's test suite" in body
+
+
 def test_title_is_stable_because_it_is_the_dedupe_key():
     """Anything varying in the title — a date, a version, the error text —
     stops the canary recognising its own issue, so it files a fresh one every
@@ -389,7 +411,7 @@ def test_the_title_carries_nothing_that_varies_between_runs():
     """The complement, as cheap insurance against a future f-string reaching
     for the clock or the interpreter version."""
     title = m.issue_title("core/python/x")
-    for token in (str(datetime.now(timezone.utc).year), "3.11", "T00:"):
+    for token in (str(datetime.now(UTC).year), "3.11", "T00:"):
         assert token not in title
 
 

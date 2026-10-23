@@ -36,7 +36,7 @@ describe("normalizeWorkspacePath", () => {
   });
 
   it("rejects absolute host paths", () => {
-    // write_file echoes these back on the local backend; they aren't
+    // write echoes these back on the local backend; they aren't
     // addressable through the workspace API.
     expect(
       normalizeWorkspacePath("/Users/me/.lha/users/u/report.md"),
