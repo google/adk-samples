@@ -76,7 +76,7 @@ if not logger.handlers:
 project_id = os.environ["GOOGLE_CLOUD_PROJECT"]
 
 
-async def build_conversational_history(  # noqa: C901, PLR0912, PLR0915
+async def build_conversational_history(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> None:
     """Before-model callback that handles both ADK and GE playground sessions.
@@ -246,7 +246,15 @@ async def build_conversational_history(  # noqa: C901, PLR0912, PLR0915
         )
 
     history = retrieve_from_history(global_session_id=global_session_id)
-    llm_request.contents = history
+    if history:
+        llm_request.contents = history
+    else:
+        # GCS history unavailable (e.g. media bucket missing): keep the
+        # contents ADK built from the session rather than sending none.
+        logger.warning(
+            f"[before_model] Empty GCS history for {global_session_id}; "
+            "falling back to session contents"
+        )
 
 
 async def inject_uploaded_images(
@@ -303,7 +311,7 @@ async def inject_uploaded_images(
     return None
 
 
-async def handle_tool_response(  # noqa: C901, PLR0912, PLR0915
+async def handle_tool_response(
     tool: BaseTool, args: dict, tool_context: ToolContext, tool_response: dict
 ) -> dict | None:
     """After-tool callback to intercept MCP tool results.

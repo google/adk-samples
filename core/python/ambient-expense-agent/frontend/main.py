@@ -74,7 +74,7 @@ async def _get_auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _extract_pending_approval(session: dict, user_id: str) -> dict | None:  # noqa: C901
+def _extract_pending_approval(session: dict, user_id: str) -> dict | None:
     """Extract pending approval info from a session's events.
 
     Scans for an ``adk_request_input`` function call without a matching
@@ -218,4 +218,4 @@ if __name__ == "__main__":
     port = int(
         os.environ.get("FRONTEND_PORT") or os.environ.get("PORT", "8081")
     )
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)  # noqa: S104

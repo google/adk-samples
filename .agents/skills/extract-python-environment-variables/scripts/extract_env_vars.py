@@ -1099,31 +1099,62 @@ def write_model_vars_to_env_example(
 # ---------------------------------------------------------------------------
 
 
+# Opening quotes of a module docstring, allowing any legal string prefix.
+# Python permits r/u/b (and Rb/bR/... pairs) before the quote; a docstring in
+# practice is r"""...""" or plain, but the scan must not be fooled by any of
+# them. Historical bug: this was a bare startswith('"""') test, so a file whose
+# docstring was written as r\"\"\"...\"\"\" (common when the text contains
+# backslashes) had `import os` injected ABOVE the docstring, demoting it to a
+# dead string expression and losing __doc__.
+_DOCSTRING_OPEN_RE = re.compile(r'^[rRuUbB]{0,2}("""|\'\'\'|"|\')')
+
+
 def _post_header_index(lines: list[str]) -> int:
     """
     Return the line index after which new top-level code should be inserted.
 
     Skips (in order):
       1. Leading license / comment block and blank lines.
-      2. An optional module-level docstring (single- or triple-quoted).
+      2. An optional module-level docstring, whatever its quote style or
+         string prefix.
 
     This prevents imports from being injected before the module docstring,
     which would cause documentation tools to miss it.
+
+    The docstring boundary is resolved with the AST wherever the source
+    parses, since that is the only way to be right about every quote style,
+    prefix, and implicit string concatenation. The textual scan below is a
+    fallback for sources that do not parse (the caller may be mid-edit).
     """
-    i = 0
     n = len(lines)
 
-    # Skip license header (comment lines and blank lines)
+    # AST path — authoritative when the source is syntactically valid.
+    try:
+        tree = ast.parse("".join(lines))
+    except (SyntaxError, ValueError):
+        tree = None
+    if tree is not None and tree.body:
+        first = tree.body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            # end_lineno is the 1-based last line of the docstring, which is
+            # exactly the 0-based index of the line after it.
+            return min(first.value.end_lineno or first.value.lineno, n)
+
+    # Fallback: skip the license header (comment and blank lines)...
+    i = 0
     while i < n and (lines[i].strip().startswith("#") or not lines[i].strip()):
         i += 1
 
-    # Skip module docstring if present
+    # ...then an optional module docstring.
     if i < n:
-        stripped = lines[i].strip()
-        for quote in ('"""', "'''"):
-            if not stripped.startswith(quote):
-                continue
-            rest = stripped[len(quote) :]
+        match = _DOCSTRING_OPEN_RE.match(lines[i].strip())
+        if match:
+            quote = match.group(1)
+            rest = lines[i].strip()[match.end() :]
             if rest.endswith(quote) and len(rest) >= len(quote):
                 i += 1  # single-line docstring
             else:
@@ -1131,9 +1162,8 @@ def _post_header_index(lines: list[str]) -> int:
                 while i < n and quote not in lines[i]:
                     i += 1
                 i += 1  # include the line that contains the closing quotes
-            break
 
-    return i
+    return min(i, n)
 
 
 def _docstring_node_ids(tree: ast.AST) -> set[int]:
@@ -1229,6 +1259,72 @@ def _getenv_default_node_ids(tree: ast.AST) -> set[int]:
     return ids
 
 
+def _structural_exclusion_node_ids(tree: ast.AST) -> set[int]:
+    """
+    Return the id() of every ast.Constant that must NOT be rewritten because
+    of WHERE it sits, regardless of what it looks like.
+
+    A model string is only a candidate for promotion to an env var when it is
+    a *configurable constant*. Three positions mean it is something else, and
+    rewriting them corrupts working code:
+
+    1. **An element of a collection literal** (dict key or value, list, set,
+       or tuple entry). These are lookup tables and enumerations of supported
+       models, not a single configurable choice::
+
+           IMAGE_MODELS = {
+               "flash": "gemini-2.5-flash-image",
+               "pro":   "gemini-2.5-pro-image",
+           }
+
+       Rewriting the values makes the table resolve at import time from a
+       single env var; rewriting the KEYS is worse still, because
+       ``IMAGE_MODELS.get("flash")`` then never matches anything. A dict key
+       must stay a static literal.
+
+    2. **A subscript index** — ``IMAGE_MODELS["gemini-3.1"]`` is a key INTO
+       such a table. Replacing it looks up a different (probably absent)
+       entry.
+
+    3. **An operand of a comparison** — ``if "gemini-3.1" in model_id`` tests
+       a value rather than configuring one. Replacing it changes the
+       predicate's meaning.
+
+    Skipping a legitimate extraction is cheap (the user can lift the value by
+    hand); silently breaking a lookup table is not. When in doubt this errs
+    towards skipping, and the skipped literals are reported so nothing is
+    hidden — see :func:`extract_skipped_model_literals`.
+    """
+    ids: set[int] = set()
+    for parent in ast.walk(tree):
+        if isinstance(parent, ast.Dict):
+            # `keys` holds None for a `**expansion` entry — guard for it.
+            for node in list(parent.keys) + list(parent.values):
+                if isinstance(node, ast.Constant):
+                    ids.add(id(node))
+        elif isinstance(parent, (ast.List, ast.Set, ast.Tuple)):
+            for node in parent.elts:
+                if isinstance(node, ast.Constant):
+                    ids.add(id(node))
+        elif isinstance(parent, ast.Subscript):
+            if isinstance(parent.slice, ast.Constant):
+                ids.add(id(parent.slice))
+        elif isinstance(parent, ast.Compare):
+            for node in [parent.left, *parent.comparators]:
+                if isinstance(node, ast.Constant):
+                    ids.add(id(node))
+    return ids
+
+
+def _model_exclusion_node_ids(tree: ast.AST) -> set[int]:
+    """Every Constant the model-replacement path must leave alone."""
+    return (
+        _docstring_node_ids(tree)
+        | _getenv_default_node_ids(tree)
+        | _structural_exclusion_node_ids(tree)
+    )
+
+
 def _flat_offset(lines: list[str], lineno: int, col: int) -> int:
     """Convert a 1-based lineno + 0-based col_offset to a flat char offset."""
     return sum(len(ln) for ln in lines[: lineno - 1]) + col
@@ -1254,7 +1350,7 @@ def _imports_os(tree: ast.AST) -> bool:
 _NOQA_E402_SUFFIX = "  # noqa: E402 -- must come after load_dotenv()"
 
 
-def _suppress_e402_on_late_relative_imports(  # noqa: C901
+def _suppress_e402_on_late_relative_imports(
     tree: ast.Module | None, lines: list[str]
 ) -> tuple[list[str], int]:
     """Append `# noqa: E402` to top-level `from .x import y` statements that
@@ -1579,6 +1675,74 @@ def _find_dependencies_close_bracket(content: str) -> int | None:
     return _scan_matching_close_bracket(content, deps_start.end() - 1)
 
 
+def _split_trailing_comment(line: str) -> tuple[str, str]:
+    """
+    Split a single TOML line into ``(code, comment)``.
+
+    A ``#`` only opens a comment when it sits outside a string, so the scan
+    tracks basic strings (``"..."``, backslash escapes honoured) and literal
+    strings (``'...'``, no escapes). ``comment`` starts at the ``#`` and is
+    ``""`` when the line has none; any whitespace between the code and the
+    ``#`` stays on the ``code`` side so callers can preserve the layout.
+    """
+    quote: str | None = None
+    escaped = False
+    for idx, ch in enumerate(line):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif quote == '"' and ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = None
+            continue
+        if ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            return line[:idx], line[idx:]
+    return line, ""
+
+
+def _array_body_has_entries(array_body: str) -> bool:
+    """Whether an array body holds a real entry (not just blanks/comments)."""
+    code_only = "".join(
+        _split_trailing_comment(ln)[0] for ln in array_body.split("\n")
+    )
+    return bool(code_only.strip())
+
+
+def _ensure_trailing_comma(trimmed: str) -> str:
+    """
+    Append a ``,`` to the last array entry in ``trimmed`` if it lacks one.
+
+    The comma must land on the ENTRY, never inside a trailing comment.
+    Historical bug: a plain ``trimmed.endswith(",")`` test inspected the end
+    of the *comment* text, so an array ending in::
+
+        "pyOpenSSL>=23.0",  # mTLS during auth in some envs
+
+    grew a stray comma inside the comment, and one ending in::
+
+        "pyOpenSSL>=23.0"  # no comma
+
+    produced invalid TOML — the separating comma was commented out, which
+    the round-trip guard in :func:`ensure_python_dotenv_dependency` then
+    rejected, silently skipping the dependency insertion altogether.
+    """
+    lines = trimmed.split("\n")
+    for i in range(len(lines) - 1, -1, -1):
+        code, comment = _split_trailing_comment(lines[i])
+        if not code.strip():
+            continue  # blank or comment-only line — keep looking backwards
+        stripped = code.rstrip()
+        if stripped.endswith(",") or stripped.endswith("["):
+            return trimmed  # already terminated, or the array is empty
+        gap = code[len(stripped) :]
+        lines[i] = stripped + "," + gap + comment
+        return "\n".join(lines)
+    return trimmed
+
+
 def _insert_before_close(content: str, close_idx: int) -> str:
     """
     Insert a `"python-dotenv>=1.0.0",` line into the dependencies array
@@ -1596,12 +1760,12 @@ def _insert_before_close(content: str, close_idx: int) -> str:
     # the layout of the insertion.
     trimmed = prefix.rstrip()
 
-    # If the array has any content, make sure the last entry has a trailing
-    # comma before we append our own.
+    # If the array holds any real entry, make sure the last one has a
+    # trailing comma before we append our own.
     array_open = trimmed.rfind("[")
     array_body = trimmed[array_open + 1 :] if array_open >= 0 else ""
-    if array_body.strip() and not trimmed.endswith(","):
-        trimmed += ","
+    if _array_body_has_entries(array_body):
+        trimmed = _ensure_trailing_comma(trimmed)
 
     return trimmed + '\n    "python-dotenv>=1.0.0",\n' + suffix
 
@@ -1699,6 +1863,9 @@ def extract_hardcoded_models(
         :func:`_getenv_default_node_ids`) — those are already serving as
         env-var defaults; replacing them would silently regress the type
         from ``str`` to ``str | None`` and could break at runtime.
+      * String literals whose POSITION means they aren't a configurable
+        constant — collection-literal entries, subscript indices, and
+        comparison operands (see :func:`_structural_exclusion_node_ids`).
 
     Returns:
       {file_path: [(line_number, model_string), ...]}
@@ -1712,9 +1879,7 @@ def extract_hardcoded_models(
         except (SyntaxError, UnicodeDecodeError):
             continue
 
-        excluded_ids = _docstring_node_ids(tree) | _getenv_default_node_ids(
-            tree
-        )
+        excluded_ids = _model_exclusion_node_ids(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant):
@@ -1729,16 +1894,175 @@ def extract_hardcoded_models(
     return hits
 
 
+def extract_skipped_model_literals(
+    py_files: list[Path],
+) -> dict[Path, list[tuple[int, str]]]:
+    """
+    Find model strings deliberately NOT rewritten because of their position.
+
+    These are the literals :func:`_structural_exclusion_node_ids` protects —
+    lookup-table entries, subscript keys, comparison operands. They are
+    reported rather than silently dropped so the maintainer knows the recipe
+    still hardcodes a model somewhere, and can decide whether that table
+    ought to be configurable.
+
+    Docstring mentions are excluded (prose, not code). Identical
+    (line, string) pairs are de-duplicated: ``{"gemini-x": "gemini-x"}``
+    holds two distinct nodes on one line, and listing it twice only makes
+    the report harder to read.
+
+    Returns:
+      {file_path: [(line_number, model_string), ...]}
+    """
+    skipped: dict[Path, list[tuple[int, str]]] = {}
+
+    for py_file in py_files:
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(py_file))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+
+        structural = _structural_exclusion_node_ids(tree)
+        docstrings = _docstring_node_ids(tree)
+        seen: set[tuple[int, str]] = set()
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant):
+                continue
+            if id(node) not in structural or id(node) in docstrings:
+                continue
+            if not isinstance(node.value, str):
+                continue
+            if not any(node.value.startswith(p) for p in MODEL_PREFIXES):
+                continue
+            key = (node.lineno, node.value)
+            if key in seen:
+                continue
+            seen.add(key)
+            skipped.setdefault(py_file, []).append(key)
+
+    if skipped:
+        for hits in skipped.values():
+            hits.sort()
+
+    return skipped
+
+
+def _assignment_target_name(node: ast.AST) -> str | None:
+    """Return the single ``Name`` target of an assignment, else None."""
+    if (
+        isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+    ):
+        return node.targets[0].id
+    if (
+        isinstance(node, ast.AnnAssign)
+        and node.value is not None
+        and isinstance(node.target, ast.Name)
+    ):
+        return node.target.id
+    return None
+
+
+def _var_name_from_target(target: str) -> str | None:
+    """
+    Derive an env-var name from the assignment target holding a model string.
+
+    ``DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001"`` tells us far more
+    about the variable's role than the generic ``MODEL_NAME`` fallback does —
+    especially in a recipe that already reads a *different* model var (an LLM)
+    from the environment, where a second bare ``MODEL_NAME`` is actively
+    misleading.
+
+    Only targets that name a model are used; anything else returns None so the
+    caller falls back to the generic scheme. The leading ``DEFAULT_`` is
+    dropped because it describes the constant, not the model.
+    """
+    name = target.strip().lstrip("_").upper()
+    if name.startswith("DEFAULT_"):
+        name = name[len("DEFAULT_") :]
+    if not name.isidentifier():
+        return None
+    if "MODEL" not in name:
+        return None
+    if name == "MODEL":
+        return "MODEL_NAME"
+    return name
+
+
+def extract_model_var_hints(py_files: list[Path]) -> dict[str, str]:
+    """
+    Suggest an env-var name for each hardcoded model string, from the
+    assignment target that holds it.
+
+    Both ``DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001"`` and
+    ``embedding_model = cfg.get("embedding_model", "gemini-embedding-001")``
+    yield the hint ``EMBEDDING_MODEL``. The same exclusions as
+    :func:`extract_hardcoded_models` apply, so a model name mentioned in a
+    docstring or already serving as a getenv default never votes.
+
+    When a model string is assigned to differently-named targets across the
+    recipe, the most frequent target wins, ties broken alphabetically, so the
+    result is deterministic.
+
+    Returns:
+      {model_string: suggested_var_name} — only for strings with a usable hint.
+    """
+    votes: dict[str, dict[str, int]] = {}
+
+    for py_file in py_files:
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(py_file))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+
+        excluded_ids = _model_exclusion_node_ids(tree)
+
+        for node in ast.walk(tree):
+            target = _assignment_target_name(node)
+            if target is None:
+                continue
+            derived = _var_name_from_target(target)
+            if derived is None:
+                continue
+            for child in ast.walk(node.value):
+                if not isinstance(child, ast.Constant):
+                    continue
+                if id(child) in excluded_ids:
+                    continue
+                if not isinstance(child.value, str):
+                    continue
+                if any(
+                    child.value.startswith(prefix) for prefix in MODEL_PREFIXES
+                ):
+                    tally = votes.setdefault(child.value, {})
+                    tally[derived] = tally.get(derived, 0) + 1
+
+    return {
+        model_str: sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        for model_str, tally in votes.items()
+    }
+
+
 def assign_model_var_names(
     model_strings: set[str],
     existing_vars: set[str] | None = None,
+    hints: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """
-    Assign a standardised MODEL_NAME_* env var name to each unique model string.
+    Assign a standardised env var name to each unique model string.
 
     Rules (applied to the sorted list for determinism):
-      - If there is only one model → MODEL_NAME (no suffix), unless MODEL_NAME
-        is already taken, in which case the counter scheme below is used.
+      - If ``hints`` supplies a name derived from the assignment target (see
+        :func:`extract_model_var_hints`) and that name is free, use it. A
+        recipe that writes ``DEFAULT_EMBEDDING_MODEL`` gets ``EMBEDDING_MODEL``
+        rather than a generic ``MODEL_NAME`` that collides conceptually with
+        an LLM model var it may already read.
+      - Otherwise, if exactly one model is left unnamed → MODEL_NAME (no
+        suffix), unless MODEL_NAME is already taken.
       - Otherwise → MODEL_NAME_GENERATED_1, MODEL_NAME_GENERATED_2, … skipping
         any index whose name is already present in existing_vars (e.g. from a
         prior run or a manually added entry in .env.example).
@@ -1753,21 +2077,39 @@ def assign_model_var_names(
       model_strings: the set of unique hardcoded model strings found in source.
       existing_vars: names already declared in .env.example (or anywhere else
         that should be treated as taken). Defaults to empty set.
+      hints: optional {model_string: suggested_name} from the assignment
+        targets in source.
 
     Returns:
       {model_string: env_var_name}
     """
     taken = set(existing_vars) if existing_vars else set()
+    hints = hints or {}
     sorted_strings = sorted(model_strings)
 
-    if len(sorted_strings) == 1:
-        if "MODEL_NAME" not in taken:
-            return {sorted_strings[0]: "MODEL_NAME"}
-        # Fall through to the counter scheme if MODEL_NAME is already taken.
-
     mapping: dict[str, str] = {}
-    counter = 1
+    unresolved: list[str] = []
+
+    # Pass 1 — honour a hint derived from the assignment target.
     for model_str in sorted_strings:
+        hint = hints.get(model_str)
+        if hint and hint not in taken:
+            mapping[model_str] = hint
+            taken.add(hint)
+        else:
+            unresolved.append(model_str)
+
+    if not unresolved:
+        return mapping
+
+    # Pass 2 — a lone unnamed model gets the unsuffixed MODEL_NAME.
+    if len(unresolved) == 1 and "MODEL_NAME" not in taken:
+        mapping[unresolved[0]] = "MODEL_NAME"
+        return mapping
+
+    # Pass 3 — counter scheme for everything still unnamed.
+    counter = 1
+    for model_str in unresolved:
         while f"MODEL_NAME_GENERATED_{counter}" in taken:
             counter += 1
         var_name = f"MODEL_NAME_GENERATED_{counter}"
@@ -1778,11 +2120,23 @@ def assign_model_var_names(
     return mapping
 
 
+def _py_string_literal(value: str) -> str:
+    """Render ``value`` as a one-line, double-quoted Python string literal."""
+    body = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+    return f'"{body}"'
+
+
 def _model_replacement(
     node: ast.AST,
     excluded_ids: set[int],
     name_map: dict[str, str],
     lines: list[str],
+    keep_defaults: bool = False,
 ) -> tuple[int, int, str, str, str] | None:
     """
     Return (start, end, new_text, model_str, var_name) if node is a
@@ -1792,6 +2146,22 @@ def _model_replacement(
     are already serving as ``os.getenv``/``environ.get``/``setdefault``
     default arguments. The latter must NOT be replaced — see
     :func:`_getenv_default_node_ids` for the correctness rationale.
+
+    ``keep_defaults`` controls the shape of the emitted call:
+
+      * False (the default) → BARE ``os.getenv("VAR")``. This is the skill's
+        normal rule: we do NOT write inferred defaults into Python source.
+        Default values are the maintainer's decision; the skill's job is to
+        lift the constant out of the source, not to also decide what fallback
+        the maintainer wants. It is only SAFE because a ``load_dotenv()``
+        bootstrap guarantees ``.env`` has been read by the time the call runs.
+
+      * True → ``os.getenv("VAR", "<original literal>")``. Used when no
+        bootstrap could be installed (see :func:`run_step_load_dotenv`), so
+        nothing loads ``.env`` and a bare lookup would evaluate to ``None``
+        at runtime — silently breaking the recipe. Preserving the literal as
+        the fallback keeps behaviour identical to before the rewrite while
+        still lifting the value into the environment.
     """
     if not isinstance(node, ast.Constant):
         return None
@@ -1804,18 +2174,18 @@ def _model_replacement(
         return None
     start = _flat_offset(lines, node.lineno, node.col_offset)
     end = _flat_offset(lines, node.end_lineno, node.end_col_offset)
-    # Emit BARE `os.getenv("VAR")` — no default argument. This is a hard
-    # rule of the skill: we do NOT write inferred defaults into Python
-    # source, even though `os.getenv("MODEL_NAME", node.value)` would be
-    # trivially "safer" (the recipe would keep working after the rewrite
-    # even without .env set up). Default values are the maintainer's
-    # decision; the skill's job is to lift the constant out of the source,
-    # not to also decide what fallback the maintainer wants.
-    return start, end, f'os.getenv("{var_name}")', node.value, var_name
+    if keep_defaults:
+        new_text = f'os.getenv("{var_name}", {_py_string_literal(node.value)})'
+    else:
+        new_text = f'os.getenv("{var_name}")'
+    return start, end, new_text, node.value, var_name
 
 
 def _collect_model_replacements(
-    tree: ast.AST, source: str, name_map: dict[str, str]
+    tree: ast.AST,
+    source: str,
+    name_map: dict[str, str],
+    keep_defaults: bool = False,
 ) -> tuple[list[tuple[int, int, str]], dict[str, str]]:
     """Walk ``tree`` and collect model-string replacement plans.
 
@@ -1833,12 +2203,14 @@ def _collect_model_replacements(
     type of a call like ``os.getenv("V", "gemini-3.5-flash")`` from
     ``str`` to ``str | None``.
     """
-    excluded_ids = _docstring_node_ids(tree) | _getenv_default_node_ids(tree)
+    excluded_ids = _model_exclusion_node_ids(tree)
     lines = source.splitlines(keepends=True)
     replacements: list[tuple[int, int, str]] = []
     file_substituted: dict[str, str] = {}
     for node in ast.walk(tree):
-        replacement = _model_replacement(node, excluded_ids, name_map, lines)
+        replacement = _model_replacement(
+            node, excluded_ids, name_map, lines, keep_defaults=keep_defaults
+        )
         if replacement is None:
             continue
         start, end, new_text, model_str, var_name = replacement
@@ -1883,11 +2255,15 @@ def replace_hardcoded_models(
     hits: dict[Path, list[tuple[int, str]]],
     name_map: dict[str, str],
     dry_run: bool = False,
+    keep_defaults: bool = False,
 ) -> dict[str, str]:
     """
     Replace each hardcoded model string with the correct
-    os.getenv("MODEL_NAME_*") call in-place, using the mapping produced by
+    os.getenv(...) call in-place, using the mapping produced by
     assign_model_var_names().
+
+    ``keep_defaults`` preserves the original literal as the ``os.getenv``
+    fallback — see :func:`_model_replacement` for when and why.
 
     Replacement is AST-position-based, which means:
       - All quote styles (single, double, triple, raw) are handled correctly
@@ -1912,7 +2288,7 @@ def replace_hardcoded_models(
             continue
 
         replacements, file_substituted = _collect_model_replacements(
-            tree, source, name_map
+            tree, source, name_map, keep_defaults=keep_defaults
         )
         if not replacements:
             continue
@@ -2040,18 +2416,24 @@ def run_step_env_vars(
     return env_example
 
 
-def run_step_load_dotenv(recipe_dir: Path, dry_run: bool = False) -> None:
+def run_step_load_dotenv(recipe_dir: Path, dry_run: bool = False) -> bool:
     """Step 4: inject load_dotenv() bootstrap into the package __init__.py,
     and suppress Ruff E402 on any trailing relative imports that come after
     non-import statements (whether we just injected them or the author had
-    already written a bootstrap by hand)."""
+    already written a bootstrap by hand).
+
+    Returns whether a ``load_dotenv()`` bootstrap is in place afterwards.
+    Step 6 needs this: without a bootstrap nothing reads ``.env``, so the
+    bare ``os.getenv("VAR")`` calls it would otherwise emit evaluate to
+    ``None`` at runtime. See :func:`_model_replacement`.
+    """
     init_py = find_package_init(recipe_dir)
     if not init_py:
         print(
             "[WARN] No Python package (subdirectory with __init__.py) found. "
             "load_dotenv() injection skipped."
         )
-        return
+        return False
     rel = init_py.relative_to(recipe_dir)
     injected, noqa_added = inject_load_dotenv(init_py, dry_run=dry_run)
     if injected:
@@ -2068,6 +2450,7 @@ def run_step_load_dotenv(recipe_dir: Path, dry_run: bool = False) -> None:
             "E402 in Phase 4 (ordering is intentional: env must be "
             "populated before importing agent submodules)."
         )
+    return True
 
 
 def run_step_pyproject(recipe_dir: Path, dry_run: bool = False) -> None:
@@ -2105,9 +2488,33 @@ def run_step_model_names(
     py_files: list[Path],
     env_example: Path,
     dry_run: bool = False,
+    dotenv_active: bool = True,
 ) -> None:
-    """Step 6: detect hardcoded model strings, replace with os.getenv()."""
+    """Step 6: detect hardcoded model strings, replace with os.getenv().
+
+    ``dotenv_active`` comes from :func:`run_step_load_dotenv`. When it is
+    False nothing in the recipe reads ``.env``, so the original literal is
+    preserved as the ``os.getenv`` fallback rather than emitting a bare
+    lookup that would evaluate to ``None``.
+    """
     model_hits = extract_hardcoded_models(py_files)
+    skipped = extract_skipped_model_literals(py_files)
+
+    if skipped:
+        total = sum(len(v) for v in skipped.values())
+        print(
+            f"\n[INFO] Left {total} model literal(s) in place — their position "
+            "means they are not a configurable constant (lookup-table entry, "
+            "subscript key, or comparison operand). Rewriting them would "
+            "break the code:"
+        )
+        for py_file, file_hits in skipped.items():
+            for lineno, model_str in file_hits:
+                print(
+                    f"       {py_file.relative_to(recipe_dir)}:{lineno}"
+                    f' — "{model_str}"'
+                )
+
     if not model_hits:
         print("\n[PASS] No hardcoded model names detected.")
         return
@@ -2118,7 +2525,8 @@ def run_step_model_names(
         for _lineno, model_str in file_hits
     }
     existing_vars = read_defined_vars(env_example)
-    name_map = assign_model_var_names(all_model_strings, existing_vars)
+    hints = extract_model_var_hints(py_files)
+    name_map = assign_model_var_names(all_model_strings, existing_vars, hints)
 
     print("\n[INFO] Detected hardcoded model name(s):")
     for py_file, file_hits in model_hits.items():
@@ -2128,8 +2536,21 @@ def run_step_model_names(
                 f' — "{model_str}" → {name_map[model_str]}'
             )
 
+    keep_defaults = not dotenv_active
+    if keep_defaults:
+        print(
+            "[INFO] No load_dotenv() bootstrap is in place, so nothing would "
+            "read .env at runtime. Keeping the original literal as the "
+            "os.getenv() fallback instead of emitting a bare lookup that "
+            "would evaluate to None."
+        )
+
     substituted = replace_hardcoded_models(
-        py_files, model_hits, name_map, dry_run=dry_run
+        py_files,
+        model_hits,
+        name_map,
+        dry_run=dry_run,
+        keep_defaults=keep_defaults,
     )
     if not substituted:
         return
@@ -2145,9 +2566,14 @@ def run_step_model_names(
 
     replace_verb = "Would replace" if dry_run else "Replaced"
     for model_str, var_name in substituted.items():
+        call = (
+            f'os.getenv("{var_name}", "{model_str}")'
+            if keep_defaults
+            else f'os.getenv("{var_name}")'
+        )
         print(
             f'[{_tag(dry_run)}] {replace_verb} hardcoded "{model_str}" with'
-            f' os.getenv("{var_name}") in source.'
+            f" {call} in source."
         )
     if added_models:
         add_verb = "Would add" if dry_run else "Added"
@@ -2176,7 +2602,7 @@ def main() -> None:
     parser.add_argument(
         "--recipe-dir",
         required=True,
-        help="Path to the root of the Python recipe (e.g. contrib/my-recipe)",
+        help="Path to the root of the Python recipe (e.g. contrib/python/my-recipe)",
     )
     parser.add_argument(
         "--dry-run",
@@ -2206,9 +2632,15 @@ def main() -> None:
         print(f"       {f.relative_to(recipe_dir)}")
 
     env_example = run_step_env_vars(recipe_dir, py_files, dry_run=dry_run)
-    run_step_load_dotenv(recipe_dir, dry_run=dry_run)
+    dotenv_active = run_step_load_dotenv(recipe_dir, dry_run=dry_run)
     run_step_pyproject(recipe_dir, dry_run=dry_run)
-    run_step_model_names(recipe_dir, py_files, env_example, dry_run=dry_run)
+    run_step_model_names(
+        recipe_dir,
+        py_files,
+        env_example,
+        dry_run=dry_run,
+        dotenv_active=dotenv_active,
+    )
 
     print(f"\n{'=' * 50}")
     if dry_run:

@@ -1,0 +1,2 @@
+{"statusUpdate": {"taskId": "task-2", "contextId": "ctx-e2e", "status": {"state": "TASK_STATE_WORKING", "message": {"messageId": "", "contextId": "ctx-e2e", "role": 2, "parts": [{"text": "Generating a bar plot now."}]}}, "final": false}}
+{"message": {"messageId": "m-final", "contextId": "ctx-e2e", "role": 2, "parts": [{"text": "Done!"}]}}

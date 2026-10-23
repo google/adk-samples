@@ -122,7 +122,7 @@ def retry_with_exponential_backoff(
     return decorator
 
 
-def get_mime_type_from_bytes(data):  # noqa: PLR0911
+def get_mime_type_from_bytes(data):
     """Detect MIME type from file signature (magic bytes).
 
     Args:
@@ -173,7 +173,7 @@ def get_mime_type_from_bytes(data):  # noqa: PLR0911
     return "application/octet-stream"
 
 
-def get_mime_type_from_path(path):  # noqa: PLR0911
+def get_mime_type_from_path(path):
     """Detect MIME type from file extension in path.
 
     Args:

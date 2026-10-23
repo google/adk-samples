@@ -212,7 +212,7 @@ def update_config_env(endpoint_name):
     print(f"\nUpdated config.env: SHOE_CLASSIFICATION_ENDPOINT={endpoint_name}")
 
 
-def main():  # noqa: C901, PLR0915
+def main():
     """Evaluate Gemini LoRA model."""
     # Use the system prompt from the codebase
     sys.path.insert(

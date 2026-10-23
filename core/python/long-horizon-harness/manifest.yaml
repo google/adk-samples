@@ -1,0 +1,38 @@
+type: "standalone"
+status: "active"
+language: "python"
+description: "Horizon — a self-improving long-horizon agent on Google ADK + Vertex AI"
+# Full harness: sandboxed environment interface, Memory Bank self-improvement,
+# guardrail layers, routines/scheduler, A2A surface and a Vite web client. Well
+# past the core/ default 500-file tier.
+large: true
+deployable: true
+
+architecture:
+  agent: "multi"
+  stateful: true
+  datasources:
+  - "external"
+
+dependencies:
+  libraries:
+  - "adk"
+  services:
+  - "vertex-ai"
+  - "agent-engine"
+  - "cloud-run"
+  - "cloud-sql"
+  - "cloud-scheduler"
+  - "secret-manager"
+
+tags:
+- "long-horizon"
+- "memory"
+- "sandbox"
+- "guardrails"
+- "human-in-the-loop"
+- "a2a"
+
+ownership:
+  team: "Developer Evangelism & Engineering (DevRel) - Cloud AI"
+  poc: "eliasecchig"

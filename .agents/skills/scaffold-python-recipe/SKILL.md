@@ -1,9 +1,9 @@
 ---
 name: scaffold-python-recipe
 description: >
-  This skill should be used when the user wants to "create a new Python ADK sample",
-  "scaffold a new Python sample recipe", "generate a new Python sample in contrib",
-  "add a new Python sample to the adk-samples repository", or "create a Python adk sample".
+  This skill should be used when the user wants to "create a new Python ADK recipe",
+  "scaffold a new Python recipe", "generate a new Python recipe in contrib",
+  "add a new Python recipe to the adk-recipes repository", or "create a Python adk recipe".
   It utilizes an automated script to copy template files and resolve basic placeholders.
 metadata:
   author: Google
@@ -11,9 +11,9 @@ metadata:
   version: 1.0.0
 ---
 
-# Scaffolding a New Python ADK Sample
+# Scaffolding a New Python ADK Recipe
 
-Use this skill to scaffold a new Python ADK sample recipe inside this repository using the automated script at `scripts/scaffold.py`.
+Use this skill to scaffold a new Python ADK recipe inside this repository using the automated script at `scripts/scaffold.py`.
 
 ---
 
@@ -31,11 +31,14 @@ You **must** have both pieces of information below before running the script. If
 
 ### 1. Output Directory (Required — must ask if not provided)
 
-The user must choose one of these two valid locations:
-- `contrib/`
-- `core/python/`
+The user must choose one of these valid locations:
+- `contrib/python/` — community recipes; preferred for new Python recipes
+- `core/python/` — curated recipes
+- `contrib/` — legacy flat layout, still accepted; prefer `contrib/python/`
 
 If the user has not specified which directory, ask them to choose. Do not proceed until a valid choice is confirmed.
+
+This skill **cannot** scaffold a vertical plugin (`plugins/<vertical>/<solution>/`). Those have a different shape — `SKILL.md`, `EVAL.yaml`, `scripts/`, `assets/`, `references/`, `tests/unit/` — and no template ships for them yet. If the user asks for one, tell them so rather than scaffolding into the wrong place.
 
 ### 2. Recipe Name (Required — must ask if not provided)
 

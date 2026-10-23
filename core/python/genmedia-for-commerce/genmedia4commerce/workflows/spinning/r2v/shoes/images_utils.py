@@ -304,7 +304,7 @@ def classify_frames(sampled_frames, client, model, mode="normal"):
     return product_position_frames
 
 
-def sample_and_process_frames(  # noqa: C901, PLR0912
+def sample_and_process_frames(
     frame_list: list[bytes],
     target_num_frames: int = 50,
     target_size: tuple[int, int] | None = None,

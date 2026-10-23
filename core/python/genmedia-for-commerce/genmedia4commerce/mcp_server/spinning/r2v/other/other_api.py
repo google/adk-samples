@@ -120,7 +120,7 @@ async def r2v_preprocess(images: list[UploadFile] = File(...)):  # noqa: B008
             client=client,
             upscale_client=veo_client,
             num_workers=4,
-            upscale_images=True,
+            upscale_images=False,
             create_canva=False,
         )
 
@@ -249,7 +249,7 @@ async def r2v_pipeline(images: list[UploadFile] = File(...)):  # noqa: B008
             client=client,
             upscale_client=veo_client,
             num_workers=4,
-            upscale_images=True,
+            upscale_images=False,
             create_canva=False,
         )
 
@@ -319,7 +319,8 @@ async def r2v_pipeline(images: list[UploadFile] = File(...)):  # noqa: B008
 
 @router.post("/merge")
 async def r2v_merge(
-    videos: list[UploadFile] = File(...), speeds: str = Form(...)  # noqa: B008
+    videos: list[UploadFile] = File(...),  # noqa: B008
+    speeds: str = Form(...),
 ):
     """Merge multiple video segments into one final video."""
     if not videos:

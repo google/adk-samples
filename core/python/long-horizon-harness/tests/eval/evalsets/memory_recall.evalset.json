@@ -1,0 +1,240 @@
+{
+  "eval_set_id": "memory_recall",
+  "name": "Memory Recall",
+  "description": "Behavioral evals proving the agent remembers facts the user stated earlier and uses them to personalize follow-up responses. Recall is served by PreloadMemoryTool injecting relevant memories into the model's context at the start of each turn — the agent does NOT need to call any tool on the recall turn to satisfy these rubrics. Rubrics grade what the user sees, not the trajectory. Per-invocation: only the recall turn is graded. NOTE on cross-session recall: ADK's local_eval_service runs eval_cases in parallel against a fresh InMemoryMemoryService per case, so cross-session continuity cannot be tested here against the in-memory fake. Each case below tests recall WITHIN one session (turn 1 stores via memory, turn N recalls via preload). True cross-session recall against VertexAiMemoryBankService is validated by the integration harness.",
+  "eval_cases": [
+    {
+      "eval_id": "recall_timezone",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "Please remember that I work in Pacific time. Just acknowledge."}]
+          }
+        },
+        {
+          "user_content": {
+            "parts": [{"text": "What timezone do I work in?"}]
+          },
+          "rubrics": [
+            {
+              "rubric_id": "mem_recall_timezone_named",
+              "rubric_content": {
+                "text_property": "The response correctly names the user's timezone as Pacific (or Pacific Time, PT, PST/PDT, US Pacific). It must not name any other timezone and must not claim the assistant has no memory of the user's timezone."
+              }
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_shared",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "recall_name",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "My name is Sam. Remember that."}]
+          }
+        },
+        {
+          "user_content": {
+            "parts": [{"text": "Hi there — could you greet me by name?"}]
+          },
+          "rubrics": [
+            {
+              "rubric_id": "mem_recall_greets_by_name",
+              "rubric_content": {
+                "text_property": "The response greets the user using the name 'Sam'. It must not use a different name and must not refuse on the grounds that it doesn't know the user's name."
+              }
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_shared",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "recall_preference_concise",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "I strongly prefer concise answers. One or two short sentences max, no preamble."}]
+          }
+        },
+        {
+          "user_content": {
+            "parts": [{"text": "Why is the sky blue?"}]
+          },
+          "rubrics": [
+            {
+              "rubric_id": "mem_recall_response_is_concise",
+              "rubric_content": {
+                "text_property": "The response is at most three sentences long, contains no preamble like 'Sure!' or 'Great question!', and answers the question directly. Markdown headings, bullet lists, or multi-paragraph explanations fail this rubric."
+              }
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_shared",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "recall_forget_then_query",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "I like spicy food."}]
+          }
+        },
+        {
+          "user_content": {
+            "parts": [{"text": "Actually, forget what I said about spicy food. I never said that."}]
+          }
+        },
+        {
+          "user_content": {
+            "parts": [{"text": "Do I like spicy food? Please be honest about what you actually remember about me right now."}]
+          },
+          "rubrics": [
+            {
+              "rubric_id": "mem_recall_respects_forget",
+              "rubric_content": {
+                "text_property": "The response does NOT assert that the user likes spicy food. It either says it doesn't know, says the user retracted that claim, or says it has no current information about the user's spice preferences. Asserting 'yes, you like spicy food' fails."
+              }
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_shared",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "negative_no_facts_stated",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "Do you remember anything about me? Be honest — only claim something if I actually told you."}]
+          },
+          "rubrics": [
+            {
+              "rubric_id": "mem_recall_admits_no_memory",
+              "rubric_content": {
+                "text_property": "The response honestly states that it has no information about the user (e.g., 'no, you haven't told me anything yet', 'I don't have anything about you on file', 'nothing is loaded about you', etc.). The recall path is PreloadMemoryTool — the agent does not need to have called any save/store tool to satisfy this rubric, and the response need not mention saving, storing, or 'saved details'. It must NOT fabricate facts about the user (name, location, profession, preferences, etc.)."
+              }
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_shared",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "recall_multi_fact_stress",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "Five things to remember: 1) I'm a backend engineer. 2) I work in Python. 3) I drink black coffee. 4) I live in Berlin. 5) I have a cat named Mochi."}]
+          }
+        },
+        {
+          "user_content": {
+            "parts": [{"text": "Quiz me on what you know about me. List everything you remember in bullet form."}]
+          },
+          "rubrics": [
+            {
+              "rubric_id": "mem_recall_at_least_three_of_five",
+              "rubric_content": {
+                "text_property": "The response correctly recalls AT LEAST 3 of these 5 facts: backend engineer, Python, black coffee, Berlin, cat named Mochi. Each fact must be attributed to the user (not generic statements). Fabricated facts not in the original list count against this rubric — if any made-up fact appears, the rubric fails."
+              }
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_shared",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "recall_scope_user_vs_agent",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "Two facts: A) I prefer the metric system (this is about me). B) Note to yourself: when I ask about temperatures, always include both C and F. Save both."}]
+          }
+        },
+        {
+          "user_content": {
+            "parts": [{"text": "What's a comfortable indoor room temperature?"}]
+          },
+          "rubrics": [
+            {
+              "rubric_id": "mem_recall_user_pref_metric_first",
+              "rubric_content": {
+                "text_property": "The response leads with a Celsius temperature value (e.g., '20–22°C') because the user prefers metric. Leading with Fahrenheit fails."
+              }
+            },
+            {
+              "rubric_id": "mem_recall_agent_note_dual_units",
+              "rubric_content": {
+                "text_property": "The response includes BOTH Celsius and Fahrenheit values, honoring the agent-scoped self-note. A Celsius-only answer fails. A Fahrenheit-only answer fails."
+              }
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_shared",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "recall_no_redundant_save",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "My preferred timezone is Pacific Time (PST). Please save that."}]
+          }
+        },
+        {
+          "user_content": {
+            "parts": [{"text": "What is my preferred timezone?"}]
+          },
+          "intermediate_data": {
+            "tool_uses": []
+          },
+          "rubrics": [
+            {
+              "rubric_id": "mem_recall_no_redundant_add_memory",
+              "rubric_content": {
+                "text_property": "The response correctly recalls the user's preferred timezone as Pacific Time (PT, PST, or PDT acceptable). Recall is served via PreloadMemoryTool — the agent satisfies this rubric by stating the timezone from preloaded context with NO tool call on this turn. It must NOT call memory again and must NOT claim to have just saved, stored, or recorded the fact (re-saving would create a duplicate). Phrases like 'I've saved this' or 'I've stored this' on this recall turn fail the rubric. Absence of any save language is the expected and passing behavior."
+              }
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_shared",
+        "state": {}
+      }
+    }
+  ]
+}

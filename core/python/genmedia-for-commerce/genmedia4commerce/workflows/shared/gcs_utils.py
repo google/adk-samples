@@ -41,7 +41,7 @@ def get_storage_client(project_id: str | None = None) -> storage.Client:
     return storage.Client(project=project_id)
 
 
-def upload_folder_to_gcs(  # noqa: C901, PLR0912
+def upload_folder_to_gcs(
     bucket_name: str,
     source_folder_path: str,
     destination_prefix: str = "",
@@ -214,7 +214,7 @@ def download_file_from_gcs(
     return str(dest_path)
 
 
-def save_and_upload_to_gcs(  # noqa: C901, PLR0915
+def save_and_upload_to_gcs(
     result: dict[str, Any],
     product_id: str,
     bucket_name: str,

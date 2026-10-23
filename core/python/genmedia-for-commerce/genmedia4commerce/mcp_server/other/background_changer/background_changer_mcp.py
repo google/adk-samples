@@ -43,7 +43,7 @@ def _get_clients():
     return client, nano_client
 
 
-async def run_background_changer(  # noqa: C901, PLR0911
+async def run_background_changer(
     person_image_base64: str,
     background_description: str = "",
     background_image_base64: str = "",

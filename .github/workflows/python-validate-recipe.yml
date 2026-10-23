@@ -2,15 +2,15 @@ name: Validate Python Recipe
 
 # Python-specific validation for each affected Python recipe:
 # `.env.example` env-key notice, AST-based env-var extraction check,
-# no-local-Ruff-config, `[project]` metadata rules, and a
-# hardcoded-model-name notice. Structural checks live in
-# `validate-recipe-structure.yml`.
+# no-local-Ruff-config, and `[project]` metadata rules. Structural checks
+# and model-literal notices live in `validate-recipe-structure.yml`.
 
 on:
   pull_request:
     paths:
       - 'core/**'
       - 'contrib/**'
+      - 'plugins/**'
       - '.github/workflows/python-validate-recipe.yml'
       - '.github/scripts/check_env_vars.py'
       - '.github/scripts/check_recipe_pyproject.py'
@@ -26,15 +26,20 @@ jobs:
   validate-python-recipes:
     name: Check Python-specific recipe constraints
     runs-on: ubuntu-latest
+    # 20 minutes covers `uv sync` + a full-repo scan on the workflow_dispatch
+    # / infra-changed path, with headroom. Prevents the default 6-hour job
+    # ceiling from applying when a check hangs.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # ratchet:astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.11"
           enable-cache: false
@@ -110,17 +115,18 @@ jobs:
           set -euo pipefail
 
           # Full-repo enumeration: list every path under core/, contrib/,
-          # and skills/ (any depth), then feed it through the same helper
+          # and plugins/ (any depth), then feed it through the same helper
           # the diff step uses — with --language python. This keeps one
           # source of truth for the layout matrix (path → recipe →
-          # language) instead of re-implementing it in shell. `skills/`
-          # is included so that a Python recipe under skills/python/…
-          # (or a flat skills/<recipe>/ with language: python in its
-          # manifest) is picked up by the full scan; missing roots are
-          # tolerated silently via 2>/dev/null.
+          # language) instead of re-implementing it in shell. `plugins/`
+          # is included so that a Python plugin at
+          # plugins/<vertical>/<solution>/ is picked up by the full scan.
+          # Its language comes from manifest.language rather than the path:
+          # the middle component under plugins/ is a vertical (retail/, hr/),
+          # not a language. Missing roots are tolerated via 2>/dev/null.
           # NOT `--no-project`: see the notes on the sibling invocation
           # above.
-          ALL=$(find core contrib skills -type f 2>/dev/null | uv run python tools/affected_recipes.py --language python)
+          ALL=$(find core contrib plugins -type f 2>/dev/null | uv run python tools/affected_recipes.py --language python)
 
           echo "All Python recipes:"
           echo "$ALL"
@@ -151,19 +157,36 @@ jobs:
           fi
 
           FAILED=0
+          CI_FAULTS=0
 
           # Each recipe is validated in a subshell so a transient failure
           # inside one recipe (e.g. a `find` error) aborts only that
-          # recipe's checks, not the whole loop. The subshell exits 1
-          # when any check fails; `|| FAILED=1` records the aggregate.
+          # recipe's checks, not the whole loop.
+          #
+          # The subshell's exit status carries WHOSE fault it was, because
+          # a subshell cannot write back to the parent's variables:
+          #   0 — recipe passed
+          #   1 — the recipe has problems the contributor must fix
+          #   2 — one of OUR checkers crashed or the CI environment broke
+          # Keeping 2 distinct is the point: a contributor should never be
+          # sent hunting through their own PR for a bug in our tooling.
           while IFS= read -r recipe; do
             [ -z "$recipe" ] && continue
             echo ""
             echo "========================================"
             echo "Validating: $recipe"
             echo "========================================"
+            # `set +e` here only so the parent can READ the subshell's exit
+            # status; without it `set -e` would abort this script the moment
+            # a recipe fails, before the case below can classify it. The
+            # subshell re-enables `set -e` for itself on its first line, so
+            # an unexpected failure mid-recipe still aborts that recipe's
+            # remaining checks exactly as before.
+            set +e
             (
+              set -e
               RECIPE_FAILED=0
+              CI_FAULT=0
 
               # ------------------------------------------------------------
               # Check: .env.example — notice keys
@@ -199,38 +222,25 @@ jobs:
               # (HOME, PATH, GITHUB_*, INTEGRATION_TEST, …).
               # ------------------------------------------------------------
               if [ -f "$recipe/.env.example" ]; then
+                # Output is NOT captured: the checker prints its own human
+                # blocks and its own ::error annotations. Capturing would
+                # swallow the annotations, and re-echoing them through a
+                # shell demux is what used to flatten every multi-line fix
+                # instruction into one unusable line.
                 set +e
-                env_vars_result=$(uv run --no-project \
-                  python3 .github/scripts/check_env_vars.py "$recipe")
+                uv run --no-project \
+                  python3 .github/scripts/check_env_vars.py "$recipe"
                 env_vars_exit=$?
                 set -e
-
-                if [ "$env_vars_exit" -ne 0 ]; then
-                  echo "::error file=$recipe/.env.example::env-var checker crashed (exit=$env_vars_exit). See job output."
-                  echo "[FAIL] env-var checker crashed (exit=$env_vars_exit)."
-                  RECIPE_FAILED=1
-                fi
-
-                while IFS= read -r line; do
-                  [ -z "$line" ] && continue
-                  kind="${line%%::*}"
-                  rest="${line#*::}"
-                  file="${rest%%::*}"
-                  msg="${rest#*::}"
-                  case "$kind" in
-                    PASS)
-                      echo "[PASS] $msg"
-                      ;;
-                    FAIL)
-                      echo "::error file=$file::$msg"
-                      echo "[FAIL] $msg"
-                      RECIPE_FAILED=1
-                      ;;
-                    *)
-                      echo "$line"
-                      ;;
-                  esac
-                done <<< "$env_vars_result"
+                case "$env_vars_exit" in
+                  0) ;;
+                  1) RECIPE_FAILED=1 ;;
+                  2) CI_FAULT=1 ;;
+                  *)
+                    echo "::error::check_env_vars.py exited with an undefined status ($env_vars_exit). This is a CI tooling bug, not a problem with your recipe."
+                    CI_FAULT=1
+                    ;;
+                esac
               fi
 
               # ------------------------------------------------------------
@@ -292,73 +302,72 @@ jobs:
                 # env via `uv run --with`. `packaging` is used for PEP
                 # 440 version specifier parsing (see
                 # check_requires_python in the checker).
+                # Uncaptured for the same reason as check_env_vars.py above.
                 set +e
-                pyproject_result=$(uv run --no-project --with pyyaml --with packaging \
-                  python .github/scripts/check_recipe_pyproject.py "$recipe")
+                uv run --no-project --with pyyaml --with packaging \
+                  python .github/scripts/check_recipe_pyproject.py "$recipe"
                 py_exit=$?
                 set -e
-
-                if [ "$py_exit" -ne 0 ]; then
-                  echo "::error file=$pyproject::pyproject.toml metadata checker crashed (uv/python exit=$py_exit). See job output."
-                  echo "[FAIL] pyproject.toml metadata checker crashed (uv/python exit=$py_exit)."
-                  RECIPE_FAILED=1
-                fi
-
-                while IFS= read -r line; do
-                  [ -z "$line" ] && continue
-                  kind="${line%%::*}"
-                  rest="${line#*::}"
-                  file="${rest%%::*}"
-                  msg="${rest#*::}"
-                  case "$kind" in
-                    PASS)
-                      echo "[PASS] $msg"
-                      ;;
-                    FAIL)
-                      echo "::error file=$file::$msg"
-                      echo "[FAIL] $msg"
-                      RECIPE_FAILED=1
-                      ;;
-                    *)
-                      # Unrecognized line — surface it so it isn't
-                      # silently lost.
-                      echo "$line"
-                      ;;
-                  esac
-                done <<< "$pyproject_result"
+                case "$py_exit" in
+                  0) ;;
+                  1) RECIPE_FAILED=1 ;;
+                  2) CI_FAULT=1 ;;
+                  *)
+                    echo "::error::check_recipe_pyproject.py exited with an undefined status ($py_exit). This is a CI tooling bug, not a problem with your recipe."
+                    CI_FAULT=1
+                    ;;
+                esac
               fi
 
-              # ------------------------------------------------------------
-              # Notice: Possible hardcoded model names in Python files.
-              # Emits ::notice (never fail) when a string literal in a
-              # non-test .py file matches a well-known model prefix.
-              # ------------------------------------------------------------
-              MODEL_PREFIXES="gemini-|gemini-exp-|imagen-|claude-|llama-|meta/llama-|mistral-|codestral-|phi-|grok-|command-|jamba-"
-
-              while IFS= read -r pyfile; do
-                matches=$(grep -onE "['\"]($MODEL_PREFIXES)[^ '\"]{1,35}['\"]" "$pyfile" || true)
-                [ -z "$matches" ] && continue
-                while IFS=: read -r lineno match; do
-                  [ -z "$lineno" ] && continue
-                  echo "::notice file=$pyfile,line=$lineno::Possible hardcoded model name $match detected. If this is a model identifier, consider using an environment variable instead."
-                  echo "[NOTICE] $pyfile:$lineno — possible hardcoded model name: $match"
-                done <<< "$matches"
-              done < <(find "$recipe" -type f -name "*.py" ! -path "*/tests/*")
-
+              # A CI fault outranks a recipe failure: if our own checker
+              # could not run, we do not actually know whether the recipe
+              # is valid, and saying "your recipe is broken" would be a
+              # guess.
+              if [ "$CI_FAULT" -eq 1 ]; then
+                exit 2
+              fi
               if [ "$RECIPE_FAILED" -eq 1 ]; then
                 exit 1
               fi
               echo ""
               echo "[PASS] All Python-specific checks passed for: $recipe"
-            ) || FAILED=1
+            )
+            recipe_status=$?
+            set -e
+            case "$recipe_status" in
+              0) ;;
+              2) CI_FAULTS=1 ;;
+              *) FAILED=1 ;;
+            esac
           done <<< "$RECIPES"
+
+          if [ "$CI_FAULTS" -eq 1 ]; then
+            echo ""
+            echo "========================================"
+            echo "  CI TOOLING FAILURE — not your changes"
+            echo "========================================"
+            echo ""
+            echo "One of this repo's own checker scripts could not run, so"
+            echo "validation is inconclusive. Do not change your recipe to"
+            echo "work around this."
+            echo ""
+            echo "  1. Re-run this job — transient failures clear on retry."
+            echo "  2. If it fails again, open an issue with the [ci-fault]"
+            echo "     detail above and a link to this run."
+            echo ""
+            echo "See docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+            exit 1
+          fi
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
             echo "========================================"
-            echo "  One or more Python recipes failed validation."
-            echo "  See errors above for details."
+            echo "  ACTION REQUIRED: recipe validation failed"
             echo "========================================"
+            echo ""
+            echo "Each problem above lists why the rule applies and how to"
+            echo "fix it. Every fix is documented in"
+            echo "docs/recipe-handbook/troubleshooting.md"
             exit 1
           fi
 

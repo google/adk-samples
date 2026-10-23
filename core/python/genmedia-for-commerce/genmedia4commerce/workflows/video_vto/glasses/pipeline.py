@@ -148,7 +148,7 @@ def run_regeneration_pipeline(req: RegenerationRequest):
     return {"videos": encoded_videos, "filenames": video_filenames}
 
 
-def run_generation_pipeline(  # noqa: C901, PLR0912
+def run_generation_pipeline(
     prompt,
     number_of_videos,
     model_image_bytes,

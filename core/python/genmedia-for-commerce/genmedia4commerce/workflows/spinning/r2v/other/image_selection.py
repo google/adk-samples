@@ -150,7 +150,7 @@ Only return the JSON object, nothing else."""
         }
 
 
-def select_best_images(  # noqa: C901
+def select_best_images(
     client,
     images_bytes: list[bytes],
     model: str = os.getenv("MODEL_NAME_GENERATED_1"),

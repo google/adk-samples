@@ -1,0 +1,19 @@
+{
+  "name": "lha",
+  "description": "Horizon (E2E mock)",
+  "version": "0.0.0",
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0",
+      "url": "http://localhost:3000/a2a",
+      "tenant": ""
+    }
+  ],
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "capabilities": {
+    "streaming": true
+  },
+  "skills": []
+}

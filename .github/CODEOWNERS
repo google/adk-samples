@@ -1,63 +1,48 @@
-# Agent Academic Research
-/python/agents/academic-research/ @gulliantonio
+# PRs require approval from a repository admin.
+# Routing is by language folder. Last matching rule wins.
+#
+# HOW TO CHANGE THE CATCH-ALL REVIEWER:
+#   Edit the `*` line below and replace @tommywagz with any GitHub username.
+#   Submit a PR — it will require approval from the current catch-all reviewer.
+#
+# HOW TO ADD A NEW LANGUAGE FOLDER:
+#   Add a new line following the same pattern: /core/<lang>/**  @username
+#
+# HOW TO CHANGE A LANGUAGE REVIEWER:
+#   Find the relevant line(s) below and replace the username.
+#
+# THE USERNAME IS A LOGIN, NOT A NAME, AND NEEDS WRITE ACCESS:
+#   Use the GitHub login exactly — Toni Klopfenstein is @ToniCorinne, not
+#   @tklopfenstein. A guessed handle can belong to an unrelated account, and
+#   an owner without write access is silently dropped, leaving the path with
+#   NO owner rather than falling back to the catch-all. Both mistakes were
+#   live on the Go lines until #2605. Verify a change with:
+#     gh api repos/google/adk-recipes/codeowners/errors
 
-# Ambient Expense Agent
-/python/agents/ambient-expense-agent/ @eliasecchig
+# Catch-all: docs, root configs, anything not matched below
+* @tommywagz
 
-# Auto Insurance Agent
-/python/agents/auto-insurance-agent/ @drush1980
+# Repository governance (CI, policy, this file) stays with the repo admin.
+/.github/**            @happyhuman
 
-# Brand Search Optimization
-/python/agents/brand-search-optimization/ @nikhilkul
+# --- core/ ---
+/core/python/**        @eliasecchig
+/core/go/**            @ToniCorinne
+/core/java/**          @eliasecchig
+/core/typescript/**    @tommywagz
+/core/kotlin/**        @tommywagz
 
-# CaMeL
-/python/agents/camel/ @sammalik-lgtm
+# Recipes owned by their authors. Listed after the language lines above,
+# because the last matching rule wins.
+/core/python/ambient-quality-agent/** @maxgasztych @google/adlc-devex
+/core/python/genmedia-for-commerce/** @lspataroG @giuliosalierno @eliasecchig
 
-# Customer Service
-/python/agents/customer-service/ @anifort
+# --- contrib/ ---
+/contrib/python/**     @tommywagz
+/contrib/go/**         @ToniCorinne
+/contrib/java/**       @tommywagz
+/contrib/typescript/** @tommywagz
+/contrib/kotlin/**     @tommywagz
 
-# Data Science
-/python/agents/data-science/ @mstyer-google
-
-# Financial Advisor
-/python/agents/financial-advisor/ @gulliantonio
-
-# FOMC Research
-/python/agents/fomc-research/ @mstyer-google
-
-# Deep Search
-/python/agents/deep-search/ @eliasecchig @lavinigam-gcp
-
-# Image Scoring
-/python/agents/image-scoring/ @kishorerj
-
-# LLM Auditor
-/python/agents/llm-auditor/ @csferng
-
-# Marketing Agency
-/python/agents/marketing-agency/ @gulliantonio
-
-# Personalized Shopping
-/python/agents/personalized-shopping/ @yiwen-song
-
-# RAG
-/python/agents/RAG/ @cnemri
-
-# Software Bug Assistant
-/python/agents/software-bug-assistant/ @jackwotherspoon
-/java/agents/software-bug-assistant/ @askmeegs
-
-# Travel Concierge
-/python/agents/travel-concierge/ @gkcng
-
-# Time Series Forecasting
-/java/agents/time-series-forecasting/ @kweinmeister
-
-# Short movie agents
-/python/agents/short-movie-agents @rsamborski
-
-# Dynamic workflows
-/python/agents/workflow-dynamic @rsamborski
-
-# GenMedia for Commerce
-/python/agents/genmedia-for-commerce/ @lspataroG @giuliosalierno
+# --- plugins/ ---
+/plugins/**            @tommywagz

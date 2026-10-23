@@ -45,7 +45,7 @@ _config_loaded = False
 
 
 def _ensure_config():
-    global _config_loaded  # noqa: PLW0603
+    global _config_loaded
     if _config_loaded:
         return
     config_path = Path(__file__).parent.parent.parent.parent / "config.env"
@@ -191,7 +191,7 @@ def _evaluate_all_clips(
 # ---------------------------------------------------------------------------
 # Main Pipeline
 # ---------------------------------------------------------------------------
-async def run_animate_product_fitting(  # noqa: C901, PLR0912, PLR0915
+async def run_animate_product_fitting(
     front_image: bytes,
     back_image: bytes | None = None,
     framing: str = "full_body",

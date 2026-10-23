@@ -60,7 +60,7 @@ def is_valid_path(video_path, allowed_path):
     return True, "Path is valid"
 
 
-def is_valid_path_lessstrict(  # noqa: C901, PLR0911, PLR0912, PLR0915
+def is_valid_path_lessstrict(
     video_path, allowed_path, max_consecutive_violations=5
 ):
     """Check if a sequence of nodes represents a valid path through the allowed graph.
@@ -299,7 +299,7 @@ def is_valid(video_path, strict=True):
     )
 
 
-def find_second_occurrence_range(  # noqa: C901, PLR0912
+def find_second_occurrence_range(
     classes, original_indices, min_frame_distance=50
 ):
     """Find the initial and ending original indices where the starting class appears for the second time.
@@ -520,7 +520,7 @@ def frames_in_extremity_class(
     return result + 1
 
 
-def validate_and_fix_product_spin_consistency_r2v(  # noqa: C901, PLR0912, PLR0915
+def validate_and_fix_product_spin_consistency_r2v(
     video_bytes: bytes | None = None,
     client=None,
     model=None,

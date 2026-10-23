@@ -23,8 +23,9 @@ if not os.getenv("MODEL_NAME_GENERATED_1"):
         allow_module_level=True,
     )
 
-from genmedia4commerce.agent_engine_app import AgentEngineApp
 from google.adk.events.event import Event
+
+from genmedia4commerce.agent_engine_app import AgentEngineApp
 
 
 @pytest.fixture

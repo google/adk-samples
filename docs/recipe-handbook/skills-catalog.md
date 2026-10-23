@@ -1,27 +1,53 @@
-<!-- word count: 685 (target 800, cap 1200) -->
+# Repo Skills Catalog
 
-# AI Skills Catalog
-
-Skills your AI coding assistant invokes to help you prepare a recipe. Source lives at
+**Repo skills** your AI coding assistant invokes while working in this
+repo — preparing a recipe, answering questions about how the repo
+works, or validating files. Source lives at
 [`.agents/skills/`](../../.agents/skills/); each has a `SKILL.md`
-with a full description. This catalog summarises them and maps
+with a full description. This catalog summarizes them and maps
 them to the [checklist](../recipe-checklist.md).
 
-> **Fastest path:** for a PR-ready recipe in one command, use
-> [`prepare-python-recipe`](#prepare-python-recipe). It runs
-> every other Python skill in the right order.
+> Not to be confused with **plugins** — recipes and solutions shipped to
+> users under `plugins/` (see [Plugin Layout and Specification](./plugins.md)).
+> Repo skills build this repository; plugins are recipes shipped to users.
+
+> **Fastest path:** for a PR-ready recipe, use
+> [`prepare-python-recipe`](#prepare-python-recipe). It runs every
+> preparation skill in order; container deployability
+> (`make-python-recipe-deployable`) is a separate required step for `contrib/`.
 
 ## How to invoke a skill
 
 Say the skill's name or its trigger phrase to your assistant:
 
-```
+```text
 "prepare the python recipe contrib/python/my-recipe"
 "align pyproject.toml for my recipe"
 "generate manifest.yaml for contrib/python/my-recipe"
 ```
 
 The assistant loads the skill on demand and runs it.
+
+## Ask the repo oracle
+
+### `repo-oracle`
+
+Answers questions about how this repo works — CI and workflow behavior,
+repository size and file limits, who reviews which paths, what the bots do, and
+how a recipe is prepared and validated. It reads the repo and cites the
+file it answered from.
+
+**Read-only.** It never edits, commits, comments, or does the work
+itself. Ask it to prepare your recipe and you get the steps plus the
+name of the skill that does it — never the work.
+
+- **When to use:** you have a question about the repo rather than a
+  task to run — including "which skill do I need?"
+- **Not for:** your failing check, your working tree, or your branch.
+  It cannot see your machine.
+- **Trigger:** "oracle, what's the file limit for a contrib recipe?",
+  "oracle, who reviews core/go?", "ask the oracle how to add a
+  language".
 
 ## Universal skills
 
@@ -30,8 +56,8 @@ Apply regardless of language.
 ### `generate-manifest`
 
 Reads your recipe's files, infers what belongs in `manifest.yaml`,
-and writes a valid manifest matching the
-[schema](../../.github/schemas/manifest-schema.json).
+and writes a valid manifest. The [manifest](./manifest.md) page
+describes every field.
 
 - **Input:** recipe path.
 - **Writes:** `manifest.yaml`.
@@ -41,14 +67,14 @@ and writes a valid manifest matching the
 
 ## Python skills
 
-Apply to recipes under `contrib/python/`.
+Apply to recipes under `contrib/python/`, `core/python/`, or Python `plugins/`.
 
 ### `prepare-python-recipe`
 
 > **Start here.** The end-to-end orchestrator — if you only run
-> one skill, run this one.
+> one preparation skill, run this one.
 
-Runs seven phases in order:
+Runs eight phases in order:
 
 1. `generate-manifest`
 2. `extract-python-environment-variables`
@@ -56,7 +82,8 @@ Runs seven phases in order:
 4. `ruff format` and `ruff check`
 5. `uv lock`
 6. `generate-python-runnability-test`
-7. `py_compile` verification of the generated test file
+7. `py_compile` and `pytest` verification of the generated test file
+8. `uv run validate manifest` and `uv run validate structure`
 
 Interactive — pauses at fixed decision points, or when it needs a
 decision from you.
@@ -124,23 +151,48 @@ without credentials.
 - **When to use:** adding the required runnability test.
 - **Trigger:** "generate runnability test for contrib/python/my-recipe".
 
-## Java / Go / TypeScript / Kotlin skills
+### `make-python-recipe-deployable`
 
-None yet. Contributions welcome — see
-[skill authoring](#skill-authoring) below.
+Turns a working recipe into a **deployable** one — packageable into
+a container and runnable as a service. Generates the serving files
+(`Dockerfile`, `.dockerignore`, `fast_api_app.py`,
+`app_utils/{a2a,services,reasoning_engine_adapter}.py`,
+`agents-cli-manifest.yaml`) and configures the recipe to match.
 
-## Skill authoring
+Not part of `prepare-python-recipe`. Required for every recipe under
+`contrib/`, which must ship a `Dockerfile` and set `deployable: true`;
+optional under `core/` and `plugins/`.
 
-### `skill-author`
+- **Input:** recipe path. Optional `--data-dirs`, `--region`,
+  `--overwrite`, `--verify-container`.
+- **Writes:** the serving files, plus `pyproject.toml` (serving
+  deps, hatch wheel package), `agent.py` (the `App` object), and
+  `manifest.yaml` (`deployable: true`).
+- **Modes:** dry-run reports; `--apply` writes.
+- **Stops rather than guessing** when the recipe needs an ADK major
+  migration, or carries the old `app_utils` generation
+  (`telemetry.py` / `typing.py` / `deploy.py`).
+- **Verifies its own output** when docker is available: builds the
+  generated Dockerfile, runs it, and probes `/list-apps` and the A2A
+  agent card. A container that will not come up **blocks**
+  `manifest.deployable`. The skill asks before doing this, and skips
+  cleanly when there is no container runtime — the common case, and
+  not a failure.
+- **Six outcomes,** crossing whether the recipe needs provisioned
+  infrastructure with whether a container actually proved it:
+  `deployable-verified`, `deployable-unverified`,
+  `containerized-verified`, `containerized-unverified`,
+  `verification-failed`, `blocked`. Both `containerized-*` and
+  `verification-failed` leave `manifest.deployable` unset on purpose,
+  so a reader can always tell a proven result from an assumed one.
+- **Does not** deploy or write terraform. It builds an image only to
+  check its own work and then deletes it; publishing belongs to Cloud
+  Build and Artifact Registry.
+- **Trigger:** "make contrib/python/my-recipe deployable".
 
-A skill for creating, refining, and iterating on other skills.
-Scaffolds a valid `SKILL.md`, gives feedback on your trigger
-description, and helps you debug when a skill isn't loading.
+## Go / Java / Kotlin / TypeScript skills
 
-- **When to use:** writing a new skill, improving a skill's
-  trigger description, fixing a skill that isn't activating.
-- **Trigger:** "help me author a skill named my-skill",
-  "make a skill for my-skill".
+None yet.
 
 ## Skills load automatically
 
@@ -150,4 +202,4 @@ description, and helps you debug when a skill isn't loading.
 
 ---
 
-← [Checklist](../recipe-checklist.md) · [Handbook](./README.md)
+← [Docs home](../README.md) · [Checklist](../recipe-checklist.md) · [Handbook](./README.md)

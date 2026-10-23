@@ -1,23 +1,42 @@
 name: Validate Recipe Structure
 
 # Language-agnostic structural validation for every recipe under `core/`,
-# `contrib/`, and `skills/`: manifest presence + schema, folder name,
+# `contrib/`, and `plugins/`: manifest presence + schema, folder name,
 # size, file count, and required files (matrix from `.github/policy.yml`).
 
 on:
   pull_request:
+    # `labeled` is included so that applying the `allow-legacy-path` escape
+    # hatch re-runs the retired-folder check instead of needing a manual
+    # re-run. The other three are the GitHub defaults, which listing
+    # `types` at all would otherwise drop.
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - 'core/**'
       - 'contrib/**'
-      - 'skills/**'
+      - 'plugins/**'
+      # Retired recipe roots (policy.yml `frozen_paths`). Without these the
+      # workflow never fires for a PR that only touches a retired folder,
+      # and the check below could never see it.
+      - 'python/agents/**'
+      - 'java/agents/**'
+      - 'go/agents/**'
+      - 'kotlin/agents/**'
+      - 'typescript/agents/**'
       - '.github/schemas/manifest-schema.json'
+      - '.github/schemas/plugin-schema.json'
       - '.github/policy.yml'
       - '.github/workflows/validate-recipe-structure.yml'
+      - '.github/scripts/check_model_literals.py'
+      - '.github/scripts/tests/test_check_model_literals.py'
+      - '.github/scripts/check_recipe_lint_config.py'
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'
       - 'tools/validate_readme.py'
       - 'tools/affected_recipes.py'
+      - 'tools/check_frozen_paths.py'
+      - 'tools/validate_placement.py'
       - 'pyproject.toml'
   push:
     branches:
@@ -25,10 +44,14 @@ on:
     paths:
       - 'core/**'
       - 'contrib/**'
-      - 'skills/**'
+      - 'plugins/**'
       - '.github/schemas/manifest-schema.json'
+      - '.github/schemas/plugin-schema.json'
       - '.github/policy.yml'
       - '.github/workflows/validate-recipe-structure.yml'
+      - '.github/scripts/check_model_literals.py'
+      - '.github/scripts/tests/test_check_model_literals.py'
+      - '.github/scripts/check_recipe_lint_config.py'
       - 'tools/validate.py'
       - 'tools/validate_manifest.py'
       - 'tools/validate_structure.py'
@@ -44,15 +67,19 @@ jobs:
   validate-structure:
     name: Check recipe structure and content
     runs-on: ubuntu-latest
+    # Structure checks are pure Python (no builds); 15 minutes leaves plenty
+    # of headroom even on the full-repo scan path.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # ratchet:astral-sh/setup-uv@v10.2.0
         with:
           # Pin explicitly for reproducibility and to match the sibling
           # python-validate-recipe.yml step. Structure checks only need
@@ -95,16 +122,6 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # If any infra file that controls this workflow's behaviour
-          # changed, validate ALL recipes so the new config applies across
-          # the board.
-          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/(schemas/manifest-schema\.json|policy\.yml|workflows/validate-recipe-structure\.yml)|tools/(validate|validate_manifest|validate_structure|validate_readme|affected_recipes)\.py|pyproject\.toml)$" || true)
-          if [ -n "$INFRA_CHANGED" ]; then
-            echo "Schema, policy, workflow, or tool changed — will validate all recipes."
-            echo "validate_all=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           # Map changed files → affected recipe directories via the shared
           # helper (also unit-tested in tools/tests/test_affected_recipes.py).
           # Runs against the project venv (created by `uv sync` above) —
@@ -120,21 +137,213 @@ jobs:
             echo "$CHANGED_RECIPES"
             echo "RECIPES_EOF"
           } >> "$GITHUB_OUTPUT"
+
+          # If any infra file that controls this workflow's behaviour
+          # changed, validate ALL recipes so the new config applies across
+          # the board.
+          INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -E "^(\.github/(schemas/(manifest|plugin)-schema\.json|policy\.yml|workflows/validate-recipe-structure\.yml|scripts/(check_model_literals|tests/test_check_model_literals|check_recipe_lint_config)\.py)|tools/(validate|validate_manifest|validate_structure|validate_readme|affected_recipes)\.py|pyproject\.toml)$" || true)
+          if [ -n "$INFRA_CHANGED" ]; then
+            echo "Schema, policy, workflow, or tool changed — will validate all recipes."
+            echo "validate_all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           echo "validate_all=false" >> "$GITHUB_OUTPUT"
 
       - name: Validate affected recipes
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           VALIDATE_ALL: ${{ steps.affected.outputs.validate_all }}
           CHANGED_RECIPES: ${{ steps.affected.outputs.changed_recipes }}
         run: |
           set -euo pipefail
 
+          # Exit status carries whose fault it is: 1 = rules the contributor
+          # must fix, 2 = one of our validators crashed. `|| FAILED=1` used
+          # to flatten the two, so a tooling bug printed the "here is how to
+          # fix your recipe" banner over a traceback.
+          run_validator() {
+            local subcmd="$1"
+            shift
+            if [ "$VALIDATE_ALL" = "true" ] && [ "$EVENT_NAME" = "pull_request" ] && [ $# -eq 0 ]; then
+              local head_out
+              head_out=$(mktemp)
+              set +e
+              uv run validate "$subcmd" > "$head_out" 2>&1
+              local status=$?
+              set -e
+              if [ "$status" -eq 0 ]; then
+                cat "$head_out"
+                rm -f "$head_out"
+                return
+              elif [ "$status" -eq 1 ]; then
+                local base_wt="$RUNNER_TEMP/base_validate_wt"
+                local base_out
+                base_out=$(mktemp)
+                git worktree add --detach "$base_wt" "origin/$BASE_REF" >/dev/null 2>&1
+                set +e
+                PYTHONPATH="$base_wt/tools" .venv/bin/python "$base_wt/tools/validate_${subcmd}.py" > "$base_out" 2>&1
+                set -e
+                git worktree remove --force "$base_wt" >/dev/null 2>&1 || true
+
+                local new_errors
+                new_errors=$(python3 - "$head_out" "$base_out" "$CHANGED_RECIPES" <<'PY'
+          import sys
+          from pathlib import Path
+
+          head_lines = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          base_lines = set(Path(sys.argv[2]).read_text(encoding="utf-8").splitlines())
+          changed = [r.strip() for r in sys.argv[3].splitlines() if r.strip()]
+
+          kept = []
+          for line in head_lines:
+              if not line.startswith("::error "):
+                  continue
+              in_changed = any(f"file={r}/" in line or f"file={r}:" in line for r in changed)
+              if in_changed or line not in base_lines:
+                  kept.append(line)
+          print("\n".join(kept))
+          PY
+                )
+                rm -f "$base_out"
+                if [ -z "$new_errors" ]; then
+                  grep -v "^::error " "$head_out" || true
+                  echo "[PASS] No new ${subcmd} problems introduced relative to origin/$BASE_REF."
+                  rm -f "$head_out"
+                  return
+                fi
+                grep -v "^::error " "$head_out" || true
+                echo "$new_errors"
+                rm -f "$head_out"
+                FAILED=1
+                return
+              fi
+              cat "$head_out"
+              rm -f "$head_out"
+              case "$status" in
+                2) CI_FAULT=1 ;;
+                *)
+                  echo "::error::'uv run validate $subcmd' exited with an undefined status ($status). This is a CI tooling bug, not a problem with your recipe."
+                  CI_FAULT=1
+                  ;;
+              esac
+              return
+            fi
+            set +e
+            uv run validate "$subcmd" "$@"
+            local status=$?
+            set -e
+            case "$status" in
+              0) ;;
+              1) FAILED=1 ;;
+              2) CI_FAULT=1 ;;
+              *)
+                echo "::error::'uv run validate $subcmd $*' exited with an undefined status ($status). This is a CI tooling bug, not a problem with your recipe."
+                CI_FAULT=1
+                ;;
+            esac
+          }
+
+          # ------------------------------------------------------------
+          # Check: recipe-local lint and style configuration.
+          # Style & lint configs are centralized in the repo root.
+          # The rule is advisory during rollout: the checker reports its
+          # findings as warnings and exits 0 itself, so exit 1 only
+          # appears once the rule is made blocking in the script.
+          # ------------------------------------------------------------
+          run_lint_config_check() {
+            local recipe="$1"
+            set +e
+            python3 .github/scripts/check_recipe_lint_config.py "$recipe"
+            local status=$?
+            set -e
+            case "$status" in
+              0) ;;
+              1) FAILED=1 ;;
+              2) CI_FAULT=1 ;;
+              *)
+                echo "::error::check_recipe_lint_config.py exited with an undefined status ($status). This is a CI tooling bug, not a problem with your recipe."
+                CI_FAULT=1
+                ;;
+            esac
+          }
+
+          # ------------------------------------------------------------
+          # Notice: possible hardcoded model names in recipe source files.
+          # The checker emits ::notice lines and exits 0 whatever it finds;
+          # only exit 2 (the checker itself broke) affects the job.
+          # ------------------------------------------------------------
+          run_model_literal_check() {
+            local recipe="$1"
+            set +e
+            uv run --no-project python3 .github/scripts/check_model_literals.py "$recipe"
+            local status=$?
+            set -e
+            case "$status" in
+              0) ;;
+              2) CI_FAULT=1 ;;
+              *)
+                echo "::error::check_model_literals.py exited with an undefined status ($status). This is a CI tooling bug, not a problem with your recipe."
+                CI_FAULT=1
+                ;;
+            esac
+          }
+
+          ci_fault_banner() {
+            echo ""
+            echo "========================================"
+            echo "  CI TOOLING FAILURE — not your changes"
+            echo "========================================"
+            echo ""
+            echo "A validator crashed, so we do not know whether your recipe"
+            echo "is valid. Re-run the job; if it fails again, open an issue"
+            echo "with the detail above."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+          }
+
+          FAILED=0
+          CI_FAULT=0
+
           if [ "$VALIDATE_ALL" = "true" ]; then
-            # Both validators walk core/, contrib/, and skills/ in one pass.
-            FAILED=0
-            uv run validate structure || FAILED=1
-            uv run validate readme    || FAILED=1
-            exit $FAILED
+            # Both validators walk core/, contrib/, and plugins/ in one pass.
+            run_validator structure
+            run_validator readme
+
+            while IFS= read -r recipe; do
+              [ -z "$recipe" ] && continue
+              run_lint_config_check "$recipe"
+              run_model_literal_check "$recipe"
+            done < <(find core contrib plugins -mindepth 1 -maxdepth 3 -type f -name manifest.yaml -exec dirname {} \;)
+
+            if [ "$CI_FAULT" -eq 1 ]; then
+              ci_fault_banner
+              exit 1
+            fi
+
+            # This branch used to `exit $FAILED` with no message while the
+            # per-recipe branch below printed a banner. It is the branch
+            # taken whenever a PR touches pyproject.toml, policy.yml, the
+            # schema or a validation tool, so the silent variant was hit
+            # often — a red X with nothing to read.
+            if [ "$FAILED" -eq 1 ]; then
+              echo ""
+              echo "========================================"
+              echo "  ACTION REQUIRED: recipe validation failed"
+              echo "========================================"
+              echo ""
+              echo "Every recipe was re-validated because this PR changed the"
+              echo "schema, the policy, or a validation tool. Failures may"
+              echo "therefore be in recipes you did not touch — that is"
+              echo "expected, and they still have to be fixed or the rule"
+              echo "change reverted."
+              echo ""
+              echo "Each problem above says why the rule applies and how to"
+              echo "fix it. Docs: docs/recipe-handbook/troubleshooting.md"
+              exit 1
+            fi
+            exit 0
           fi
 
           if [ -z "$CHANGED_RECIPES" ]; then
@@ -145,18 +354,158 @@ jobs:
           # Per-recipe invocation: keeps annotations scoped to the recipe
           # under review and lets one broken recipe not short-circuit
           # validation of the others in the same PR.
-          FAILED=0
+          #
+          # A here-string feeds the loop rather than a pipe, so the body runs
+          # in this shell and the FAILED / CI_FAULT assignments survive it.
           while IFS= read -r recipe; do
             [ -z "$recipe" ] && continue
-            uv run validate structure "$recipe" || FAILED=1
-            uv run validate readme    "$recipe" || FAILED=1
+            run_validator structure "$recipe"
+            run_validator readme    "$recipe"
+            run_lint_config_check   "$recipe"
+            run_model_literal_check "$recipe"
           done <<< "$CHANGED_RECIPES"
+
+          if [ "$CI_FAULT" -eq 1 ]; then
+            ci_fault_banner
+            exit 1
+          fi
 
           if [ "$FAILED" -eq 1 ]; then
             echo ""
             echo "========================================"
-            echo "  One or more recipes failed structural validation."
-            echo "  See errors above for details."
+            echo "  ACTION REQUIRED: recipe validation failed"
             echo "========================================"
+            echo ""
+            echo "Each problem above says which rule applies, why it applies"
+            echo "to this recipe, and how to fix it."
+            echo ""
+            echo "Docs: docs/recipe-handbook/troubleshooting.md"
             exit 1
           fi
+
+  check-frozen-paths:
+    name: Check for work in retired folders
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Pull requests only — on a push to main the merge has already happened,
+    # so failing there is noise rather than a gate.
+    #
+    # Skipped for bot authors: Dependabot still has open PRs touching the
+    # retired roots, and blocking them would just generate churn. Matching on
+    # the `[bot]` suffix rather than naming Dependabot covers future bots too.
+    #
+    # Skipped when a maintainer applies `allow-legacy-path`. Only users with
+    # write access can label a PR, so this is the same permission boundary as
+    # an admin override — but it is explicit and recorded on the PR.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !endsWith(github.event.pull_request.user.login, '[bot]') &&
+      !contains(github.event.pull_request.labels.*.name, 'allow-legacy-path')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+        with:
+          # Full history so the merge-base diff below resolves.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # ratchet:astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.11"
+          enable-cache: false
+
+      - name: Install validation dependencies
+        # tools/check_frozen_paths.py reads .github/policy.yml, so it needs
+        # PyYAML from the repo-root pyproject.toml.
+        run: uv sync
+
+      - name: Check for changes in retired recipe folders
+        env:
+          # Route the GitHub-controlled value through an env var rather than
+          # interpolating it directly, same as the sibling job above.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin "$BASE_REF"
+
+          # --diff-filter=AM keeps additions and modifications only.
+          # Deletions and renames are deliberately excluded so that MOVING a
+          # recipe out of a retired folder is never blocked by this check.
+          git diff --diff-filter=AM --name-only "origin/$BASE_REF"...HEAD \
+            | uv run python tools/check_frozen_paths.py
+
+  check-recipe-placement:
+    name: Check recipe placement
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Deliberately unconditional — unlike check-frozen-paths there is no bot
+    # or label exemption. A whole-tree scan, so it also catches a
+    # misplacement that arrives by rename or bad merge rather than by an
+    # obvious "add a recipe" diff.
+    #
+    # It cannot ride on the validate-structure job above: that runs the
+    # validators per AFFECTED recipe, and affected_recipes.py maps a
+    # misplaced plugin (plugins/<solution> with no vertical) to None, so it
+    # would never appear in changed_recipes.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # ratchet:astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.11"
+          enable-cache: false
+
+      - name: Install validation dependencies
+        # validate_placement imports validate_manifest, which needs PyYAML
+        # from the repo-root pyproject.toml.
+        run: uv sync
+
+      - name: Check every recipe sits at its required path
+        run: |
+          set -euo pipefail
+
+          # Distinguish "a recipe is misplaced" (1) from "the placement
+          # validator crashed" (2); a bare invocation would surface the
+          # second as the first.
+          set +e
+          uv run python tools/validate_placement.py
+          status=$?
+          set -e
+          case "$status" in
+            0) ;;
+            1) exit 1 ;;
+            2|*)
+              echo ""
+              echo "========================================"
+              echo "  CI TOOLING FAILURE — not your changes"
+              echo "========================================"
+              echo ""
+              echo "The placement validator could not complete, so we do not"
+              echo "know whether every recipe is correctly placed. Re-run the"
+              echo "job; if it fails again, open an issue with the detail above."
+              echo ""
+              echo "Docs: docs/recipe-handbook/troubleshooting.md#ci-infrastructure-failure"
+              exit 1
+              ;;
+          esac
+
+  # The `check-dependabot-config` job used to live here. It failed a
+  # contributor's PR when .github/dependabot.yml no longer matched the recipe
+  # tree, because that file enumerated one entry per directory and had to be
+  # regenerated by hand on every recipe add or remove.
+  #
+  # dependabot.yml no longer enumerates recipe directories. It still names
+  # every recipe ecosystem, but only to suppress updates, and it locates them
+  # with a `["/", "**/*"]` glob that already covers any recipe added or
+  # removed. So there is nothing to keep in sync and nothing to gate. See the
+  # header of that file.

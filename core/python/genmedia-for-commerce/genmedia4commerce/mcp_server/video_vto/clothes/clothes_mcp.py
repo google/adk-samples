@@ -25,7 +25,7 @@ from workflows.video_vto.clothes.pipeline import (
 logger = logging.getLogger(__name__)
 
 
-async def run_video_vto_clothes(  # noqa: C901, PLR0911
+async def run_video_vto_clothes(
     full_body_image_base64: str,
     garment_images_base64: list[str],
     scenario: str = "a plain white studio background",

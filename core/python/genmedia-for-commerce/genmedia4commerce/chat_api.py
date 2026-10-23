@@ -63,7 +63,7 @@ class ChatRequest(BaseModel):
     message: str
 
 
-async def chat_streamer(request: ChatRequest):  # noqa: C901, PLR0912
+async def chat_streamer(request: ChatRequest):
     """Stream chat responses from the agent."""
     # Create the session if it doesn't exist
     if not await session_service.get_session(
@@ -119,7 +119,7 @@ async def chat_streamer(request: ChatRequest):  # noqa: C901, PLR0912
                                             )
                                             + "\n"
                                         )
-                                except Exception:
+                                except Exception:  # noqa: S110
                                     # DO NOT yield raw text from tools to the user
                                     pass
 

@@ -132,7 +132,7 @@ async def preprocess_images_r2v(images: list[UploadFile] = File(...)):  # noqa: 
             upscale_client=veo_client,
             shoe_classifier_model=shoe_classifier_model,
             num_workers=max(1, multiprocessing.cpu_count() - 1),
-            upscale_images=True,
+            upscale_images=False,
             create_canva=False,
         )
 
@@ -281,7 +281,8 @@ async def generate_video_r2v(
 
 @router.post("/merge-videos")
 async def merge_videos(
-    videos: list[UploadFile] = File(...), speeds: str = Form(...)  # noqa: B008
+    videos: list[UploadFile] = File(...),  # noqa: B008
+    speeds: str = Form(...),
 ):
     """Merge multiple video files into one."""
     if not videos:
@@ -327,7 +328,7 @@ async def run_pipeline_endpoint_r2v(payload: dict = Body(...)):  # noqa: B008
     max_retries = payload.get("max_retries", 5)
     veo_model = payload.get("veo_model", "veo-3.1-generate-001")
     reference_type = payload.get("reference_type", "asset")
-    upscale_images = payload.get("upscale_images", True)
+    upscale_images = payload.get("upscale_images", False)
     product_consistency_model = payload.get(
         "product_consistency_model", os.getenv("MODEL_NAME_GENERATED_4")
     )

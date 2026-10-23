@@ -49,7 +49,7 @@ def _get_clients():
     return client, veo_client
 
 
-async def run_spinning_interpolation(  # noqa: C901
+async def run_spinning_interpolation(
     images_base64: list[str],
     background_color: str = "#FFFFFF",
 ) -> dict:
@@ -97,7 +97,7 @@ async def run_spinning_interpolation(  # noqa: C901
             client=client,
             upscale_client=veo_client,
             num_workers=4,
-            upscale_images=True,
+            upscale_images=False,
             create_canva=True,
         ),
     )

@@ -273,7 +273,7 @@ def setup_agent_identity(client: Any, project: str, display_name: str) -> Any:
     default=False,
     help="Enable agent identity for per-agent IAM access control (Preview feature)",
 )
-def deploy_agent_engine_app(  # noqa: C901, PLR0915
+def deploy_agent_engine_app(
     project: str | None,
     location: str,
     display_name: str,
